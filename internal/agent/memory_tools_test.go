@@ -26,9 +26,9 @@ import (
 // internal/agent applique internal/authorization.Authorizer et résout la
 // portée avant d'appeler Store, jamais la persistance elle-même.
 type fakeMemoryStore struct {
-	mu         sync.Mutex
-	memories   map[string]memory.Memory
-	scopes     map[string]struct {
+	mu       sync.Mutex
+	memories map[string]memory.Memory
+	scopes   map[string]struct {
 		orgID   model.OrgID
 		scope   model.Scope
 		scopeID model.ScopeID

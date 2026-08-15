@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -370,12 +371,7 @@ func TestManagerCloseIsIdempotent(t *testing.T) {
 // --- helpers ---
 
 func contains(items []string, target string) bool {
-	for _, item := range items {
-		if item == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(items, target)
 }
 
 func findTool(t *testing.T, tools []llm.Tool, name string) llm.Tool {
