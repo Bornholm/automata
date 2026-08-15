@@ -68,6 +68,12 @@ agents:
     capabilities:
       - calendar.personal.read
       - calendar.personal.write
+    limits:
+      max_sequential_tool_calls: 4
+      max_actions_per_turn: 5
+      tool_timeout: 15s
+      max_tool_result_bytes: 16KiB
+      max_tool_context_bytes: 32KiB
 
 mcp_servers:
   google-calendar:

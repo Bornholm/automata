@@ -65,17 +65,25 @@ var ErrEmptyReply = errors.New("agent: réponse du modèle vide")
 // spéculative pour cette phase. Il sera introduit aux phases où le
 // tool-calling (délégation, mémoire, MCP) devient nécessaire.
 type GenAIAgent struct {
-	client       llm.ChatCompletionStreamingClient
-	systemPrompt string
+	client         llm.ChatCompletionStreamingClient
+	systemPrompt   string
+	agentName      string
+	orgDisplayName string
 }
 
 // NewGenAIAgent construit un GenAIAgent utilisant client pour les
-// complétions en streaming et systemPrompt comme premier message système de
-// chaque exécution.
-func NewGenAIAgent(client llm.ChatCompletionStreamingClient, systemPrompt string) *GenAIAgent {
+// complétions en streaming. systemPrompt est le prompt statique déjà
+// composé de l'agent (typiquement via BuildSystemPrompt) : il ne contient
+// ni le contexte d'exécution ni la demande. agentName et orgDisplayName
+// sont les valeurs statiques (connues à la construction, pas par requête)
+// utilisées pour peupler le bloc de contexte injecté à chaque exécution
+// (voir BuildContextBlock, PLAN.md §7.3).
+func NewGenAIAgent(client llm.ChatCompletionStreamingClient, systemPrompt string, agentName string, orgDisplayName string) *GenAIAgent {
 	return &GenAIAgent{
-		client:       client,
-		systemPrompt: systemPrompt,
+		client:         client,
+		systemPrompt:   systemPrompt,
+		agentName:      agentName,
+		orgDisplayName: orgDisplayName,
 	}
 }
 
@@ -135,11 +143,15 @@ func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 
 // buildMessages transforme req en messages GenAI : system prompt en
 // premier, puis l'historique dans l'ordre chronologique, puis le message
-// utilisateur courant.
+// utilisateur courant. Le message système envoyé au modèle est le prompt
+// statique de l'agent suivi du bloc de contexte d'exécution propre à cette
+// requête (PLAN.md §7.2, §7.3) : le contexte n'est jamais mélangé au prompt
+// statique construit une fois pour toutes à l'enregistrement de l'agent.
 func (a *GenAIAgent) buildMessages(req Request) []llm.Message {
 	messages := make([]llm.Message, 0, len(req.History)+2)
 
-	messages = append(messages, llm.NewMessage(llm.RoleSystem, a.systemPrompt))
+	systemMessage := a.systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, a.orgDisplayName, a.agentName)
+	messages = append(messages, llm.NewMessage(llm.RoleSystem, systemMessage))
 
 	for _, m := range req.History {
 		messages = append(messages, llm.NewMessage(genaiRole(m.Role), m.Content))

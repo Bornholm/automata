@@ -108,6 +108,12 @@ agents:
     capabilities:
       - calendar.personal.read
       - calendar.personal.write
+    limits:
+      max_sequential_tool_calls: 4
+      max_actions_per_turn: 5
+      tool_timeout: 15s
+      max_tool_result_bytes: 16KiB
+      max_tool_context_bytes: 32KiB
 
 mcp_servers:
   google-calendar:
@@ -606,5 +612,37 @@ func TestLoad_AggregatesMultipleErrors(t *testing.T) {
 
 	if len(valErrs) < 2 {
 		t.Errorf("len(ValidationErrors) = %d, attendu au moins 2", len(valErrs))
+	}
+}
+
+func TestLoad_InvalidAgentLimitZero(t *testing.T) {
+	setBaseEnv(t)
+
+	content := strings.Replace(baseYAML, "max_actions_per_turn: 10", "max_actions_per_turn: 0", 1)
+	path := writeYAML(t, content)
+
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("Load: erreur attendue pour une limite max_actions_per_turn à zéro")
+	}
+
+	if !strings.Contains(err.Error(), "max_actions_per_turn") {
+		t.Errorf("erreur = %v, attendu mention de max_actions_per_turn", err)
+	}
+}
+
+func TestLoad_InvalidAgentLimitNegative(t *testing.T) {
+	setBaseEnv(t)
+
+	content := strings.Replace(baseYAML, "max_sequential_tool_calls: 8", "max_sequential_tool_calls: -1", 1)
+	path := writeYAML(t, content)
+
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("Load: erreur attendue pour une limite max_sequential_tool_calls négative")
+	}
+
+	if !strings.Contains(err.Error(), "max_sequential_tool_calls") {
+		t.Errorf("erreur = %v, attendu mention de max_sequential_tool_calls", err)
 	}
 }

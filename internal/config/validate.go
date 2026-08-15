@@ -101,9 +101,42 @@ func validateAgents(cfg *Config) []error {
 				errs = append(errs, fmt.Errorf("%s.mcp_servers: serveur mcp inconnu %q", prefix, server))
 			}
 		}
+
+		errs = append(errs, validateAgentLimits(prefix, agent.Limits)...)
 	}
 
 	errs = append(errs, detectDelegationCycles(cfg)...)
+
+	return errs
+}
+
+// validateAgentLimits vérifie que chaque limite d'exécution d'un agent est
+// strictement positive. Une limite à zéro ou négative n'a pas de sens
+// applicatif (elle interdirait tout appel ou tolérerait une taille
+// négative) : elle doit être rejetée explicitement plutôt que silencieusement
+// désactivée (PLAN.md Phase 7, §6.2 "ses limites").
+func validateAgentLimits(prefix string, limits AgentLimits) []error {
+	var errs []error
+
+	if limits.MaxSequentialToolCalls <= 0 {
+		errs = append(errs, fmt.Errorf("%s.limits.max_sequential_tool_calls: doit être strictement positif (valeur actuelle: %d)", prefix, limits.MaxSequentialToolCalls))
+	}
+
+	if limits.MaxActionsPerTurn <= 0 {
+		errs = append(errs, fmt.Errorf("%s.limits.max_actions_per_turn: doit être strictement positif (valeur actuelle: %d)", prefix, limits.MaxActionsPerTurn))
+	}
+
+	if limits.ToolTimeout <= 0 {
+		errs = append(errs, fmt.Errorf("%s.limits.tool_timeout: doit être strictement positif (valeur actuelle: %s)", prefix, limits.ToolTimeout.Duration()))
+	}
+
+	if limits.MaxToolResultBytes <= 0 {
+		errs = append(errs, fmt.Errorf("%s.limits.max_tool_result_bytes: doit être strictement positif (valeur actuelle: %d)", prefix, limits.MaxToolResultBytes))
+	}
+
+	if limits.MaxToolContextBytes <= 0 {
+		errs = append(errs, fmt.Errorf("%s.limits.max_tool_context_bytes: doit être strictement positif (valeur actuelle: %d)", prefix, limits.MaxToolContextBytes))
+	}
 
 	return errs
 }
