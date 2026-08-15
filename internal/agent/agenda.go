@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -240,15 +241,11 @@ func augmentSchemaForConfirmation(schema map[string]any) map[string]any {
 	}
 
 	augmented := make(map[string]any, len(schema))
-	for k, v := range schema {
-		augmented[k] = v
-	}
+	maps.Copy(augmented, schema)
 
 	properties, _ := augmented["properties"].(map[string]any)
 	newProperties := make(map[string]any, len(properties)+2)
-	for k, v := range properties {
-		newProperties[k] = v
-	}
+	maps.Copy(newProperties, properties)
 
 	newProperties["proposal_id"] = map[string]any{
 		"type":        "string",
@@ -271,9 +268,7 @@ func augmentSchemaForConfirmation(schema map[string]any) map[string]any {
 func wrapCalendarReadTool(tool llm.Tool, calendarID string) llm.Tool {
 	execute := func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 		args := make(map[string]any, len(params)+1)
-		for k, v := range params {
-			args[k] = v
-		}
+		maps.Copy(args, params)
 		args[calendarIDParam] = calendarID
 
 		return tool.Execute(ctx, args)
