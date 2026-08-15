@@ -116,11 +116,11 @@ require (
 // public, obsolète par rapport au dépôt de travail local). On pointe donc
 // vers le dépôt local, dont le code source fait foi (voir
 // docs/integration-inventory.md §1 et AGENTS.md).
-replace github.com/bornholm/go-courier => /home/wpetit/workspace/go-courier
+replace github.com/bornholm/go-courier => ../go-courier
 
-replace github.com/bornholm/genai => /home/wpetit/workspace/genai
+replace github.com/bornholm/genai => ../genai
 
 // amoxtli n'a pas non plus de version taguée publiée pour l'API réellement
 // utilisée ici (voir docs/integration-inventory.md §3) : même rationale que
 // go-courier et genai ci-dessus.
-replace github.com/bornholm/amoxtli => /home/wpetit/workspace/amoxtli
+replace github.com/bornholm/amoxtli => ../amoxtli

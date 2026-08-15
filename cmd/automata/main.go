@@ -31,6 +31,20 @@ func main() {
 // Le drapeau -config suit la convention Go (préfixe simple tiret), comme
 // pour "config validate" : le parsing des drapeaux de cobra est donc
 // désactivé et délégué au paquet flag standard.
+//
+// Args: cobra.ArbitraryArgs est nécessaire ici : le drapeau -config étant en
+// simple tiret et multi-caractères, cobra ne le reconnaît pas comme un
+// drapeau consommant une valeur lors de la résolution de commande
+// (stripFlags/Find, package cobra) puisque aucun drapeau n'est enregistré
+// sur cette commande (DisableFlagParsing délègue tout au paquet flag
+// standard dans RunE). Sans cette annotation, la validation par défaut de
+// cobra (legacyArgs) traite la VALEUR du drapeau (ex. "/config/config.yaml")
+// comme une tentative de sous-commande inconnue et Execute() échoue avec
+// "unknown command", avant même l'appel de RunE — silencieusement, à cause
+// de SilenceErrors : c'était un défaut latent depuis les phases précédentes,
+// jamais exercé faute de test exécutant le binaire compilé sans
+// sous-commande (voir Phase 22, packaging, où l'image Docker invoque
+// justement "automata -config ...").
 func newRootCommand(logger *slog.Logger) *cobra.Command {
 	root := &cobra.Command{
 		Use:                "automata",
@@ -38,6 +52,7 @@ func newRootCommand(logger *slog.Logger) *cobra.Command {
 		SilenceUsage:       true,
 		SilenceErrors:      true,
 		DisableFlagParsing: true,
+		Args:               cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fs := flag.NewFlagSet("automata", flag.ContinueOnError)
 			fs.SetOutput(cmd.ErrOrStderr())

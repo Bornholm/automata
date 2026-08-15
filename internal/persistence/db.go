@@ -11,10 +11,27 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "github.com/ncruces/go-sqlite3/driver"
+	sqlitedriver "github.com/ncruces/go-sqlite3/driver"
 
 	"github.com/bornholm/automata/internal/config"
 )
+
+// init enregistre un alias "sqlite" pour le driver database/sql fourni par
+// github.com/ncruces/go-sqlite3/driver, qui ne s'enregistre lui-même que
+// sous le nom "sqlite3" (son comportement par défaut, voir la documentation
+// du paquet driver). Or PLAN.md §12 et tous les exemples de configuration
+// de ce dépôt (internal/config/testdata/valid/config.yaml,
+// docs/deployment.md) utilisent systématiquement "storage.application.driver:
+// sqlite" — sans le "3". Sans cet alias, une configuration suivant cette
+// convention documentée échoue au démarrage réel avec "sql: unknown driver
+// \"sqlite\"" (constaté lors du test de déploiement Docker, Phase 22) :
+// jamais détecté avant, car les tests existants (internal/persistence,
+// internal/e2e) construisent leur config.StorageApplication directement en
+// Go avec Driver: "sqlite3", sans jamais charger le fichier YAML d'exemple
+// canonique via un run réel du binaire.
+func init() {
+	sql.Register("sqlite", &sqlitedriver.SQLite{})
+}
 
 // DB encapsule la connexion SQLite applicative et ses opérations
 // transactionnelles.
