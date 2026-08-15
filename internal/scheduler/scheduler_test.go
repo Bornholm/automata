@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,8 +13,11 @@ import (
 	"github.com/bornholm/go-courier"
 	"github.com/bornholm/go-courier/provider/memory"
 
+	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
+	"github.com/bornholm/automata/internal/authorization"
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/scheduler"
@@ -159,6 +163,115 @@ func newRegistry(agents map[string]agent.Agent) *agent.Registry {
 	return agent.NewRegistryFromAgents(agents)
 }
 
+// proposingAgent est un agent factice qui répond reply et propose proposed
+// (PLAN.md §17).
+func proposingAgent(reply string, proposed []delegation.ProposedAction) *fakeAgent {
+	return newFakeAgent(func(ctx context.Context, req agent.Request) (agent.Result, error) {
+		return agent.Result{Reply: reply, ProposedActions: proposed}, nil
+	})
+}
+
+// confirmationConfig construit une configuration minimale (organisation,
+// rôles, principaux) suffisante pour authorization.NewAuthorizer dans les
+// tests require_confirmation : le rôle "adult" accorde calendar.org.write,
+// le rôle "child" ne l'accorde pas.
+func confirmationConfig() *config.Config {
+	return &config.Config{
+		Organization: config.Organization{ID: "home", DisplayName: "Maison"},
+		Identities: config.Identities{
+			Roles: map[string]config.Role{
+				"adult": {Permissions: []string{"calendar.org.write"}},
+				"child": {Permissions: []string{}},
+			},
+			Principals: []config.Principal{
+				{ID: "scheduler-writer", Kind: config.PrincipalKindService, DisplayName: "Scheduler", Roles: nil},
+				{ID: "adult-confirmer", Kind: config.PrincipalKindHuman, DisplayName: "Alice", Roles: []string{"adult"}},
+				{ID: "child-confirmer", Kind: config.PrincipalKindHuman, DisplayName: "Enfant", Roles: []string{"child"}},
+			},
+		},
+	}
+}
+
+// requireConfirmationSchedule construit un schedule config.Schedule dont la
+// politique d'actions est require_confirmation, livré sur un canal de
+// groupe (provider/channelID donnés), pour que le confirmateur humain n'ait
+// pas besoin d'être l'auteur du plan (PLAN.md §10.5 authorizeConfirmer :
+// seule la portée personal restreint au créateur).
+func requireConfirmationSchedule(id, cronExpr, timezone, agentName, providerName, channelID string) config.Schedule {
+	sched := baseSchedule(id, cronExpr, timezone, agentName, providerName)
+	sched.Execution.PrincipalID = "scheduler-writer"
+	sched.Execution.Actions.Policy = config.ActionsPolicyRequireConfirmation
+	sched.Delivery.ChannelID = channelID
+	return sched
+}
+
+// calendarWriteProposal construit une delegation.ProposedAction d'écriture
+// calendrier org, exécutée par l'exécuteur mcpServer/toolName (fake dans les
+// tests).
+func calendarWriteProposal(summary, mcpServer, toolName string) delegation.ProposedAction {
+	return delegation.ProposedAction{
+		Summary:            summary,
+		MCPServer:          mcpServer,
+		ToolName:           toolName,
+		Arguments:          map[string]any{},
+		RequiredPermission: "calendar.org.write",
+		Scope:              model.ScopeOrg,
+		ScopeID:            "home",
+	}
+}
+
+// humanIdentity construit l'identité d'exécution d'un humain confirmant
+// dans le canal de groupe provider/channelID, avec le même ConversationID
+// que celui que buildIdentity du scheduler calcule pour ce même canal
+// (provider + ":" + channelID) — reproduisant ce que
+// internal/identity.Resolver.ResolveMessage calculerait pour un message
+// entrant réel sur ce canal.
+func humanIdentity(principalID model.PrincipalID, provider, channelID string) model.ExecutionIdentity {
+	return model.ExecutionIdentity{
+		Trigger:        model.TriggerMessage,
+		PrincipalID:    principalID,
+		OrgID:          "home",
+		ConversationID: model.ConversationID(provider + ":" + channelID),
+		Provider:       provider,
+		ChannelID:      channelID,
+		ChannelKind:    model.ChannelGroup,
+		Scope:          model.ScopeGroup,
+		ScopeID:        "home-group",
+	}
+}
+
+func humanConversation(provider, channelID string) model.Conversation {
+	return model.Conversation{
+		ID:        model.ConversationID(provider + ":" + channelID),
+		OrgID:     "home",
+		Provider:  provider,
+		ChannelID: channelID,
+		Kind:      model.ChannelGroup,
+		Scope:     model.ScopeGroup,
+		ScopeID:   "home-group",
+	}
+}
+
+// fakePlanExecutor est un action.Executor factice qui compte ses appels et
+// retourne toujours un succès.
+type fakePlanExecutor struct {
+	mu    sync.Mutex
+	calls int
+}
+
+func (f *fakePlanExecutor) Execute(ctx context.Context, identity model.ExecutionIdentity, plan persistence.ActionPlan, act persistence.Action, args map[string]any) (string, error) {
+	f.mu.Lock()
+	f.calls++
+	f.mu.Unlock()
+	return "ok", nil
+}
+
+func (f *fakePlanExecutor) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
 // --- tests --------------------------------------------------------------
 
 func TestScheduler_Tick_Triggers(t *testing.T) {
@@ -176,7 +289,7 @@ func TestScheduler_Tick_Triggers(t *testing.T) {
 	provider := memory.NewProvider()
 	senders := map[string]courier.Provider{"whatsapp": provider}
 
-	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil)
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
 	if err := s.Tick(context.Background(), at); err != nil {
 		t.Fatalf("Tick: %v", err)
@@ -223,7 +336,7 @@ func TestScheduler_Tick_Disabled(t *testing.T) {
 	provider := memory.NewProvider()
 	senders := map[string]courier.Provider{"whatsapp": provider}
 
-	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil)
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
 	for i := 0; i < 3; i++ {
 		if err := s.Tick(context.Background(), at.Add(time.Duration(i)*24*time.Hour)); err != nil {
@@ -267,7 +380,7 @@ func TestScheduler_Tick_Timezones(t *testing.T) {
 	senders := map[string]courier.Provider{"whatsapp": provider}
 
 	clock := newFakeClock(parisAt.UTC())
-	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil)
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
 	if err := s.Tick(context.Background(), parisAt.UTC()); err != nil {
 		t.Fatalf("Tick (paris instant): %v", err)
@@ -316,7 +429,7 @@ func TestScheduler_Tick_DaylightSavingTransition(t *testing.T) {
 	senders := map[string]courier.Provider{"whatsapp": provider}
 
 	clock := newFakeClock(beforeDST.UTC())
-	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil)
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
 	if err := s.Tick(context.Background(), beforeDST.UTC()); err != nil {
 		t.Fatalf("Tick avant DST: %v", err)
@@ -349,7 +462,7 @@ func TestScheduler_Tick_DuplicateOccurrence(t *testing.T) {
 	provider := memory.NewProvider()
 	senders := map[string]courier.Provider{"whatsapp": provider}
 
-	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil)
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
 	if err := s.Tick(context.Background(), at); err != nil {
 		t.Fatalf("Tick #1: %v", err)
@@ -387,7 +500,7 @@ func TestScheduler_Tick_ConcurrencyForbid(t *testing.T) {
 	runningFor := at.Add(-24 * time.Hour).UTC().Format(time.RFC3339)
 	insertRunningScheduledRun(t, db, sched.ID, runningFor)
 
-	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil)
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
 	if err := s.Tick(context.Background(), at); err != nil {
 		t.Fatalf("Tick: %v", err)
@@ -426,7 +539,7 @@ func TestScheduler_Tick_Timeout(t *testing.T) {
 	provider := memory.NewProvider()
 	senders := map[string]courier.Provider{"whatsapp": provider}
 
-	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil)
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
 	done := make(chan error, 1)
 	go func() {
@@ -469,7 +582,7 @@ func TestScheduler_Tick_MinimalPermissionsIdentity(t *testing.T) {
 	provider := memory.NewProvider()
 	senders := map[string]courier.Provider{"whatsapp": provider}
 
-	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil)
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
 	if err := s.Tick(context.Background(), at); err != nil {
 		t.Fatalf("Tick: %v", err)
@@ -511,7 +624,7 @@ func TestScheduler_Delivery(t *testing.T) {
 	provider := memory.NewProvider()
 	senders := map[string]courier.Provider{"whatsapp": provider}
 
-	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil)
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
 	if err := s.Tick(context.Background(), at); err != nil {
 		t.Fatalf("Tick: %v", err)
@@ -553,7 +666,7 @@ func TestScheduler_Delivery_FailureDoesNotReexecute(t *testing.T) {
 
 	senders := map[string]courier.Provider{"broken": failingProvider{}}
 
-	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil)
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
 	if err := s.Tick(context.Background(), at); err != nil {
 		t.Fatalf("Tick: %v", err)
@@ -683,5 +796,442 @@ func markRunSucceeded(t *testing.T, db *persistence.DB, scheduleID, scheduledFor
 	})
 	if err != nil {
 		t.Fatalf("clôture de l'exécution en cours: %v", err)
+	}
+}
+
+func countActionPlansByConversation(t *testing.T, db *persistence.DB, conversationID model.ConversationID) int {
+	t.Helper()
+
+	var count int
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		row := tx.QueryRowContext(context.Background(), `SELECT COUNT(*) FROM action_plans WHERE conversation_id = ?`, conversationID)
+		return row.Scan(&count)
+	})
+	if err != nil {
+		t.Fatalf("count action_plans: %v", err)
+	}
+
+	return count
+}
+
+func findAuditEventsByType(t *testing.T, db *persistence.DB, eventType string) []persistence.AuditEvent {
+	t.Helper()
+
+	var events []persistence.AuditEvent
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		rows, err := tx.QueryContext(context.Background(), `
+			SELECT id, org_id, principal_id, trigger, conversation_id, event_type, resource_kind,
+				resource_scope, resource_scope_id, outcome, metadata_json, created_at
+			FROM audit_events WHERE event_type = ?
+		`, eventType)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var e persistence.AuditEvent
+			if err := rows.Scan(&e.ID, &e.OrgID, &e.PrincipalID, &e.Trigger, &e.ConversationID, &e.EventType,
+				&e.ResourceKind, &e.ResourceScope, &e.ResourceScopeID, &e.Outcome, &e.MetadataJSON, &e.CreatedAt); err != nil {
+				return err
+			}
+			events = append(events, e)
+		}
+		return rows.Err()
+	})
+	if err != nil {
+		t.Fatalf("recherche des événements d'audit %q: %v", eventType, err)
+	}
+
+	return events
+}
+
+// --- tests Phase 17 : tâches planifiées avec confirmation --------------
+
+func TestScheduler_RequireConfirmation_ProposesPlan(t *testing.T) {
+	db := openTestDB(t)
+
+	at := time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC)
+	clock := newFakeClock(at)
+
+	sched := requireConfirmationSchedule("propose-write", "0 7 * * *", "UTC", "main", "whatsapp", "org-group")
+	cfg := confirmationConfig()
+	cfg.Schedules = []config.Schedule{sched}
+
+	fake := proposingAgent("Je propose de créer un événement.", []delegation.ProposedAction{
+		calendarWriteProposal("Créer l'événement anniversaire", "calendar-server", "create_event"),
+	})
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	authorizer := authorization.NewAuthorizer(cfg)
+	executor := &fakePlanExecutor{}
+	engine := action.NewEngine(db, authorizer, nil, cfg,
+		action.WithExecutor("calendar-server", executor),
+		action.WithAuditEvents(persistence.NewAuditEventRepository()),
+	)
+
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, engine, nil)
+
+	if err := s.Tick(context.Background(), at); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	run, found := findLatestRun(t, db, sched.ID)
+	if !found {
+		t.Fatalf("scheduled_run: aucun enregistrement trouvé")
+	}
+	if run.Status != scheduler.StatusSucceeded {
+		t.Fatalf("scheduled_run.status: got %q, expected %q", run.Status, scheduler.StatusSucceeded)
+	}
+
+	convID := model.ConversationID("whatsapp:org-group")
+	if count := countActionPlansByConversation(t, db, convID); count != 1 {
+		t.Fatalf("action_plans pour %q: got %d, expected 1", convID, count)
+	}
+
+	sent := provider.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("messages envoyés: got %d, expected 1", len(sent))
+	}
+	content, err := courier.GetMessageMainContent(context.Background(), sent[0])
+	if err != nil {
+		t.Fatalf("GetMessageMainContent: %v", err)
+	}
+	if !strings.Contains(content, "Créer l'événement anniversaire") {
+		t.Fatalf("texte de proposition attendu dans la livraison, obtenu: %q", content)
+	}
+	if !strings.Contains(content, "confirmer") {
+		t.Fatalf("instructions de confirmation attendues dans la livraison, obtenu: %q", content)
+	}
+}
+
+func TestScheduler_RequireConfirmation_ConfirmByAuthorizedHuman(t *testing.T) {
+	db := openTestDB(t)
+
+	at := time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC)
+	clock := newFakeClock(at)
+
+	sched := requireConfirmationSchedule("confirm-write", "0 7 * * *", "UTC", "main", "whatsapp", "org-group")
+	cfg := confirmationConfig()
+	cfg.Schedules = []config.Schedule{sched}
+
+	fake := proposingAgent("Je propose une écriture.", []delegation.ProposedAction{
+		calendarWriteProposal("Créer l'événement", "calendar-server", "create_event"),
+	})
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	authorizer := authorization.NewAuthorizer(cfg)
+	executor := &fakePlanExecutor{}
+	engine := action.NewEngine(db, authorizer, nil, cfg,
+		action.WithExecutor("calendar-server", executor),
+		action.WithAuditEvents(persistence.NewAuditEventRepository()),
+	)
+
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, engine, nil)
+
+	if err := s.Tick(context.Background(), at); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	confirmer := humanIdentity("adult-confirmer", "whatsapp", "org-group")
+	conv := humanConversation("whatsapp", "org-group")
+
+	cmd, ok := action.ParseCommand("confirmer")
+	if !ok {
+		t.Fatal("ParseCommand(\"confirmer\") a échoué")
+	}
+
+	report, err := engine.HandleCommand(context.Background(), confirmer, conv, cmd)
+	if err != nil {
+		t.Fatalf("HandleCommand: %v", err)
+	}
+	if !strings.Contains(report, "succès") {
+		t.Fatalf("succès attendu, obtenu: %q", report)
+	}
+	if got := executor.callCount(); got != 1 {
+		t.Fatalf("exécution de l'action: got %d appels, expected 1", got)
+	}
+}
+
+func TestScheduler_RequireConfirmation_InsufficientPermission(t *testing.T) {
+	db := openTestDB(t)
+
+	at := time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC)
+	clock := newFakeClock(at)
+
+	sched := requireConfirmationSchedule("child-confirm-write", "0 7 * * *", "UTC", "main", "whatsapp", "org-group")
+	cfg := confirmationConfig()
+	cfg.Schedules = []config.Schedule{sched}
+
+	fake := proposingAgent("Je propose une écriture.", []delegation.ProposedAction{
+		calendarWriteProposal("Créer l'événement", "calendar-server", "create_event"),
+	})
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	authorizer := authorization.NewAuthorizer(cfg)
+	executor := &fakePlanExecutor{}
+	engine := action.NewEngine(db, authorizer, nil, cfg,
+		action.WithExecutor("calendar-server", executor),
+		action.WithAuditEvents(persistence.NewAuditEventRepository()),
+	)
+
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, engine, nil)
+
+	if err := s.Tick(context.Background(), at); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	confirmer := humanIdentity("child-confirmer", "whatsapp", "org-group")
+	conv := humanConversation("whatsapp", "org-group")
+
+	cmd, _ := action.ParseCommand("confirmer")
+	report, err := engine.HandleCommand(context.Background(), confirmer, conv, cmd)
+	if err != nil {
+		t.Fatalf("HandleCommand: %v", err)
+	}
+	if !strings.Contains(report, "échec") {
+		t.Fatalf("échec attendu (permission insuffisante), obtenu: %q", report)
+	}
+	if got := executor.callCount(); got != 0 {
+		t.Fatalf("aucune exécution attendue (permission insuffisante), got %d appels", got)
+	}
+}
+
+func TestScheduler_RequireConfirmation_Expiration(t *testing.T) {
+	db := openTestDB(t)
+
+	at := time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC)
+	clock := newFakeClock(at)
+
+	sched := requireConfirmationSchedule("expire-write", "0 7 * * *", "UTC", "main", "whatsapp", "org-group")
+	cfg := confirmationConfig()
+	cfg.Schedules = []config.Schedule{sched}
+
+	fake := proposingAgent("Je propose une écriture.", []delegation.ProposedAction{
+		calendarWriteProposal("Créer l'événement", "calendar-server", "create_event"),
+	})
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	authorizer := authorization.NewAuthorizer(cfg)
+	executor := &fakePlanExecutor{}
+	engine := action.NewEngine(db, authorizer, nil, cfg,
+		action.WithExecutor("calendar-server", executor),
+		action.WithAuditEvents(persistence.NewAuditEventRepository()),
+		action.WithPlanTTL(time.Minute),
+		action.WithClock(clock.Now),
+	)
+
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, engine, nil)
+
+	if err := s.Tick(context.Background(), at); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	clock.Set(at.Add(2 * time.Minute))
+
+	confirmer := humanIdentity("adult-confirmer", "whatsapp", "org-group")
+	conv := humanConversation("whatsapp", "org-group")
+
+	cmd, _ := action.ParseCommand("confirmer")
+	report, err := engine.HandleCommand(context.Background(), confirmer, conv, cmd)
+	if err != nil {
+		t.Fatalf("HandleCommand: %v", err)
+	}
+	if !strings.Contains(report, "expiré") {
+		t.Fatalf("expiration attendue, obtenu: %q", report)
+	}
+	if got := executor.callCount(); got != 0 {
+		t.Fatalf("aucune exécution attendue (plan expiré), got %d appels", got)
+	}
+}
+
+func TestScheduler_RequireConfirmation_TickTwiceDoesNotDuplicatePlan(t *testing.T) {
+	db := openTestDB(t)
+
+	at := time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC)
+	clock := newFakeClock(at)
+
+	sched := requireConfirmationSchedule("dedup-write", "0 7 * * *", "UTC", "main", "whatsapp", "org-group")
+	cfg := confirmationConfig()
+	cfg.Schedules = []config.Schedule{sched}
+
+	fake := proposingAgent("Je propose une écriture.", []delegation.ProposedAction{
+		calendarWriteProposal("Créer l'événement", "calendar-server", "create_event"),
+	})
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	authorizer := authorization.NewAuthorizer(cfg)
+	executor := &fakePlanExecutor{}
+	engine := action.NewEngine(db, authorizer, nil, cfg,
+		action.WithExecutor("calendar-server", executor),
+		action.WithAuditEvents(persistence.NewAuditEventRepository()),
+	)
+
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, engine, nil)
+
+	if err := s.Tick(context.Background(), at); err != nil {
+		t.Fatalf("Tick #1: %v", err)
+	}
+	if err := s.Tick(context.Background(), at); err != nil {
+		t.Fatalf("Tick #2: %v", err)
+	}
+
+	if got := fake.callCount(); got != 1 {
+		t.Fatalf("agent calls: got %d, expected 1 (déduplication d'occurrence)", got)
+	}
+
+	convID := model.ConversationID("whatsapp:org-group")
+	if count := countActionPlansByConversation(t, db, convID); count != 1 {
+		t.Fatalf("action_plans pour %q: got %d, expected 1 (pas de doublon)", convID, count)
+	}
+}
+
+func TestScheduler_RequireConfirmation_RestartThenConfirm(t *testing.T) {
+	storageCfg := testStorageConfig(t)
+	db, err := persistence.Open(context.Background(), storageCfg)
+	if err != nil {
+		t.Fatalf("persistence.Open: %v", err)
+	}
+
+	at := time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC)
+	clock := newFakeClock(at)
+
+	sched := requireConfirmationSchedule("restart-write", "0 7 * * *", "UTC", "main", "whatsapp", "org-group")
+	cfg := confirmationConfig()
+	cfg.Schedules = []config.Schedule{sched}
+
+	fake := proposingAgent("Je propose une écriture.", []delegation.ProposedAction{
+		calendarWriteProposal("Créer l'événement", "calendar-server", "create_event"),
+	})
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	authorizer := authorization.NewAuthorizer(cfg)
+	executor := &fakePlanExecutor{}
+	engine := action.NewEngine(db, authorizer, nil, cfg,
+		action.WithExecutor("calendar-server", executor),
+		action.WithAuditEvents(persistence.NewAuditEventRepository()),
+	)
+
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, engine, nil)
+
+	if err := s.Tick(context.Background(), at); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	// Simule un redémarrage du processus : fermeture de la connexion, puis
+	// réouverture d'une nouvelle instance *persistence.DB sur le même
+	// fichier, et construction d'un nouvel action.Engine dessus (même
+	// pattern que TestEngine_RedemarrageAvantConfirmation, Phase 15).
+	if err := db.Close(); err != nil {
+		t.Fatalf("db.Close: %v", err)
+	}
+
+	db2, err := persistence.Open(context.Background(), storageCfg)
+	if err != nil {
+		t.Fatalf("persistence.Open (redémarrage): %v", err)
+	}
+	t.Cleanup(func() { _ = db2.Close() })
+
+	engine2 := action.NewEngine(db2, authorizer, nil, cfg,
+		action.WithExecutor("calendar-server", executor),
+		action.WithAuditEvents(persistence.NewAuditEventRepository()),
+	)
+
+	confirmer := humanIdentity("adult-confirmer", "whatsapp", "org-group")
+	conv := humanConversation("whatsapp", "org-group")
+
+	cmd, _ := action.ParseCommand("confirmer")
+	report, err := engine2.HandleCommand(context.Background(), confirmer, conv, cmd)
+	if err != nil {
+		t.Fatalf("HandleCommand après redémarrage: %v", err)
+	}
+	if !strings.Contains(report, "succès") {
+		t.Fatalf("succès attendu après redémarrage, obtenu: %q", report)
+	}
+	if got := executor.callCount(); got != 1 {
+		t.Fatalf("exécution attendue après redémarrage: got %d appels, expected 1", got)
+	}
+}
+
+func TestScheduler_RequireConfirmation_Audit(t *testing.T) {
+	db := openTestDB(t)
+
+	at := time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC)
+	clock := newFakeClock(at)
+
+	sched := requireConfirmationSchedule("audit-write", "0 7 * * *", "UTC", "main", "whatsapp", "org-group")
+	cfg := confirmationConfig()
+	cfg.Schedules = []config.Schedule{sched}
+
+	fake := proposingAgent("Je propose une écriture.", []delegation.ProposedAction{
+		calendarWriteProposal("Créer l'événement", "calendar-server", "create_event"),
+	})
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	authorizer := authorization.NewAuthorizer(cfg)
+	executor := &fakePlanExecutor{}
+	engine := action.NewEngine(db, authorizer, nil, cfg,
+		action.WithExecutor("calendar-server", executor),
+		action.WithAuditEvents(persistence.NewAuditEventRepository()),
+	)
+
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, engine, nil)
+
+	if err := s.Tick(context.Background(), at); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	proposedEvents := findAuditEventsByType(t, db, "action_plan.proposed")
+	if len(proposedEvents) != 1 {
+		t.Fatalf("audit_events action_plan.proposed: got %d, expected 1", len(proposedEvents))
+	}
+	if proposedEvents[0].PrincipalID != "scheduler-writer" {
+		t.Errorf("audit action_plan.proposed principal_id: got %q, expected %q (auteur technique)", proposedEvents[0].PrincipalID, "scheduler-writer")
+	}
+	if proposedEvents[0].Trigger != model.TriggerCron {
+		t.Errorf("audit action_plan.proposed trigger: got %q, expected %q", proposedEvents[0].Trigger, model.TriggerCron)
+	}
+
+	confirmer := humanIdentity("adult-confirmer", "whatsapp", "org-group")
+	conv := humanConversation("whatsapp", "org-group")
+
+	cmd, _ := action.ParseCommand("confirmer")
+	if _, err := engine.HandleCommand(context.Background(), confirmer, conv, cmd); err != nil {
+		t.Fatalf("HandleCommand: %v", err)
+	}
+
+	confirmedEvents := findAuditEventsByType(t, db, "action_plan.confirmed")
+	if len(confirmedEvents) != 1 {
+		t.Fatalf("audit_events action_plan.confirmed: got %d, expected 1", len(confirmedEvents))
+	}
+	if confirmedEvents[0].PrincipalID != "adult-confirmer" {
+		t.Errorf("audit action_plan.confirmed principal_id: got %q, expected %q (confirmateur humain)", confirmedEvents[0].PrincipalID, "adult-confirmer")
+	}
+	if confirmedEvents[0].Trigger != model.TriggerMessage {
+		t.Errorf("audit action_plan.confirmed trigger: got %q, expected %q", confirmedEvents[0].Trigger, model.TriggerMessage)
+	}
+	if confirmedEvents[0].Outcome != action.StatusSucceeded {
+		t.Errorf("audit action_plan.confirmed outcome: got %q, expected %q", confirmedEvents[0].Outcome, action.StatusSucceeded)
 	}
 }

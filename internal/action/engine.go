@@ -69,15 +69,16 @@ type Executor interface {
 // Engine est le moteur central des plans d'actions (PLAN.md §10, Phase 15).
 // Une valeur zéro n'est pas utilisable : construire via NewEngine.
 type Engine struct {
-	db         *persistence.DB
-	plans      *persistence.ActionPlanRepository
-	actions    *persistence.ActionRepository
-	authorizer *authorization.Authorizer
-	mcpManager *mcp.Manager
-	cfg        *config.Config
-	now        func() time.Time
-	planTTL    time.Duration
-	executors  map[string]Executor
+	db          *persistence.DB
+	plans       *persistence.ActionPlanRepository
+	actions     *persistence.ActionRepository
+	authorizer  *authorization.Authorizer
+	mcpManager  *mcp.Manager
+	cfg         *config.Config
+	now         func() time.Time
+	planTTL     time.Duration
+	executors   map[string]Executor
+	auditEvents *persistence.AuditEventRepository
 }
 
 // Option configure un Engine à la construction.
@@ -122,6 +123,20 @@ func WithExecutor(mcpServer string, ex Executor) Option {
 	return func(e *Engine) {
 		if mcpServer != "" && ex != nil {
 			e.executors[mcpServer] = ex
+		}
+	}
+}
+
+// WithAuditEvents active l'enregistrement de l'événement d'audit
+// "action_plan.confirmed" (PLAN.md §17, "auditer ... le confirmateur
+// humain") à chaque confirmation de plan menée à exécution par confirmPlan.
+// Dépendance optionnelle : si jamais fournie (repo nil, ou option omise),
+// confirmPlan continue de fonctionner exactement comme avant cette phase,
+// simplement sans écrire d'événement d'audit.
+func WithAuditEvents(repo *persistence.AuditEventRepository) Option {
+	return func(e *Engine) {
+		if repo != nil {
+			e.auditEvents = repo
 		}
 	}
 }
@@ -326,7 +341,64 @@ func (e *Engine) confirmPlan(ctx context.Context, identity model.ExecutionIdenti
 		return "", err
 	}
 
+	e.recordPlanConfirmedAudit(ctx, identity, plan, finalStatus, outcomes)
+
 	return formatExecutionReport(finalStatus, outcomes), nil
+}
+
+// recordPlanConfirmedAudit journalise l'événement d'audit
+// "action_plan.confirmed" (PLAN.md §17, "auditer ... le confirmateur
+// humain") : le principal enregistré est identity.PrincipalID, c'est-à-dire
+// le confirmateur ACTUEL, jamais plan.CreatedBy (l'auteur, potentiellement
+// technique, de la proposition). No-op silencieux si aucun
+// persistence.AuditEventRepository n'a été fourni via WithAuditEvents. Une
+// erreur d'écriture est journalisée... nulle part ici faute de logger sur
+// Engine : elle est simplement ignorée, l'audit étant best-effort et ne
+// devant jamais faire échouer une confirmation par ailleurs réussie.
+func (e *Engine) recordPlanConfirmedAudit(ctx context.Context, identity model.ExecutionIdentity, plan persistence.ActionPlan, finalStatus string, outcomes []actionOutcome) {
+	if e.auditEvents == nil {
+		return
+	}
+
+	succeeded, failed := 0, 0
+	for _, o := range outcomes {
+		if o.ok {
+			succeeded++
+		} else {
+			failed++
+		}
+	}
+
+	metadata, err := json.Marshal(map[string]any{
+		"plan_id":   string(plan.ID),
+		"succeeded": succeeded,
+		"failed":    failed,
+	})
+	if err != nil {
+		return
+	}
+	metadataJSON := string(metadata)
+
+	convID := plan.ConversationID
+
+	event := persistence.AuditEvent{
+		ID:              persistence.AuditEventID(uuid.NewString()),
+		OrgID:           plan.OrgID,
+		PrincipalID:     identity.PrincipalID,
+		Trigger:         model.TriggerMessage,
+		ConversationID:  &convID,
+		EventType:       "action_plan.confirmed",
+		ResourceKind:    "action_plan",
+		ResourceScope:   plan.Scope,
+		ResourceScopeID: plan.ScopeID,
+		Outcome:         finalStatus,
+		MetadataJSON:    &metadataJSON,
+		CreatedAt:       e.now().UTC().Format(time.RFC3339),
+	}
+
+	_ = e.db.WithTx(ctx, func(tx *sql.Tx) error {
+		return e.auditEvents.Insert(ctx, tx, event)
+	})
 }
 
 // cancelPlan marque ref comme annulé (PLAN.md §10.4). Comme confirmPlan,

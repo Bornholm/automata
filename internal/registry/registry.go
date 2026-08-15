@@ -82,7 +82,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	authorizer := authorization.NewAuthorizer(cfg)
 
-	var actionOpts []action.Option
+	actionOpts := []action.Option{action.WithAuditEvents(persistence.NewAuditEventRepository())}
 	if memRes.store != nil {
 		actionOpts = append(actionOpts, action.WithMemoryStore(memRes.store))
 	}
@@ -93,7 +93,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
 
-	sched := scheduler.NewScheduler(cfg, scheduler.RealClock{}, db, agents, providers, logger)
+	sched := scheduler.NewScheduler(cfg, scheduler.RealClock{}, db, agents, providers, actionEngine, logger)
 
 	var wg sync.WaitGroup
 

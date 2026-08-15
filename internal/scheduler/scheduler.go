@@ -1,19 +1,27 @@
 // Package scheduler déclenche les agents configurés selon les expressions
-// cron déclarées dans cfg.Schedules (PLAN.md §11, Phase 16).
+// cron déclarées dans cfg.Schedules (PLAN.md §11, Phase 16 et §17).
 //
-// V1 est strictement en lecture seule : toute action proposée par l'agent
+// Politique "read_only" (Phase 16) : toute action proposée par l'agent
 // durant une exécution planifiée est journalisée puis ignorée, jamais
-// transformée en plan de confirmation (internal/action n'est pas invoqué
-// ici, voir Phase 17). Chaque occurrence est enregistrée avant son exécution
-// (déduplication native via UNIQUE(schedule_id, scheduled_for) en base,
-// PLAN.md §11.5), et la livraison du résultat via Courier est une étape
-// strictement séparée de l'exécution : une erreur de livraison ne réexécute
-// jamais l'agent (PLAN.md §11.6).
+// transformée en plan de confirmation.
+//
+// Politique "require_confirmation" (Phase 17) : toute action proposée par
+// l'agent est transformée en plan d'actions persisté (internal/action),
+// livré au canal configuré, confirmable par un humain compétent de ce canal
+// exactement comme une proposition née d'une conversation (même moteur, même
+// revérification de permission par action au moment de la confirmation).
+//
+// Chaque occurrence est enregistrée avant son exécution (déduplication
+// native via UNIQUE(schedule_id, scheduled_for) en base, PLAN.md §11.5), et
+// la livraison du résultat via Courier est une étape strictement séparée de
+// l'exécution : une erreur de livraison ne réexécute jamais l'agent (PLAN.md
+// §11.6).
 package scheduler
 
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -23,6 +31,7 @@ import (
 
 	"github.com/bornholm/go-courier"
 
+	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/model"
@@ -51,7 +60,14 @@ const (
 	errCodeUnsupportedPolicy = "unsupported_actions_policy"
 	errCodeProviderNotFound  = "provider_not_found"
 	errCodeSendFailed        = "send_failed"
+	errCodePlanCreationError = "action_plan_creation_error"
 )
+
+// Types d'événements d'audit émis par le scheduler (PLAN.md §17, "auditer
+// l'auteur technique et le confirmateur humain"). Le second événement
+// ("action_plan.confirmed") est émis par internal/action.Engine lui-même au
+// moment de la confirmation, pas ici.
+const auditEventPlanProposed = "action_plan.proposed"
 
 // Clock abstrait l'horloge système, pour des tests déterministes.
 type Clock interface {
@@ -67,19 +83,20 @@ func (RealClock) Now() time.Time { return time.Now() }
 var _ Clock = RealClock{}
 
 // ValidateSchedules vérifie, au démarrage, que chaque déclenchement
-// planifié activé déclare une politique d'actions supportée par cette
-// phase. V1 est strictement en lecture seule (PLAN.md §11.3) : la politique
-// "require_confirmation" n'est pas silencieusement traitée comme
-// "read_only", elle est refusée explicitement (la Phase 17 l'ajoutera).
+// planifié activé déclare une politique d'actions supportée : "read_only"
+// (Phase 16) ou "require_confirmation" (Phase 17, PLAN.md §11.3). Toute
+// autre valeur reste une erreur de configuration claire.
 func ValidateSchedules(cfg *config.Config) error {
 	for _, sched := range cfg.Schedules {
 		if !sched.Enabled {
 			continue
 		}
 
-		if sched.Execution.Actions.Policy != config.ActionsPolicyReadOnly {
-			return fmt.Errorf("scheduler: schedule %q: politique d'actions %q non supportée par cette phase (seul %q est supporté)",
-				sched.ID, sched.Execution.Actions.Policy, config.ActionsPolicyReadOnly)
+		switch sched.Execution.Actions.Policy {
+		case config.ActionsPolicyReadOnly, config.ActionsPolicyRequireConfirmation:
+		default:
+			return fmt.Errorf("scheduler: schedule %q: politique d'actions %q non supportée (attendu %q ou %q)",
+				sched.ID, sched.Execution.Actions.Policy, config.ActionsPolicyReadOnly, config.ActionsPolicyRequireConfirmation)
 		}
 	}
 
@@ -89,14 +106,17 @@ func ValidateSchedules(cfg *config.Config) error {
 // Scheduler déclenche les agents configurés selon leurs expressions cron et
 // livre le résultat via Courier.
 type Scheduler struct {
-	cfg     *config.Config
-	clock   Clock
-	db      *persistence.DB
-	agents  *agent.Registry
-	senders map[string]courier.Provider
+	cfg          *config.Config
+	clock        Clock
+	db           *persistence.DB
+	agents       *agent.Registry
+	senders      map[string]courier.Provider
+	actionEngine *action.Engine
 
 	scheduledRuns    *persistence.ScheduledRunRepository
 	deliveryAttempts *persistence.DeliveryAttemptRepository
+	conversations    *persistence.ConversationRepository
+	auditEvents      *persistence.AuditEventRepository
 
 	logger *slog.Logger
 }
@@ -104,7 +124,13 @@ type Scheduler struct {
 // NewScheduler construit un Scheduler. senders doit contenir un
 // courier.Provider par nom de fournisseur déclaré dans cfg.Courier.Providers
 // (la même map que celle utilisée pour l'ingress, voir internal/registry).
-func NewScheduler(cfg *config.Config, clock Clock, db *persistence.DB, agents *agent.Registry, senders map[string]courier.Provider, logger *slog.Logger) *Scheduler {
+// actionEngine est utilisé pour transformer les actions proposées par un
+// agent exécuté sous la politique "require_confirmation" en plan de
+// confirmation (PLAN.md §17) ; il peut être nil si aucun schedule activé ne
+// déclare cette politique (ValidateSchedules ne l'impose pas explicitement,
+// mais une exécution require_confirmation avec actionEngine nil échoue
+// proprement, voir executeAndDeliver).
+func NewScheduler(cfg *config.Config, clock Clock, db *persistence.DB, agents *agent.Registry, senders map[string]courier.Provider, actionEngine *action.Engine, logger *slog.Logger) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -115,8 +141,11 @@ func NewScheduler(cfg *config.Config, clock Clock, db *persistence.DB, agents *a
 		db:               db,
 		agents:           agents,
 		senders:          senders,
+		actionEngine:     actionEngine,
 		scheduledRuns:    persistence.NewScheduledRunRepository(),
 		deliveryAttempts: persistence.NewDeliveryAttemptRepository(),
+		conversations:    persistence.NewConversationRepository(),
+		auditEvents:      persistence.NewAuditEventRepository(),
 		logger:           logger,
 	}
 }
@@ -327,11 +356,13 @@ func (s *Scheduler) recordOccurrence(ctx context.Context, sched config.Schedule,
 func (s *Scheduler) executeAndDeliver(ctx context.Context, sched config.Schedule, runID persistence.ScheduledRunID) {
 	logCtx := []any{"schedule_id", sched.ID, "scheduled_run_id", runID}
 
-	if sched.Execution.Actions.Policy != config.ActionsPolicyReadOnly {
+	switch sched.Execution.Actions.Policy {
+	case config.ActionsPolicyReadOnly, config.ActionsPolicyRequireConfirmation:
+	default:
 		// Défendu dès le démarrage par ValidateSchedules : ce cas ne
 		// devrait jamais se produire en usage normal.
 		s.failRun(ctx, runID, errCodeUnsupportedPolicy)
-		s.logger.ErrorContext(ctx, "scheduler: politique d'actions non supportée par cette phase", logCtx...)
+		s.logger.ErrorContext(ctx, "scheduler: politique d'actions non supportée", logCtx...)
 		return
 	}
 
@@ -362,12 +393,27 @@ func (s *Scheduler) executeAndDeliver(ctx context.Context, sched config.Schedule
 
 	reply := result.Reply
 
-	// Politique read_only (PLAN.md §11.3) : toute action proposée est
-	// journalisée puis ignorée, jamais exécutée ni transformée en plan de
-	// confirmation (internal/action n'est pas invoqué ici).
 	if len(result.ProposedActions) > 0 {
-		s.logger.InfoContext(ctx, "scheduler: actions proposées ignorées (politique read_only)", append(logCtx, "count", len(result.ProposedActions))...)
-		reply = fmt.Sprintf("%s\n\n(%d action(s) proposée(s) ignorée(s) : lecture seule)", reply, len(result.ProposedActions))
+		switch sched.Execution.Actions.Policy {
+		case config.ActionsPolicyRequireConfirmation:
+			// PLAN.md §17 : les actions proposées deviennent un plan de
+			// confirmation persisté, au nom du principal de service (auteur
+			// technique), livré au canal configuré pour qu'un humain
+			// compétent de ce canal puisse le confirmer.
+			planReply, ok := s.proposeActionPlan(ctx, sched, identity, conversation, result, logCtx)
+			if !ok {
+				s.failRun(ctx, runID, errCodePlanCreationError)
+				s.deliverIfNeeded(ctx, sched, runID, "", true)
+				return
+			}
+			reply = planReply
+		default:
+			// Politique read_only (PLAN.md §11.3) : toute action proposée
+			// est journalisée puis ignorée, jamais exécutée ni transformée
+			// en plan de confirmation.
+			s.logger.InfoContext(ctx, "scheduler: actions proposées ignorées (politique read_only)", append(logCtx, "count", len(result.ProposedActions))...)
+			reply = fmt.Sprintf("%s\n\n(%d action(s) proposée(s) ignorée(s) : lecture seule)", reply, len(result.ProposedActions))
+		}
 	}
 
 	if err := s.succeedRun(ctx, runID); err != nil {
@@ -377,13 +423,24 @@ func (s *Scheduler) executeAndDeliver(ctx context.Context, sched config.Schedule
 	s.deliverIfNeeded(ctx, sched, runID, reply, false)
 }
 
-// buildIdentity construit l'identité d'exécution et la conversation
-// synthétique d'une occurrence planifiée (PLAN.md §9.3, §11.2). Aucun accès
-// personnel implicite : Scope/ScopeID proviennent exclusivement de la
-// configuration de confiance (sched.Execution), jamais d'un contenu fourni
-// par l'utilisateur ou le LLM.
+// buildIdentity construit l'identité d'exécution et la conversation d'une
+// occurrence planifiée (PLAN.md §9.3, §11.2). Aucun accès personnel
+// implicite : Scope/ScopeID proviennent exclusivement de la configuration de
+// confiance (sched.Execution), jamais d'un contenu fourni par l'utilisateur
+// ou le LLM.
+//
+// ConversationID est délibérément identique à celui que calculerait
+// internal/identity.Resolver.ResolveMessage pour un message entrant RÉEL sur
+// le canal de livraison (provider + ":" + channelID) : c'est ce qui permet à
+// un humain tapant "confirmer" dans ce canal de retrouver, via
+// internal/action.Engine.HandleCommand, le plan créé par une exécution
+// planifiée require_confirmation (PLAN.md §17). Une valeur dérivée de
+// l'exécution (schedule_id + scheduled_for, comme utilisé PLAN.md §9.3 pour
+// l'isolation des sessions MCP) serait ici une ERREUR : elle rendrait le
+// plan invisible à toute confirmation humaine, puisque HandleCommand ne
+// retrouve que les plans de identity.ConversationID de l'appelant.
 func (s *Scheduler) buildIdentity(sched config.Schedule, runID persistence.ScheduledRunID) (model.ExecutionIdentity, model.Conversation) {
-	conversationID := model.ConversationID(fmt.Sprintf("schedule:%s:%s", sched.ID, runID))
+	conversationID := model.ConversationID(sched.Delivery.Provider + ":" + sched.Delivery.ChannelID)
 
 	channelKind := model.ChannelPrivate
 	for _, ch := range s.cfg.Channels {
@@ -418,6 +475,113 @@ func (s *Scheduler) buildIdentity(sched config.Schedule, runID persistence.Sched
 	}
 
 	return identity, conversation
+}
+
+// proposeActionPlan transforme les actions proposées par l'agent en plan de
+// confirmation persisté (PLAN.md §17). Retourne le texte à livrer et true en
+// cas de succès ; false si le plan n'a pas pu être créé (auquel cas
+// l'appelant doit traiter l'occurrence comme un échec d'exécution).
+func (s *Scheduler) proposeActionPlan(ctx context.Context, sched config.Schedule, identity model.ExecutionIdentity, conversation model.Conversation, result agent.Result, logCtx []any) (string, bool) {
+	if s.actionEngine == nil {
+		s.logger.ErrorContext(ctx, "scheduler: politique require_confirmation mais aucun moteur d'actions configuré", logCtx...)
+		return "", false
+	}
+
+	if err := s.ensureConversation(ctx, conversation); err != nil {
+		s.logger.ErrorContext(ctx, "scheduler: échec de l'enregistrement de la conversation de livraison", append(logCtx, "error", err)...)
+		return "", false
+	}
+
+	plan, planText, err := s.actionEngine.CreatePlan(ctx, identity, result.ProposedActions)
+	if err != nil {
+		s.logger.ErrorContext(ctx, "scheduler: échec de la création du plan d'actions", append(logCtx, "error", err)...)
+		return "", false
+	}
+
+	s.recordPlanProposedAudit(ctx, identity, plan, len(result.ProposedActions), logCtx)
+
+	reply := result.Reply
+	if reply != "" {
+		reply = reply + "\n\n" + planText
+	} else {
+		reply = planText
+	}
+
+	return reply, true
+}
+
+// ensureConversation insère conv si elle n'existe pas encore, identifiée par
+// (provider, external_channel_id) — même logique que
+// internal/conversation.Handler.ensureConversation, dupliquée ici car non
+// exportée par ce package. Nécessaire pour satisfaire la contrainte de clé
+// étrangère action_plans.conversation_id avant tout appel à
+// action.Engine.CreatePlan.
+func (s *Scheduler) ensureConversation(ctx context.Context, conv model.Conversation) error {
+	return s.db.WithTx(ctx, func(tx *sql.Tx) error {
+		_, found, err := s.conversations.FindByProviderAndExternalChannelID(ctx, tx, conv.Provider, conv.ChannelID)
+		if err != nil {
+			return err
+		}
+		if found {
+			return nil
+		}
+
+		now := s.clock.Now().UTC().Format(time.RFC3339)
+
+		return s.conversations.Insert(ctx, tx, persistence.Conversation{
+			ID:                conv.ID,
+			OrgID:             conv.OrgID,
+			Provider:          conv.Provider,
+			ExternalChannelID: conv.ChannelID,
+			Kind:              conv.Kind,
+			Scope:             conv.Scope,
+			ScopeID:           conv.ScopeID,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		})
+	})
+}
+
+// recordPlanProposedAudit journalise l'événement d'audit "action_plan.proposed"
+// (PLAN.md §17, "auditer l'auteur technique") : le principal auteur est
+// celui de l'identité de service ayant créé le plan (identity.PrincipalID),
+// jamais un humain. Une erreur d'écriture est journalisée mais n'affecte
+// jamais le déroulement normal de l'exécution planifiée : l'audit est un
+// enregistrement best-effort, pas une condition de succès.
+func (s *Scheduler) recordPlanProposedAudit(ctx context.Context, identity model.ExecutionIdentity, plan persistence.ActionPlan, actionCount int, logCtx []any) {
+	metadata, err := json.Marshal(map[string]any{
+		"plan_id":       string(plan.ID),
+		"actions_count": actionCount,
+	})
+	if err != nil {
+		s.logger.ErrorContext(ctx, "scheduler: échec de la sérialisation des métadonnées d'audit", append(logCtx, "error", err)...)
+		return
+	}
+	metadataJSON := string(metadata)
+
+	convID := plan.ConversationID
+
+	event := persistence.AuditEvent{
+		ID:              persistence.AuditEventID(uuid.NewString()),
+		OrgID:           plan.OrgID,
+		PrincipalID:     identity.PrincipalID,
+		Trigger:         model.TriggerCron,
+		ConversationID:  &convID,
+		EventType:       auditEventPlanProposed,
+		ResourceKind:    "action_plan",
+		ResourceScope:   plan.Scope,
+		ResourceScopeID: plan.ScopeID,
+		Outcome:         "proposed",
+		MetadataJSON:    &metadataJSON,
+		CreatedAt:       s.clock.Now().UTC().Format(time.RFC3339),
+	}
+
+	err = s.db.WithTx(ctx, func(tx *sql.Tx) error {
+		return s.auditEvents.Insert(ctx, tx, event)
+	})
+	if err != nil {
+		s.logger.ErrorContext(ctx, "scheduler: échec de l'enregistrement de l'événement d'audit action_plan.proposed", append(logCtx, "error", err)...)
+	}
 }
 
 // succeedRun marque runID comme terminé avec succès.
