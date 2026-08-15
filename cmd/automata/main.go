@@ -63,6 +63,7 @@ func newRootCommand(logger *slog.Logger) *cobra.Command {
 	}
 
 	root.AddCommand(newConfigCommand())
+	root.AddCommand(newMemoryCommand(logger))
 
 	return root
 }
@@ -126,6 +127,69 @@ func newConfigValidateCommand() *cobra.Command {
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "configuration valide: %s (organisation %q, %d agent(s))\n", *configPath, cfg.Organization.ID, len(cfg.Agents))
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+// newMemoryCommand construit la commande "memory" et sa sous-commande
+// "reindex" (PLAN.md §8.6, Phase 10).
+func newMemoryCommand(logger *slog.Logger) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "memory",
+		Short: "Gestion de la mémoire persistante Amoxtli",
+	}
+
+	cmd.AddCommand(newMemoryReindexCommand(logger))
+
+	return cmd
+}
+
+// newMemoryReindexCommand construit la sous-commande "memory reindex" : elle
+// charge la configuration, construit le codex amoxtli décrit par
+// cfg.Memory, et déclenche une réindexation complète.
+//
+// Le drapeau -config suit la convention Go (préfixe simple tiret), comme
+// pour "config validate".
+func newMemoryReindexCommand(logger *slog.Logger) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                "reindex",
+		Short:              "Réindexe intégralement la mémoire à partir du store",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fs := flag.NewFlagSet("reindex", flag.ContinueOnError)
+			fs.SetOutput(cmd.ErrOrStderr())
+
+			configPath := fs.String("config", "", "chemin du fichier de configuration YAML (requis)")
+
+			if err := fs.Parse(args); err != nil {
+				return errSilent
+			}
+
+			if *configPath == "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "le drapeau -config est requis")
+				return errSilent
+			}
+
+			cfg, err := config.Load(*configPath)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "configuration invalide:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
+
+			if err := registry.MemoryReindex(cmd.Context(), logger, cfg); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "réindexation échouée:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
+
+			fmt.Fprintln(cmd.OutOrStdout(), "réindexation terminée avec succès")
 
 			return nil
 		},

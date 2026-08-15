@@ -25,6 +25,7 @@ import (
 	"github.com/bornholm/automata/internal/conversation"
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/ingress"
+	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/persistence"
 )
 
@@ -58,7 +59,13 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		return fmt.Errorf("registry: construction des fournisseurs courier: %w", err)
 	}
 
-	handler, err := buildConversationHandler(cfg, db)
+	memRes, err := buildMemory(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("registry: construction de la mémoire: %w", err)
+	}
+	defer memRes.close(logger)
+
+	handler, err := buildConversationHandler(cfg, db, memRes.store)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
@@ -125,8 +132,10 @@ func buildCourierProviders(cfg *config.Config) (map[string]courier.Provider, err
 // cfg.Audio.TranscriptionClient. Rien n'est construit si l'audio est
 // désactivé : le comportement existant (message vide transmis tel quel) est
 // préservé.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB) (ingress.Handler, error) {
-	agents, err := agent.NewRegistry(cfg)
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *memory.AmoxtliStore) (ingress.Handler, error) {
+	memoryTools := buildMemoryTools(cfg, memStore)
+
+	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools)
 	if err != nil {
 		return nil, fmt.Errorf("construction du registre d'agents: %w", err)
 	}

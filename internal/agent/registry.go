@@ -45,6 +45,22 @@ type Registry struct {
 // deux passes sont nécessaires : un OrchestratorAgent a besoin que ses
 // délégués existent déjà dans le registre pour les envelopper.
 func NewRegistry(cfg *config.Config) (*Registry, error) {
+	return NewRegistryWithMemory(cfg, MemoryTools{})
+}
+
+// NewRegistryWithMemory se comporte comme NewRegistry, mais attache
+// memoryTools (search_memory/remember/forget_memory, PLAN.md §8, Phase 10) à
+// chaque agent orchestrateur construit, selon les booléens
+// agentCfg.Memory.{Search,Remember,Forget} propres à chaque agent déclaré
+// dans cfg.Agents. memoryTools.Store et memoryTools.Authorizer sont partagés
+// par tous les agents (une seule mémoire, un seul Authorizer par instance,
+// voir internal/registry.Run) ; seuls les trois booléens sont recalculés par
+// agent.
+//
+// La valeur zéro de MemoryTools (Store nil) n'expose aucun outil mémoire :
+// NewRegistry s'appuie sur ce comportement pour rester utilisable sans
+// mémoire câblée (tests, phases antérieures).
+func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools) (*Registry, error) {
 	agents := make(map[string]Agent, len(cfg.Agents))
 	clients := make(map[string]llm.Client, len(cfg.Agents))
 	prompts := make(map[string]string, len(cfg.Agents))
@@ -94,7 +110,14 @@ func NewRegistry(cfg *config.Config) (*Registry, error) {
 			specialists[delegateName] = NewAgentSpecialist(delegateName, delegateAgent)
 		}
 
-		agents[name] = NewOrchestratorAgent(clients[name], prompts[name], name, cfg.Organization.DisplayName, specialists, agentCfg.Limits.MaxSequentialToolCalls)
+		orchestrator := NewOrchestratorAgent(clients[name], prompts[name], name, cfg.Organization.DisplayName, specialists, agentCfg.Limits.MaxSequentialToolCalls)
+
+		agentMemoryTools := memoryTools
+		agentMemoryTools.Search = memoryTools.Search && agentCfg.Memory.Search
+		agentMemoryTools.Remember = memoryTools.Remember && agentCfg.Memory.Remember
+		agentMemoryTools.Forget = memoryTools.Forget && agentCfg.Memory.Forget
+
+		agents[name] = orchestrator.WithMemoryTools(agentMemoryTools)
 	}
 
 	return &Registry{agents: agents}, nil

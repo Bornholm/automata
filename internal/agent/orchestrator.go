@@ -47,6 +47,7 @@ type OrchestratorAgent struct {
 	orgDisplayName         string
 	specialists            map[string]delegation.Specialist
 	maxSequentialToolCalls int
+	memoryTools            MemoryTools
 }
 
 // NewOrchestratorAgent construit un OrchestratorAgent. specialists associe
@@ -73,6 +74,8 @@ func NewOrchestratorAgent(client llm.ChatCompletionClient, systemPrompt, agentNa
 // un par un, dans l'ordre reçu, avant le tour suivant.
 func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, error) {
 	tools := a.buildDelegationTools(req.Identity)
+	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity)...)
+	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
 	messages := buildChatMessages(a.systemPrompt, a.agentName, a.orgDisplayName, req)
 
@@ -192,6 +195,18 @@ func newDelegationTool(agentID string, specialist delegation.Specialist, identit
 			return llm.NewToolResult(result.Summary), nil
 		},
 	)
+}
+
+// WithMemoryTools attache tools à a : les outils search_memory/remember/
+// forget_memory correspondants (selon tools.Search/Remember/Forget) sont
+// exposés au modèle en plus des délégations, dès le prochain Execute
+// (PLAN.md §6.1, §8, Phase 10). Retourne a pour permettre le chaînage à la
+// construction (voir internal/agent.NewRegistryWithMemory). Un appel avec la
+// valeur zéro de MemoryTools désactive tous les outils mémoire, ce qui est
+// le comportement par défaut d'un OrchestratorAgent tout juste construit.
+func (a *OrchestratorAgent) WithMemoryTools(tools MemoryTools) *OrchestratorAgent {
+	a.memoryTools = tools
+	return a
 }
 
 var _ Agent = &OrchestratorAgent{}
