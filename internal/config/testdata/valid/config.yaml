@@ -1,0 +1,174 @@
+version: 1
+
+organization:
+  id: home
+  display_name: Maison
+
+storage:
+  application:
+    driver: sqlite
+    path: data/app.sqlite
+    pragmas:
+      foreign_keys: true
+      journal_mode: WAL
+      busy_timeout: 5s
+
+courier:
+  providers:
+    whatsapp:
+      type: whatsapp
+      session_path: data/courier/whatsapp
+
+audio:
+  enabled: true
+  transcription_client: transcription
+  max_size: 20MiB
+  timeout: 2m
+  persist_audio: false
+  persist_transcription: false
+
+llm_clients:
+  main:
+    provider: openai
+    model: ${MAIN_MODEL}
+    api_key: ${MAIN_API_KEY}
+    base_url: ${MAIN_BASE_URL}
+
+  transcription:
+    provider: openai
+    model: ${TRANSCRIPTION_MODEL}
+    api_key: ${TRANSCRIPTION_API_KEY}
+
+agents:
+  main:
+    type: orchestrator
+    client: main
+    system_prompt:
+      file: prompts/main.md
+    delegates:
+      - agenda
+    memory:
+      search: true
+      remember: true
+      forget: true
+    limits:
+      max_sequential_tool_calls: 8
+      max_actions_per_turn: 10
+      tool_timeout: 30s
+      max_tool_result_bytes: 16KiB
+      max_tool_context_bytes: 64KiB
+
+  agenda:
+    type: specialist
+    client: main
+    system_prompt:
+      inline: "Tu es l'agent agenda."
+    mcp_servers:
+      - google-calendar
+    capabilities:
+      - calendar.personal.read
+      - calendar.personal.write
+
+mcp_servers:
+  google-calendar:
+    transport: http
+    url: ${GOOGLE_CALENDAR_MCP_URL}
+    headers:
+      Authorization: Bearer ${GOOGLE_CALENDAR_MCP_TOKEN}
+
+memory:
+  store:
+    driver: sqlite
+    path: data/amoxtli.sqlite
+
+  indexes:
+    - id: lexical
+      type: bleve
+      path: data/memory.bleve
+      weight: 1
+
+  policies:
+    private_can_write_org: false
+    org_readable_by_children: true
+
+identities:
+  roles:
+    adult:
+      permissions:
+        - memory.personal.read
+        - memory.personal.write
+        - memory.personal.delete
+        - calendar.personal.read
+        - calendar.personal.write
+
+    scheduled-reader:
+      permissions:
+        - memory.org.read
+
+  principals:
+    - id: alice
+      kind: human
+      display_name: Alice
+      roles: [adult]
+
+    - id: scheduler-readonly
+      kind: service
+      display_name: Planificateur
+      roles: [scheduled-reader]
+
+origins:
+  - provider: whatsapp
+    external_user_id: ${ALICE_WHATSAPP_ID}
+    principal_id: alice
+
+channels:
+  - provider: whatsapp
+    channel_id: ${ORG_GROUP_CHANNEL_ID}
+    display_name: Groupe principal
+    kind: group
+    org_id: home
+    scope: group
+    scope_id: main-group
+    activation: mention
+    members:
+      - alice
+    resources:
+      calendar: ${ORG_GROUP_CALENDAR_ID}
+
+  - provider: whatsapp
+    channel_id: ${ALICE_PRIVATE_CHANNEL_ID}
+    kind: private
+    org_id: home
+    scope: personal
+    scope_id: alice
+    principal_id: alice
+    resources:
+      calendar: ${ALICE_CALENDAR_ID}
+
+schedules:
+  - id: morning-summary
+    enabled: true
+
+    schedule:
+      cron: "0 7 * * *"
+      timezone: Europe/Paris
+
+    execution:
+      principal_id: scheduler-readonly
+      org_id: home
+      scope: org
+      scope_id: home
+      agent: main
+      prompt: |
+        Prépare un résumé des événements et tâches importants de la journée.
+      actions:
+        policy: read_only
+
+    delivery:
+      provider: whatsapp
+      channel_id: ${ORG_GROUP_CHANNEL_ID}
+      mode: on_content
+
+    concurrency:
+      policy: forbid
+      timeout: 10m
