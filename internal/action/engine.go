@@ -18,6 +18,7 @@ import (
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
+	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
 )
 
@@ -81,6 +82,7 @@ type Engine struct {
 	executors   map[string]Executor
 	auditEvents *persistence.AuditEventRepository
 	logger      *slog.Logger
+	metrics     *observability.Metrics
 }
 
 // Option configure un Engine à la construction.
@@ -152,6 +154,15 @@ func WithLogger(logger *slog.Logger) Option {
 		if logger != nil {
 			e.logger = logger
 		}
+	}
+}
+
+// WithMetrics active l'observation du nombre de plans d'actions proposés
+// (CreatePlan) et confirmés (confirmPlan) par l'Engine (PLAN.md §14.3,
+// Phase 20). metrics nil (option omise) désactive l'observation.
+func WithMetrics(metrics *observability.Metrics) Option {
+	return func(e *Engine) {
+		e.metrics = metrics
 	}
 }
 
@@ -243,6 +254,8 @@ func (e *Engine) CreatePlan(ctx context.Context, identity model.ExecutionIdentit
 	if err != nil {
 		return persistence.ActionPlan{}, "", fmt.Errorf("action: persistance du plan d'actions: %w", err)
 	}
+
+	e.metrics.IncActionProposed()
 
 	return plan, formatPlanProposal(rows, e.planTTL), nil
 }
@@ -442,6 +455,8 @@ func (e *Engine) confirmPlan(ctx context.Context, identity model.ExecutionIdenti
 	if err := e.authorizeConfirmer(identity, plan); err != nil {
 		return "Vous n'êtes pas autorisé à confirmer ce plan d'actions.", nil
 	}
+
+	e.metrics.IncActionConfirmed()
 
 	if err := e.setPlanStatus(ctx, plan.ID, StatusConfirmed); err != nil {
 		return "", err

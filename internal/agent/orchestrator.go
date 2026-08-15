@@ -11,6 +11,7 @@ import (
 
 	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/model"
+	"github.com/bornholm/automata/internal/observability"
 )
 
 // ErrMaxDelegationsReached est retournée par OrchestratorAgent.Execute
@@ -48,6 +49,7 @@ type OrchestratorAgent struct {
 	specialists            map[string]delegation.Specialist
 	maxSequentialToolCalls int
 	memoryTools            MemoryTools
+	metrics                *observability.Metrics
 }
 
 // NewOrchestratorAgent construit un OrchestratorAgent. specialists associe
@@ -106,7 +108,7 @@ func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentit
 	tools := make([]llm.Tool, 0, len(a.specialists))
 
 	for agentID, specialist := range a.specialists {
-		tools = append(tools, newDelegationTool(agentID, specialist, identity, collector))
+		tools = append(tools, newDelegationTool(agentID, specialist, identity, collector, a.metrics))
 	}
 
 	// Ordre déterministe : la map d'origine n'a pas d'ordre garanti, et un
@@ -123,7 +125,7 @@ func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentit
 // comme erreur Go (ce qui ferait échouer tout le tour) : il est transmis au
 // modèle comme contenu de résultat d'outil, en clair, pour qu'il puisse
 // s'adapter (PLAN.md Phase 8, test "spécialiste en erreur").
-func newDelegationTool(agentID string, specialist delegation.Specialist, identity model.ExecutionIdentity, collector *proposalCollector) llm.Tool {
+func newDelegationTool(agentID string, specialist delegation.Specialist, identity model.ExecutionIdentity, collector *proposalCollector, metrics *observability.Metrics) llm.Tool {
 	schema := llm.NewJSONSchema().
 		RequiredProperty("goal", "Objectif précis à atteindre par le spécialiste.", "string").
 		Property("relevant_input", "Éléments de contexte explicitement nécessaires à la tâche, formulés en clair. Ne jamais transmettre l'historique complet de la conversation.", "string").
@@ -149,6 +151,8 @@ func newDelegationTool(agentID string, specialist delegation.Specialist, identit
 					}
 				}
 			}
+
+			metrics.IncDelegation(agentID)
 
 			result, err := specialist.Execute(ctx, delegation.Request{
 				AgentID:       agentID,
@@ -179,6 +183,17 @@ func newDelegationTool(agentID string, specialist delegation.Specialist, identit
 // le comportement par défaut d'un OrchestratorAgent tout juste construit.
 func (a *OrchestratorAgent) WithMemoryTools(tools MemoryTools) *OrchestratorAgent {
 	a.memoryTools = tools
+	return a
+}
+
+// WithMetrics attache metrics à a : les délégations vers chaque spécialiste
+// (outil "delegate_to_<agentID>") sont comptabilisées dès le prochain
+// Execute (PLAN.md §14.3, Phase 20). metrics nil désactive l'observation
+// (comportement par défaut d'un OrchestratorAgent tout juste construit).
+// Retourne a pour permettre le chaînage à la construction, comme
+// WithMemoryTools.
+func (a *OrchestratorAgent) WithMetrics(metrics *observability.Metrics) *OrchestratorAgent {
+	a.metrics = metrics
 	return a
 }
 

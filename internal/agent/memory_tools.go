@@ -12,6 +12,7 @@ import (
 	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
+	"github.com/bornholm/automata/internal/observability"
 )
 
 // MemoryTools regroupe les dépendances nécessaires pour exposer les outils
@@ -29,6 +30,9 @@ type MemoryTools struct {
 	// (search_memory ou la liste de candidats de forget_memory). Une valeur
 	// <= 0 retombe sur 5.
 	MaxResults int
+	// Metrics observe le nombre de recherches mémoire (search_memory,
+	// PLAN.md §14.3, Phase 20). nil désactive l'observation.
+	Metrics *observability.Metrics
 }
 
 func (t MemoryTools) maxResults() int {
@@ -241,6 +245,8 @@ func (t MemoryTools) newSearchMemoryTool(identity model.ExecutionIdentity) llm.T
 			if strings.TrimSpace(query) == "" {
 				return llm.NewToolResult("erreur: le paramètre 'query' est requis et ne peut pas être vide."), nil
 			}
+
+			t.Metrics.IncMemorySearch()
 
 			results, err := t.searchAuthorizedScopes(ctx, identity, readScopes(identity), "read", query)
 			if err != nil {

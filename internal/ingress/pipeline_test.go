@@ -163,7 +163,7 @@ func newTestPipeline(t *testing.T, handler ingress.Handler) (*ingress.Pipeline, 
 
 	db := testDB(t)
 
-	pipeline := ingress.NewPipeline(testProviderName, provider, resolver, db, handler, testLogger())
+	pipeline := ingress.NewPipeline(testProviderName, provider, resolver, db, handler, testLogger(), nil)
 
 	return pipeline, provider
 }

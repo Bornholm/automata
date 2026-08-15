@@ -40,8 +40,21 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateChannels(cfg)...)
 	errs = append(errs, validateMemory(cfg)...)
 	errs = append(errs, validateSchedules(cfg)...)
+	errs = append(errs, validateObservability(cfg)...)
 
 	return joinErrors(errs)
+}
+
+func validateObservability(cfg *Config) []error {
+	if !cfg.Observability.Enabled {
+		return nil
+	}
+
+	if cfg.Observability.Addr == "" {
+		return []error{fmt.Errorf("observability.addr: requis lorsque observability.enabled vaut true")}
+	}
+
+	return nil
 }
 
 func validateVersion(cfg *Config) []error {

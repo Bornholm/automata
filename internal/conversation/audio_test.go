@@ -101,7 +101,7 @@ func TestHandler_VoiceNote_NotPersistedByDefault(t *testing.T) {
 	transcriber := &spyTranscriber{reply: "bonjour, ceci est un test vocal"}
 	audioCfg := audio.Config{Enabled: true, MaxSize: 1 << 20, Timeout: time.Second}
 
-	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false)
+	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false, nil)
 
 	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
 	conv := testConversation(model.ConversationID("conv-voice"), "chan-voice")
@@ -144,7 +144,7 @@ func TestHandler_VoiceNote_PersistedWhenExplicitlyEnabled(t *testing.T) {
 	transcriber := &spyTranscriber{reply: "texte transcrit à conserver"}
 	audioCfg := audio.Config{Enabled: true, MaxSize: 1 << 20, Timeout: time.Second}
 
-	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, true)
+	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, true, nil)
 
 	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
 	conv := testConversation(model.ConversationID("conv-voice-persist"), "chan-voice-persist")
@@ -168,7 +168,7 @@ func TestHandler_VoiceNote_UnsupportedFormat(t *testing.T) {
 	transcriber := &spyTranscriber{err: audio.ErrUnsupportedFormat}
 	audioCfg := audio.Config{Enabled: true, MaxSize: 1 << 20, Timeout: time.Second}
 
-	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false)
+	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false, nil)
 
 	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
 	conv := testConversation(model.ConversationID("conv-voice-unsupported"), "chan-voice-unsupported")
@@ -191,7 +191,7 @@ func TestHandler_VoiceNote_TooLarge(t *testing.T) {
 	transcriber := &spyTranscriber{reply: "ne doit jamais être atteint"}
 	audioCfg := audio.Config{Enabled: true, MaxSize: 4, Timeout: time.Second}
 
-	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false)
+	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false, nil)
 
 	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
 	conv := testConversation(model.ConversationID("conv-voice-toolarge"), "chan-voice-toolarge")
@@ -217,7 +217,7 @@ func TestHandler_VoiceNote_Timeout(t *testing.T) {
 	transcriber := &spyTranscriber{reply: "ne doit jamais être atteint"}
 	audioCfg := audio.Config{Enabled: true, MaxSize: 1 << 20, Timeout: time.Nanosecond}
 
-	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false)
+	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false, nil)
 
 	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
 	conv := testConversation(model.ConversationID("conv-voice-timeout"), "chan-voice-timeout")
@@ -243,7 +243,7 @@ func TestHandler_VoiceNote_EmptyTranscription(t *testing.T) {
 	transcriber := &spyTranscriber{err: audio.ErrEmptyTranscription}
 	audioCfg := audio.Config{Enabled: true, MaxSize: 1 << 20, Timeout: time.Second}
 
-	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false)
+	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false, nil)
 
 	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
 	conv := testConversation(model.ConversationID("conv-voice-empty"), "chan-voice-empty")
@@ -266,7 +266,7 @@ func TestHandler_VoiceNote_Cancellation(t *testing.T) {
 	transcriber := &spyTranscriber{reply: "ne doit jamais être atteint"}
 	audioCfg := audio.Config{Enabled: true, MaxSize: 1 << 20, Timeout: time.Minute}
 
-	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false)
+	h := conversation.NewHandler(db, a, nil, 0, audioCfg, transcriber, false, nil)
 
 	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
 	conv := testConversation(model.ConversationID("conv-voice-cancel"), "chan-voice-cancel")

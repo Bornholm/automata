@@ -57,7 +57,7 @@ func TestPipeline_GroupWithoutMention_VoiceNoteNeverRead(t *testing.T) {
 	audioCfg := audio.Config{Enabled: true, MaxSize: 1 << 20, Timeout: time.Second}
 
 	db := testDB(t)
-	handler := conversation.NewHandler(db, fixedReplyAgent{}, nil, 0, audioCfg, transcriber, false)
+	handler := conversation.NewHandler(db, fixedReplyAgent{}, nil, 0, audioCfg, transcriber, false, nil)
 
 	resolver, err := identity.NewResolver(testConfig())
 	if err != nil {
@@ -73,7 +73,7 @@ func TestPipeline_GroupWithoutMention_VoiceNoteNeverRead(t *testing.T) {
 	)
 	t.Cleanup(func() { _ = provider.Close() })
 
-	pipeline := ingress.NewPipeline(testProviderName, provider, resolver, db, handler, testLogger())
+	pipeline := ingress.NewPipeline(testProviderName, provider, resolver, db, handler, testLogger(), nil)
 
 	stop := runPipeline(t, pipeline)
 	defer stop()

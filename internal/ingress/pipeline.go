@@ -20,6 +20,7 @@ import (
 	"github.com/bornholm/automata/internal/apperr"
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/model"
+	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
 )
 
@@ -87,11 +88,14 @@ type Pipeline struct {
 	processedMessages *persistence.ProcessedMessageRepository
 	handler           Handler
 	logger            *slog.Logger
+	metrics           *observability.Metrics
 }
 
 // NewPipeline construit un Pipeline. handler ne doit jamais être nil ; en
-// Phase 5, passer FixedReplyHandler.
-func NewPipeline(providerName string, provider courier.Provider, resolver *identity.Resolver, db *persistence.DB, handler Handler, logger *slog.Logger) *Pipeline {
+// Phase 5, passer FixedReplyHandler. metrics peut être nil (registre de
+// métriques désactivé, PLAN.md Phase 20) : toutes ses méthodes sont alors
+// no-op.
+func NewPipeline(providerName string, provider courier.Provider, resolver *identity.Resolver, db *persistence.DB, handler Handler, logger *slog.Logger, metrics *observability.Metrics) *Pipeline {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -104,6 +108,7 @@ func NewPipeline(providerName string, provider courier.Provider, resolver *ident
 		processedMessages: persistence.NewProcessedMessageRepository(),
 		handler:           handler,
 		logger:            logger,
+		metrics:           metrics,
 	}
 }
 
@@ -147,6 +152,8 @@ func (p *Pipeline) Run(ctx context.Context) error {
 // journalisée et n'interrompt jamais la boucle appelante (voir AGENTS.md :
 // le pipeline continue avec le message suivant).
 func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg courier.Message) {
+	p.metrics.IncMessagesReceived()
+
 	externalUserID := string(msg.From().ID())
 	channelID := string(msg.Channel().ChannelID())
 	messageID := string(msg.ID())
@@ -154,6 +161,8 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 	execIdentity, conversation, err := p.resolver.ResolveMessage(ctx, p.providerName, externalUserID, channelID)
 	if err != nil {
 		if errors.Is(err, apperr.ErrUnknownOrigin) || errors.Is(err, apperr.ErrUnknownChannel) || errors.Is(err, apperr.ErrUnauthorized) {
+			p.metrics.IncUnknownOrigin()
+
 			p.logger.InfoContext(ctx, "ingress: message ignoré (identité non résolue ou non autorisée)",
 				"provider", p.providerName,
 				"channel_id", channelID,
@@ -179,6 +188,7 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 
 	if conversation.Kind == model.ChannelGroup {
 		if !courier.IsMentioned(msg, self.ID()) {
+			p.metrics.IncMessagesIgnoredNoMention()
 			p.logger.InfoContext(ctx, "ingress: message de groupe ignoré (assistant non mentionné)", logCtx...)
 			return
 		}
@@ -191,6 +201,7 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 	}
 
 	if duplicate {
+		p.metrics.IncDuplicateMessage()
 		p.logger.InfoContext(ctx, "ingress: message déjà traité, ignoré", logCtx...)
 		return
 	}

@@ -27,6 +27,7 @@ import (
 	genaihttp "github.com/bornholm/genai/mcp/http"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/observability"
 )
 
 // Limits décrit les limites appliquées à l'exécution des outils MCP d'une
@@ -55,6 +56,8 @@ type Manager struct {
 	cfg    *config.Config
 	logger *slog.Logger
 
+	metrics *observability.Metrics
+
 	mu sync.Mutex
 	// sessions[sessionKey][serverName] : un client connecté au plus par
 	// couple (session, serveur). La création (y compris Start, qui effectue
@@ -79,6 +82,16 @@ func NewManager(cfg *config.Config, logger *slog.Logger) *Manager {
 		logger:   logger,
 		sessions: make(map[SessionKey]map[string]genaimcp.Client),
 	}
+}
+
+// WithMetrics attache metrics à m : chaque appel d'outil MCP (succès ou
+// erreur) et chaque troncature de résultat sont comptabilisés dès le
+// prochain appel (PLAN.md §14.3, Phase 20). metrics nil désactive
+// l'observation (comportement par défaut de NewManager). Retourne m pour
+// permettre le chaînage à la construction.
+func (m *Manager) WithMetrics(metrics *observability.Metrics) *Manager {
+	m.metrics = metrics
+	return m
 }
 
 // GetTools retourne les outils du serveur MCP nommé serverName pour la
@@ -216,6 +229,8 @@ func (m *Manager) wrapTool(tool llm.Tool, sessionKey SessionKey, serverName stri
 		duration := time.Since(start)
 
 		if err != nil {
+			m.metrics.IncMCPCall(serverName, toolName, err)
+
 			m.logger.ErrorContext(ctx, "mcp: échec de l'appel d'outil",
 				slog.String("server", serverName),
 				slog.String("session", string(sessionKey)),
@@ -234,7 +249,10 @@ func (m *Manager) wrapTool(tool llm.Tool, sessionKey SessionKey, serverName stri
 			text = truncateText(text, limits.MaxToolResultBytes)
 			text += fmt.Sprintf("\n[résultat tronqué à %d octets]", limits.MaxToolResultBytes)
 			truncated = true
+			m.metrics.IncToolResultTruncated()
 		}
+
+		m.metrics.IncMCPCall(serverName, toolName, nil)
 
 		m.logger.InfoContext(ctx, "mcp: appel d'outil terminé",
 			slog.String("server", serverName),

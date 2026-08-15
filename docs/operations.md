@@ -1,0 +1,199 @@
+# Exploitation — Automata
+
+Ce document est le livrable de la Phase 20 (« Observabilité et exploitation
+», PLAN.md) : procédures opérationnelles nécessaires pour diagnostiquer une
+panne, sauvegarder et restaurer les données, et redéployer une instance,
+sans jamais avoir besoin de lire le contenu des conversations privées
+(AGENTS.md, « ne pas journaliser les contenus privés » — le même principe
+gouverne l'exploitation).
+
+## 1. Fichiers à sauvegarder
+
+Une instance Automata persiste son état dans quatre emplacements distincts,
+tous sous le répertoire de données de l'instance (`/data` dans les exemples
+ci-dessous — adapter à `storage.application.path`, `memory.store.path` et au
+`session_path` réellement configurés) :
+
+| Emplacement                          | Contenu                                                              | Config source                     |
+|---------------------------------------|------------------------------------------------------------------------|------------------------------------|
+| `/data/app.sqlite` (+ `-wal`, `-shm` si présents) | Base applicative : conversations, messages, plans d'actions, exécutions planifiées, tentatives de livraison, audit | `storage.application.path`         |
+| `/data/amoxtli.sqlite`                | Métadonnées de la mémoire persistante (Amoxtli)                       | `memory.store.path`                |
+| `/data/memory.bleve/`                 | Index de recherche plein texte de la mémoire                          | `memory.indexes[].path`            |
+| `/data/courier/`                      | Session WhatsApp (identifiants d'appareil liés, état Go Courier)      | `courier.providers.<nom>.session_path` |
+
+La base applicative fonctionne en mode WAL (`storage.application.pragmas.journal_mode`) :
+les fichiers `-wal` et `-shm` associés à `app.sqlite`, lorsqu'ils existent,
+font partie intégrante de l'état non encore consolidé dans le fichier
+principal et doivent être copiés avec lui, jamais séparément.
+
+## 2. Procédure de sauvegarde
+
+**Méthode recommandée : arrêt propre avant copie.**
+
+Automata s'arrête proprement sur `SIGINT`/`SIGTERM` (`context.Context` annulé
+dans `cmd/automata/main.go`, propagé par `internal/registry.Run` à tous les
+composants : pipelines ingress, scheduler, serveur d'observabilité). Une
+sauvegarde prise pendant que le processus tourne risquerait de copier
+`app.sqlite` pendant une transaction en cours ou de laisser les fichiers WAL
+et le fichier principal dans des états incohérents entre eux malgré un
+`cp` atomique par fichier (aucune garantie de cohérence *inter-fichiers*
+sans coordination applicative). L'arrêt propre reste donc la méthode par
+défaut retenue ici : la plus simple à documenter et à exécuter sans risque,
+même si SQLite propose par ailleurs une API de sauvegarde à chaud
+(`VACUUM INTO`, ou l'API C `sqlite3_backup`) qui pourrait éviter l'arrêt du
+service — non retenue par défaut pour ne pas ajouter une dépendance
+opérationnelle supplémentaire (outillage `sqlite3` CLI, ou code applicatif
+dédié) non demandée explicitement par PLAN.md §20.
+
+Séquence :
+
+1. Envoyer `SIGTERM` au processus (ou `Ctrl+C` en premier plan) et attendre
+   sa sortie. Le processus journalise `"automata stopping"` puis se termine
+   une fois tous les composants arrêtés (`wg.Wait()` dans
+   `internal/registry.Run`).
+2. Copier l'intégralité des quatre emplacements du tableau ci-dessus vers la
+   destination de sauvegarde (ex. `tar`, `rsync`, snapshot du volume).
+3. Redémarrer le processus (voir §5 « Mise à jour et redémarrage »).
+
+Une sauvegarde régulière (cron, ou tâche planifiée hors du processus
+Automata lui-même) doit exécuter ces trois étapes ; la fenêtre
+d'indisponibilité correspond à la durée de la copie (généralement
+quelques secondes à quelques minutes selon la taille de l'index Bleve).
+
+## 3. Procédure de restauration
+
+1. Arrêter le processus s'il tourne (même procédure que pour la
+   sauvegarde).
+2. Remplacer intégralement les quatre emplacements par leur contenu
+   sauvegardé (supprimer l'état courant avant de restaurer, pour ne pas
+   laisser cohabiter un `-wal` restauré avec un `app.sqlite` courant, par
+   exemple).
+3. Vérifier que les permissions et le propriétaire des fichiers restaurés
+   correspondent à ceux attendus par le processus (voir
+   `docs/security-model.md` pour les permissions restrictives appliquées à
+   la base SQLite).
+4. Redémarrer le processus. Les migrations s'appliquent automatiquement à
+   l'ouverture (voir §4) ; aucune étape manuelle supplémentaire n'est
+   nécessaire.
+5. Valider la restauration avec `automata admin inspect` (voir §6) et les
+   endpoints de santé (voir §4) avant de considérer l'instance
+   opérationnelle.
+
+## 4. Endpoints de santé et de métriques
+
+Un serveur HTTP local optionnel peut être activé dans la configuration :
+
+```yaml
+observability:
+  enabled: true
+  addr: "127.0.0.1:9090"
+```
+
+Section absente, ou `enabled: false` (par défaut) : aucun serveur HTTP
+n'est démarré, comportement historique inchangé. Lorsqu'il est activé, il
+expose trois routes, toutes en lecture seule et sans authentification —
+l'adresse doit donc rester locale (`127.0.0.1`) ou protégée par un
+pare-feu/reverse proxy si elle doit être exposée à un superviseur externe :
+
+- **`GET /healthz/live`** — 200 dès que le processus tourne, indépendamment
+  de tout état interne (liveness). Un superviseur de processus (systemd,
+  Docker, Kubernetes) l'utilise pour décider s'il faut redémarrer le
+  processus.
+- **`GET /healthz/ready`** — 200 une fois que la persistance est ouverte et
+  que les pipelines ingress et le scheduler ont démarré ; 503 avant (au
+  démarrage) ou si l'instance ne doit pas encore recevoir de trafic
+  applicatif (readiness). Un load-balancer ou une sonde d'orchestrateur
+  l'utilise pour décider d'aiguiller du trafic vers cette instance.
+- **`GET /metrics`** — export JSON agrégé des compteurs et latences
+  décrits par PLAN.md §14.3 : messages reçus, messages ignorés sans
+  mention, origines refusées, messages dupliqués, latence de transcription
+  et de réponse (compte/somme/min/max en millisecondes), délégations par
+  agent, appels MCP réussis/en erreur par (serveur, outil), actions
+  proposées/confirmées, recherches mémoire, occurrences cron par schedule,
+  erreurs de livraison, résultats d'outil tronqués. Aucun contenu de
+  message, de transcription ni d'argument d'outil n'y figure jamais :
+  uniquement des compteurs agrégés et des identifiants déjà présents dans
+  la configuration (`agent_id`, `schedule_id`, `server`/`tool` MCP).
+
+Interrogation typique :
+
+```bash
+curl -s http://127.0.0.1:9090/healthz/live
+curl -s http://127.0.0.1:9090/healthz/ready
+curl -s http://127.0.0.1:9090/metrics | jq .
+```
+
+Format de l'export retenu : JSON simple (pas le format texte Prometheus).
+PLAN.md §14.3 ne prescrit aucun format particulier ; un export Prometheus
+aurait ajouté du travail de mise en forme (types de métriques, labels,
+échappement) sans bénéfice fonctionnel supplémentaire pour cette phase — un
+`curl | jq` suffit à diagnostiquer une panne. Si une intégration Prometheus
+devient nécessaire plus tard, un exporteur séparé peut consommer `/metrics`
+sans modifier `internal/observability`.
+
+## 5. Mise à jour et redémarrage
+
+1. Arrêter proprement le processus (`SIGTERM`, attendre la sortie — voir
+   §2). Ne jamais tuer le processus (`SIGKILL`) en fonctionnement normal :
+   cela laisserait potentiellement un plan d'actions bloqué en
+   `executing` (récupéré automatiquement au redémarrage suivant par
+   `internal/action.Engine.RecoverInterrupted`, mais avec les actions
+   concernées marquées en échec plutôt que rejouées — voir le commentaire
+   de cette fonction).
+2. Remplacer le binaire `automata` par la nouvelle version.
+3. Redémarrer le processus avec la même commande
+   (`automata -config <chemin>`). Les migrations de schéma en attente
+   s'appliquent automatiquement à l'ouverture de la base
+   (`internal/persistence.Open`, Phase 4) : il n'existe pas de commande
+   `automata migrate` séparée. Ce choix est délibéré, pas un oubli : les
+   migrations sont déjà idempotentes (rejouables sans effet si déjà
+   appliquées) et s'exécutent avant tout traitement de message ou tick de
+   scheduler, donc une commande dédiée n'apporterait qu'une redondance
+   avec le comportement automatique existant, sans réduire aucun risque
+   opérationnel réel (le seul scénario où « migrer sans démarrer le
+   service complet » aurait de la valeur — vérifier qu'une migration
+   s'applique sans risque avant un déploiement — est déjà couvert par
+   `automata config validate`, qui charge la configuration sans ouvrir la
+   base ni démarrer de service).
+4. Valider avec `GET /healthz/ready` (si activé) et `automata admin
+   inspect -kind runs` que le service a repris normalement.
+
+## 6. Commandes d'administration disponibles
+
+Ces commandes existent déjà (Phases 2, 10, 18) ; ce paragraphe n'en est
+qu'un récapitulatif opérationnel, pas une redocumentation complète (voir
+`cmd/automata/main.go` pour le détail de chaque sous-commande).
+
+- **`automata config validate -config <chemin>`** — charge et valide
+  intégralement une configuration YAML sans démarrer de service. À exécuter
+  avant tout déploiement d'une configuration modifiée.
+- **`automata memory reindex -config <chemin>`** — réindexe intégralement
+  la mémoire persistante à partir du store, sans démarrer le service
+  complet. Utile après une modification de `memory.indexes` ou une
+  restauration de `/data/amoxtli.sqlite` sans son index Bleve associé.
+- **`automata admin inspect -config <chemin> -kind plans|runs`** —
+  inspection en lecture seule (aucune mutation) de l'état récent des plans
+  d'actions (`plans`) ou des exécutions planifiées (`runs`). Première
+  commande à exécuter pour diagnostiquer un plan bloqué, une confirmation
+  qui semble ne jamais aboutir, ou un schedule qui ne se déclenche pas.
+
+## 7. Diagnostiquer une panne sans lire les conversations privées
+
+Ordre recommandé, du plus rapide au plus détaillé :
+
+1. `GET /healthz/live` et `/healthz/ready` (si le serveur d'observabilité
+   est activé) : le processus tourne-t-il, est-il prêt ?
+2. `GET /metrics` : y a-t-il un pic d'erreurs de livraison, d'appels MCP en
+   erreur, d'origines refusées, de résultats tronqués ? Ces compteurs
+   suffisent souvent à localiser le composant en cause (ingress, MCP,
+   scheduler, livraison) sans consulter aucun contenu applicatif.
+3. `automata admin inspect -kind plans` / `-kind runs` : état détaillé,
+   toujours sans contenu de conversation (statuts, horodatages,
+   identifiants).
+4. Logs structurés du processus (`slog`, JSON sur stderr) : toujours
+   filtrés des contenus privés par construction (PLAN.md §14.2 — jamais de
+   contenu intégral de message, de transcription, d'arguments MCP
+   sensibles, de tokens ni de pièces jointes), mais avec les identifiants
+   de corrélation utiles (`org_id`, `principal_id`, `conversation_id`,
+   `provider`, `channel_id`, `trigger`, `agent_id`, `schedule_id`, `run_id`,
+   `action_plan_id`, `action_id`).

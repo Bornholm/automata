@@ -82,7 +82,7 @@ func TestHandler_HistoryIsolatedPerConversation(t *testing.T) {
 	db := openTestDB(t)
 
 	a := &recordingAgent{}
-	h := conversation.NewHandler(db, a, nil, 0, audio.Config{}, nil, false)
+	h := conversation.NewHandler(db, a, nil, 0, audio.Config{}, nil, false, nil)
 
 	identity := model.ExecutionIdentity{
 		PrincipalID: model.PrincipalID("alice"),
@@ -130,7 +130,7 @@ func TestHandler_GroupAuthorAttribution(t *testing.T) {
 	db := openTestDB(t)
 
 	a := &recordingAgent{}
-	h := conversation.NewHandler(db, a, nil, 0, audio.Config{}, nil, false)
+	h := conversation.NewHandler(db, a, nil, 0, audio.Config{}, nil, false, nil)
 
 	conv := model.Conversation{
 		ID:        model.ConversationID("conv-group"),

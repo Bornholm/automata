@@ -29,6 +29,7 @@ import (
 	"github.com/bornholm/automata/internal/ingress"
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/memory"
+	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/scheduler"
 )
@@ -46,6 +47,15 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	if err := scheduler.ValidateSchedules(cfg); err != nil {
 		return fmt.Errorf("registry: validation des schedules: %w", err)
 	}
+
+	// Registre de métriques et indicateur de disponibilité (readiness),
+	// PLAN.md §14.3 et Phase 20. Construits inconditionnellement (coût
+	// négligeable, purement en mémoire) : seul le démarrage du serveur HTTP
+	// d'observabilité, plus bas, dépend de cfg.Observability.Enabled. ready
+	// reste à sa valeur zéro (non prêt) tant que la persistance et les
+	// pipelines ingress/scheduler ne sont pas tous démarrés.
+	metrics := observability.NewMetrics()
+	ready := &observability.Ready{}
 
 	db, err := persistence.Open(ctx, cfg.Storage.Application)
 	if err != nil {
@@ -73,7 +83,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	}
 	defer memRes.close(logger)
 
-	mcpManager := mcp.NewManager(cfg, logger)
+	mcpManager := mcp.NewManager(cfg, logger).WithMetrics(metrics)
 	defer func() {
 		if err := mcpManager.Close(); err != nil {
 			logger.ErrorContext(ctx, "registry: échec de la fermeture du gestionnaire mcp", "error", err)
@@ -82,7 +92,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	authorizer := authorization.NewAuthorizer(cfg)
 
-	actionOpts := []action.Option{action.WithAuditEvents(persistence.NewAuditEventRepository()), action.WithLogger(logger)}
+	actionOpts := []action.Option{action.WithAuditEvents(persistence.NewAuditEventRepository()), action.WithLogger(logger), action.WithMetrics(metrics)}
 	if memRes.store != nil {
 		actionOpts = append(actionOpts, action.WithMemoryStore(memRes.store))
 	}
@@ -102,17 +112,17 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		logger.ErrorContext(ctx, "registry: échec de la récupération des plans d'actions interrompus", "error", err)
 	}
 
-	handler, agents, err := buildConversationHandler(cfg, db, memRes.store, mcpManager, actionEngine)
+	handler, agents, err := buildConversationHandler(cfg, db, memRes.store, mcpManager, actionEngine, metrics)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
 
-	sched := scheduler.NewScheduler(cfg, scheduler.RealClock{}, db, agents, providers, actionEngine, logger)
+	sched := scheduler.NewScheduler(cfg, scheduler.RealClock{}, db, agents, providers, actionEngine, logger).WithMetrics(metrics)
 
 	var wg sync.WaitGroup
 
 	for name, provider := range providers {
-		pipeline := ingress.NewPipeline(name, provider, resolver, db, handler, logger)
+		pipeline := ingress.NewPipeline(name, provider, resolver, db, handler, logger, metrics)
 
 		wg.Add(1)
 		go func(name string, pipeline *ingress.Pipeline) {
@@ -132,6 +142,29 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			logger.ErrorContext(ctx, "registry: scheduler arrêté en erreur", "error", err)
 		}
 	}()
+
+	// La persistance est ouverte et les pipelines ingress/scheduler viennent
+	// d'être démarrés (goroutines lancées ci-dessus) : le service peut
+	// désormais répondre "prêt" (PLAN.md Phase 20, readiness). Les pipelines
+	// eux-mêmes ne signalent pas individuellement leur démarrage effectif
+	// (ex : connexion établie au fournisseur Courier) : ready reflète que le
+	// processus a fini son câblage interne, pas que chaque dépendance
+	// externe est déjà joignable — cohérent avec la distinction attendue
+	// entre readiness applicative et liveness du processus.
+	ready.Set(true)
+
+	if cfg.Observability.Enabled {
+		obsServer := observability.NewServer(cfg.Observability.Addr, metrics, ready, logger)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			if err := obsServer.Run(ctx); err != nil {
+				logger.ErrorContext(ctx, "registry: serveur d'observabilité arrêté en erreur", "error", err)
+			}
+		}()
+	}
 
 	<-ctx.Done()
 
@@ -184,10 +217,10 @@ func buildCourierProviders(cfg *config.Config) (map[string]courier.Provider, err
 // réutilisé tel quel par internal/scheduler pour exécuter les tâches
 // planifiées (PLAN.md §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine) (ingress.Handler, *agent.Registry, error) {
-	memoryTools := buildMemoryTools(cfg, memStore)
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, metrics *observability.Metrics) (ingress.Handler, *agent.Registry, error) {
+	memoryTools := buildMemoryTools(cfg, memStore, metrics)
 
-	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, mcpManager)
+	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, mcpManager, metrics)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
 	}
@@ -219,5 +252,5 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *
 		transcriber = audio.NewGenAITranscriber(transcriptionClient)
 	}
 
-	return conversation.NewHandler(db, mainAgent, actionEngine, 0, audioCfg, transcriber, cfg.Audio.PersistTranscription), agents, nil
+	return conversation.NewHandler(db, mainAgent, actionEngine, 0, audioCfg, transcriber, cfg.Audio.PersistTranscription, metrics), agents, nil
 }

@@ -61,19 +61,30 @@ func (b ByteSize) Bytes() uint64 {
 
 // Config est la racine de la configuration YAML d'Automata.
 type Config struct {
-	Version      int                  `yaml:"version"`
-	Organization Organization         `yaml:"organization"`
-	Storage      Storage              `yaml:"storage"`
-	Courier      Courier              `yaml:"courier"`
-	Audio        Audio                `yaml:"audio"`
-	LLMClients   map[string]LLMClient `yaml:"llm_clients"`
-	Agents       map[string]Agent     `yaml:"agents"`
-	MCPServers   map[string]MCPServer `yaml:"mcp_servers"`
-	Memory       Memory               `yaml:"memory"`
-	Identities   Identities           `yaml:"identities"`
-	Origins      []Origin             `yaml:"origins"`
-	Channels     []Channel            `yaml:"channels"`
-	Schedules    []Schedule           `yaml:"schedules"`
+	Version       int                  `yaml:"version"`
+	Organization  Organization         `yaml:"organization"`
+	Storage       Storage              `yaml:"storage"`
+	Courier       Courier              `yaml:"courier"`
+	Audio         Audio                `yaml:"audio"`
+	LLMClients    map[string]LLMClient `yaml:"llm_clients"`
+	Agents        map[string]Agent     `yaml:"agents"`
+	MCPServers    map[string]MCPServer `yaml:"mcp_servers"`
+	Memory        Memory               `yaml:"memory"`
+	Identities    Identities           `yaml:"identities"`
+	Origins       []Origin             `yaml:"origins"`
+	Channels      []Channel            `yaml:"channels"`
+	Schedules     []Schedule           `yaml:"schedules"`
+	Observability Observability        `yaml:"observability"`
+}
+
+// Observability décrit le serveur HTTP local optionnel de santé et de
+// métriques (PLAN.md Phase 20). Désactivé par défaut : une section absente
+// (ou Enabled: false) ne démarre aucun serveur HTTP. Aucune valeur par
+// défaut n'est inventée pour Addr au-delà de cette désactivation par
+// défaut ; lorsque Enabled est vrai, Addr est requis.
+type Observability struct {
+	Enabled bool   `yaml:"enabled"`
+	Addr    string `yaml:"addr"`
 }
 
 // Organization décrit l'organisation propriétaire de l'instance.

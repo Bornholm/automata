@@ -14,6 +14,7 @@ import (
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/mcp"
+	"github.com/bornholm/automata/internal/observability"
 )
 
 // calendarMCPServerName est le nom conventionnel du serveur MCP Google
@@ -59,7 +60,7 @@ type Registry struct {
 // deux passes sont nécessaires : un OrchestratorAgent a besoin que ses
 // délégués existent déjà dans le registre pour les envelopper.
 func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error) {
-	return NewRegistryWithMemory(cfg, MemoryTools{}, mcpManager)
+	return NewRegistryWithMemory(cfg, MemoryTools{}, mcpManager, nil)
 }
 
 // NewRegistryWithMemory se comporte comme NewRegistry, mais attache
@@ -85,7 +86,7 @@ func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error)
 // Internet". mcpManager peut être nil si aucun agent de cfg ne déclare de
 // MCPServers (utilisable tel quel par les tests n'exerçant pas cette
 // fonctionnalité).
-func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManager *mcp.Manager) (*Registry, error) {
+func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManager *mcp.Manager, metrics *observability.Metrics) (*Registry, error) {
 	agents := make(map[string]Agent, len(cfg.Agents))
 	clients := make(map[string]llm.Client, len(cfg.Agents))
 	prompts := make(map[string]string, len(cfg.Agents))
@@ -197,7 +198,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 		agentMemoryTools.Remember = memoryTools.Remember && agentCfg.Memory.Remember
 		agentMemoryTools.Forget = memoryTools.Forget && agentCfg.Memory.Forget
 
-		agents[name] = orchestrator.WithMemoryTools(agentMemoryTools)
+		agents[name] = orchestrator.WithMemoryTools(agentMemoryTools).WithMetrics(metrics)
 	}
 
 	return &Registry{agents: agents}, nil

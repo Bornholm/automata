@@ -35,6 +35,7 @@ import (
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/model"
+	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
 )
 
@@ -119,7 +120,8 @@ type Scheduler struct {
 	conversations    *persistence.ConversationRepository
 	auditEvents      *persistence.AuditEventRepository
 
-	logger *slog.Logger
+	logger  *slog.Logger
+	metrics *observability.Metrics
 }
 
 // NewScheduler construit un Scheduler. senders doit contenir un
@@ -149,6 +151,16 @@ func NewScheduler(cfg *config.Config, clock Clock, db *persistence.DB, agents *a
 		auditEvents:      persistence.NewAuditEventRepository(),
 		logger:           logger,
 	}
+}
+
+// WithMetrics attache metrics à s : chaque occurrence planifiée déclenchée
+// et chaque erreur de livraison sont comptabilisées dès le prochain Tick
+// (PLAN.md §14.3, Phase 20). metrics nil désactive l'observation
+// (comportement par défaut de NewScheduler). Retourne s pour permettre le
+// chaînage à la construction.
+func (s *Scheduler) WithMetrics(metrics *observability.Metrics) *Scheduler {
+	s.metrics = metrics
+	return s
 }
 
 // Run boucle indéfiniment en appelant Tick(ctx, clock.Now()) toutes les
@@ -310,6 +322,8 @@ func (s *Scheduler) triggerOccurrence(ctx context.Context, sched config.Schedule
 		// silencieux, mais l'ancre doit tout de même avancer.
 		return true
 	}
+
+	s.metrics.IncCronOccurrence(sched.ID)
 
 	s.executeAndDeliver(ctx, sched, runID)
 
@@ -735,6 +749,10 @@ func (s *Scheduler) deliver(ctx context.Context, sched config.Schedule, runID pe
 // recordDeliveryAttempt persiste la tentative de livraison et met à jour
 // scheduled_runs.delivery_status en conséquence.
 func (s *Scheduler) recordDeliveryAttempt(ctx context.Context, runID persistence.ScheduledRunID, sched config.Schedule, status string, errorCode *string) {
+	if status == DeliveryStatusFailed {
+		s.metrics.IncDeliveryError()
+	}
+
 	now := s.clock.Now().UTC().Format(time.RFC3339)
 
 	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {

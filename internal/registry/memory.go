@@ -14,6 +14,7 @@ import (
 	"github.com/bornholm/automata/internal/authorization"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/memory"
+	"github.com/bornholm/automata/internal/observability"
 )
 
 // memoryCollectionLabel est le label de la collection amoxtli unique créée
@@ -167,7 +168,7 @@ func MemoryReindex(ctx context.Context, logger interface {
 // nil (mémoire non configurée), retourne la valeur zéro d'agent.MemoryTools
 // : aucun outil mémoire n'est alors jamais exposé, quelle que soit la
 // configuration des agents.
-func buildMemoryTools(cfg *config.Config, store *memory.AmoxtliStore) agent.MemoryTools {
+func buildMemoryTools(cfg *config.Config, store *memory.AmoxtliStore, metrics *observability.Metrics) agent.MemoryTools {
 	if store == nil {
 		return agent.MemoryTools{}
 	}
@@ -179,5 +180,6 @@ func buildMemoryTools(cfg *config.Config, store *memory.AmoxtliStore) agent.Memo
 		Remember:   true,
 		Forget:     true,
 		MaxResults: 5,
+		Metrics:    metrics,
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/model"
+	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
 )
 
@@ -54,6 +55,9 @@ type Handler struct {
 	// distincte du traitement audio lui-même (audio.Config), portant
 	// uniquement sur ce qui est écrit dans la table messages (PLAN.md §3.4).
 	persistTranscription bool
+	// metrics peut être nil (PLAN.md Phase 20, registre de métriques
+	// désactivé) : toutes ses méthodes sont alors no-op.
+	metrics *observability.Metrics
 }
 
 // NewHandler construit un Handler. historyLimit borne le nombre de messages
@@ -64,8 +68,9 @@ type Handler struct {
 // un message sans contenu textuel garde son comportement antérieur (chaîne
 // vide transmise telle quelle). persistTranscription contrôle si le texte
 // transcrit réel (true) ou une indication neutre (false, par défaut) est
-// écrit dans la table messages.
-func NewHandler(db *persistence.DB, a agent.Agent, actions *action.Engine, historyLimit int, audioCfg audio.Config, transcriber audio.Transcriber, persistTranscription bool) *Handler {
+// écrit dans la table messages. metrics observe la latence de
+// transcription et la latence d'exécution de l'agent (PLAN.md §14.3).
+func NewHandler(db *persistence.DB, a agent.Agent, actions *action.Engine, historyLimit int, audioCfg audio.Config, transcriber audio.Transcriber, persistTranscription bool, metrics *observability.Metrics) *Handler {
 	if historyLimit <= 0 {
 		historyLimit = defaultHistoryLimit
 	}
@@ -81,6 +86,7 @@ func NewHandler(db *persistence.DB, a agent.Agent, actions *action.Engine, histo
 		audioCfg:             audioCfg,
 		transcriber:          transcriber,
 		persistTranscription: persistTranscription,
+		metrics:              metrics,
 	}
 }
 
@@ -107,7 +113,9 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 	if text == "" && h.audioCfg.Enabled {
 		voiceNote, found := audio.FindVoiceNote(msg)
 		if found {
+			transcriptionStart := time.Now()
 			transcribed, err := audio.ExtractText(ctx, h.audioCfg, h.transcriber, voiceNote)
+			h.metrics.ObserveTranscriptionLatency(time.Since(transcriptionStart))
 			if err != nil {
 				return "", fmt.Errorf("conversation: transcription de la note vocale: %w", err)
 			}
@@ -170,12 +178,14 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		}
 	}
 
+	agentStart := time.Now()
 	result, err := h.agent.Execute(ctx, agent.Request{
 		Identity:     identity,
 		Conversation: conv,
 		History:      history,
 		Input:        text,
 	})
+	h.metrics.ObserveAgentLatency(time.Since(agentStart))
 	if err != nil {
 		return "", fmt.Errorf("conversation: exécution de l'agent: %w", err)
 	}
