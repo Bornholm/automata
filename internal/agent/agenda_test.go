@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -399,8 +400,7 @@ func TestAgendaToolAgent_ConfirmedCreateEventExecutesReally(t *testing.T) {
 func extractProposalID(t *testing.T, opts *llm.ChatCompletionOptions) string {
 	t.Helper()
 
-	for i := len(opts.Messages) - 1; i >= 0; i-- {
-		msg := opts.Messages[i]
+	for _, msg := range slices.Backward(opts.Messages) {
 		if msg.Role() != llm.RoleTool {
 			continue
 		}
