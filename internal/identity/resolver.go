@@ -8,6 +8,7 @@ package identity
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/bornholm/automata/internal/apperr"
 	"github.com/bornholm/automata/internal/config"
@@ -92,16 +93,7 @@ func (r *Resolver) ResolveMessage(ctx context.Context, provider, externalUserID,
 	}
 
 	if ch.Kind == config.ChannelKindGroup {
-		member := false
-
-		for _, m := range ch.Members {
-			if m == principalID {
-				member = true
-				break
-			}
-		}
-
-		if !member {
+		if !slices.Contains(ch.Members, principalID) {
 			return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf("identity: principal %q non membre du groupe %s/%s: %w", principalID, provider, channelID, apperr.ErrUnauthorized)
 		}
 	}
