@@ -19,8 +19,10 @@ import (
 	"github.com/bornholm/go-courier"
 	"github.com/bornholm/go-courier/provider/whatsapp"
 
+	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/audio"
+	"github.com/bornholm/automata/internal/authorization"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/conversation"
 	"github.com/bornholm/automata/internal/identity"
@@ -73,7 +75,15 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		}
 	}()
 
-	handler, err := buildConversationHandler(cfg, db, memRes.store, mcpManager)
+	authorizer := authorization.NewAuthorizer(cfg)
+
+	var actionOpts []action.Option
+	if memRes.store != nil {
+		actionOpts = append(actionOpts, action.WithMemoryStore(memRes.store))
+	}
+	actionEngine := action.NewEngine(db, authorizer, mcpManager, cfg, actionOpts...)
+
+	handler, err := buildConversationHandler(cfg, db, memRes.store, mcpManager, actionEngine)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
@@ -140,7 +150,7 @@ func buildCourierProviders(cfg *config.Config) (map[string]courier.Provider, err
 // cfg.Audio.TranscriptionClient. Rien n'est construit si l'audio est
 // désactivé : le comportement existant (message vide transmis tel quel) est
 // préservé.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager) (ingress.Handler, error) {
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine) (ingress.Handler, error) {
 	memoryTools := buildMemoryTools(cfg, memStore)
 
 	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, mcpManager)
@@ -175,5 +185,5 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *
 		transcriber = audio.NewGenAITranscriber(transcriptionClient)
 	}
 
-	return conversation.NewHandler(db, mainAgent, 0, audioCfg, transcriber, cfg.Audio.PersistTranscription), nil
+	return conversation.NewHandler(db, mainAgent, actionEngine, 0, audioCfg, transcriber, cfg.Audio.PersistTranscription), nil
 }

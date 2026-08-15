@@ -6,6 +6,7 @@ require (
 	github.com/bornholm/amoxtli v0.0.0-00010101000000-000000000000
 	github.com/bornholm/go-courier v0.0.0-20250902080206-c967c407f1e1
 	github.com/dustin/go-humanize v1.0.1
+	github.com/modelcontextprotocol/go-sdk v1.3.0
 	github.com/ncruces/go-sqlite3 v0.35.2
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
@@ -54,7 +55,6 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
-	github.com/modelcontextprotocol/go-sdk v1.3.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
@@ -85,7 +85,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/bornholm/genai v0.31.0
+	github.com/bornholm/genai v0.33.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

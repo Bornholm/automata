@@ -7,7 +7,9 @@ import (
 
 	"github.com/bornholm/genai/llm"
 
+	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/authorization"
+	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
 )
@@ -47,7 +49,10 @@ func (t MemoryTools) enabled() bool {
 // identity, selon les capacités déclarées par la configuration de l'agent
 // (t.Search/t.Remember/t.Forget). Reconstruit à chaque exécution, comme
 // buildDelegationTools : l'identité n'est jamais décidée par le modèle.
-func (t MemoryTools) buildMemoryTools(identity model.ExecutionIdentity) []llm.Tool {
+// collector accumule les delegation.ProposedAction produites par
+// forget_memory (PLAN.md §10, Phase 15) : voir proposalCollector
+// (toolloop.go).
+func (t MemoryTools) buildMemoryTools(identity model.ExecutionIdentity, collector *proposalCollector) []llm.Tool {
 	if !t.enabled() {
 		return nil
 	}
@@ -61,7 +66,7 @@ func (t MemoryTools) buildMemoryTools(identity model.ExecutionIdentity) []llm.To
 		tools = append(tools, t.newRememberTool(identity))
 	}
 	if t.Forget {
-		tools = append(tools, t.newForgetMemoryTool(identity))
+		tools = append(tools, t.newForgetMemoryTool(identity, collector))
 	}
 
 	return tools
@@ -299,36 +304,38 @@ func (t MemoryTools) newRememberTool(identity model.ExecutionIdentity) llm.Tool 
 	)
 }
 
-// newForgetMemoryTool construit l'outil "forget_memory" (PLAN.md §8.5). Le
-// mécanisme de confirmation ad-hoc implémenté ici (paramètre confirm,
-// scopé à la seule mémoire) est délibérément chirurgical : il sera
-// généralisé par le système de plans d'actions de la Phase 15
-// (persistence.ActionPlan / ActionRepository, déjà présents dans le schéma
-// mais pas encore branchés) plutôt que d'anticiper cette généralisation ici.
-func (t MemoryTools) newForgetMemoryTool(identity model.ExecutionIdentity) llm.Tool {
+// newForgetMemoryTool construit l'outil "forget_memory" (PLAN.md §8.5,
+// §10). Depuis la Phase 15, cet outil n'exécute plus jamais de suppression
+// lui-même : une requête textuelle seule liste des candidats (inchangé), et
+// un 'id' résolu sans ambiguïté produit une delegation.ProposedAction,
+// accumulée dans collector, plutôt qu'un paramètre 'confirm' ad-hoc. C'est
+// internal/action.Engine qui persiste cette proposition en
+// persistence.ActionPlan (via internal/conversation.Handler, qui lit
+// Result.ProposedActions après l'exécution de l'agent) et qui l'exécute
+// réellement, seulement après confirmation explicite ("confirmer" dans la
+// conversation, PLAN.md §10.4) et revérification complète (§10.5) — jamais
+// au sein de ce tour d'outil.
+func (t MemoryTools) newForgetMemoryTool(identity model.ExecutionIdentity, collector *proposalCollector) llm.Tool {
 	schema := llm.NewJSONSchema().
 		Property("query", "Texte décrivant la ou les mémoires à supprimer. À utiliser seul, sans 'id', pour obtenir une liste numérotée de candidats.", "string").
-		Property("id", "Identifiant précis d'une mémoire à supprimer, obtenu via une recherche préalable (search_memory ou un appel précédent de forget_memory avec 'query').", "string").
-		Property("confirm", "true uniquement pour confirmer une suppression déjà proposée avec son 'id' exact. Ne jamais mettre à true sans confirmation explicite de l'utilisateur.", "boolean")
+		Property("id", "Identifiant précis d'une mémoire à supprimer, obtenu via une recherche préalable (search_memory ou un appel précédent de forget_memory avec 'query').", "string")
 
 	return llm.NewFuncTool(
 		"forget_memory",
-		"Supprime une mémoire de la mémoire persistante. Une requête textuelle seule ne supprime jamais rien : elle ne fait que lister des candidats.",
+		"Propose la suppression d'une mémoire de la mémoire persistante. Une requête textuelle seule ne supprime jamais rien : elle ne fait que lister des candidats. Un 'id' précis propose une suppression, qui ne sera exécutée qu'après confirmation explicite de l'utilisateur dans la conversation (répondre \"confirmer\").",
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			query := strings.TrimSpace(stringParam(params, "query"))
 			id := strings.TrimSpace(stringParam(params, "id"))
-			confirm, _ := params["confirm"].(bool)
 
 			if id == "" {
 				if query == "" {
-					return llm.NewToolResult("erreur: fournir soit 'query' (pour lister des candidats), soit 'id' (pour supprimer une mémoire précise)."), nil
+					return llm.NewToolResult("erreur: fournir soit 'query' (pour lister des candidats), soit 'id' (pour proposer la suppression d'une mémoire précise)."), nil
 				}
 
 				// PLAN.md §8.5 : "une suppression par requête textuelle non
-				// résolue est interdite". Cette branche ne supprime jamais
-				// rien, quelles que soient les valeurs de confirm ou id : elle
-				// se contente de lister des candidats.
+				// résolue est interdite". Cette branche ne propose jamais rien,
+				// elle se contente de lister des candidats.
 				results, err := t.searchAuthorizedScopes(ctx, identity, readScopes(identity), "read", query)
 				if err != nil {
 					return llm.NewToolResult(fmt.Sprintf("erreur lors de la recherche mémoire: %v", err)), nil
@@ -348,33 +355,20 @@ func (t MemoryTools) newForgetMemoryTool(identity model.ExecutionIdentity) llm.T
 				return llm.NewToolResult(fmt.Sprintf("aucune mémoire accessible avec l'identifiant %q dans ce contexte.", id)), nil
 			}
 
-			if !confirm {
-				return llm.NewToolResult(fmt.Sprintf(
-					"Confirmation requise avant suppression (portée %s) :\n%s\nPour confirmer, rappeler forget_memory avec id=%q et confirm=true.",
-					scope, mem.Content, mem.ID,
-				)), nil
-			}
+			collector.add(delegation.ProposedAction{
+				Summary:            fmt.Sprintf("Supprimer la mémoire (portée %s) : %s", scope, mem.Content),
+				MCPServer:          action.InternalServer,
+				ToolName:           action.MemoryForgetTool,
+				Arguments:          map[string]any{"id": mem.ID},
+				RequiredPermission: fmt.Sprintf("memory.%s.delete", scope),
+				Scope:              scope,
+				ScopeID:            scopeID(scope, identity),
+			})
 
-			// Revérification explicite de l'autorisation avant l'action
-			// destructive (PLAN.md §6, "l'autorisation doit être vérifiée ...
-			// avant l'exécution d'une action confirmée") : ne jamais réutiliser
-			// la vérification faite lors de l'appel précédent (confirm=false),
-			// qui peut être arbitrairement ancien du point de vue du modèle.
-			if err := t.Authorizer.Authorize(ctx, authorization.AuthorizationRequest{
-				Identity:      identity,
-				Permission:    fmt.Sprintf("memory.%s.delete", scope),
-				TargetOrgID:   identity.OrgID,
-				TargetScope:   scope,
-				TargetScopeID: scopeID(scope, identity),
-			}); err != nil {
-				return llm.NewToolResult(fmt.Sprintf("suppression refusée: %v", err)), nil
-			}
-
-			if err := t.Store.Forget(ctx, mem.ID); err != nil {
-				return llm.NewToolResult(fmt.Sprintf("échec de la suppression: %v", err)), nil
-			}
-
-			return llm.NewToolResult("Mémoire supprimée."), nil
+			return llm.NewToolResult(fmt.Sprintf(
+				"Suppression proposée (portée %s) : %s\nEn attente de confirmation : répondez \"confirmer\" dans la conversation pour l'exécuter, ou \"annuler\" pour abandonner.",
+				scope, mem.Content,
+			)), nil
 		},
 	)
 }

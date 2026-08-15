@@ -3,9 +3,56 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/bornholm/genai/llm"
+
+	"github.com/bornholm/automata/internal/delegation"
 )
+
+// proposalCollector accumule les delegation.ProposedAction produites par
+// les outils exécutés durant un tour de runToolLoop (PLAN.md §10, Phase
+// 15). C'est le canal choisi pour faire remonter une proposition depuis
+// l'exécution d'un outil LLM jusqu'à Agent.Result, sans changer la
+// signature de llm.Tool.Execute (context.Context, map[string]any) ni celle
+// de runToolLoop : un outil qui produit une proposition (voir
+// MemoryTools.newForgetMemoryTool) capture le collector correspondant à
+// l'exécution courante dans sa closure et y ajoute l'action, en plus de
+// retourner un texte lisible au modèle. Protégé par un mutex bien que
+// runToolLoop exécute les outils strictement séquentiellement (jamais deux
+// exécutions concurrentes pour un même tour) : un canal explicitement
+// thread-safe est plus robuste qu'une hypothèse implicite sur l'ordre
+// d'exécution qui pourrait changer sans que ce fichier soit relu.
+type proposalCollector struct {
+	mu        sync.Mutex
+	proposals []delegation.ProposedAction
+}
+
+func newProposalCollector() *proposalCollector {
+	return &proposalCollector{}
+}
+
+// add ajoute p aux propositions accumulées. Sûr à appeler avec un récepteur
+// nil (aucun collector actif) : ne fait rien.
+func (c *proposalCollector) add(p delegation.ProposedAction) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.proposals = append(c.proposals, p)
+}
+
+// take retourne les propositions accumulées. Sûr à appeler avec un
+// récepteur nil (retourne nil).
+func (c *proposalCollector) take() []delegation.ProposedAction {
+	if c == nil {
+		return nil
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.proposals
+}
 
 // toolLoopResult est le résultat d'un appel à runToolLoop : le texte de la
 // réponse finale du modèle (sans tool-call), et le contenu textuel de

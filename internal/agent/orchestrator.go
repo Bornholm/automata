@@ -75,8 +75,10 @@ func NewOrchestratorAgent(client llm.ChatCompletionClient, systemPrompt, agentNa
 // boucle elle-même est factorisée dans runToolLoop (toolloop.go), partagée
 // avec MCPToolAgent (Phase 12) : voir son commentaire de package.
 func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, error) {
-	tools := a.buildDelegationTools(req.Identity)
-	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity)...)
+	collector := newProposalCollector()
+
+	tools := a.buildDelegationTools(req.Identity, collector)
+	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity, collector)...)
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
 	messages := buildChatMessages(a.systemPrompt, a.agentName, a.orgDisplayName, req)
@@ -91,7 +93,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 		return Result{}, err
 	}
 
-	return Result{Reply: loopResult.Text}, nil
+	return Result{Reply: loopResult.Text, ProposedActions: collector.take()}, nil
 }
 
 // buildDelegationTools construit un llm.Tool "delegate_to_<agentID>" par
@@ -100,11 +102,11 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 // l'identité d'exécution propre à la requête courante : l'identité n'est
 // jamais décidée par le modèle (InvariantRules, règle 1), seulement
 // transmise par l'application.
-func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentity) []llm.Tool {
+func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentity, collector *proposalCollector) []llm.Tool {
 	tools := make([]llm.Tool, 0, len(a.specialists))
 
 	for agentID, specialist := range a.specialists {
-		tools = append(tools, newDelegationTool(agentID, specialist, identity))
+		tools = append(tools, newDelegationTool(agentID, specialist, identity, collector))
 	}
 
 	// Ordre déterministe : la map d'origine n'a pas d'ordre garanti, et un
@@ -121,7 +123,7 @@ func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentit
 // comme erreur Go (ce qui ferait échouer tout le tour) : il est transmis au
 // modèle comme contenu de résultat d'outil, en clair, pour qu'il puisse
 // s'adapter (PLAN.md Phase 8, test "spécialiste en erreur").
-func newDelegationTool(agentID string, specialist delegation.Specialist, identity model.ExecutionIdentity) llm.Tool {
+func newDelegationTool(agentID string, specialist delegation.Specialist, identity model.ExecutionIdentity, collector *proposalCollector) llm.Tool {
 	schema := llm.NewJSONSchema().
 		RequiredProperty("goal", "Objectif précis à atteindre par le spécialiste.", "string").
 		Property("relevant_input", "Éléments de contexte explicitement nécessaires à la tâche, formulés en clair. Ne jamais transmettre l'historique complet de la conversation.", "string").
@@ -157,6 +159,10 @@ func newDelegationTool(agentID string, specialist delegation.Specialist, identit
 			})
 			if err != nil {
 				return llm.NewToolResult(fmt.Sprintf("le spécialiste %q a échoué: %v", agentID, err)), nil
+			}
+
+			for _, pa := range result.ProposedActions {
+				collector.add(pa)
 			}
 
 			return llm.NewToolResult(result.Summary), nil

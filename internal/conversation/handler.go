@@ -9,11 +9,13 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/bornholm/go-courier"
 	"github.com/google/uuid"
 
+	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/model"
@@ -43,6 +45,7 @@ type Handler struct {
 	conversations *persistence.ConversationRepository
 	messages      *persistence.MessageRepository
 	agent         agent.Agent
+	actions       *action.Engine
 	historyLimit  int
 	now           func() time.Time
 	audioCfg      audio.Config
@@ -62,7 +65,7 @@ type Handler struct {
 // vide transmise telle quelle). persistTranscription contrôle si le texte
 // transcrit réel (true) ou une indication neutre (false, par défaut) est
 // écrit dans la table messages.
-func NewHandler(db *persistence.DB, a agent.Agent, historyLimit int, audioCfg audio.Config, transcriber audio.Transcriber, persistTranscription bool) *Handler {
+func NewHandler(db *persistence.DB, a agent.Agent, actions *action.Engine, historyLimit int, audioCfg audio.Config, transcriber audio.Transcriber, persistTranscription bool) *Handler {
 	if historyLimit <= 0 {
 		historyLimit = defaultHistoryLimit
 	}
@@ -72,6 +75,7 @@ func NewHandler(db *persistence.DB, a agent.Agent, historyLimit int, audioCfg au
 		conversations:        persistence.NewConversationRepository(),
 		messages:             persistence.NewMessageRepository(),
 		agent:                a,
+		actions:              actions,
 		historyLimit:         historyLimit,
 		now:                  time.Now,
 		audioCfg:             audioCfg,
@@ -145,6 +149,27 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		return "", fmt.Errorf("conversation: enregistrement du message entrant: %w", err)
 	}
 
+	// PLAN.md §10.4 : "confirmer"/"annuler" sont des commandes
+	// conversationnelles littérales, jamais des décisions du modèle — la
+	// même règle invariante qui interdit au LLM de décider de l'identité,
+	// de la portée ou des permissions s'applique à la confirmation d'une
+	// action sensible. Cette interception a lieu AVANT tout appel à
+	// h.agent.Execute, et le LLM n'est jamais consulté pour ce cas.
+	if h.actions != nil {
+		if cmd, ok := action.ParseCommand(text); ok {
+			reply, err := h.actions.HandleCommand(ctx, identity, conv, cmd)
+			if err != nil {
+				return "", fmt.Errorf("conversation: traitement de la commande de confirmation: %w", err)
+			}
+
+			if err := h.persistAssistantReply(ctx, identity, conv, reply); err != nil {
+				return "", err
+			}
+
+			return reply, nil
+		}
+	}
+
 	result, err := h.agent.Execute(ctx, agent.Request{
 		Identity:     identity,
 		Conversation: conv,
@@ -155,23 +180,42 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		return "", fmt.Errorf("conversation: exécution de l'agent: %w", err)
 	}
 
-	err = h.db.WithTx(ctx, func(tx *sql.Tx) error {
+	reply := result.Reply
+
+	if h.actions != nil && len(result.ProposedActions) > 0 {
+		_, planText, err := h.actions.CreatePlan(ctx, identity, result.ProposedActions)
+		if err != nil {
+			return "", fmt.Errorf("conversation: création du plan d'actions: %w", err)
+		}
+		reply = strings.TrimSpace(reply + "\n\n" + planText)
+	}
+
+	if err := h.persistAssistantReply(ctx, identity, conv, reply); err != nil {
+		return "", err
+	}
+
+	return reply, nil
+}
+
+// persistAssistantReply enregistre reply comme message "assistant" de la
+// conversation conv.
+func (h *Handler) persistAssistantReply(ctx context.Context, identity model.ExecutionIdentity, conv model.Conversation, reply string) error {
+	err := h.db.WithTx(ctx, func(tx *sql.Tx) error {
 		return h.messages.Insert(ctx, tx, persistence.Message{
 			ID:                uuid.NewString(),
 			ConversationID:    conv.ID,
 			ExternalMessageID: uuid.NewString(),
 			PrincipalID:       identity.PrincipalID,
 			Role:              "assistant",
-			Content:           result.Reply,
+			Content:           reply,
 			ContentKind:       contentKindText,
 			CreatedAt:         h.now().UTC().Format(time.RFC3339),
 		})
 	})
 	if err != nil {
-		return "", fmt.Errorf("conversation: enregistrement de la réponse: %w", err)
+		return fmt.Errorf("conversation: enregistrement de la réponse: %w", err)
 	}
-
-	return result.Reply, nil
+	return nil
 }
 
 // ensureConversation insère conv si elle n'existe pas encore, identifiée par

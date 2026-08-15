@@ -66,6 +66,19 @@ var errTodoGroupNotFound = errors.New("groupe de propositions introuvable, déj�
 // (§6.4, "plusieurs actions par tour" ; travaux 5-7 de la Phase 14) — un
 // écart assumé par rapport au cycle proposal_id/confirm par appel de
 // l'agenda (Phase 13), qui ne convient pas à une confirmation groupée.
+//
+// Toujours en attente de migration vers internal/action (Phase 15) : le
+// système central de plans d'actions persistés (internal/action.Engine,
+// commandes conversationnelles "confirmer"/"annuler") a été construit et
+// démontré de bout en bout avec la mémoire (internal/agent/memory_tools.go),
+// mais migrer ce mécanisme de confirmation groupée en mémoire vers un plan
+// persisté (avec, pour todo, une seule commande "confirmer" désignant
+// PLUSIEURS actions à la fois) est un changement de forme plus large que le
+// retrofit d'un spécialiste unique et a été jugé hors périmètre raisonnable
+// pour cette phase (voir PLAN.md, Phase 15, "périmètre explicitement
+// limité"). Ce mécanisme ad-hoc suit le même chemin que forget_memory avant
+// la Phase 15 : confirmation pilotée par le modèle via un paramètre d'outil
+// dans le même tour, pas de persistance SQLite, expiration TTL locale.
 type todoProposal struct {
 	seq            uint64
 	toolName       string

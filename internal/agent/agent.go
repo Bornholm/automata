@@ -12,6 +12,7 @@ import (
 
 	"github.com/bornholm/genai/llm"
 
+	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/model"
 )
 
@@ -40,6 +41,13 @@ type Result struct {
 	// durant ce tour (Phase 12, MCPToolAgent). Vide pour GenAIAgent et
 	// OrchestratorAgent, qui ne produisent aucune référence.
 	References []string
+	// ProposedActions liste les actions sensibles proposées durant ce tour
+	// (PLAN.md §10, Phase 15), collectées par OrchestratorAgent depuis les
+	// outils qui en produisent (voir MemoryTools.newForgetMemoryTool).
+	// internal/conversation.Handler les transforme en persistence.ActionPlan
+	// via internal/action.Engine.CreatePlan. Vide pour GenAIAgent et
+	// MCPToolAgent, qui n'en produisent aucune.
+	ProposedActions []delegation.ProposedAction
 }
 
 // Agent exécute une conversation applicative et produit une réponse.

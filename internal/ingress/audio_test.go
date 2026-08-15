@@ -57,7 +57,7 @@ func TestPipeline_GroupWithoutMention_VoiceNoteNeverRead(t *testing.T) {
 	audioCfg := audio.Config{Enabled: true, MaxSize: 1 << 20, Timeout: time.Second}
 
 	db := testDB(t)
-	handler := conversation.NewHandler(db, fixedReplyAgent{}, 0, audioCfg, transcriber, false)
+	handler := conversation.NewHandler(db, fixedReplyAgent{}, nil, 0, audioCfg, transcriber, false)
 
 	resolver, err := identity.NewResolver(testConfig())
 	if err != nil {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/bornholm/genai/llm"
 
+	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/authorization"
 	"github.com/bornholm/automata/internal/config"
@@ -193,6 +194,17 @@ func toolCallArgs(t *testing.T, args map[string]any) string {
 // observé au tour suivant (ce que le modèle verrait réellement).
 func executeMemoryTool(t *testing.T, tools agent.MemoryTools, identity model.ExecutionIdentity, name string, args map[string]any) string {
 	t.Helper()
+	text, _ := executeMemoryToolWithProposals(t, tools, identity, name, args)
+	return text
+}
+
+// executeMemoryToolWithProposals se comporte comme executeMemoryTool mais
+// retourne également les delegation.ProposedAction accumulées durant
+// l'exécution (PLAN.md §10, Phase 15) : forget_memory ne supprime plus rien
+// lui-même, il produit une proposition que seul internal/action.Engine
+// exécute, après confirmation.
+func executeMemoryToolWithProposals(t *testing.T, tools agent.MemoryTools, identity model.ExecutionIdentity, name string, args map[string]any) (string, []delegation.ProposedAction) {
+	t.Helper()
 
 	var toolResultText string
 
@@ -214,11 +226,12 @@ func executeMemoryTool(t *testing.T, tools agent.MemoryTools, identity model.Exe
 
 	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{}, 5).WithMemoryTools(tools)
 
-	if _, err := a.Execute(context.Background(), agent.Request{Identity: identity, Input: "test"}); err != nil {
+	result, err := a.Execute(context.Background(), agent.Request{Identity: identity, Input: "test"})
+	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	return toolResultText
+	return toolResultText, result.ProposedActions
 }
 
 func TestSearchMemory_PrivateConversationCoversPersonalAndOrgOnly(t *testing.T) {
@@ -407,32 +420,37 @@ func TestForgetMemory_ConfirmationFlow(t *testing.T) {
 
 	identity := privateIdentity("alice")
 
-	// id fourni, confirm=false: doit décrire la mémoire et demander une
-	// confirmation, sans rien supprimer.
-	text := executeMemoryTool(t, tools, identity, "forget_memory", map[string]any{"id": "m1", "confirm": false})
+	// id fourni: doit décrire la mémoire, produire une proposition d'action
+	// (PLAN.md §10, Phase 15) et ne rien supprimer elle-même — c'est
+	// désormais internal/action.Engine qui exécute la suppression, après
+	// confirmation explicite dans la conversation.
+	text, proposals := executeMemoryToolWithProposals(t, tools, identity, "forget_memory", map[string]any{"id": "m1"})
 	if !strings.Contains(text, "note à supprimer") {
-		t.Errorf("contenu de confirmation manquant: %q", text)
+		t.Errorf("contenu de la proposition manquant: %q", text)
 	}
 	if len(store.forgotten) != 0 {
-		t.Fatalf("suppression prématurée avant confirmation: %v", store.forgotten)
+		t.Fatalf("suppression prématurée sans confirmation: %v", store.forgotten)
+	}
+	if _, ok := store.memories["m1"]; !ok {
+		t.Errorf("mémoire supprimée sans confirmation")
 	}
 
-	// id fourni, confirm=true: supprime effectivement.
-	text = executeMemoryTool(t, tools, identity, "forget_memory", map[string]any{"id": "m1", "confirm": true})
-	if !strings.Contains(text, "supprimée") {
-		t.Errorf("confirmation de suppression manquante: %q", text)
+	if len(proposals) != 1 {
+		t.Fatalf("nombre de propositions inattendu: %d", len(proposals))
 	}
-	if len(store.forgotten) != 1 || store.forgotten[0] != "m1" {
-		t.Fatalf("Forget: appels inattendus: %v", store.forgotten)
+	pa := proposals[0]
+	if pa.MCPServer != action.InternalServer || pa.ToolName != action.MemoryForgetTool {
+		t.Errorf("action proposée inattendue: %+v", pa)
 	}
-
-	// La mémoire n'est plus retrouvable.
-	if _, ok := store.memories["m1"]; ok {
-		t.Errorf("mémoire toujours présente après suppression confirmée")
+	if pa.Arguments["id"] != "m1" {
+		t.Errorf("argument 'id' manquant ou incorrect: %+v", pa.Arguments)
+	}
+	if pa.RequiredPermission != "memory.personal.delete" {
+		t.Errorf("permission requise inattendue: %q", pa.RequiredPermission)
 	}
 }
 
-func TestForgetMemory_UnauthorizedDeleteNeverCallsStore(t *testing.T) {
+func TestForgetMemory_UnauthorizedDeleteNeverProposesAction(t *testing.T) {
 	store := newFakeMemoryStore()
 	store.seed("m1", "note de bob", "home", model.ScopePersonal, "bob")
 
@@ -446,26 +464,18 @@ func TestForgetMemory_UnauthorizedDeleteNeverCallsStore(t *testing.T) {
 	// (voir memoryTestConfig).
 	identity := privateIdentity("bob")
 
-	text := executeMemoryTool(t, tools, identity, "forget_memory", map[string]any{"id": "m1", "confirm": false})
+	text, proposals := executeMemoryToolWithProposals(t, tools, identity, "forget_memory", map[string]any{"id": "m1"})
 	if strings.Contains(text, "note de bob") {
 		t.Errorf("contenu exposé malgré l'absence d'autorisation de suppression: %q", text)
+	}
+	if len(proposals) != 0 {
+		t.Fatalf("action proposée malgré l'absence d'autorisation: %+v", proposals)
 	}
 	if len(store.forgotten) != 0 {
 		t.Fatalf("Forget appelé malgré l'absence d'autorisation: %v", store.forgotten)
 	}
 	if _, ok := store.memories["m1"]; !ok {
 		t.Errorf("mémoire supprimée à tort")
-	}
-
-	// Même en tentant directement confirm=true : la revérification
-	// explicite avant l'action destructive doit aussi échouer, puisque le
-	// GetByID initial échoue déjà à trouver une portée autorisée.
-	text = executeMemoryTool(t, tools, identity, "forget_memory", map[string]any{"id": "m1", "confirm": true})
-	if strings.Contains(text, "supprimée") {
-		t.Fatalf("suppression effectuée malgré l'absence d'autorisation: %q", text)
-	}
-	if len(store.forgotten) != 0 {
-		t.Fatalf("Forget appelé malgré l'absence d'autorisation: %v", store.forgotten)
 	}
 }
 
