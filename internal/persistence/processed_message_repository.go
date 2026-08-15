@@ -47,3 +47,17 @@ func (r *ProcessedMessageRepository) FindByProviderAndExternalMessageID(ctx cont
 
 	return m, true, nil
 }
+
+// UpdateStatus met à jour le statut final d'une trace de message traité déjà
+// insérée par Insert.
+func (r *ProcessedMessageRepository) UpdateStatus(ctx context.Context, q Querier, provider, externalMessageID, status string) error {
+	_, err := q.ExecContext(ctx, `
+		UPDATE processed_messages
+		SET status = ?
+		WHERE provider = ? AND external_message_id = ?
+	`, status, provider, externalMessageID)
+	if err != nil {
+		return fmt.Errorf("mise à jour du statut du message traité (%q, %q): %w", provider, externalMessageID, err)
+	}
+	return nil
+}

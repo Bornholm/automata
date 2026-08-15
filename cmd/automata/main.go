@@ -25,16 +25,35 @@ func main() {
 }
 
 // newRootCommand construit la commande racine automata. Sans sous-commande,
-// elle conserve le comportement historique : démarrage du registry avec
-// gestion de SIGINT/SIGTERM.
+// elle conserve le comportement historique : chargement de la configuration
+// puis démarrage du registry avec gestion de SIGINT/SIGTERM.
+//
+// Le drapeau -config suit la convention Go (préfixe simple tiret), comme
+// pour "config validate" : le parsing des drapeaux de cobra est donc
+// désactivé et délégué au paquet flag standard.
 func newRootCommand(logger *slog.Logger) *cobra.Command {
 	root := &cobra.Command{
-		Use:           "automata",
-		Short:         "Automata assemble les services applicatifs de l'assistant",
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:                "automata",
+		Short:              "Automata assemble les services applicatifs de l'assistant",
+		SilenceUsage:       true,
+		SilenceErrors:      true,
+		DisableFlagParsing: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := run(logger); err != nil {
+			fs := flag.NewFlagSet("automata", flag.ContinueOnError)
+			fs.SetOutput(cmd.ErrOrStderr())
+
+			configPath := fs.String("config", "", "chemin du fichier de configuration YAML (requis)")
+
+			if err := fs.Parse(args); err != nil {
+				return errSilent
+			}
+
+			if *configPath == "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "le drapeau -config est requis")
+				return errSilent
+			}
+
+			if err := run(logger, *configPath); err != nil {
 				logger.Error("automata exited with error", "error", err)
 				return err
 			}
@@ -48,11 +67,16 @@ func newRootCommand(logger *slog.Logger) *cobra.Command {
 	return root
 }
 
-func run(logger *slog.Logger) error {
+func run(logger *slog.Logger, configPath string) error {
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return fmt.Errorf("chargement de la configuration: %w", err)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	return registry.Run(ctx, logger)
+	return registry.Run(ctx, logger, cfg)
 }
 
 // newConfigCommand construit la commande "config" et sa sous-commande
