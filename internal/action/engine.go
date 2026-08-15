@@ -487,7 +487,7 @@ func (e *Engine) executeAction(ctx context.Context, identity model.ExecutionIden
 	// obtenue lors de la proposition.
 	targetScope, err := scopeFromPermission(act.RequiredPermission)
 	if err != nil {
-		return e.failAction(ctx, act, startedAt, "invalid_permission", err)
+		return e.failAction(ctx, act, "invalid_permission", err)
 	}
 
 	if err := e.authorizer.Authorize(ctx, authorization.AuthorizationRequest{
@@ -497,7 +497,7 @@ func (e *Engine) executeAction(ctx context.Context, identity model.ExecutionIden
 		TargetScope:   targetScope,
 		TargetScopeID: plan.ScopeID,
 	}); err != nil {
-		return e.failAction(ctx, act, startedAt, "permission_denied", err)
+		return e.failAction(ctx, act, "permission_denied", err)
 	}
 
 	// 6. Résoudre à nouveau les ressources externes si l'action en dépend :
@@ -509,19 +509,19 @@ func (e *Engine) executeAction(ctx context.Context, identity model.ExecutionIden
 	var args map[string]any
 	if strings.TrimSpace(act.ArgumentsJSON) != "" {
 		if err := json.Unmarshal([]byte(act.ArgumentsJSON), &args); err != nil {
-			return e.failAction(ctx, act, startedAt, "invalid_arguments", err)
+			return e.failAction(ctx, act, "invalid_arguments", err)
 		}
 	}
 
 	executor, ok := e.executorFor(act.MCPServer)
 	if !ok {
-		return e.failAction(ctx, act, startedAt, "no_executor", fmt.Errorf("aucun exécuteur disponible pour le serveur %q", act.MCPServer))
+		return e.failAction(ctx, act, "no_executor", fmt.Errorf("aucun exécuteur disponible pour le serveur %q", act.MCPServer))
 	}
 
 	// 7-8. Exécuter réellement l'action.
 	resultText, err := executor.Execute(ctx, identity, plan, act, args)
 	if err != nil {
-		return e.failAction(ctx, act, startedAt, "execution_failed", err)
+		return e.failAction(ctx, act, "execution_failed", err)
 	}
 
 	// 9. Enregistrer le résultat.
@@ -535,7 +535,7 @@ func (e *Engine) executeAction(ctx context.Context, identity model.ExecutionIden
 
 // failAction enregistre l'échec d'une action et retourne l'outcome
 // correspondant.
-func (e *Engine) failAction(ctx context.Context, act persistence.Action, startedAt, code string, cause error) actionOutcome {
+func (e *Engine) failAction(ctx context.Context, act persistence.Action, code string, cause error) actionOutcome {
 	completedAt := e.now().UTC().Format(time.RFC3339)
 	errCode := code
 	_ = e.setActionStatus(ctx, act.ID, StatusFailed, nil, &completedAt, &errCode)
