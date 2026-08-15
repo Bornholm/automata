@@ -36,6 +36,10 @@ type Request struct {
 // Result est le résultat d'une exécution d'Agent.
 type Result struct {
 	Reply string
+	// References liste les URLs extraites des résultats d'outils exécutés
+	// durant ce tour (Phase 12, MCPToolAgent). Vide pour GenAIAgent et
+	// OrchestratorAgent, qui ne produisent aucune référence.
+	References []string
 }
 
 // Agent exécute une conversation applicative et produit une réponse.

@@ -47,7 +47,7 @@ func testRegistryConfig() *config.Config {
 func TestNewRegistry_BuildsAllConfiguredAgents(t *testing.T) {
 	cfg := testRegistryConfig()
 
-	registry, err := agent.NewRegistry(cfg)
+	registry, err := agent.NewRegistry(cfg, nil)
 	if err != nil {
 		t.Fatalf("NewRegistry: erreur inattendue: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestNewRegistry_BuildsAllConfiguredAgents(t *testing.T) {
 func TestNewRegistry_UnknownAgentRejected(t *testing.T) {
 	cfg := testRegistryConfig()
 
-	registry, err := agent.NewRegistry(cfg)
+	registry, err := agent.NewRegistry(cfg, nil)
 	if err != nil {
 		t.Fatalf("NewRegistry: erreur inattendue: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestNewRegistry_UnknownLLMClientRejected(t *testing.T) {
 	main.Client = "inexistant"
 	cfg.Agents["main"] = main
 
-	_, err := agent.NewRegistry(cfg)
+	_, err := agent.NewRegistry(cfg, nil)
 	if err == nil {
 		t.Fatal("NewRegistry: erreur attendue pour un client llm inconnu")
 	}
@@ -98,7 +98,7 @@ func TestNewRegistry_UnknownLLMClientRejected(t *testing.T) {
 func TestNewRegistry_Isolation(t *testing.T) {
 	cfg := testRegistryConfig()
 
-	registry, err := agent.NewRegistry(cfg)
+	registry, err := agent.NewRegistry(cfg, nil)
 	if err != nil {
 		t.Fatalf("NewRegistry: erreur inattendue: %v", err)
 	}

@@ -71,7 +71,9 @@ func NewOrchestratorAgent(client llm.ChatCompletionClient, systemPrompt, agentNa
 // Execute implémente Agent. La boucle d'appel d'outils est strictement
 // séquentielle (PLAN.md §6.4, "l'exécution initiale sera séquentielle") :
 // lorsqu'un tour du modèle demande plusieurs tool-calls, ils sont exécutés
-// un par un, dans l'ordre reçu, avant le tour suivant.
+// un par un, dans l'ordre reçu, avant le tour suivant. La mécanique de
+// boucle elle-même est factorisée dans runToolLoop (toolloop.go), partagée
+// avec MCPToolAgent (Phase 12) : voir son commentaire de package.
 func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, error) {
 	tools := a.buildDelegationTools(req.Identity)
 	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity)...)
@@ -84,47 +86,12 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 		maxIterations = 1
 	}
 
-	for i := 0; i < maxIterations; i++ {
-		resp, err := a.client.ChatCompletion(ctx, llm.WithMessages(messages...), llm.WithTools(tools...))
-		if err != nil {
-			return Result{}, fmt.Errorf("agent: appel du client llm: %w", err)
-		}
-
-		toolCalls := resp.ToolCalls()
-		if len(toolCalls) == 0 {
-			text := ""
-			if msg := resp.Message(); msg != nil {
-				text = msg.Content()
-			}
-
-			if text == "" {
-				return Result{}, ErrEmptyReply
-			}
-
-			return Result{Reply: text}, nil
-		}
-
-		messages = append(messages, llm.NewToolCallsMessage(toolCalls...))
-
-		for _, tc := range toolCalls {
-			toolMessage, err := llm.ExecuteToolCall(ctx, tc, tools...)
-			if err != nil {
-				// Un échec dur (paramètres illisibles, panique interne au
-				// tool) ne doit pas faire échouer tout le tour : on le
-				// transmet au modèle comme résultat d'outil, exactement
-				// comme un échec applicatif du spécialiste (voir
-				// newDelegationTool), pour qu'il puisse s'adapter.
-				toolMessage = llm.NewToolMessage(tc.ID(), llm.NewToolResult(fmt.Sprintf("erreur d'exécution de l'outil %q: %v", tc.Name(), err)))
-			}
-			messages = append(messages, toolMessage)
-		}
-
-		if err := ctx.Err(); err != nil {
-			return Result{}, err
-		}
+	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, ErrMaxDelegationsReached)
+	if err != nil {
+		return Result{}, err
 	}
 
-	return Result{}, ErrMaxDelegationsReached
+	return Result{Reply: loopResult.Text}, nil
 }
 
 // buildDelegationTools construit un llm.Tool "delegate_to_<agentID>" par

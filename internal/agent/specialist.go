@@ -43,7 +43,7 @@ func (s *AgentSpecialist) Execute(ctx context.Context, req delegation.Request) (
 		return delegation.Result{}, fmt.Errorf("agent: délégation vers %q: %w", s.agentID, err)
 	}
 
-	return delegation.Result{Summary: result.Reply}, nil
+	return delegation.Result{Summary: result.Reply, References: result.References}, nil
 }
 
 // buildDelegationInput compose le message utilisateur envoyé au spécialiste

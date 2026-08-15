@@ -12,6 +12,7 @@ import (
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/mcp"
 )
 
 // Registry construit et détient un Agent isolé pour chaque agent déclaré
@@ -44,8 +45,8 @@ type Registry struct {
 // AgentSpecialist enveloppant le GenAIAgent déjà construit du délégué. Les
 // deux passes sont nécessaires : un OrchestratorAgent a besoin que ses
 // délégués existent déjà dans le registre pour les envelopper.
-func NewRegistry(cfg *config.Config) (*Registry, error) {
-	return NewRegistryWithMemory(cfg, MemoryTools{})
+func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error) {
+	return NewRegistryWithMemory(cfg, MemoryTools{}, mcpManager)
 }
 
 // NewRegistryWithMemory se comporte comme NewRegistry, mais attache
@@ -60,7 +61,18 @@ func NewRegistry(cfg *config.Config) (*Registry, error) {
 // La valeur zéro de MemoryTools (Store nil) n'expose aucun outil mémoire :
 // NewRegistry s'appuie sur ce comportement pour rester utilisable sans
 // mémoire câblée (tests, phases antérieures).
-func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools) (*Registry, error) {
+//
+// Depuis la Phase 12 (PLAN.md §9, §9.3), mcpManager est utilisé pour
+// construire un MCPToolAgent (mcp_tool_agent.go) pour chaque agent déclarant
+// des MCPServers non vides et aucun Delegates : les Delegates ont priorité
+// sur MCPServers si un agent déclarait les deux (choix documenté ci-dessous,
+// dans la seconde passe) — un OrchestratorAgent expose des outils de
+// délégation, pas des outils MCP, conformément à PLAN.md Phase 12 "le
+// généraliste peut déléguer une recherche sans charger les outils
+// Internet". mcpManager peut être nil si aucun agent de cfg ne déclare de
+// MCPServers (utilisable tel quel par les tests n'exerçant pas cette
+// fonctionnalité).
+func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManager *mcp.Manager) (*Registry, error) {
 	agents := make(map[string]Agent, len(cfg.Agents))
 	clients := make(map[string]llm.Client, len(cfg.Agents))
 	prompts := make(map[string]string, len(cfg.Agents))
@@ -90,6 +102,22 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools) (*Regist
 
 	for name, agentCfg := range cfg.Agents {
 		if len(agentCfg.Delegates) == 0 {
+			if len(agentCfg.MCPServers) > 0 {
+				agents[name] = NewMCPToolAgent(
+					clients[name],
+					prompts[name],
+					name,
+					cfg.Organization.DisplayName,
+					mcpManager,
+					agentCfg.MCPServers,
+					mcp.Limits{
+						ToolTimeout:        agentCfg.Limits.ToolTimeout.Duration(),
+						MaxToolResultBytes: int64(agentCfg.Limits.MaxToolResultBytes.Bytes()),
+					},
+					agentCfg.Limits.MaxSequentialToolCalls,
+				)
+			}
+
 			continue
 		}
 
