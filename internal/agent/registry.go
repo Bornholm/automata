@@ -203,6 +203,14 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 	return &Registry{agents: agents}, nil
 }
 
+// NewRegistryFromAgents construit un Registry directement à partir d'agents
+// déjà construits, sans passer par la configuration YAML ni construire de
+// client LLM réel. Utilisé par les tests d'autres packages (ex :
+// internal/scheduler) pour injecter un Agent factice via Get.
+func NewRegistryFromAgents(agents map[string]Agent) *Registry {
+	return &Registry{agents: agents}
+}
+
 // Get retourne l'Agent nommé name. Si aucun agent de ce nom n'a été
 // construit par NewRegistry, une erreur explicite est retournée plutôt que
 // de paniquer ou de retourner un Agent nil silencieux.

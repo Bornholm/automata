@@ -30,6 +30,7 @@ import (
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/scheduler"
 )
 
 // mainAgentName est l'identifiant conventionnel de l'agent généraliste dans
@@ -41,6 +42,10 @@ const mainAgentName = "main"
 // validée (voir config.Load).
 func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	logger.InfoContext(ctx, "automata starting")
+
+	if err := scheduler.ValidateSchedules(cfg); err != nil {
+		return fmt.Errorf("registry: validation des schedules: %w", err)
+	}
 
 	db, err := persistence.Open(ctx, cfg.Storage.Application)
 	if err != nil {
@@ -83,10 +88,12 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	}
 	actionEngine := action.NewEngine(db, authorizer, mcpManager, cfg, actionOpts...)
 
-	handler, err := buildConversationHandler(cfg, db, memRes.store, mcpManager, actionEngine)
+	handler, agents, err := buildConversationHandler(cfg, db, memRes.store, mcpManager, actionEngine)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
+
+	sched := scheduler.NewScheduler(cfg, scheduler.RealClock{}, db, agents, providers, logger)
 
 	var wg sync.WaitGroup
 
@@ -102,6 +109,15 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			}
 		}(name, pipeline)
 	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		if err := sched.Run(ctx); err != nil && ctx.Err() == nil {
+			logger.ErrorContext(ctx, "registry: scheduler arrêté en erreur", "error", err)
+		}
+	}()
 
 	<-ctx.Done()
 
@@ -150,17 +166,21 @@ func buildCourierProviders(cfg *config.Config) (map[string]courier.Provider, err
 // cfg.Audio.TranscriptionClient. Rien n'est construit si l'audio est
 // désactivé : le comportement existant (message vide transmis tel quel) est
 // préservé.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine) (ingress.Handler, error) {
+// Depuis la Phase 16, elle retourne également le *agent.Registry construit,
+// réutilisé tel quel par internal/scheduler pour exécuter les tâches
+// planifiées (PLAN.md §11) : un seul registre d'agents par instance,
+// jamais reconstruit.
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine) (ingress.Handler, *agent.Registry, error) {
 	memoryTools := buildMemoryTools(cfg, memStore)
 
 	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, mcpManager)
 	if err != nil {
-		return nil, fmt.Errorf("construction du registre d'agents: %w", err)
+		return nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
 	}
 
 	mainAgent, err := agents.Get(mainAgentName)
 	if err != nil {
-		return nil, fmt.Errorf("récupération de l'agent %q: %w", mainAgentName, err)
+		return nil, nil, fmt.Errorf("récupération de l'agent %q: %w", mainAgentName, err)
 	}
 
 	audioCfg := audio.Config{}
@@ -169,12 +189,12 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *
 	if cfg.Audio.Enabled {
 		llmClientCfg, ok := cfg.LLMClients[cfg.Audio.TranscriptionClient]
 		if !ok {
-			return nil, fmt.Errorf("audio: client llm %q (référencé par audio.transcription_client) introuvable dans la configuration", cfg.Audio.TranscriptionClient)
+			return nil, nil, fmt.Errorf("audio: client llm %q (référencé par audio.transcription_client) introuvable dans la configuration", cfg.Audio.TranscriptionClient)
 		}
 
 		transcriptionClient, err := agent.BuildTranscriptionClient(context.Background(), llmClientCfg)
 		if err != nil {
-			return nil, fmt.Errorf("audio: construction du client de transcription %q: %w", cfg.Audio.TranscriptionClient, err)
+			return nil, nil, fmt.Errorf("audio: construction du client de transcription %q: %w", cfg.Audio.TranscriptionClient, err)
 		}
 
 		audioCfg = audio.Config{
@@ -185,5 +205,5 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *
 		transcriber = audio.NewGenAITranscriber(transcriptionClient)
 	}
 
-	return conversation.NewHandler(db, mainAgent, actionEngine, 0, audioCfg, transcriber, cfg.Audio.PersistTranscription), nil
+	return conversation.NewHandler(db, mainAgent, actionEngine, 0, audioCfg, transcriber, cfg.Audio.PersistTranscription), agents, nil
 }

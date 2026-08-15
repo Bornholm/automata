@@ -47,3 +47,19 @@ func (r *DeliveryAttemptRepository) FindByID(ctx context.Context, q Querier, id 
 
 	return d, true, nil
 }
+
+// CountByScheduledRunID retourne le nombre de tentatives de livraison déjà
+// enregistrées pour scheduledRunID. Utilisé par internal/scheduler pour
+// numéroter la prochaine tentative (RetryDelivery).
+func (r *DeliveryAttemptRepository) CountByScheduledRunID(ctx context.Context, q Querier, scheduledRunID ScheduledRunID) (int, error) {
+	row := q.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM delivery_attempts WHERE scheduled_run_id = ?
+	`, scheduledRunID)
+
+	var count int
+	if err := row.Scan(&count); err != nil {
+		return 0, fmt.Errorf("comptage des tentatives de livraison pour %q: %w", scheduledRunID, err)
+	}
+
+	return count, nil
+}
