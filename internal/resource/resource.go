@@ -52,8 +52,44 @@ func (e *ErrCalendarNotConfigured) Error() string {
 // Aucune valeur par défaut n'est jamais inventée : si rien ne correspond,
 // une erreur claire (*ErrCalendarNotConfigured) est retournée.
 func ResolveCalendarID(cfg *config.Config, scope model.Scope, scopeID model.ScopeID) (string, error) {
-	if cfg == nil {
+	id, ok := resolveResourceID(cfg, scope, scopeID, "calendar")
+	if !ok {
 		return "", &ErrCalendarNotConfigured{Scope: scope, ScopeID: scopeID}
+	}
+	return id, nil
+}
+
+// ErrTodoListNotConfigured est retournée par ResolveTodoListID lorsqu'aucun
+// canal de la configuration ne déclare de ressource "todo" pour la portée
+// demandée. Même contrat qu'ErrCalendarNotConfigured (voir ci-dessus).
+type ErrTodoListNotConfigured struct {
+	Scope   model.Scope
+	ScopeID model.ScopeID
+}
+
+func (e *ErrTodoListNotConfigured) Error() string {
+	return fmt.Sprintf("resource: liste de tâches non configurée pour cette portée (scope=%s, scope_id=%s)", e.Scope, e.ScopeID)
+}
+
+// ResolveTodoListID retourne l'identifiant de liste de tâches réel associé à
+// (scope, scopeID), sur exactement le même modèle que ResolveCalendarID
+// (canal de cfg.Channels dont Scope/ScopeID correspondent et dont
+// Resources["todo"] est non vide ; premier canal correspondant retenu ;
+// aucune valeur par défaut inventée).
+func ResolveTodoListID(cfg *config.Config, scope model.Scope, scopeID model.ScopeID) (string, error) {
+	id, ok := resolveResourceID(cfg, scope, scopeID, "todo")
+	if !ok {
+		return "", &ErrTodoListNotConfigured{Scope: scope, ScopeID: scopeID}
+	}
+	return id, nil
+}
+
+// resolveResourceID factorise la recherche commune à ResolveCalendarID et
+// ResolveTodoListID : parcourir cfg.Channels à la recherche du premier canal
+// dont (Scope, ScopeID) correspond et dont Resources[key] est non vide.
+func resolveResourceID(cfg *config.Config, scope model.Scope, scopeID model.ScopeID, key string) (string, bool) {
+	if cfg == nil {
+		return "", false
 	}
 
 	for _, ch := range cfg.Channels {
@@ -64,13 +100,13 @@ func ResolveCalendarID(cfg *config.Config, scope model.Scope, scopeID model.Scop
 			continue
 		}
 
-		calendarID := ch.Resources["calendar"]
-		if calendarID == "" {
+		id := ch.Resources[key]
+		if id == "" {
 			continue
 		}
 
-		return calendarID, nil
+		return id, true
 	}
 
-	return "", &ErrCalendarNotConfigured{Scope: scope, ScopeID: scopeID}
+	return "", false
 }

@@ -22,6 +22,12 @@ import (
 // agenda (voir NewRegistryWithMemory ci-dessous).
 const calendarMCPServerName = "google-calendar"
 
+// todoMCPServerName est le nom conventionnel du serveur MCP de gestion de
+// tâches déclaré par agents.<nom>.mcp_servers (PLAN.md §12 mcp_servers.todo,
+// Phase 14) : c'est sa présence dans agentCfg.MCPServers qui identifie le
+// spécialiste todo, même principe que calendarMCPServerName ci-dessus.
+const todoMCPServerName = "todo"
+
 // Registry construit et détient un Agent isolé pour chaque agent déclaré
 // dans la configuration (PLAN.md §6.2, §7.2, Phase 7). Chaque Agent obtenu
 // via Get a son propre client LLM et son propre system prompt composé :
@@ -126,6 +132,19 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 				// aucune résolution de ressource ni confirmation.
 				if slices.Contains(agentCfg.MCPServers, calendarMCPServerName) {
 					agents[name] = NewAgendaToolAgent(
+						clients[name],
+						prompts[name],
+						name,
+						cfg.Organization.DisplayName,
+						mcpManager,
+						agentCfg.MCPServers,
+						limits,
+						agentCfg.Limits.MaxSequentialToolCalls,
+						cfg,
+						nil,
+					)
+				} else if slices.Contains(agentCfg.MCPServers, todoMCPServerName) {
+					agents[name] = NewTodoToolAgent(
 						clients[name],
 						prompts[name],
 						name,
