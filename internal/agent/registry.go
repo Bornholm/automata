@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/bornholm/genai/llm"
 	"github.com/bornholm/genai/llm/provider"
@@ -14,6 +15,12 @@ import (
 	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/mcp"
 )
+
+// calendarMCPServerName est le nom conventionnel du serveur MCP Google
+// Calendar déclaré par agents.<nom>.mcp_servers (PLAN.md §9.1, Phase 13) :
+// c'est sa présence dans agentCfg.MCPServers qui identifie le spécialiste
+// agenda (voir NewRegistryWithMemory ci-dessous).
+const calendarMCPServerName = "google-calendar"
 
 // Registry construit et détient un Agent isolé pour chaque agent déclaré
 // dans la configuration (PLAN.md §6.2, §7.2, Phase 7). Chaque Agent obtenu
@@ -103,19 +110,45 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 	for name, agentCfg := range cfg.Agents {
 		if len(agentCfg.Delegates) == 0 {
 			if len(agentCfg.MCPServers) > 0 {
-				agents[name] = NewMCPToolAgent(
-					clients[name],
-					prompts[name],
-					name,
-					cfg.Organization.DisplayName,
-					mcpManager,
-					agentCfg.MCPServers,
-					mcp.Limits{
-						ToolTimeout:        agentCfg.Limits.ToolTimeout.Duration(),
-						MaxToolResultBytes: int64(agentCfg.Limits.MaxToolResultBytes.Bytes()),
-					},
-					agentCfg.Limits.MaxSequentialToolCalls,
-				)
+				limits := mcp.Limits{
+					ToolTimeout:        agentCfg.Limits.ToolTimeout.Duration(),
+					MaxToolResultBytes: int64(agentCfg.Limits.MaxToolResultBytes.Bytes()),
+				}
+
+				// Le spécialiste agenda est identifié par la présence du
+				// serveur MCP "google-calendar" parmi ses MCPServers, plutôt
+				// que par son nom d'agent : un nom (ex: "agenda") est un
+				// choix arbitraire de l'opérateur qui configure agents.yaml,
+				// alors que le serveur MCP déclaré décrit sans ambiguïté ce
+				// que l'agent peut effectivement faire (PLAN.md Phase 13).
+				// Tout autre spécialiste MCP (ex: "research", Phase 12) qui
+				// ne déclare pas ce serveur reste un MCPToolAgent nu, sans
+				// aucune résolution de ressource ni confirmation.
+				if slices.Contains(agentCfg.MCPServers, calendarMCPServerName) {
+					agents[name] = NewAgendaToolAgent(
+						clients[name],
+						prompts[name],
+						name,
+						cfg.Organization.DisplayName,
+						mcpManager,
+						agentCfg.MCPServers,
+						limits,
+						agentCfg.Limits.MaxSequentialToolCalls,
+						cfg,
+						nil,
+					)
+				} else {
+					agents[name] = NewMCPToolAgent(
+						clients[name],
+						prompts[name],
+						name,
+						cfg.Organization.DisplayName,
+						mcpManager,
+						agentCfg.MCPServers,
+						limits,
+						agentCfg.Limits.MaxSequentialToolCalls,
+					)
+				}
 			}
 
 			continue

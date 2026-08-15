@@ -52,7 +52,19 @@ type MCPToolAgent struct {
 	mcpServerNames         []string
 	mcpLimits              mcp.Limits
 	maxSequentialToolCalls int
+	toolsRewriter          ToolsRewriterFunc
 }
+
+// ToolsRewriterFunc transforme les outils MCP bruts d'un spécialiste avant
+// qu'ils ne soient exposés au modèle, pour un Request donné. Introduit par
+// la Phase 13 (agenda) : un spécialiste MCP nu (ex: "research", Phase 12)
+// n'a besoin d'aucune transformation, mais le spécialiste agenda doit
+// réécrire systématiquement calendar_id (PLAN.md §9.2) et transformer les
+// outils d'écriture en un flux proposition/confirmation (PLAN.md §10.1) —
+// voir agenda.go. Un rewriter reçoit les outils déjà triés par nom et peut
+// retourner un ensemble différent (nombre, noms, schémas) : MCPToolAgent ne
+// suppose rien de plus que "une liste d'outils exploitable par le modèle".
+type ToolsRewriterFunc func(ctx context.Context, req Request, tools []llm.Tool) ([]llm.Tool, error)
 
 // NewMCPToolAgent construit un MCPToolAgent. mcpServerNames est la liste des
 // NOMS de serveurs MCP déclarés par l'agent (agentCfg.MCPServers) : Execute
@@ -99,6 +111,14 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 	}
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
+	if a.toolsRewriter != nil {
+		rewritten, err := a.toolsRewriter(ctx, req, tools)
+		if err != nil {
+			return Result{}, fmt.Errorf("agent: réécriture des outils mcp: %w", err)
+		}
+		tools = rewritten
+	}
+
 	messages := buildChatMessages(a.systemPrompt, a.agentName, a.orgDisplayName, req)
 
 	maxIterations := a.maxSequentialToolCalls
@@ -112,6 +132,16 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 	}
 
 	return Result{Reply: loopResult.Text, References: extractReferences(loopResult.ToolResults)}, nil
+}
+
+// WithToolsRewriter attache fn à a : les outils mcp bruts récupérés à
+// chaque Execute passent par fn avant d'être exposés au modèle. Retourne a
+// pour permettre le chaînage à la construction (voir
+// NewAgendaToolAgent). fn nil (comportement par défaut) ne modifie jamais
+// les outils, exactement le comportement de MCPToolAgent avant la Phase 13.
+func (a *MCPToolAgent) WithToolsRewriter(fn ToolsRewriterFunc) *MCPToolAgent {
+	a.toolsRewriter = fn
+	return a
 }
 
 // extractReferences extrait, déduplique (en conservant l'ordre de première
