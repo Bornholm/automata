@@ -95,3 +95,66 @@ func (r *ActionPlanRepository) ListActiveByConversation(ctx context.Context, q Q
 
 	return plans, nil
 }
+
+// ListByStatus retourne tous les plans d'actions dans le statut status,
+// triés par date de création croissante. Utilisée par
+// action.Engine.RecoverInterrupted (PLAN.md Phase 18) pour retrouver, au
+// redémarrage, les plans restés bloqués en "executing" par un crash du
+// processus.
+func (r *ActionPlanRepository) ListByStatus(ctx context.Context, q Querier, status string) ([]ActionPlan, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT id, org_id, conversation_id, created_by, scope, scope_id, status, expires_at, created_at, updated_at
+		FROM action_plans
+		WHERE status = ?
+		ORDER BY created_at ASC, id ASC
+	`, status)
+	if err != nil {
+		return nil, fmt.Errorf("liste des plans d'actions de statut %q: %w", status, err)
+	}
+	defer rows.Close()
+
+	var plans []ActionPlan
+	for rows.Next() {
+		var p ActionPlan
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.ConversationID, &p.CreatedBy, &p.Scope, &p.ScopeID, &p.Status, &p.ExpiresAt, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("lecture d'un plan d'actions de statut %q: %w", status, err)
+		}
+		plans = append(plans, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("parcours des plans d'actions de statut %q: %w", status, err)
+	}
+
+	return plans, nil
+}
+
+// ListRecent retourne au plus limit plans d'actions, triés par date de
+// création décroissante (les plus récents d'abord). Utilisée par la
+// commande d'administration "automata admin inspect" (PLAN.md Phase 18),
+// lecture seule.
+func (r *ActionPlanRepository) ListRecent(ctx context.Context, q Querier, limit int) ([]ActionPlan, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT id, org_id, conversation_id, created_by, scope, scope_id, status, expires_at, created_at, updated_at
+		FROM action_plans
+		ORDER BY created_at DESC, id DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("liste des plans d'actions récents: %w", err)
+	}
+	defer rows.Close()
+
+	var plans []ActionPlan
+	for rows.Next() {
+		var p ActionPlan
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.ConversationID, &p.CreatedBy, &p.Scope, &p.ScopeID, &p.Status, &p.ExpiresAt, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("lecture d'un plan d'actions récent: %w", err)
+		}
+		plans = append(plans, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("parcours des plans d'actions récents: %w", err)
+	}
+
+	return plans, nil
+}

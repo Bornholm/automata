@@ -66,6 +66,8 @@ func (e *mcpExecutor) Execute(ctx context.Context, identity model.ExecutionIdent
 			continue
 		}
 
+		args = withIdempotencyKey(args, tool.Parameters(), string(act.ID))
+
 		result, err := tool.Execute(ctx, args)
 		if err != nil {
 			return "", fmt.Errorf("exécution de l'outil %q: %w", act.ToolName, err)
@@ -78,3 +80,50 @@ func (e *mcpExecutor) Execute(ctx context.Context, identity model.ExecutionIdent
 }
 
 var _ Executor = &mcpExecutor{}
+
+// idempotencyKeyPropertyNames énumère, par ordre de préférence, les noms de
+// propriété conventionnels sous lesquels un serveur MCP peut déclarer
+// accepter une clé d'idempotence (PLAN.md §18, "ajouter des clés
+// d'idempotence aux actions MCP lorsque possible"). Le premier nom présent
+// dans le schéma du outil l'emporte.
+var idempotencyKeyPropertyNames = []string{"idempotency_key", "client_request_id", "request_id"}
+
+// idempotencyKeyProperty inspecte schema (le JSON Schema retourné par
+// llm.Tool.Parameters(), typiquement {"type":"object","properties":{...}})
+// et retourne le premier nom de propriété conventionnel qui y est déclaré,
+// s'il en existe un. Purement best-effort : de nombreux serveurs MCP réels
+// ne déclarent aucune de ces propriétés, auquel cas ok vaut false et aucune
+// injection n'a lieu — ce n'est en rien garanti par le protocole MCP.
+func idempotencyKeyProperty(schema map[string]any) (string, bool) {
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+
+	for _, name := range idempotencyKeyPropertyNames {
+		if _, ok := properties[name]; ok {
+			return name, true
+		}
+	}
+
+	return "", false
+}
+
+// withIdempotencyKey retourne args augmenté de la clé d'idempotence
+// actionID sous la propriété conventionnelle déclarée par schema, si une
+// telle propriété existe (voir idempotencyKeyProperty). N'alloue et ne
+// modifie rien si schema n'en déclare aucune : args est alors retourné tel
+// quel (PLAN.md §18, injection "lorsque possible" seulement).
+func withIdempotencyKey(args map[string]any, schema map[string]any, actionID string) map[string]any {
+	name, ok := idempotencyKeyProperty(schema)
+	if !ok {
+		return args
+	}
+
+	if args == nil {
+		args = make(map[string]any, 1)
+	}
+	args[name] = actionID
+
+	return args
+}

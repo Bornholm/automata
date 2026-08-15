@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/authorization"
 	"github.com/bornholm/automata/internal/config"
@@ -648,4 +650,291 @@ func TestEngine_RedemarrageAvantConfirmation(t *testing.T) {
 	if _, found, _ := store.GetByID(context.Background(), "home", model.ScopePersonal, "alice", "m1"); found {
 		t.Fatal("la mémoire aurait dû être supprimée après redémarrage")
 	}
+}
+
+// --- Phase 18 : reprise des plans interrompus ---------------------------
+
+func TestEngine_RecoverInterrupted_NotStarted(t *testing.T) {
+	storageCfg := testStorageConfig(t)
+	db := openTestDB(t, storageCfg)
+
+	authorizer := authorization.NewAuthorizer(appConfig(true))
+	fake := &fakeExecutor{}
+	engine := action.NewEngine(db, authorizer, nil, appConfig(true), action.WithExecutor("server-x", fake))
+
+	conv := testConversation("conv-1")
+	ensureConversation(t, db, conv)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	plan := persistence.ActionPlan{
+		ID:             persistence.ActionPlanID(uuid.NewString()),
+		OrgID:          conv.OrgID,
+		ConversationID: conv.ID,
+		CreatedBy:      "alice",
+		Scope:          model.ScopePersonal,
+		ScopeID:        "alice",
+		Status:         action.StatusExecuting,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	act := persistence.Action{
+		ID:                 persistence.ActionID(uuid.NewString()),
+		PlanID:             plan.ID,
+		Position:           0,
+		MCPServer:          "server-x",
+		ToolName:           "tool-x",
+		ArgumentsJSON:      "{}",
+		Summary:            "Action jamais commencée",
+		RequiredPermission: "memory.personal.write",
+		Status:             "proposed",
+		CreatedAt:          now,
+	}
+
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		plans := persistence.NewActionPlanRepository()
+		if err := plans.Insert(context.Background(), tx, plan); err != nil {
+			return err
+		}
+		actions := persistence.NewActionRepository()
+		return actions.Insert(context.Background(), tx, act)
+	})
+	if err != nil {
+		t.Fatalf("insertion directe du plan interrompu: %v", err)
+	}
+
+	if err := engine.RecoverInterrupted(context.Background()); err != nil {
+		t.Fatalf("RecoverInterrupted: %v", err)
+	}
+
+	reloadedAct := findAction(t, db, act.ID)
+	if reloadedAct.Status != action.StatusFailed {
+		t.Fatalf("statut de l'action non commencée: got %q, expected %q", reloadedAct.Status, action.StatusFailed)
+	}
+	if reloadedAct.ErrorCode == nil || *reloadedAct.ErrorCode != "interrupted_not_started" {
+		t.Fatalf("error_code attendu %q, obtenu %v", "interrupted_not_started", reloadedAct.ErrorCode)
+	}
+
+	reloadedPlan := findPlan(t, db, plan.ID)
+	if reloadedPlan.Status != action.StatusFailed {
+		t.Fatalf("statut du plan: got %q, expected %q", reloadedPlan.Status, action.StatusFailed)
+	}
+
+	if fake.calls != 0 {
+		t.Fatalf("l'exécuteur n'aurait jamais dû être appelé, calls=%d", fake.calls)
+	}
+
+	// Idempotence : un second appel ne change plus rien (aucun plan
+	// "executing" ne subsiste).
+	if err := engine.RecoverInterrupted(context.Background()); err != nil {
+		t.Fatalf("second RecoverInterrupted: %v", err)
+	}
+	if fake.calls != 0 {
+		t.Fatalf("l'exécuteur n'aurait toujours pas dû être appelé, calls=%d", fake.calls)
+	}
+}
+
+func TestEngine_RecoverInterrupted_UnknownOutcome(t *testing.T) {
+	storageCfg := testStorageConfig(t)
+	db := openTestDB(t, storageCfg)
+
+	authorizer := authorization.NewAuthorizer(appConfig(true))
+	fake := &fakeExecutor{}
+	engine := action.NewEngine(db, authorizer, nil, appConfig(true), action.WithExecutor("server-x", fake))
+
+	conv := testConversation("conv-1")
+	ensureConversation(t, db, conv)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	plan := persistence.ActionPlan{
+		ID:             persistence.ActionPlanID(uuid.NewString()),
+		OrgID:          conv.OrgID,
+		ConversationID: conv.ID,
+		CreatedBy:      "alice",
+		Scope:          model.ScopePersonal,
+		ScopeID:        "alice",
+		Status:         action.StatusExecuting,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	act := persistence.Action{
+		ID:                 persistence.ActionID(uuid.NewString()),
+		PlanID:             plan.ID,
+		Position:           0,
+		MCPServer:          "server-x",
+		ToolName:           "tool-x",
+		ArgumentsJSON:      "{}",
+		Summary:            "Action interrompue après l'appel externe",
+		RequiredPermission: "memory.personal.write",
+		Status:             action.StatusExecuting,
+		CreatedAt:          now,
+		StartedAt:          &now,
+		// CompletedAt volontairement nil : simule un crash entre l'appel
+		// MCP et l'enregistrement du résultat.
+	}
+
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		plans := persistence.NewActionPlanRepository()
+		if err := plans.Insert(context.Background(), tx, plan); err != nil {
+			return err
+		}
+		actions := persistence.NewActionRepository()
+		return actions.Insert(context.Background(), tx, act)
+	})
+	if err != nil {
+		t.Fatalf("insertion directe du plan interrompu: %v", err)
+	}
+
+	if err := engine.RecoverInterrupted(context.Background()); err != nil {
+		t.Fatalf("RecoverInterrupted: %v", err)
+	}
+
+	reloadedAct := findAction(t, db, act.ID)
+	if reloadedAct.Status != action.StatusFailed {
+		t.Fatalf("statut de l'action interrompue: got %q, expected %q", reloadedAct.Status, action.StatusFailed)
+	}
+	if reloadedAct.ErrorCode == nil || *reloadedAct.ErrorCode != "interrupted_unknown_outcome" {
+		t.Fatalf("error_code attendu %q, obtenu %v", "interrupted_unknown_outcome", reloadedAct.ErrorCode)
+	}
+	if reloadedAct.CompletedAt == nil {
+		t.Fatal("completed_at aurait dû être renseigné par la récupération")
+	}
+
+	reloadedPlan := findPlan(t, db, plan.ID)
+	if reloadedPlan.Status != action.StatusFailed {
+		t.Fatalf("statut du plan: got %q, expected %q", reloadedPlan.Status, action.StatusFailed)
+	}
+
+	if fake.calls != 0 {
+		t.Fatalf("l'exécuteur n'aurait jamais dû être rappelé, calls=%d", fake.calls)
+	}
+}
+
+func TestEngine_RecoverInterrupted_PartiallySucceeded(t *testing.T) {
+	storageCfg := testStorageConfig(t)
+	db := openTestDB(t, storageCfg)
+
+	authorizer := authorization.NewAuthorizer(appConfig(true))
+	engine := action.NewEngine(db, authorizer, nil, appConfig(true))
+
+	conv := testConversation("conv-1")
+	ensureConversation(t, db, conv)
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	plan := persistence.ActionPlan{
+		ID:             persistence.ActionPlanID(uuid.NewString()),
+		OrgID:          conv.OrgID,
+		ConversationID: conv.ID,
+		CreatedBy:      "alice",
+		Scope:          model.ScopePersonal,
+		ScopeID:        "alice",
+		Status:         action.StatusExecuting,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	succeededAct := persistence.Action{
+		ID:                 persistence.ActionID(uuid.NewString()),
+		PlanID:             plan.ID,
+		Position:           0,
+		MCPServer:          "server-x",
+		ToolName:           "tool-x",
+		ArgumentsJSON:      "{}",
+		Summary:            "Action déjà réussie avant le crash",
+		RequiredPermission: "memory.personal.write",
+		Status:             action.StatusSucceeded,
+		CreatedAt:          now,
+		StartedAt:          &now,
+		CompletedAt:        &now,
+	}
+	interruptedAct := persistence.Action{
+		ID:                 persistence.ActionID(uuid.NewString()),
+		PlanID:             plan.ID,
+		Position:           1,
+		MCPServer:          "server-x",
+		ToolName:           "tool-y",
+		ArgumentsJSON:      "{}",
+		Summary:            "Action interrompue par le crash",
+		RequiredPermission: "memory.personal.write",
+		Status:             action.StatusExecuting,
+		CreatedAt:          now,
+		StartedAt:          &now,
+	}
+
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		plans := persistence.NewActionPlanRepository()
+		if err := plans.Insert(context.Background(), tx, plan); err != nil {
+			return err
+		}
+		actions := persistence.NewActionRepository()
+		if err := actions.Insert(context.Background(), tx, succeededAct); err != nil {
+			return err
+		}
+		return actions.Insert(context.Background(), tx, interruptedAct)
+	})
+	if err != nil {
+		t.Fatalf("insertion directe du plan interrompu: %v", err)
+	}
+
+	if err := engine.RecoverInterrupted(context.Background()); err != nil {
+		t.Fatalf("RecoverInterrupted: %v", err)
+	}
+
+	reloadedPlan := findPlan(t, db, plan.ID)
+	if reloadedPlan.Status != action.StatusPartiallySucceeded {
+		t.Fatalf("statut du plan: got %q, expected %q", reloadedPlan.Status, action.StatusPartiallySucceeded)
+	}
+
+	reloadedSucceeded := findAction(t, db, succeededAct.ID)
+	if reloadedSucceeded.Status != action.StatusSucceeded {
+		t.Fatalf("l'action déjà réussie ne devrait pas être modifiée, got %q", reloadedSucceeded.Status)
+	}
+
+	reloadedInterrupted := findAction(t, db, interruptedAct.ID)
+	if reloadedInterrupted.Status != action.StatusFailed {
+		t.Fatalf("statut de l'action interrompue: got %q, expected %q", reloadedInterrupted.Status, action.StatusFailed)
+	}
+	if reloadedInterrupted.ErrorCode == nil || *reloadedInterrupted.ErrorCode != "interrupted_unknown_outcome" {
+		t.Fatalf("error_code attendu %q, obtenu %v", "interrupted_unknown_outcome", reloadedInterrupted.ErrorCode)
+	}
+}
+
+func findAction(t *testing.T, db *persistence.DB, id persistence.ActionID) persistence.Action {
+	t.Helper()
+
+	var (
+		a     persistence.Action
+		found bool
+	)
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		var err error
+		a, found, err = persistence.NewActionRepository().FindByID(context.Background(), tx, id)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("findAction: %v", err)
+	}
+	if !found {
+		t.Fatalf("findAction: action %q introuvable", id)
+	}
+	return a
+}
+
+func findPlan(t *testing.T, db *persistence.DB, id persistence.ActionPlanID) persistence.ActionPlan {
+	t.Helper()
+
+	var (
+		p     persistence.ActionPlan
+		found bool
+	)
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		var err error
+		p, found, err = persistence.NewActionPlanRepository().FindByID(context.Background(), tx, id)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("findPlan: %v", err)
+	}
+	if !found {
+		t.Fatalf("findPlan: plan %q introuvable", id)
+	}
+	return p
 }

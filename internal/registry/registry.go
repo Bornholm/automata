@@ -82,11 +82,25 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	authorizer := authorization.NewAuthorizer(cfg)
 
-	actionOpts := []action.Option{action.WithAuditEvents(persistence.NewAuditEventRepository())}
+	actionOpts := []action.Option{action.WithAuditEvents(persistence.NewAuditEventRepository()), action.WithLogger(logger)}
 	if memRes.store != nil {
 		actionOpts = append(actionOpts, action.WithMemoryStore(memRes.store))
 	}
 	actionEngine := action.NewEngine(db, authorizer, mcpManager, cfg, actionOpts...)
+
+	// Récupération des plans/actions interrompus par un crash du processus
+	// précédent (PLAN.md Phase 18), AVANT de traiter le moindre message ou
+	// tick de scheduler : sinon une confirmation entrante ou une occurrence
+	// planifiée pourrait cohabiter avec un plan resté bloqué en "executing".
+	// Choix délibéré : une erreur ici n'est pas fatale au démarrage — elle
+	// est journalisée clairement et signale un état à examiner via
+	// "automata admin inspect", mais bloquer tout le processus reviendrait à
+	// transformer un problème localisé (quelques plans bloqués, déjà
+	// inertes et sans effet supplémentaire tant qu'ils ne sont pas
+	// confirmables) en une indisponibilité totale du service.
+	if err := actionEngine.RecoverInterrupted(ctx); err != nil {
+		logger.ErrorContext(ctx, "registry: échec de la récupération des plans d'actions interrompus", "error", err)
+	}
 
 	handler, agents, err := buildConversationHandler(cfg, db, memRes.store, mcpManager, actionEngine)
 	if err != nil {

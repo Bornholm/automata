@@ -564,6 +564,126 @@ func TestScheduler_Tick_Timeout(t *testing.T) {
 	}
 }
 
+// TestScheduler_Tick_RestartDuringCron simule un redémarrage du processus
+// survenu PENDANT une exécution planifiée : l'ancienne exécution est restée
+// bloquée en "running" (le crash a empêché le defer/cancel de
+// context.WithTimeout d'invoquer failRun) depuis plus longtemps que
+// Concurrency.Timeout. PLAN.md §18, "redémarrage pendant cron" : le
+// prochain Tick doit détecter ce verrou périmé, le récupérer, et déclencher
+// normalement la nouvelle occurrence due (au lieu de rester bloqué
+// indéfiniment par la politique de concurrence "forbid").
+func TestScheduler_Tick_RestartDuringCron(t *testing.T) {
+	db := openTestDB(t)
+
+	at := time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC)
+	clock := newFakeClock(at)
+
+	sched := baseSchedule("restart-during-cron", "0 7 * * *", "UTC", "main", "whatsapp")
+	sched.Concurrency.Timeout = config.Duration(time.Minute)
+	cfg := &config.Config{Schedules: []config.Schedule{sched}}
+
+	fake := replyingAgent("résumé")
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	// Exécution restée "running" depuis 2 minutes (> Concurrency.Timeout de
+	// 1 minute), pour une occurrence antérieure à celle attendue à "at".
+	staleFor := at.Add(-24 * time.Hour).UTC().Format(time.RFC3339)
+	staleStartedAt := at.Add(-2 * time.Minute).UTC().Format(time.RFC3339)
+	insertRunningScheduledRunAt(t, db, sched.ID, staleFor, staleStartedAt)
+
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
+
+	if err := s.Tick(context.Background(), at); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	if got := fake.callCount(); got != 1 {
+		t.Fatalf("l'occurrence due devait être déclenchée malgré le verrou périmé: agent calls got %d, expected 1", got)
+	}
+}
+
+// TestScheduler_Tick_StaleLockErrorCode vérifie explicitement (PLAN.md §18,
+// "verrou périmé") que l'exécution "running" périmée est marquée "failed"
+// avec l'error_code dédié "stale_lock_recovered".
+func TestScheduler_Tick_StaleLockErrorCode(t *testing.T) {
+	db := openTestDB(t)
+
+	at := time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC)
+	clock := newFakeClock(at)
+
+	sched := baseSchedule("stale-lock", "0 7 * * *", "UTC", "main", "whatsapp")
+	sched.Concurrency.Timeout = config.Duration(time.Minute)
+	cfg := &config.Config{Schedules: []config.Schedule{sched}}
+
+	fake := replyingAgent("résumé")
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	staleFor := at.Add(-24 * time.Hour).UTC().Format(time.RFC3339)
+	staleStartedAt := at.Add(-2 * time.Minute).UTC().Format(time.RFC3339)
+	staleID := insertRunningScheduledRunAt(t, db, sched.ID, staleFor, staleStartedAt)
+
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
+
+	if err := s.Tick(context.Background(), at); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	staleRun := findRunByID(t, db, staleID)
+	if staleRun.Status != scheduler.StatusFailed {
+		t.Fatalf("statut de l'exécution périmée: got %q, expected %q", staleRun.Status, scheduler.StatusFailed)
+	}
+	if staleRun.ErrorCode == nil || *staleRun.ErrorCode != "stale_lock_recovered" {
+		t.Fatalf("error_code attendu %q, obtenu %v", "stale_lock_recovered", staleRun.ErrorCode)
+	}
+}
+
+// TestScheduler_Tick_LockNotYetStale vérifie qu'une exécution "running"
+// dont la durée écoulée n'excède PAS encore Concurrency.Timeout n'est en
+// aucun cas considérée comme périmée : la nouvelle occurrence reste bloquée
+// par la politique "forbid", comme avant cette phase
+// (TestScheduler_Tick_ConcurrencyForbid).
+func TestScheduler_Tick_LockNotYetStale(t *testing.T) {
+	db := openTestDB(t)
+
+	at := time.Date(2024, 1, 2, 7, 0, 0, 0, time.UTC)
+	clock := newFakeClock(at)
+
+	sched := baseSchedule("lock-not-stale", "0 7 * * *", "UTC", "main", "whatsapp")
+	sched.Concurrency.Timeout = config.Duration(10 * time.Minute)
+	cfg := &config.Config{Schedules: []config.Schedule{sched}}
+
+	fake := replyingAgent("résumé")
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	staleFor := at.Add(-24 * time.Hour).UTC().Format(time.RFC3339)
+	startedAt := at.Add(-time.Minute).UTC().Format(time.RFC3339)
+	runningID := insertRunningScheduledRunAt(t, db, sched.ID, staleFor, startedAt)
+
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
+
+	if err := s.Tick(context.Background(), at); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	if got := fake.callCount(); got != 0 {
+		t.Fatalf("occurrence due ne devrait pas se déclencher (verrou pas encore périmé): agent calls got %d, expected 0", got)
+	}
+
+	running := findRunByID(t, db, runningID)
+	if running.Status != scheduler.StatusRunning {
+		t.Fatalf("le verrou pas encore périmé n'aurait pas dû être touché, statut got %q", running.Status)
+	}
+}
+
 func TestScheduler_Tick_MinimalPermissionsIdentity(t *testing.T) {
 	db := openTestDB(t)
 
@@ -777,6 +897,62 @@ func insertRunningScheduledRun(t *testing.T, db *persistence.DB, scheduleID, sch
 	if err != nil {
 		t.Fatalf("insertion d'une exécution en cours: %v", err)
 	}
+}
+
+// insertRunningScheduledRunAt insère, comme insertRunningScheduledRun, une
+// exécution "running", mais avec un started_at explicite (au lieu de
+// time.Now()) : nécessaire pour simuler un verrou périmé (PLAN.md §18),
+// c'est-à-dire une exécution "running" depuis plus longtemps que
+// Concurrency.Timeout par rapport à l'horloge (fake) du Scheduler sous
+// test.
+func insertRunningScheduledRunAt(t *testing.T, db *persistence.DB, scheduleID, scheduledFor, startedAt string) persistence.ScheduledRunID {
+	t.Helper()
+
+	id := persistence.ScheduledRunID("running-" + scheduledFor)
+	now := time.Now().UTC().Format(time.RFC3339)
+
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		return persistence.NewScheduledRunRepository().Insert(context.Background(), tx, persistence.ScheduledRun{
+			ID:           id,
+			ScheduleID:   scheduleID,
+			ScheduledFor: scheduledFor,
+			StartedAt:    &startedAt,
+			Status:       scheduler.StatusRunning,
+			PrincipalID:  "scheduler-readonly",
+			OrgID:        "home",
+			Scope:        model.ScopeOrg,
+			ScopeID:      "home",
+			AgentID:      "main",
+			CreatedAt:    now,
+		})
+	})
+	if err != nil {
+		t.Fatalf("insertion d'une exécution en cours (started_at explicite): %v", err)
+	}
+
+	return id
+}
+
+func findRunByID(t *testing.T, db *persistence.DB, id persistence.ScheduledRunID) persistence.ScheduledRun {
+	t.Helper()
+
+	var (
+		run   persistence.ScheduledRun
+		found bool
+	)
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		var err error
+		run, found, err = persistence.NewScheduledRunRepository().FindByID(context.Background(), tx, id)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	if !found {
+		t.Fatalf("exécution planifiée %q introuvable", id)
+	}
+
+	return run
 }
 
 func markRunSucceeded(t *testing.T, db *persistence.DB, scheduleID, scheduledFor string) {

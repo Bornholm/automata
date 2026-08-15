@@ -120,6 +120,39 @@ func (r *ScheduledRunRepository) UpdateDeliveryStatus(ctx context.Context, q Que
 	return nil
 }
 
+// ListRecent retourne au plus limit exécutions planifiées, toutes
+// schedule_id confondus, triées par scheduled_for décroissant (les plus
+// récentes d'abord). Utilisée par la commande d'administration "automata
+// admin inspect" (PLAN.md Phase 18), lecture seule.
+func (r *ScheduledRunRepository) ListRecent(ctx context.Context, q Querier, limit int) ([]ScheduledRun, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT id, schedule_id, scheduled_for, started_at, completed_at, status, principal_id, org_id,
+			scope, scope_id, agent_id, error_code, delivery_status, created_at
+		FROM scheduled_runs
+		ORDER BY scheduled_for DESC, id DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("liste des exécutions planifiées récentes: %w", err)
+	}
+	defer rows.Close()
+
+	var runs []ScheduledRun
+	for rows.Next() {
+		var s ScheduledRun
+		if err := rows.Scan(&s.ID, &s.ScheduleID, &s.ScheduledFor, &s.StartedAt, &s.CompletedAt, &s.Status, &s.PrincipalID, &s.OrgID,
+			&s.Scope, &s.ScopeID, &s.AgentID, &s.ErrorCode, &s.DeliveryStatus, &s.CreatedAt); err != nil {
+			return nil, fmt.Errorf("lecture d'une exécution planifiée récente: %w", err)
+		}
+		runs = append(runs, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("parcours des exécutions planifiées récentes: %w", err)
+	}
+
+	return runs, nil
+}
+
 func scanScheduledRun(row *sql.Row) (ScheduledRun, bool, error) {
 	var s ScheduledRun
 	if err := row.Scan(&s.ID, &s.ScheduleID, &s.ScheduledFor, &s.StartedAt, &s.CompletedAt, &s.Status, &s.PrincipalID, &s.OrgID,

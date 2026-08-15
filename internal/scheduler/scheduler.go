@@ -55,12 +55,13 @@ const (
 // Codes d'erreur courts persistés dans scheduled_runs.error_code /
 // delivery_attempts.error_code (même convention que internal/action.Engine).
 const (
-	errCodeAgentNotFound     = "agent_not_found"
-	errCodeExecutionError    = "execution_error"
-	errCodeUnsupportedPolicy = "unsupported_actions_policy"
-	errCodeProviderNotFound  = "provider_not_found"
-	errCodeSendFailed        = "send_failed"
-	errCodePlanCreationError = "action_plan_creation_error"
+	errCodeAgentNotFound      = "agent_not_found"
+	errCodeExecutionError     = "execution_error"
+	errCodeUnsupportedPolicy  = "unsupported_actions_policy"
+	errCodeProviderNotFound   = "provider_not_found"
+	errCodeSendFailed         = "send_failed"
+	errCodePlanCreationError  = "action_plan_creation_error"
+	errCodeStaleLockRecovered = "stale_lock_recovered"
 )
 
 // Types d'événements d'audit émis par le scheduler (PLAN.md §17, "auditer
@@ -269,10 +270,13 @@ func (s *Scheduler) triggerOccurrence(ctx context.Context, sched config.Schedule
 
 	if sched.Concurrency.Policy != config.ConcurrencyPolicyAllow {
 		// Défaut (y compris valeur vide) : forbid, voir PLAN.md §11.4.
-		var running bool
+		var (
+			running      persistence.ScheduledRun
+			runningFound bool
+		)
 		err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
-			_, found, err := s.scheduledRuns.FindRunningByScheduleID(ctx, tx, sched.ID)
-			running = found
+			var err error
+			running, runningFound, err = s.scheduledRuns.FindRunningByScheduleID(ctx, tx, sched.ID)
 			return err
 		})
 		if err != nil {
@@ -280,9 +284,18 @@ func (s *Scheduler) triggerOccurrence(ctx context.Context, sched config.Schedule
 			return false
 		}
 
-		if running {
-			s.logger.InfoContext(ctx, "scheduler: occurrence ignorée (exécution déjà en cours, politique forbid)", logCtx...)
-			return false
+		if runningFound {
+			if !s.isStaleLock(sched, running) {
+				s.logger.InfoContext(ctx, "scheduler: occurrence ignorée (exécution déjà en cours, politique forbid)", logCtx...)
+				return false
+			}
+
+			// Verrou périmé (PLAN.md §18, "verrou périmé") : l'exécution
+			// "running" bloquée depuis plus longtemps que
+			// sched.Concurrency.Timeout ne peut être due qu'à un crash du
+			// PROCESSUS entier (voir isStaleLock) — elle est récupérée et
+			// cette occurrence se déclenche normalement.
+			s.recoverStaleLock(ctx, sched, running, logCtx)
 		}
 	}
 
@@ -301,6 +314,67 @@ func (s *Scheduler) triggerOccurrence(ctx context.Context, sched config.Schedule
 	s.executeAndDeliver(ctx, sched, runID)
 
 	return true
+}
+
+// isStaleLock détecte un verrou de concurrence "forbid" périmé (PLAN.md §18,
+// "verrou périmé") : une exécution planifiée "running" dont la durée
+// écoulée depuis started_at (jusqu'à s.clock.Now(), pas jusqu'à l'occurrence
+// candidate, qui peut être un rattrapage dans le passé) dépasse déjà
+// sched.Concurrency.Timeout — le MÊME délai déjà utilisé comme timeout
+// d'exécution de l'agent (context.WithTimeout, voir executeAndDeliver).
+//
+// Aucune marge de sécurité supplémentaire n'est ajoutée au-delà de ce
+// timeout : il borne déjà précisément la durée maximale légitime d'une
+// exécution normale, puisque c'est exactement le délai passé à
+// context.WithTimeout pour CETTE MÊME exécution. Ce cas ne devrait
+// normalement jamais se produire si ce timeout applicatif fonctionne
+// correctement : son defer/cancel garantit un appel à succeedRun/failRun
+// avant que Tick ne revienne. isStaleLock est un filet de sécurité pour un
+// crash du PROCESSUS ENTIER (kill -9, panique non récupérée, coupure
+// d'alimentation), où même ce defer n'a pas pu s'exécuter, laissant
+// l'exécution bloquée indéfiniment en "running" et donc bloquant, sous
+// politique "forbid", toute occurrence future de ce schedule.
+func (s *Scheduler) isStaleLock(sched config.Schedule, running persistence.ScheduledRun) bool {
+	timeout := sched.Concurrency.Timeout.Duration()
+	if timeout <= 0 || running.StartedAt == nil {
+		return false
+	}
+
+	startedAt, err := time.Parse(time.RFC3339, *running.StartedAt)
+	if err != nil {
+		return false
+	}
+
+	return s.clock.Now().Sub(startedAt) >= timeout
+}
+
+// recoverStaleLock marque running (déjà détectée comme périmée par
+// isStaleLock) comme "failed", error_code "stale_lock_recovered". Une
+// erreur d'écriture est journalisée mais ne bloque pas le déclenchement de
+// la nouvelle occurrence par l'appelant : au pire, la prochaine tentative de
+// récupération réessaiera au tick suivant.
+func (s *Scheduler) recoverStaleLock(ctx context.Context, sched config.Schedule, running persistence.ScheduledRun, logCtx []any) {
+	completedAt := s.clock.Now().UTC().Format(time.RFC3339)
+	code := errCodeStaleLockRecovered
+
+	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
+		return s.scheduledRuns.UpdateStatus(ctx, tx, running.ID, StatusFailed, &completedAt, &code)
+	})
+	if err != nil {
+		s.logger.ErrorContext(ctx, "scheduler: échec de la récupération du verrou périmé", append(logCtx, "stale_scheduled_run_id", running.ID, "error", err)...)
+		return
+	}
+
+	s.logger.WarnContext(ctx, "scheduler: verrou de concurrence périmé récupéré (crash de processus suspecté)",
+		append(logCtx, "stale_scheduled_run_id", running.ID, "started_at", derefOr(running.StartedAt, ""))...)
+}
+
+// derefOr retourne *p, ou fallback si p est nil.
+func derefOr(p *string, fallback string) string {
+	if p == nil {
+		return fallback
+	}
+	return *p
 }
 
 // recordOccurrence enregistre immédiatement, au sein d'une transaction,

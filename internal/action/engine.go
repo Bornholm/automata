@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -79,6 +80,7 @@ type Engine struct {
 	planTTL     time.Duration
 	executors   map[string]Executor
 	auditEvents *persistence.AuditEventRepository
+	logger      *slog.Logger
 }
 
 // Option configure un Engine à la construction.
@@ -141,6 +143,18 @@ func WithAuditEvents(repo *persistence.AuditEventRepository) Option {
 	}
 }
 
+// WithLogger fournit le logger utilisé par Engine.RecoverInterrupted
+// (PLAN.md Phase 18) pour journaliser le nombre de plans et d'actions
+// récupérés au démarrage. slog.Default() est utilisé si jamais fournie ou
+// si logger est nil.
+func WithLogger(logger *slog.Logger) Option {
+	return func(e *Engine) {
+		if logger != nil {
+			e.logger = logger
+		}
+	}
+}
+
 // NewEngine construit un Engine. mcpManager peut être nil si aucune action
 // exécutée par cet Engine ne passe par un serveur MCP (auquel cas seuls les
 // exécuteurs explicitement enregistrés via WithMemoryStore/WithExecutor
@@ -156,6 +170,7 @@ func NewEngine(db *persistence.DB, authorizer *authorization.Authorizer, mcpMana
 		now:        time.Now,
 		planTTL:    defaultPlanTTL,
 		executors:  make(map[string]Executor),
+		logger:     slog.Default(),
 	}
 
 	for _, opt := range opts {
@@ -230,6 +245,117 @@ func (e *Engine) CreatePlan(ctx context.Context, identity model.ExecutionIdentit
 	}
 
 	return plan, formatPlanProposal(rows, e.planTTL), nil
+}
+
+// RecoverInterrupted recherche, au démarrage du processus, les plans
+// d'actions restés bloqués en statut "executing" (PLAN.md §18, "reprendre
+// les plans interrompus", "identifier les états ambigus"). Un tel plan ne
+// peut résulter que d'un crash du processus AU MILIEU de confirmPlan, entre
+// la transition initiale vers "executing" (ligne 323 environ) et la
+// persistance de son statut final (succeeded/partially_succeeded/failed) :
+// en usage normal, confirmPlan ne retourne jamais avant d'avoir écrit ce
+// statut final.
+//
+// Pour chaque action de ces plans :
+//
+//   - "executing" SANS completed_at : l'appel externe (MCP ou interne) a
+//     peut-être eu lieu — le crash a pu survenir n'importe où entre l'appel
+//     de Executor.Execute et l'enregistrement de son résultat
+//     (executeAction, points 8-9). Son issue réelle est donc INCONNUE : PAS
+//     DE REJEU. Elle est marquée "failed", error_code
+//     "interrupted_unknown_outcome".
+//
+//   - "proposed" (jamais commencée) dans un plan "executing" : cette action
+//     n'a produit aucun effet externe (le crash a eu lieu avant même le
+//     premier appel d'executeAction pour elle), mais elle N'EST PAS reprise
+//     automatiquement pour autant. Choix délibéré, plus prudent qu'une
+//     reprise automatique : PLAN.md §10.5 exige de recharger le plan,
+//     revérifier son état, son expiration, l'identité du confirmateur, les
+//     permissions et les ressources "au moment de l'exécution", juste avant
+//     chaque action — c'est-à-dire re-vérifier un contexte de confiance
+//     fourni par un humain (ou une identité de service) qui, ici, n'est
+//     justement plus présent pour re-confirmer quoi que ce soit après un
+//     redémarrage. Rejouer une écriture externe sans cette confirmation
+//     fraîche romprait la garantie centrale de la Phase 15
+//     ("ne jamais faire confiance uniquement à l'autorisation obtenue lors
+//     de la proposition"). Elle est donc marquée "failed", error_code
+//     "interrupted_not_started" ; un humain qui veut toujours cette action
+//     doit la reformuler pour obtenir une nouvelle proposition et la
+//     confirmer explicitement.
+//
+//   - toute action déjà "succeeded" ou "failed" est laissée inchangée.
+//
+// Le plan passe ensuite à "partially_succeeded" (si au moins une de ses
+// actions avait déjà "succeeded" avant le crash) ou "failed" (sinon) :
+// jamais laissé bloqué en "executing".
+//
+// Idempotente et sûre à rappeler même s'il n'y a rien à récupérer (aucun
+// plan "executing" ne signifie aucune opération). Doit être appelée UNE
+// FOIS au démarrage du processus, avant de traiter le moindre message ou
+// tick de scheduler (voir internal/registry.Run).
+func (e *Engine) RecoverInterrupted(ctx context.Context) error {
+	var (
+		recoveredPlans   int
+		recoveredActions int
+	)
+
+	err := e.db.WithTx(ctx, func(tx *sql.Tx) error {
+		plans, err := e.plans.ListByStatus(ctx, tx, StatusExecuting)
+		if err != nil {
+			return fmt.Errorf("recherche des plans interrompus: %w", err)
+		}
+
+		now := e.now().UTC().Format(time.RFC3339)
+
+		for _, plan := range plans {
+			actions, err := e.actions.ListByPlanID(ctx, tx, plan.ID)
+			if err != nil {
+				return fmt.Errorf("liste des actions du plan interrompu %q: %w", plan.ID, err)
+			}
+
+			succeeded := 0
+			for _, act := range actions {
+				switch {
+				case act.Status == StatusSucceeded:
+					succeeded++
+				case act.Status == "proposed":
+					code := "interrupted_not_started"
+					if err := e.actions.UpdateStatus(ctx, tx, act.ID, StatusFailed, nil, &now, &code); err != nil {
+						return fmt.Errorf("récupération de l'action non commencée %q: %w", act.ID, err)
+					}
+					recoveredActions++
+				case act.Status == StatusExecuting && act.CompletedAt == nil:
+					code := "interrupted_unknown_outcome"
+					if err := e.actions.UpdateStatus(ctx, tx, act.ID, StatusFailed, nil, &now, &code); err != nil {
+						return fmt.Errorf("récupération de l'action interrompue %q: %w", act.ID, err)
+					}
+					recoveredActions++
+				}
+			}
+
+			finalStatus := StatusFailed
+			if succeeded > 0 {
+				finalStatus = StatusPartiallySucceeded
+			}
+
+			if err := e.plans.UpdateStatus(ctx, tx, plan.ID, finalStatus, now); err != nil {
+				return fmt.Errorf("mise à jour du statut du plan interrompu %q: %w", plan.ID, err)
+			}
+			recoveredPlans++
+		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("action: récupération des plans interrompus: %w", err)
+	}
+
+	if e.logger != nil {
+		e.logger.InfoContext(ctx, "action: récupération des plans interrompus terminée",
+			"plans_recovered", recoveredPlans, "actions_recovered", recoveredActions)
+	}
+
+	return nil
 }
 
 // HandleCommand traite une commande "confirmer"/"annuler" reçue dans la

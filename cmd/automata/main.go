@@ -64,6 +64,7 @@ func newRootCommand(logger *slog.Logger) *cobra.Command {
 
 	root.AddCommand(newConfigCommand())
 	root.AddCommand(newMemoryCommand(logger))
+	root.AddCommand(newAdminCommand())
 
 	return root
 }
@@ -190,6 +191,67 @@ func newMemoryReindexCommand(logger *slog.Logger) *cobra.Command {
 			}
 
 			fmt.Fprintln(cmd.OutOrStdout(), "réindexation terminée avec succès")
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+// newAdminCommand construit la commande "admin" et sa sous-commande
+// "inspect" (PLAN.md §18, "ajouter une commande d'inspection
+// administrative").
+func newAdminCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "admin",
+		Short: "Commandes d'administration en lecture seule",
+	}
+
+	cmd.AddCommand(newAdminInspectCommand())
+
+	return cmd
+}
+
+// newAdminInspectCommand construit la sous-commande "admin inspect" :
+// lecture seule, aucune mutation. Le drapeau -kind sélectionne la vue
+// ("plans" par défaut, ou "runs"), sur le même modèle que les autres
+// sous-commandes de ce fichier (drapeau -config convention Go).
+func newAdminInspectCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                "inspect",
+		Short:              "Inspecte l'état des plans d'actions et des exécutions planifiées (lecture seule)",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fs := flag.NewFlagSet("inspect", flag.ContinueOnError)
+			fs.SetOutput(cmd.ErrOrStderr())
+
+			configPath := fs.String("config", "", "chemin du fichier de configuration YAML (requis)")
+			kind := fs.String("kind", "plans", "vue à inspecter: plans|runs")
+
+			if err := fs.Parse(args); err != nil {
+				return errSilent
+			}
+
+			if *configPath == "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "le drapeau -config est requis")
+				return errSilent
+			}
+
+			cfg, err := config.Load(*configPath)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "configuration invalide:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
+
+			if err := registry.AdminInspect(cmd.Context(), cfg, *kind, cmd.OutOrStdout()); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "inspection échouée:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
 
 			return nil
 		},
