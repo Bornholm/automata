@@ -1,0 +1,312 @@
+# Modèle de sécurité — Automata
+
+Ce document est le livrable de la Phase 19 (« Sécurité », PLAN.md) : une revue
+dédiée avant déploiement réel. Il décrit le modèle de menace retenu, les
+frontières de confiance appliquées par le code, et l'état constaté pour
+chacun des dix points de vérification de la Phase 19, à la date de cette
+revue (dépôt jusqu'au commit `6b21114`).
+
+## 1. Modèle de menace
+
+Automata reçoit des entrées de trois origines non fiables :
+
+1. **Messages WhatsApp** (et futurs canaux Go Courier), envoyés par :
+   - des principaux **connus** (déclarés dans `identities.principals` /
+     `origins`), dont l'identité applicative est résolue de façon fiable,
+     mais dont le **contenu** du message reste un texte arbitraire ;
+   - des principaux **inconnus** (aucune entrée `origins` correspondante) —
+     doivent être rejetés silencieusement, jamais traités ;
+   - des **membres de groupes non déclarés** (aucun `channels` correspondant,
+     ou canal déclaré mais expéditeur absent de `members`) — même exigence de
+     rejet.
+   - Le provider Go Courier ne filtre rien lui-même (voir
+     `docs/integration-inventory.md`, §1, « les providers ne filtrent rien,
+     y compris les groupes non déclarés ») : la robustesse est entièrement à
+     la charge d'`internal/identity` et `internal/authorization`.
+2. **Serveurs MCP externes**, potentiellement :
+   - **compromis** : peuvent renvoyer un résultat d'outil contenant du texte
+     conçu pour être réinjecté dans le contexte du LLM (injection de prompt
+     indirecte) ;
+   - **lents ou indisponibles** : doivent être bornés par un timeout et ne
+     jamais bloquer indéfiniment le reste du système.
+3. **Contenu de message** conçu pour manipuler le LLM (injection de prompt
+   directe) : un message utilisateur peut littéralement demander à
+   l'assistant d'« ignorer les règles précédentes », de changer de portée, de
+   révéler des identifiants internes, ou de confirmer une action sans
+   confirmation humaine réelle.
+
+Dans les trois cas, l'hypothèse de travail est la même : **le LLM est un
+composant non fiable dont la sortie (texte de réponse et arguments de
+tool-call) ne doit jamais, par elle-même, constituer une décision de
+sécurité.**
+
+## 2. Frontières de confiance
+
+### Ce que le LLM peut influencer
+
+- Le texte de sa réponse à l'utilisateur.
+- Le choix de déléguer à tel ou tel sous-agent conceptuel (`delegate_to_*`),
+  parmi ceux explicitement proposés par l'application.
+- Le choix d'appeler un outil et les arguments **sémantiques** de cet appel
+  (le contenu d'une mémoire à retenir, le titre d'un événement, le texte
+  d'une recherche).
+- Le choix de proposer une action (qui reste soumise à confirmation humaine
+  explicite et à revérification complète avant exécution, PLAN.md §10.5).
+
+### Ce que le LLM ne peut JAMAIS influencer
+
+- L'**identité** d'exécution (`model.ExecutionIdentity`) : résolue par
+  `internal/identity.Resolver` à partir de l'origine réelle du message,
+  avant tout appel au LLM.
+- La **portée** (`personal`/`group`/`org`) et l'**identifiant de portée**
+  (`ScopeID`) : dérivés de la conversation, jamais d'un paramètre de
+  tool-call.
+- Les **permissions effectives** : résolues par
+  `internal/identity.EffectivePermissions` à partir de la configuration, et
+  vérifiées par `internal/authorization.Authorizer.Authorize`, jamais par le
+  contenu généré par le modèle.
+- Les **identifiants de ressources externes résolus** (`calendar_id`,
+  `list_id`) : résolus par `internal/resource.Resolve*` à partir de la
+  portée de la conversation et de la configuration, puis réinjectés de force
+  dans les arguments d'outil — toute valeur fournie par le modèle sous ces
+  noms est écrasée avant l'appel réel (voir §4, point A.2).
+- L'**autorisation d'une action sensible** : une action proposée n'est
+  jamais exécutée sur la seule foi de la proposition ; elle exige une
+  confirmation humaine explicite (commande littérale `confirmer`/`annuler`,
+  interceptée **avant** tout appel au LLM par
+  `internal/conversation.Handler.Handle`, voir `action.ParseCommand`) puis
+  une revérification complète des permissions au moment de l'exécution
+  (`internal/action.Engine.executeAction`, étape 5 : « ne jamais se fier à
+  l'autorisation obtenue lors de la proposition »).
+
+## 3. État constaté par point de vérification (PLAN.md Phase 19)
+
+### A.1 — Frontières d'autorisation
+
+**Conforme.** `authorization.Authorizer.Authorize` est appelé à chaque point
+d'écriture/lecture sensible identifié :
+
+- `internal/agent/memory_tools.go` : recherche mémoire
+  (`searchAuthorizedScopes`), écriture (`newRememberTool`), suppression
+  (`findByIDForDelete`) — trois appels, un par opération.
+- `internal/action/engine.go` (`executeAction`, étape 5) : revérification
+  systématique des permissions au moment de la confirmation d'un plan
+  d'actions, indépendamment de l'autorisation obtenue à la proposition.
+
+**Cas particulier documenté — agenda/todo** : `internal/agent/agenda.go` et
+`internal/agent/todo.go` n'appellent **pas** `Authorizer.Authorize`
+directement. La protection y est obtenue par un mécanisme différent mais
+équivalent : `calendar_id`/`list_id` sont résolus une seule fois, à la
+construction des outils du tour, exclusivement à partir de
+`req.Conversation.Scope`/`ScopeID` (déjà déterminés par
+`internal/identity.Resolver` avant que le LLM soit appelé), via
+`resource.ResolveCalendarID`/`ResolveTodoListID`. Aucun appel de tool-call,
+qu'il s'agisse de la proposition ou de la confirmation, ne peut faire varier
+la ressource ciblée : la valeur est capturée dans la fermeture du wrapper
+d'outil, pas relue depuis les arguments du modèle. Ce choix est assumé et
+documenté dans le code (`agenda.go` lignes 344-356, `todo.go` équivalent) :
+il n'y a donc pas de contournement de l'autorisation, mais une architecture
+où la question ne se pose pas (aucune portée alternative n'est jamais
+atteignable). Aucune décision de portée/permission/ressource ne dépend d'une
+valeur fournie par le modèle : vérifié par grep exhaustif des accès à
+`internal/resource` (deux points d'entrée seulement, tous deux alimentés par
+`model.Scope`/`model.ScopeID` de l'identité résolue, jamais par
+`map[string]any` d'un tool-call).
+
+### A.2 — Arguments MCP forgés
+
+**Conforme, vérifié sans régression.**
+
+- `internal/agent/agenda.go` (`wrapCalendarWriteTool`, `wrapCalendarReadTool`)
+  et `internal/agent/todo.go` (mécanisme équivalent) réécrivent
+  systématiquement `calendar_id`/`list_id` avec la valeur résolue par
+  l'application, quelle que soit la valeur envoyée par le modèle sous ce nom
+  — pour les lectures directement à l'exécution, pour les écritures à la
+  fois à la proposition (`propose`) et implicitement à la confirmation
+  (`consume` ne relit jamais les arguments d'un nouvel appel du modèle : il
+  retourne les arguments déjà résolus et figés à la proposition, stockés en
+  mémoire process, jamais fournis à nouveau par le modèle).
+- `internal/action/executors.go` (`mcpExecutor.Execute`, Phase 15/18) :
+  **limitation connue, correctement documentée dans le code** (`engine.go`,
+  commentaire de l'étape 6 dans `executeAction`) — cet exécuteur générique ne
+  résout aucune ressource externe fraîche au moment de la confirmation, car
+  aucun producteur d'action actuel (seul `memory.forget` passe par
+  `internal/action` à ce jour) n'a de ressource externe à réécrire ; le point
+  d'extension existe (`Executor.Execute` reçoit `plan`/`act` et peut
+  résoudre toute ressource nécessaire) mais n'est pas encore exercé.
+  Agenda/todo, qui ont de vraies ressources externes à protéger, ne
+  transitent **pas** par ce chemin (voir A.1) : ils utilisent leur propre
+  mécanisme de proposition/confirmation en mémoire, qui réécrit
+  systématiquement la ressource, comme démontré ci-dessus. Il n'existe donc
+  aujourd'hui aucun chemin réel où un argument MCP forgé contenant un
+  identifiant de ressource externe atteindrait un appel MCP sans réécriture.
+  À surveiller si un futur producteur d'action MCP-externe est migré vers
+  `internal/action` sans porter sa propre logique de résolution.
+
+### A.3 — Injection de prompt
+
+**Conforme.** `internal/agent/prompt.go` :
+
+- `InvariantRules` est une constante Go, jamais interprétée comme un
+  template (pas de `{{ }}`, pas de moteur de substitution) : c'est un texte
+  statique concaténé tel quel.
+- `BuildContextBlock` n'injecte que les 4 variables autorisées par PLAN.md
+  §7.3 (agent, organisation, portée, type de canal), toutes dérivées de
+  `model.ExecutionIdentity` déjà résolue par l'application — jamais de
+  contenu utilisateur, jamais de résultat d'outil.
+- Aucun point du pipeline ne permet à un contenu de message utilisateur de
+  modifier la configuration ou les permissions : le texte du message
+  n'atteint le LLM que comme message `user` dans la liste `messages`
+  (`buildChatMessages`), jamais interpolé dans le system prompt ou le bloc
+  de contexte.
+- `InvariantRules` (règle explicite, alinéa final) prime explicitement sur
+  toute instruction contraire provenant d'un message utilisateur ou d'un
+  contenu récupéré via un outil — mesure de mitigation, pas une garantie
+  absolue : un LLM reste, par nature, influençable par son contexte. C'est
+  pourquoi les décisions réelles (§2) ne dépendent jamais de cette
+  discipline de prompt seule.
+
+### A.4 — Chemins de fichiers de prompts
+
+**Limitation connue, risque évalué comme faible, aucune restriction
+ajoutée.** `internal/config/resolve.go` (`loadSystemPrompts`) résout
+`system_prompt.file` via `resolvePath(baseDir, p)`, un simple
+`filepath.Join` sans neutralisation de `../`. Un chemin pourrait donc
+s'échapper du répertoire du fichier de configuration. Risque jugé faible et
+assumé : le fichier de configuration YAML est administré (déployé par
+l'opérateur du service, jamais par un attaquant distant — aucune valeur
+d'entrée réseau n'atteint ce champ), et une restriction stricte casserait
+des usages légitimes (prompts partagés en dehors de l'arborescence de
+configuration). Ajouter une neutralisation ici serait une abstraction
+spéculative sans menace réelle identifiée (AGENTS.md : « pas d'abstractions
+spéculatives ») ; documenté ici plutôt que corrigé.
+
+### A.5 — Permissions des fichiers SQLite
+
+**Corrigé.** `internal/persistence/db.go` (`Open`) :
+
+- Le répertoire parent est désormais créé avec `0o700` (au lieu de `0o755`).
+- Le fichier de base est pré-créé explicitement avec `0o600` via
+  `os.OpenFile`/`os.Chmod` avant l'ouverture par le driver SQLite, qui sinon
+  applique le umask du processus (potentiellement `0644`, lisible par
+  d'autres utilisateurs du système).
+- Les fichiers annexes `-wal`/`-shm` (mode `journal_mode=WAL`) sont
+  également restreints à `0o600` au meilleur effort après migration.
+- Le même durcissement a été étendu à `internal/registry/memory.go`
+  (répertoires du store mémoire Amoxtli et de l'index bleve, `0o755` →
+  `0o700`) : ces répertoires contiennent également des données personnelles
+  (mémoires retenues). Le fichier SQLite du store Amoxtli lui-même est ouvert
+  par `amoxtligorm.NewSQLiteStore`, hors du contrôle direct d'`automata` :
+  **limitation connue**, ses permissions dépendent de l'umask du processus ;
+  seul le répertoire parent est garanti restreint.
+- Test ajouté : `internal/persistence/db_test.go`,
+  `TestOpenRestrictsFilePermissions`.
+
+### A.6 — Secrets
+
+**Conforme.** Grep exhaustif de tous les usages de `slog`/`log` du dépôt
+(`internal/mcp/manager.go`, `internal/ingress/pipeline.go`,
+`internal/action/engine.go`, `internal/scheduler/scheduler.go`,
+`internal/registry/registry.go`, `cmd/automata/main.go`) : tous les champs
+journalisés sont des identifiants (`org_id`, `principal_id`,
+`conversation_id`, `provider`, `server`, `session`, `tool`, `schedule_id`,
+`scheduled_run_id`, `status`, `duration`, `result_bytes`, `truncated`) ou des
+erreurs Go (`error`, err) — jamais un secret, un jeton MCP, un en-tête
+d'autorisation, ni le contenu d'un message ou d'un résultat d'outil.
+`internal/mcp/manager.go` (`wrapTool`) documente explicitement ce choix en
+commentaire. `internal/config` ne journalise jamais rien : `expand.go`
+(résolution de `${VAR}`) et `load.go` ne contiennent aucun appel
+`slog`/`log`. Les erreurs persistées par `internal/action.Engine.failAction`
+sont un code court (`execution_failed`, `permission_denied`, …), jamais le
+texte complet de l'erreur — seul `actionOutcome.message` (texte affiché à
+l'utilisateur final dans le rapport de plan, jamais journalisé) porte le
+message complet.
+
+### A.7 — Limites de taille
+
+**Limitation connue, documentée, non corrigée dans cette phase.** Limites
+déjà en place et cohérentes : `audio.Config.MaxSize` (lecture en flux borné,
+`io.LimitReader`), `mcp.Limits.MaxToolResultBytes` (troncature des résultats
+d'outil), `internal/conversation.defaultHistoryLimit` (20 messages
+rechargés). **Aucune limite** n'existe en revanche sur la taille d'un
+message texte brut avant persistance et envoi au LLM
+(`courier.GetMessageMainContent` dans `internal/conversation/handler.go`) :
+un message extrêmement long serait persisté intégralement et transmis tel
+quel au LLM. Risque jugé réel mais modéré (dénis de service ciblé
+essentiellement contre le portefeuille de tokens de l'opérateur, pas contre
+la confidentialité ou l'intégrité des données d'autres principaux ; les
+fournisseurs de messagerie et les clients LLM appliquent déjà leurs propres
+plafonds) : à corriger dans une phase ultérieure d'exploitation plutôt que
+par un ajout non spécifié par PLAN.md dans cette revue.
+
+### A.8 — Timeouts réseau
+
+**Corrigé.** État avant correction : `audio.ExtractText` (borné par
+`audio.Config.Timeout`) et les appels d'outils MCP (bornés par
+`mcp.Limits.ToolTimeout`) étaient déjà bornés ; les exécutions planifiées par
+le scheduler étaient bornées par `ScheduleConcurrency.Timeout`
+(`scheduler.go`, `execCtx`). En revanche, l'appel réseau au LLM
+(`client.ChatCompletion`/`ChatCompletionStream`, appelé depuis
+`internal/agent/toolloop.go` et `internal/agent/agent.go`) ne recevait, pour
+tout message conversationnel entrant, que le `ctx` du processus
+(`signal.NotifyContext` dans `cmd/automata/main.go`, sans échéance) —
+`internal/agent/agent.go` documentait explicitement ce trou : « aucun
+timeout n'est ajouté ici […] l'appelant est responsable d'attacher un
+`context.WithTimeout` si nécessaire ». Comme `ingress.Pipeline.Run` traite
+les messages **strictement séquentiellement** (pas de goroutine par
+message), un fournisseur LLM ou MCP qui ne répond jamais aurait bloqué
+indéfiniment le traitement de tous les messages suivants du même
+fournisseur — un déni de service déclenchable par un tiers (fournisseur LLM
+lent, serveur MCP compromis qui ne ferme jamais la connexion).
+
+Correction apportée dans `internal/ingress/pipeline.go`
+(`Pipeline.processMessage`) : le `ctx` transmis à `Handler.Handle` est
+désormais borné par `handleTimeout` (5 minutes, volontairement large devant
+les timeouts plus fins déjà en place pour ne jamais couper un tour légitime
+enchaînant plusieurs appels d'outils) ; l'envoi de la réponse au fournisseur
+courier (`provider.Send`) est borné séparément par `sendTimeout` (30
+secondes). Test ajouté :
+`internal/ingress/pipeline_test.go`,
+`TestPipeline_HandleContextIsBounded`.
+
+### A.9 — Logs
+
+**Conforme.** Voir A.6 : aucun log observé ne contient le contenu intégral
+d'un message utilisateur, d'une transcription, ou d'arguments MCP sensibles.
+Conforme à PLAN.md §14.2.
+
+### A.10 — Origines et groupes inconnus
+
+**Conforme, aucune régression.** Les tests existants
+(`internal/identity/resolver_test.go`, `internal/ingress/pipeline_test.go`,
+notamment `TestPipeline_UnknownOriginIgnored`) couvrent le rejet silencieux
+d'une origine inconnue et d'un groupe non déclaré ou dont l'expéditeur n'est
+pas membre. Exécutés sans modification dans le cadre de cette revue : tous
+verts (`go test ./...`, `go test -race ./...`).
+
+## 4. Limitations connues assumées
+
+- **Pas de verrouillage distribué** (PLAN.md §Phase 17/18) : plusieurs
+  instances d'Automata partageant la même base SQLite ne sont pas
+  supportées ; `sqlDB.SetMaxOpenConns(1)` sérialise les écritures au sein
+  d'un seul processus, pas entre processus.
+- **Propositions d'action et mémoire non chiffrées au repos** : la base
+  SQLite applicative et le store mémoire Amoxtli contiennent du texte en
+  clair. La restriction de permissions apportée en A.5 réduit la surface
+  d'exposition (accès local uniquement, propriétaire du processus) mais ne
+  remplace pas un chiffrement au repos, hors périmètre de cette phase.
+- **Chemin de fichier de prompt non neutralisé** (A.4) : accepté, la
+  configuration étant administrée, pas fournie par un attaquant distant.
+- **Aucune limite de taille sur un message texte brut** (A.7) : accepté
+  pour cette phase, risque modéré.
+- **`mcpExecutor` (internal/action) sans résolution fraîche de ressource
+  externe** (A.2) : accepté car aucun producteur d'action actuel n'expose de
+  ressource externe par ce chemin ; point d'extension existant si cela
+  change.
+- **Fichier SQLite du store mémoire Amoxtli** : permissions dépendantes de
+  l'umask du processus, hors du contrôle direct d'`automata` (bibliothèque
+  externe) ; seul le répertoire parent est garanti restreint (A.5).
+- **Discipline de prompt (`InvariantRules`) comme mitigation, pas comme
+  garantie** (A.3) : un LLM reste en théorie influençable par son contexte ;
+  c'est pourquoi aucune décision de sécurité réelle (§2) ne repose sur cette
+  seule discipline.

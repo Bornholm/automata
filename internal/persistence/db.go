@@ -33,12 +33,37 @@ type DB struct {
 // les écritures au niveau du pool Go plutôt que de compter uniquement sur le
 // busy_timeout SQLite.
 func Open(ctx context.Context, cfg config.StorageApplication) (*DB, error) {
-	if cfg.Path != "" && cfg.Path != ":memory:" {
+	isFile := cfg.Path != "" && cfg.Path != ":memory:"
+
+	if isFile {
 		dir := filepath.Dir(cfg.Path)
 		if dir != "" && dir != "." {
-			if err := os.MkdirAll(dir, 0o755); err != nil {
+			// 0o700 : la base contient potentiellement des données
+			// personnelles (PLAN.md Phase 19, point 5) ; seul le
+			// propriétaire du processus doit pouvoir y accéder.
+			if err := os.MkdirAll(dir, 0o700); err != nil {
 				return nil, fmt.Errorf("création du répertoire %q: %w", dir, err)
 			}
+		}
+
+		// Pré-créer le fichier avec des permissions restrictives (0o600)
+		// avant de laisser le driver SQLite l'ouvrir : sql.Open seul
+		// créerait le fichier selon l'umask du processus, potentiellement
+		// lisible par d'autres utilisateurs du système (PLAN.md Phase 19,
+		// point 5 "restreindre les permissions des fichiers SQLite" — la
+		// base contient des données personnelles, voir PLAN.md §13).
+		f, err := os.OpenFile(cfg.Path, os.O_RDWR|os.O_CREATE, 0o600)
+		if err != nil {
+			return nil, fmt.Errorf("création du fichier de base %q: %w", cfg.Path, err)
+		}
+		if err := f.Close(); err != nil {
+			return nil, fmt.Errorf("fermeture du fichier de base %q: %w", cfg.Path, err)
+		}
+		// Un fichier préexistant (créé avant ce durcissement, ou par un
+		// umask permissif) garde ses permissions d'origine avec
+		// O_CREATE seul : les forcer explicitement.
+		if err := os.Chmod(cfg.Path, 0o600); err != nil {
+			return nil, fmt.Errorf("restriction des permissions du fichier de base %q: %w", cfg.Path, err)
 		}
 	}
 
@@ -62,6 +87,17 @@ func Open(ctx context.Context, cfg config.StorageApplication) (*DB, error) {
 	if err := migrate(ctx, sqlDB); err != nil {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("exécution des migrations: %w", err)
+	}
+
+	if isFile {
+		// Les fichiers annexes WAL/SHM (journal_mode=WAL) sont créés par
+		// SQLite lui-même lors des pragmas/migrations ci-dessus, après la
+		// restriction de permissions du fichier principal : les restreindre
+		// à leur tour, au meilleur effort (leur absence, ex. journal_mode
+		// autre que WAL, n'est pas une erreur).
+		for _, suffix := range []string{"-wal", "-shm"} {
+			_ = os.Chmod(cfg.Path+suffix, 0o600)
+		}
 	}
 
 	return &DB{sqlDB: sqlDB}, nil

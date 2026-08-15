@@ -67,7 +67,10 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 	res := memoryResources{}
 
 	if dir := filepath.Dir(cfg.Memory.Store.Path); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		// 0o700 : la mémoire persistante contient des données personnelles
+		// (PLAN.md Phase 19, point 5, même raisonnement que
+		// internal/persistence/db.go pour la base applicative).
+		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return res, fmt.Errorf("registry: mémoire: création du répertoire %q: %w", dir, err)
 		}
 	}
@@ -83,7 +86,10 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 		switch idxCfg.Type {
 		case "bleve":
 			if dir := filepath.Dir(idxCfg.Path); dir != "" && dir != "." {
-				if err := os.MkdirAll(dir, 0o755); err != nil {
+				// 0o700 : la mémoire persistante contient des données
+				// personnelles (PLAN.md Phase 19, point 5, même raisonnement
+				// que internal/persistence/db.go pour la base applicative).
+				if err := os.MkdirAll(dir, 0o700); err != nil {
 					return res, fmt.Errorf("registry: mémoire: création du répertoire %q: %w", dir, err)
 				}
 			}

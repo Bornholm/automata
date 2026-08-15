@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -267,5 +268,34 @@ func TestCloseThenUseReturnsError(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("utilisation de la base après Close(): attendu une erreur")
+	}
+}
+
+// TestOpenRestrictsFilePermissions vérifie que le fichier SQLite et son
+// répertoire parent sont créés avec des permissions restreintes au seul
+// propriétaire (PLAN.md Phase 19, point 5) : la base contient
+// potentiellement des données personnelles (messages, plans d'actions).
+func TestOpenRestrictsFilePermissions(t *testing.T) {
+	cfg := testConfig(t)
+	// Un sous-répertoire n'existant pas encore, pour que Open l'crée
+	// lui-même via os.MkdirAll : t.TempDir() existe déjà et ses
+	// permissions ne dépendent pas du code testé.
+	cfg.Path = filepath.Join(filepath.Dir(cfg.Path), "data", "automata.sqlite")
+	openTestDB(t, cfg)
+
+	info, err := os.Stat(cfg.Path)
+	if err != nil {
+		t.Fatalf("stat du fichier de base: %v", err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("permissions du fichier de base = %o, attendu 0600", perm)
+	}
+
+	dirInfo, err := os.Stat(filepath.Dir(cfg.Path))
+	if err != nil {
+		t.Fatalf("stat du répertoire parent: %v", err)
+	}
+	if perm := dirInfo.Mode().Perm(); perm != 0o700 {
+		t.Errorf("permissions du répertoire parent = %o, attendu 0700", perm)
 	}
 }

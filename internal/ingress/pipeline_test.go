@@ -413,3 +413,69 @@ func TestPipeline_ShutdownWithoutGoroutineLeak(t *testing.T) {
 		t.Errorf("fuite de goroutine suspectée: avant=%d, après=%d", before, after)
 	}
 }
+
+// deadlineCapturingHandler enregistre si le ctx reçu par Handle porte une
+// échéance (deadline).
+type deadlineCapturingHandler struct {
+	reply string
+
+	mu          sync.Mutex
+	hadDeadline bool
+	deadline    time.Time
+}
+
+func (h *deadlineCapturingHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, error) {
+	h.mu.Lock()
+	h.deadline, h.hadDeadline = ctx.Deadline()
+	h.mu.Unlock()
+
+	return h.reply, nil
+}
+
+func (h *deadlineCapturingHandler) result() (bool, time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return h.hadDeadline, h.deadline
+}
+
+// TestPipeline_HandleContextIsBounded vérifie que le ctx transmis à
+// Handler.Handle porte une échéance bornée, jamais le ctx non borné de
+// Pipeline.Run (PLAN.md Phase 19, point 8 "timeouts réseau") : sans cela,
+// un appel LLM/MCP qui ne répond jamais bloquerait indéfiniment le
+// traitement de tous les messages suivants du même fournisseur, la boucle
+// de Pipeline.Run étant strictement séquentielle.
+func TestPipeline_HandleContextIsBounded(t *testing.T) {
+	handler := &deadlineCapturingHandler{reply: "ok"}
+	pipeline, provider := newTestPipeline(t, handler)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	ctx := context.Background()
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannelRef("private-chan"),
+		courier.NewUser("alice-ext", "Alice"),
+		courier.WithMessageMainPart("bonjour"),
+	)
+
+	if err := provider.Deliver(ctx, msg); err != nil {
+		t.Fatalf("provider.Deliver: %v", err)
+	}
+
+	var hadDeadline bool
+	var deadline time.Time
+	if !waitUntil(t, 2*time.Second, func() bool {
+		hadDeadline, deadline = handler.result()
+		return hadDeadline
+	}) {
+		t.Fatal("le ctx transmis à Handle ne porte aucune échéance (deadline)")
+	}
+
+	if remaining := time.Until(deadline); remaining <= 0 || remaining > 6*time.Minute {
+		t.Errorf("échéance du ctx hors bornes attendues (0, 6min]: reste %s", remaining)
+	}
+}

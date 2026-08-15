@@ -103,7 +103,9 @@ func NewGenAIAgent(client llm.ChatCompletionStreamingClient, systemPrompt string
 // aucun timeout n'est ajouté ici (PLAN.md Phase 6 ne définit pas de champ de
 // configuration dédié ; AgentLimits.ToolTimeout concerne les appels d'outils,
 // absents de cette phase). L'appelant est responsable d'attacher un
-// context.WithTimeout si nécessaire.
+// context.WithTimeout si nécessaire (voir internal/ingress.handleTimeout,
+// qui borne ctx pour tout appel passant par le pipeline d'ingress — PLAN.md
+// Phase 19, point 8).
 func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 	messages := a.buildMessages(req)
 

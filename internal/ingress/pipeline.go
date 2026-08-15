@@ -30,6 +30,24 @@ const (
 	statusFailed     = "failed"
 )
 
+// handleTimeout borne la durée totale du traitement métier d'un message
+// (Handler.Handle, qui appelle in fine le LLM, les outils MCP et la
+// transcription audio). Sans cette limite, le ctx transmis à
+// Pipeline.processMessage n'est borné que par l'arrêt du processus (voir
+// cmd/automata/main.go, context issu de signal.NotifyContext) : un
+// fournisseur LLM ou MCP qui ne répond jamais bloquerait indéfiniment le
+// traitement de TOUS les messages suivants du même fournisseur, la boucle
+// de Pipeline.Run étant strictement séquentielle (PLAN.md Phase 19, point
+// 8 "timeouts réseau"). 5 minutes reste large devant les timeouts plus
+// courts déjà en place pour chaque appel individuel (audio.Config.Timeout,
+// mcp.Limits.ToolTimeout), pour ne jamais couper un tour légitime
+// enchaînant plusieurs appels d'outils.
+const handleTimeout = 5 * time.Minute
+
+// sendTimeout borne l'envoi de la réponse au fournisseur courier, un appel
+// réseau distinct du traitement métier.
+const sendTimeout = 30 * time.Second
+
 // Handler traite un message déjà résolu et autorisé, et retourne le contenu
 // textuel de la réponse à envoyer. Une réponse vide n'entraîne aucun envoi.
 type Handler interface {
@@ -177,7 +195,9 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 		return
 	}
 
-	reply, err := p.handler.Handle(ctx, execIdentity, conversation, msg)
+	handleCtx, cancelHandle := context.WithTimeout(ctx, handleTimeout)
+	reply, err := p.handler.Handle(handleCtx, execIdentity, conversation, msg)
+	cancelHandle()
 	if err != nil {
 		p.logger.ErrorContext(ctx, "ingress: échec du traitement du message", append(logCtx, "error", err)...)
 		p.markFinal(ctx, messageID, statusFailed, logCtx)
@@ -192,7 +212,10 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 			courier.WithMessageMainPart(reply),
 		)
 
-		if err := p.provider.Send(ctx, outgoing); err != nil {
+		sendCtx, cancelSend := context.WithTimeout(ctx, sendTimeout)
+		err := p.provider.Send(sendCtx, outgoing)
+		cancelSend()
+		if err != nil {
 			p.logger.ErrorContext(ctx, "ingress: échec de l'envoi de la réponse", append(logCtx, "error", err)...)
 			p.markFinal(ctx, messageID, statusFailed, logCtx)
 			return
