@@ -11,6 +11,7 @@ import (
 	"github.com/bornholm/genai/llm/provider/openrouter"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/delegation"
 )
 
 // Registry construit et détient un Agent isolé pour chaque agent déclaré
@@ -28,17 +29,25 @@ type Registry struct {
 // références croisées (client llm existant, etc.), il les suppose déjà
 // correctes et retourne une erreur claire si ce n'est pas le cas.
 //
-// Les limites par agent (agentCfg.Limits) ne sont pas encore exploitées
-// ici : MaxSequentialToolCalls et MaxActionsPerTurn ne prennent sens qu'à
-// partir du tool-calling et de la délégation (Phase 8+, PLAN.md §6.3).
-// ToolTimeout, MaxToolResultBytes et MaxToolContextBytes concernent eux
-// aussi exclusivement les appels d'outils, absents de cette phase (voir
-// GenAIAgent.Execute). Elles sont en revanche déjà validées comme
-// strictement positives par config.Validate (internal/config/validate.go),
-// pour ne pas laisser passer une configuration inutilisable jusqu'à la
-// phase qui les consommera.
+// ToolTimeout, MaxToolResultBytes et MaxToolContextBytes concernent
+// exclusivement les appels d'outils MCP, absents de cette phase. Elles sont
+// en revanche déjà validées comme strictement positives par config.Validate
+// (internal/config/validate.go), pour ne pas laisser passer une
+// configuration inutilisable jusqu'à la phase qui les consommera.
+//
+// Depuis la Phase 8 (PLAN.md §6.3, §6.4), tout agent déclarant des
+// Delegates non vides est construit en deux passes : d'abord un GenAIAgent
+// "brut" comme tous les autres (y compris les spécialistes eux-mêmes,
+// puisqu'un délégué peut en théorie déléguer à son tour), puis, dans une
+// seconde passe, remplacé par un OrchestratorAgent qui expose chaque
+// délégué comme un outil LLM ("delegate_to_<nom>") adossé à un
+// AgentSpecialist enveloppant le GenAIAgent déjà construit du délégué. Les
+// deux passes sont nécessaires : un OrchestratorAgent a besoin que ses
+// délégués existent déjà dans le registre pour les envelopper.
 func NewRegistry(cfg *config.Config) (*Registry, error) {
 	agents := make(map[string]Agent, len(cfg.Agents))
+	clients := make(map[string]llm.Client, len(cfg.Agents))
+	prompts := make(map[string]string, len(cfg.Agents))
 
 	for name, agentCfg := range cfg.Agents {
 		llmClientCfg, ok := cfg.LLMClients[agentCfg.Client]
@@ -59,6 +68,33 @@ func NewRegistry(cfg *config.Config) (*Registry, error) {
 		// son propre client : aucune contamination croisée possible entre
 		// agents.
 		agents[name] = NewGenAIAgent(client, systemPrompt, name, cfg.Organization.DisplayName)
+		clients[name] = client
+		prompts[name] = systemPrompt
+	}
+
+	for name, agentCfg := range cfg.Agents {
+		if len(agentCfg.Delegates) == 0 {
+			continue
+		}
+
+		specialists := make(map[string]delegation.Specialist, len(agentCfg.Delegates))
+		for _, delegateName := range agentCfg.Delegates {
+			delegateAgent, ok := agents[delegateName]
+			if !ok {
+				// config.Validate rejette déjà les délégués inconnus avant
+				// d'atteindre NewRegistry ; ce cas ne devrait donc jamais se
+				// produire en usage normal (cfg validée). On le refuse tout
+				// de même explicitement plutôt que de paniquer sur un accès
+				// map invalide silencieux, cohérent avec le principe de ne
+				// jamais faire confiance implicitement à cfg (voir le
+				// commentaire de package).
+				return nil, fmt.Errorf("agent: délégué %q (référencé par agents.%s.delegates) introuvable dans le registre", delegateName, name)
+			}
+
+			specialists[delegateName] = NewAgentSpecialist(delegateName, delegateAgent)
+		}
+
+		agents[name] = NewOrchestratorAgent(clients[name], prompts[name], name, cfg.Organization.DisplayName, specialists, agentCfg.Limits.MaxSequentialToolCalls)
 	}
 
 	return &Registry{agents: agents}, nil

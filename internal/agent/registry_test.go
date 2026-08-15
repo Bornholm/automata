@@ -117,17 +117,16 @@ func TestNewRegistry_Isolation(t *testing.T) {
 		t.Fatal("les instances Agent de 'main' et 'agenda' ne doivent pas être identiques")
 	}
 
-	mainGenAI, ok := mainAgent.(*agent.GenAIAgent)
-	if !ok {
-		t.Fatalf("mainAgent devrait être un *agent.GenAIAgent, obtenu %T", mainAgent)
+	// Depuis la Phase 8, "main" déclare des Delegates (voir
+	// testRegistryConfig) : il est donc construit comme un
+	// *agent.OrchestratorAgent, pas un *agent.GenAIAgent brut (voir
+	// NewRegistry). "agenda" n'a pas de Delegates, il reste un GenAIAgent
+	// simple.
+	if _, ok := mainAgent.(*agent.OrchestratorAgent); !ok {
+		t.Fatalf("mainAgent devrait être un *agent.OrchestratorAgent, obtenu %T", mainAgent)
 	}
-	agendaGenAI, ok := agendaAgent.(*agent.GenAIAgent)
-	if !ok {
+	if _, ok := agendaAgent.(*agent.GenAIAgent); !ok {
 		t.Fatalf("agendaAgent devrait être un *agent.GenAIAgent, obtenu %T", agendaAgent)
-	}
-
-	if mainGenAI == agendaGenAI {
-		t.Fatal("main et agenda ne doivent pas partager la même instance GenAIAgent")
 	}
 
 	// Muter la configuration source après coup ne doit avoir aucun effet

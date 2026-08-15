@@ -148,9 +148,18 @@ func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 // requête (PLAN.md §7.2, §7.3) : le contexte n'est jamais mélangé au prompt
 // statique construit une fois pour toutes à l'enregistrement de l'agent.
 func (a *GenAIAgent) buildMessages(req Request) []llm.Message {
+	return buildChatMessages(a.systemPrompt, a.agentName, a.orgDisplayName, req)
+}
+
+// buildChatMessages transforme req en messages GenAI, partagé par toutes les
+// implémentations d'Agent adossées à GenAI (GenAIAgent, OrchestratorAgent) :
+// system prompt statique suivi du bloc de contexte d'exécution en premier
+// message, puis l'historique dans l'ordre chronologique, puis le message
+// utilisateur courant (PLAN.md §7.2, §7.3).
+func buildChatMessages(systemPrompt, agentName, orgDisplayName string, req Request) []llm.Message {
 	messages := make([]llm.Message, 0, len(req.History)+2)
 
-	systemMessage := a.systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, a.orgDisplayName, a.agentName)
+	systemMessage := systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, orgDisplayName, agentName)
 	messages = append(messages, llm.NewMessage(llm.RoleSystem, systemMessage))
 
 	for _, m := range req.History {
