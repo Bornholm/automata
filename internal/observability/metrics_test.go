@@ -168,11 +168,11 @@ func TestMetrics_ConcurrentAccess(t *testing.T) {
 	const goroutines = 50
 	const perGoroutine = 100
 
-	for i := 0; i < goroutines; i++ {
+	for i := range goroutines {
 		wg.Add(1)
 		go func(n int) {
 			defer wg.Done()
-			for j := 0; j < perGoroutine; j++ {
+			for range perGoroutine {
 				m.IncMessagesReceived()
 				m.IncDelegation("agenda")
 				m.IncMCPCall("server", "tool", nil)
