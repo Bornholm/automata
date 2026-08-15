@@ -10,6 +10,7 @@ import (
 	"github.com/bornholm/go-courier"
 
 	"github.com/bornholm/automata/internal/agent"
+	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/conversation"
 	"github.com/bornholm/automata/internal/model"
@@ -81,7 +82,7 @@ func TestHandler_HistoryIsolatedPerConversation(t *testing.T) {
 	db := openTestDB(t)
 
 	a := &recordingAgent{}
-	h := conversation.NewHandler(db, a, 0)
+	h := conversation.NewHandler(db, a, 0, audio.Config{}, nil, false)
 
 	identity := model.ExecutionIdentity{
 		PrincipalID: model.PrincipalID("alice"),
@@ -129,7 +130,7 @@ func TestHandler_GroupAuthorAttribution(t *testing.T) {
 	db := openTestDB(t)
 
 	a := &recordingAgent{}
-	h := conversation.NewHandler(db, a, 0)
+	h := conversation.NewHandler(db, a, 0, audio.Config{}, nil, false)
 
 	conv := model.Conversation{
 		ID:        model.ConversationID("conv-group"),

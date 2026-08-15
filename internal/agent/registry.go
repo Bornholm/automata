@@ -145,3 +145,35 @@ func BuildLLMClient(ctx context.Context, cfg config.LLMClient) (llm.Client, erro
 
 	return client, nil
 }
+
+// BuildTranscriptionClient construit un llm.TranscriptionClient GenAI à
+// partir d'un config.LLMClient applicatif, pour le traitement audio (PLAN.md
+// §3.4, Phase 9). Mêmes providers supportés que BuildLLMClient (openai,
+// mistral, openrouter) ; voir docs/integration-inventory.md §2.
+func BuildTranscriptionClient(ctx context.Context, cfg config.LLMClient) (llm.TranscriptionClient, error) {
+	common := provider.CommonOptions{
+		Model:   cfg.Model,
+		BaseURL: cfg.BaseURL,
+		APIKey:  cfg.APIKey,
+	}
+
+	var optFunc provider.OptionFunc
+
+	switch cfg.Provider {
+	case "openai":
+		optFunc = provider.WithTranscription(openai.Name, openai.Options{CommonOptions: common})
+	case "mistral":
+		optFunc = provider.WithTranscription(mistral.Name, mistral.Options{CommonOptions: common})
+	case "openrouter":
+		optFunc = provider.WithTranscription(openrouter.Name, openrouter.Options{CommonOptions: common})
+	default:
+		return nil, fmt.Errorf("provider llm %q non supporté pour la transcription", cfg.Provider)
+	}
+
+	client, err := provider.Create(ctx, optFunc)
+	if err != nil {
+		return nil, fmt.Errorf("création du client de transcription (provider %q): %w", cfg.Provider, err)
+	}
+
+	return client, nil
+}

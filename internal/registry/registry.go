@@ -20,6 +20,7 @@ import (
 	"github.com/bornholm/go-courier/provider/whatsapp"
 
 	"github.com/bornholm/automata/internal/agent"
+	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/conversation"
 	"github.com/bornholm/automata/internal/identity"
@@ -117,6 +118,13 @@ func buildCourierProviders(cfg *config.Config) (map[string]courier.Provider, err
 // (internal/agent/registry.go), pas seulement celles de "main". Cette
 // fonction se contente d'en extraire l'agent "main" pour le brancher sur un
 // conversation.Handler qui persiste l'historique dans db.
+//
+// Depuis la Phase 9 (PLAN.md §3.4), elle construit également le
+// audio.Transcriber utilisé pour transcrire les notes vocales lorsque
+// cfg.Audio.Enabled est vrai, à partir du client LLM référencé par
+// cfg.Audio.TranscriptionClient. Rien n'est construit si l'audio est
+// désactivé : le comportement existant (message vide transmis tel quel) est
+// préservé.
 func buildConversationHandler(cfg *config.Config, db *persistence.DB) (ingress.Handler, error) {
 	agents, err := agent.NewRegistry(cfg)
 	if err != nil {
@@ -128,5 +136,27 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB) (ingress.H
 		return nil, fmt.Errorf("récupération de l'agent %q: %w", mainAgentName, err)
 	}
 
-	return conversation.NewHandler(db, mainAgent, 0), nil
+	audioCfg := audio.Config{}
+	var transcriber audio.Transcriber
+
+	if cfg.Audio.Enabled {
+		llmClientCfg, ok := cfg.LLMClients[cfg.Audio.TranscriptionClient]
+		if !ok {
+			return nil, fmt.Errorf("audio: client llm %q (référencé par audio.transcription_client) introuvable dans la configuration", cfg.Audio.TranscriptionClient)
+		}
+
+		transcriptionClient, err := agent.BuildTranscriptionClient(context.Background(), llmClientCfg)
+		if err != nil {
+			return nil, fmt.Errorf("audio: construction du client de transcription %q: %w", cfg.Audio.TranscriptionClient, err)
+		}
+
+		audioCfg = audio.Config{
+			Enabled: true,
+			MaxSize: int64(cfg.Audio.MaxSize.Bytes()),
+			Timeout: cfg.Audio.Timeout.Duration(),
+		}
+		transcriber = audio.NewGenAITranscriber(transcriptionClient)
+	}
+
+	return conversation.NewHandler(db, mainAgent, 0, audioCfg, transcriber, cfg.Audio.PersistTranscription), nil
 }

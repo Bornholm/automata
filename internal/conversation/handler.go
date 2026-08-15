@@ -7,6 +7,7 @@ package conversation
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/bornholm/automata/internal/agent"
+	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
 )
@@ -27,6 +29,12 @@ const defaultHistoryLimit = 20
 
 const contentKindText = "text"
 
+// persistedVoiceNotePlaceholder est le contenu neutre persisté en base pour
+// un message vocal lorsque cfg.Audio.PersistTranscription est faux (valeur
+// par défaut) : la transcription réelle n'est alors jamais écrite en base
+// (PLAN.md §3.4).
+const persistedVoiceNotePlaceholder = "[Message vocal transcrit pour traitement]"
+
 // Handler implémente ingress.Handler : il orchestre chargement de
 // l'historique, exécution de l'agent et persistance du tour de
 // conversation.
@@ -37,23 +45,38 @@ type Handler struct {
 	agent         agent.Agent
 	historyLimit  int
 	now           func() time.Time
+	audioCfg      audio.Config
+	transcriber   audio.Transcriber
+	// persistTranscription reflète cfg.Audio.PersistTranscription : décision
+	// distincte du traitement audio lui-même (audio.Config), portant
+	// uniquement sur ce qui est écrit dans la table messages (PLAN.md §3.4).
+	persistTranscription bool
 }
 
 // NewHandler construit un Handler. historyLimit borne le nombre de messages
 // rechargés comme historique ; une valeur <= 0 retombe sur
-// defaultHistoryLimit.
-func NewHandler(db *persistence.DB, a agent.Agent, historyLimit int) *Handler {
+// defaultHistoryLimit. audioCfg et transcriber gouvernent le traitement des
+// notes vocales (PLAN.md §3.4, Phase 9) : lorsque audioCfg.Enabled est faux
+// ou transcriber est nil, aucune tentative de transcription n'est faite et
+// un message sans contenu textuel garde son comportement antérieur (chaîne
+// vide transmise telle quelle). persistTranscription contrôle si le texte
+// transcrit réel (true) ou une indication neutre (false, par défaut) est
+// écrit dans la table messages.
+func NewHandler(db *persistence.DB, a agent.Agent, historyLimit int, audioCfg audio.Config, transcriber audio.Transcriber, persistTranscription bool) *Handler {
 	if historyLimit <= 0 {
 		historyLimit = defaultHistoryLimit
 	}
 
 	return &Handler{
-		db:            db,
-		conversations: persistence.NewConversationRepository(),
-		messages:      persistence.NewMessageRepository(),
-		agent:         a,
-		historyLimit:  historyLimit,
-		now:           time.Now,
+		db:                   db,
+		conversations:        persistence.NewConversationRepository(),
+		messages:             persistence.NewMessageRepository(),
+		agent:                a,
+		historyLimit:         historyLimit,
+		now:                  time.Now,
+		audioCfg:             audioCfg,
+		transcriber:          transcriber,
+		persistTranscription: persistTranscription,
 	}
 }
 
@@ -61,7 +84,37 @@ func NewHandler(db *persistence.DB, a agent.Agent, historyLimit int) *Handler {
 func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, conv model.Conversation, msg courier.Message) (string, error) {
 	text, err := courier.GetMessageMainContent(ctx, msg)
 	if err != nil {
-		return "", fmt.Errorf("conversation: lecture du contenu du message: %w", err)
+		// Un message composé uniquement d'une pièce jointe (ex. une note
+		// vocale, sans partie "main" texte) fait retourner courier.ErrNotFound
+		// à GetMessageMainContent, pas une chaîne vide : ce cas doit être
+		// traité comme un texte vide pour permettre le repli audio ci-dessous,
+		// pas comme une erreur fatale.
+		if !errors.Is(err, courier.ErrNotFound) {
+			return "", fmt.Errorf("conversation: lecture du contenu du message: %w", err)
+		}
+		text = ""
+	}
+
+	// persistedContent est le contenu écrit en base pour ce message "user" :
+	// par défaut identique au texte reçu, sauf pour une note vocale
+	// transcrite sans conservation de la transcription (voir plus bas).
+	persistedContent := text
+
+	if text == "" && h.audioCfg.Enabled {
+		voiceNote, found := audio.FindVoiceNote(msg)
+		if found {
+			transcribed, err := audio.ExtractText(ctx, h.audioCfg, h.transcriber, voiceNote)
+			if err != nil {
+				return "", fmt.Errorf("conversation: transcription de la note vocale: %w", err)
+			}
+
+			text = transcribed
+			if h.persistTranscription {
+				persistedContent = transcribed
+			} else {
+				persistedContent = persistedVoiceNotePlaceholder
+			}
+		}
 	}
 
 	var history []agent.Message
@@ -83,7 +136,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 			ExternalMessageID: string(msg.ID()),
 			PrincipalID:       identity.PrincipalID,
 			Role:              "user",
-			Content:           text,
+			Content:           persistedContent,
 			ContentKind:       contentKindText,
 			CreatedAt:         h.now().UTC().Format(time.RFC3339),
 		})
