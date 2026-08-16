@@ -198,7 +198,10 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 		agentMemoryTools.Remember = memoryTools.Remember && agentCfg.Memory.Remember
 		agentMemoryTools.Forget = memoryTools.Forget && agentCfg.Memory.Forget
 
-		agents[name] = orchestrator.WithMemoryTools(agentMemoryTools).WithMetrics(metrics)
+		agents[name] = orchestrator.
+			WithMemoryTools(agentMemoryTools).
+			WithMaxActionsPerTurn(agentCfg.Limits.MaxActionsPerTurn).
+			WithMetrics(metrics)
 	}
 
 	return &Registry{agents: agents}, nil

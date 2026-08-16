@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/model"
 )
 
 // fakeCompletionClient est un client LLM de test implémentant
@@ -289,6 +291,114 @@ func TestOrchestratorAgent_MultipleDelegationsSameTurn(t *testing.T) {
 
 	if !strings.Contains(result.Reply, "2 tâches") {
 		t.Fatalf("réponse finale inattendue: %q", result.Reply)
+	}
+}
+
+// proposingSpecialist retourne un spécialiste factice qui propose count
+// actions lors de chaque délégation.
+func proposingSpecialist(count int) *fakeSpecialist {
+	return &fakeSpecialist{
+		executeFunc: func(ctx context.Context, req delegation.Request) (delegation.Result, error) {
+			proposals := make([]delegation.ProposedAction, 0, count)
+			for i := range count {
+				proposals = append(proposals, delegation.ProposedAction{
+					Summary:            fmt.Sprintf("Créer la tâche n°%d", i+1),
+					AgentID:            "todo",
+					MCPServer:          "todo",
+					ToolName:           "create_task",
+					Arguments:          map[string]any{"title": fmt.Sprintf("tâche %d", i+1)},
+					RequiredPermission: "todo.personal.write",
+					Scope:              model.ScopePersonal,
+					ScopeID:            model.ScopeID("alice"),
+				})
+			}
+
+			return delegation.Result{Summary: "Tâches préparées.", ProposedActions: proposals}, nil
+		},
+	}
+}
+
+// scriptDelegateThenReply pilote le modèle simulé pour déléguer une fois à
+// todo, puis répondre.
+func scriptDelegateThenReply(reply string) *fakeCompletionClient {
+	return &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("call-1", "delegate_to_todo", `{"goal":"Créer les tâches"}`)), nil
+			}
+			return scriptedFinalResponse(reply), nil
+		},
+	}
+}
+
+// TestOrchestratorAgent_MaxActionsPerTurnRespected vérifie qu'un lot
+// d'actions tenant sous le plafond est transmis intact (PLAN.md §9.4).
+func TestOrchestratorAgent_MaxActionsPerTurnRespected(t *testing.T) {
+	todo := proposingSpecialist(3)
+	client := scriptDelegateThenReply("J'ai préparé 3 tâches.")
+
+	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"todo": todo}, 5).
+		WithMaxActionsPerTurn(5)
+
+	result, err := a.Execute(context.Background(), agent.Request{Input: "Crée mes tâches"})
+	if err != nil {
+		t.Fatalf("Execute a échoué: %v", err)
+	}
+
+	if got := len(result.ProposedActions); got != 3 {
+		t.Fatalf("actions proposées: got %d, expected 3", got)
+	}
+
+	if strings.Contains(result.Reply, "limite") {
+		t.Errorf("aucun avertissement de plafond attendu sous la limite, obtenu: %q", result.Reply)
+	}
+}
+
+// TestOrchestratorAgent_MaxActionsPerTurnRejectsWholeBatch vérifie qu'un
+// dépassement rejette le lot entier plutôt que d'en conserver un préfixe
+// arbitraire : l'utilisateur ne doit jamais confirmer un sous-ensemble
+// silencieux de ce que l'agent a annoncé (PLAN.md §9.4, §10.3).
+func TestOrchestratorAgent_MaxActionsPerTurnRejectsWholeBatch(t *testing.T) {
+	todo := proposingSpecialist(4)
+	client := scriptDelegateThenReply("J'ai préparé 4 tâches.")
+
+	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"todo": todo}, 5).
+		WithMaxActionsPerTurn(2)
+
+	result, err := a.Execute(context.Background(), agent.Request{Input: "Crée mes tâches"})
+	if err != nil {
+		t.Fatalf("Execute a échoué: %v", err)
+	}
+
+	if got := len(result.ProposedActions); got != 0 {
+		t.Fatalf("actions proposées: got %d, expected 0 (lot entier rejeté)", got)
+	}
+
+	// La réponse doit rester exploitable et expliquer le refus.
+	if !strings.Contains(result.Reply, "J'ai préparé 4 tâches.") {
+		t.Errorf("le texte de réponse du modèle devrait être conservé, obtenu: %q", result.Reply)
+	}
+	if !strings.Contains(result.Reply, "4 actions") || !strings.Contains(result.Reply, "limite de 2") {
+		t.Errorf("la réponse devrait expliquer le dépassement, obtenu: %q", result.Reply)
+	}
+}
+
+// TestOrchestratorAgent_MaxActionsPerTurnUnsetIsUnbounded documente le
+// comportement par défaut : sans plafond configuré, aucune action n'est
+// écartée.
+func TestOrchestratorAgent_MaxActionsPerTurnUnsetIsUnbounded(t *testing.T) {
+	todo := proposingSpecialist(12)
+	client := scriptDelegateThenReply("J'ai préparé 12 tâches.")
+
+	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"todo": todo}, 5)
+
+	result, err := a.Execute(context.Background(), agent.Request{Input: "Crée mes tâches"})
+	if err != nil {
+		t.Fatalf("Execute a échoué: %v", err)
+	}
+
+	if got := len(result.ProposedActions); got != 12 {
+		t.Fatalf("actions proposées: got %d, expected 12", got)
 	}
 }
 

@@ -48,6 +48,7 @@ type OrchestratorAgent struct {
 	orgDisplayName         string
 	specialists            map[string]delegation.Specialist
 	maxSequentialToolCalls int
+	maxActionsPerTurn      int
 	memoryTools            MemoryTools
 	metrics                *observability.Metrics
 }
@@ -95,7 +96,33 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 		return Result{}, err
 	}
 
-	return Result{Reply: loopResult.Text, ProposedActions: collector.take()}, nil
+	proposals := collector.take()
+
+	// Plafond d'actions par tour (PLAN.md §9.4, agents.<nom>.limits.
+	// max_actions_per_turn). Le dépassement rejette le lot ENTIER plutôt que
+	// d'en conserver les N premières : ces actions sont sensibles et
+	// destinées à une confirmation groupée, or n'en garder qu'un préfixe
+	// arbitraire ferait confirmer à l'utilisateur autre chose que ce que
+	// l'agent a annoncé. Le texte de réponse, lui, est conservé : il porte le
+	// raisonnement qui aide à reformuler.
+	if a.maxActionsPerTurn > 0 && len(proposals) > a.maxActionsPerTurn {
+		notice := fmt.Sprintf(
+			"\n\n⚠️ Ce tour a produit %d actions à confirmer, au-delà de la limite de %d configurée pour l'agent %q. Aucune action n'a été enregistrée : reformulez votre demande en la découpant en plusieurs étapes.",
+			len(proposals), a.maxActionsPerTurn, a.agentName,
+		)
+
+		return Result{Reply: loopResult.Text + notice}, nil
+	}
+
+	return Result{Reply: loopResult.Text, ProposedActions: proposals}, nil
+}
+
+// WithMaxActionsPerTurn plafonne le nombre d'actions que ce tour peut
+// proposer à la confirmation (PLAN.md §9.4). Une valeur <= 0 (défaut) laisse
+// le nombre d'actions non borné. Retourne a pour permettre le chaînage.
+func (a *OrchestratorAgent) WithMaxActionsPerTurn(max int) *OrchestratorAgent {
+	a.maxActionsPerTurn = max
+	return a
 }
 
 // buildDelegationTools construit un llm.Tool "delegate_to_<agentID>" par
