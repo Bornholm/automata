@@ -41,13 +41,11 @@ services:
       ORG_GROUP_CALENDAR_ID: ${ORG_GROUP_CALENDAR_ID}
       ALICE_PRIVATE_CHANNEL_ID: ${ALICE_PRIVATE_CHANNEL_ID}
       ALICE_CALENDAR_ID: ${ALICE_CALENDAR_ID}
-    # Aucun HEALTHCHECK natif dans l'image (distroless "static", sans shell
-    # ni outil HTTP embarque — voir Dockerfile). La sonde applicative reste
-    # GET http://127.0.0.1:9090/healthz/ready (si observability.enabled est
-    # actif dans la configuration) : a interroger depuis l'hote ou un
-    # reverse proxy externe, pas depuis une directive `healthcheck:` de ce
-    # fichier (elle s'executerait dans le conteneur et echouerait faute
-    # d'outil disponible).
+    # La sonde de santé est définie dans l'image (directive HEALTHCHECK du
+    # Dockerfile) et s'appuie sur la sous-commande `automata healthcheck`,
+    # qui interroge GET /healthz/ready. Elle suppose observability.enabled à
+    # true dans la configuration montée ; sinon, la surcharger ici par
+    # `healthcheck: {disable: true}`.
 
 volumes:
   automata-data:

@@ -6,9 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -78,6 +80,7 @@ func newRootCommand(logger *slog.Logger) *cobra.Command {
 	}
 
 	root.AddCommand(newConfigCommand())
+	root.AddCommand(newHealthcheckCommand())
 	root.AddCommand(newMemoryCommand(logger))
 	root.AddCommand(newAdminCommand())
 
@@ -143,6 +146,71 @@ func newConfigValidateCommand() *cobra.Command {
 			}
 
 			fmt.Fprintf(cmd.OutOrStdout(), "configuration valide: %s (organisation %q, %d agent(s))\n", *configPath, cfg.Organization.ID, len(cfg.Agents))
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+// defaultHealthcheckAddr est l'adresse interrogée par "automata healthcheck"
+// en l'absence de drapeau -addr. Elle correspond à la valeur documentée pour
+// observability.addr dans docs/deployment.md ; un déploiement qui choisit une
+// autre adresse doit passer -addr explicitement.
+const defaultHealthcheckAddr = "127.0.0.1:9090"
+
+// newHealthcheckCommand construit la commande "healthcheck" (PLAN.md Phase
+// 22, point 5).
+//
+// Elle existe pour rendre la sonde de santé exécutable DEPUIS le conteneur :
+// l'image finale est une distroless "static", sans shell ni client HTTP, si
+// bien qu'aucune directive HEALTHCHECK ne pouvait y être définie. Le binaire
+// applicatif, lui, est présent — il fournit donc lui-même le client HTTP
+// minimal dont la sonde a besoin.
+//
+// Le code de sortie est le seul contrat : 0 si le service est prêt, 1 dans
+// tous les autres cas (service non prêt, injoignable, délai dépassé).
+func newHealthcheckCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                "healthcheck",
+		Short:              "Vérifie que le service local est prêt (code de sortie 0 ou 1)",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fs := flag.NewFlagSet("healthcheck", flag.ContinueOnError)
+			fs.SetOutput(cmd.ErrOrStderr())
+
+			addr := fs.String("addr", defaultHealthcheckAddr, "adresse du serveur d'observabilité à interroger")
+			timeout := fs.Duration("timeout", 3*time.Second, "délai maximal de la sonde")
+
+			if err := fs.Parse(args); err != nil {
+				return errSilent
+			}
+
+			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
+			defer cancel()
+
+			url := "http://" + *addr + "/healthz/ready"
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "sonde invalide: %v\n", err)
+				return errSilent
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "service injoignable sur %s: %v\n", *addr, err)
+				return errSilent
+			}
+			defer func() {
+				_ = resp.Body.Close()
+			}()
+
+			if resp.StatusCode != http.StatusOK {
+				fmt.Fprintf(cmd.ErrOrStderr(), "service non prêt sur %s (code %d)\n", *addr, resp.StatusCode)
+				return errSilent
+			}
 
 			return nil
 		},

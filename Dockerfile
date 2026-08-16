@@ -71,12 +71,17 @@ USER nonroot:nonroot
 # `docker run -v`.
 VOLUME ["/data", "/config", "/prompts"]
 
-# Pas de HEALTHCHECK natif : distroless "static" n'a ni shell ni binaire de
-# requete HTTP pour l'executer. Voir docs/deployment.md §5 : la sonde de
-# sante applicative reste GET /healthz/ready (internal/observability,
-# Phase 20), a interroger depuis l'exterieur du conteneur (reverse proxy,
-# orchestrateur, `docker compose ps` avec le healthcheck defini au niveau
-# compose si un outil HTTP y est disponible).
+# Sonde de santé : distroless "static" n'a ni shell ni client HTTP, la forme
+# habituelle (`CMD curl -f ...`) est donc impossible. Le binaire applicatif
+# fournit lui-même la sonde via sa sous-commande `healthcheck`, qui interroge
+# GET /healthz/ready (internal/observability, Phase 20) et se contente d'un
+# code de sortie 0/1 — la forme exec ci-dessous n'a besoin d'aucun shell.
+#
+# Prérequis : observability.enabled doit valoir true dans la configuration, et
+# observability.addr correspondre à l'adresse sondée. Pour une autre adresse,
+# ajouter `-addr <hôte:port>` à la commande. Voir docs/deployment.md §7.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["/usr/local/bin/automata", "healthcheck"]
 
 ENTRYPOINT ["/usr/local/bin/automata"]
 CMD ["-config", "/config/config.yaml"]

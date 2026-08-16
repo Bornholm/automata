@@ -279,27 +279,43 @@ non versionné ou par l'environnement de l'hôte.
 ## 7. Healthcheck
 
 L'image finale (`gcr.io/distroless/static-debian12:nonroot`) ne contient ni
-shell ni client HTTP : aucune directive `HEALTHCHECK` native n'y est donc
-définie (une commande `HEALTHCHECK` s'exécuterait *dans* le conteneur et
-échouerait faute d'outil disponible — de même pour une section
-`healthcheck:` dans `compose.yaml`).
+shell ni client HTTP : la forme habituelle d'une sonde (`CMD curl -f ...`) y
+est impossible. Le binaire applicatif étant lui-même présent dans l'image,
+c'est lui qui fournit la sonde, via sa sous-commande dédiée :
 
-La sonde de santé applicative reste celle de Phase 20
-(`internal/observability`, documentée en détail dans `docs/operations.md`
-§4) : `GET /healthz/ready` sur le port configuré par
-`observability.addr` dans la configuration YAML (à activer et exposer côté
-`compose.yaml`/pare-feu si un superviseur externe doit l'interroger).
-Vérification typique depuis l'hôte, une fois `observability` activé et le
-port publié :
+```bash
+automata healthcheck [-addr 127.0.0.1:9090] [-timeout 3s]
+```
+
+Elle interroge `GET /healthz/ready` (Phase 20, `internal/observability`,
+documenté en détail dans `docs/operations.md` §4) et n'expose qu'un code de
+sortie : `0` si le service est prêt, `1` s'il ne l'est pas, s'il est
+injoignable ou si le délai est dépassé. Aucun shell n'est requis, la
+directive du `Dockerfile` utilise la forme exec :
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["/usr/local/bin/automata", "healthcheck"]
+```
+
+**Prérequis** : `observability.enabled` doit valoir `true` dans la
+configuration montée, et `observability.addr` correspondre à l'adresse sondée
+(`127.0.0.1:9090` par défaut). Sans cela aucun serveur HTTP n'écoute, la
+sonde échoue, et le conteneur est signalé `unhealthy` — si l'observabilité
+est délibérément désactivée, neutraliser la sonde côté `compose.yaml` :
+
+```yaml
+healthcheck:
+  disable: true
+```
+
+L'état est ensuite visible via `docker compose ps` ou
+`docker inspect --format '{{.State.Health.Status}}' <conteneur>`. La même
+sonde reste bien sûr interrogeable depuis l'hôte si le port est publié :
 
 ```bash
 curl -s http://127.0.0.1:9090/healthz/ready
 ```
-
-En l'absence d'outil HTTP dans l'image, cette sonde doit être interrogée
-depuis l'extérieur du conteneur (hôte, reverse proxy, orchestrateur externe
-capable de sondes HTTP), pas depuis une directive `HEALTHCHECK`/`healthcheck:`
-exécutée dans le conteneur lui-même.
 
 ## 8. Arrêt gracieux
 
