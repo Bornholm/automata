@@ -7,6 +7,11 @@ restauration et les procédures d'exploitation courantes (mise à jour,
 diagnostic de panne, endpoints de santé), voir `docs/operations.md` — ce
 document ne les duplique pas.
 
+Pour un déploiement sur une instance Dokku, voir
+[misc/dokku/README.md](../misc/dokku/README.md) : `make dokku-deploy` y
+contourne le problème décrit juste en dessous en vendorisant les dépendances
+dans le commit poussé, plutôt qu'en fournissant des contextes de build.
+
 ## 1. Problème bloquant : dépendances locales non publiées
 
 `go.mod` redirige trois dépendances vers des dépôts locaux via des

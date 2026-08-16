@@ -15,6 +15,7 @@ seul sur des expressions cron.
 | [agents.md](agents.md) | Créer ses propres sous-agents, leur brancher des MCP, authentifier chaque utilisateur séparément |
 | [operations.md](operations.md) | Sauvegarde, restauration, mise à jour, diagnostic, métriques |
 | [deployment.md](deployment.md) | Image Docker, volumes, sonde de santé, arrêt gracieux |
+| [../misc/dokku/README.md](../misc/dokku/README.md) | Déploiement sur Dokku (`make dokku-deploy`) |
 | [security-model.md](security-model.md) | Modèle de menace, frontières de confiance, limitations assumées |
 | [integration-inventory.md](integration-inventory.md) | API réelles de go-courier, genai et Amoxtli, et leurs manques |
 

@@ -14,3 +14,5 @@ vet:
 
 race:
 	go test -race ./...
+
+include misc/**/*.mk

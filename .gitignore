@@ -9,3 +9,8 @@
 
 # Données d'exécution : bases SQLite, index de mémoire, session Courier.
 /data/
+
+# Dépendances vendorisées : 85 Mio générés à la demande par `make
+# dokku-deploy`, qui les ajoute au seul commit poussé vers Dokku (git add -f).
+# Elles n'ont rien à faire dans l'historique.
+/vendor/
