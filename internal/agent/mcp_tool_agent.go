@@ -10,6 +10,7 @@ import (
 
 	"github.com/bornholm/genai/llm"
 
+	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/mcp"
 )
 
@@ -48,28 +49,13 @@ type MCPToolAgent struct {
 	systemPrompt           string
 	agentName              string
 	orgDisplayName         string
+	cfg                    *config.Config
 	mcpManager             *mcp.Manager
 	mcpServerNames         []string
 	mcpLimits              mcp.Limits
 	maxSequentialToolCalls int
 	maxToolContextBytes    int64
-	toolsRewriter          ToolsRewriterFunc
 }
-
-// ToolsRewriterFunc transforme les outils MCP bruts d'un spécialiste avant
-// qu'ils ne soient exposés au modèle, pour un Request donné. Introduit par
-// la Phase 13 (agenda) : un spécialiste MCP nu (ex: "research", Phase 12)
-// n'a besoin d'aucune transformation, mais le spécialiste agenda doit
-// réécrire systématiquement calendar_id (PLAN.md §9.2) et transformer les
-// outils d'écriture en actions à confirmer (PLAN.md §10.1) — voir agenda.go.
-// Un rewriter reçoit les outils déjà triés par nom et peut retourner un
-// ensemble différent (nombre, noms, schémas) : MCPToolAgent ne suppose rien
-// de plus que "une liste d'outils exploitable par le modèle".
-//
-// collector reçoit les actions qu'un outil réécrit propose au lieu de les
-// exécuter. Il n'est jamais nil : un rewriter qui n'en produit aucune peut
-// simplement l'ignorer.
-type ToolsRewriterFunc func(ctx context.Context, req Request, tools []llm.Tool, collector *proposalCollector) ([]llm.Tool, error)
 
 // NewMCPToolAgent construit un MCPToolAgent. mcpServerNames est la liste des
 // NOMS de serveurs MCP déclarés par l'agent (agentCfg.MCPServers) : Execute
@@ -77,12 +63,18 @@ type ToolsRewriterFunc func(ctx context.Context, req Request, tools []llm.Tool, 
 // garantit qu'un spécialiste n'a jamais accès aux MCP d'un autre spécialiste
 // (PLAN.md Phase 11, critère de sortie "un spécialiste peut utiliser
 // uniquement ses MCP déclarés").
-func NewMCPToolAgent(client llm.ChatCompletionClient, systemPrompt, agentName, orgDisplayName string, mcpManager *mcp.Manager, mcpServerNames []string, mcpLimits mcp.Limits, maxSequentialToolCalls int) *MCPToolAgent {
+//
+// cfg fournit la politique de chaque serveur : ressource à injecter,
+// classification lecture/écriture, domaine de permission. Un seul type
+// d'agent MCP suffit donc à couvrir agenda, tâches, météo ou n'importe quel
+// autre domaine, sans code dédié (voir applyServerPolicy).
+func NewMCPToolAgent(client llm.ChatCompletionClient, systemPrompt, agentName, orgDisplayName string, cfg *config.Config, mcpManager *mcp.Manager, mcpServerNames []string, mcpLimits mcp.Limits, maxSequentialToolCalls int) *MCPToolAgent {
 	return &MCPToolAgent{
 		client:                 client,
 		systemPrompt:           systemPrompt,
 		agentName:              agentName,
 		orgDisplayName:         orgDisplayName,
+		cfg:                    cfg,
 		mcpManager:             mcpManager,
 		mcpServerNames:         mcpServerNames,
 		mcpLimits:              mcpLimits,
@@ -106,7 +98,15 @@ func NewMCPToolAgent(client llm.ChatCompletionClient, systemPrompt, agentName, o
 func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error) {
 	sessionKey := mcp.SessionKey(req.Conversation.ID)
 
+	// Les outils d'écriture peuvent produire des actions à confirmer plutôt
+	// que de s'exécuter : elles sont collectées ici puis remontées à
+	// l'orchestrateur via Result, qui les transforme en plan persisté
+	// (internal/action).
+	collector := newProposalCollector()
+	dedupe := newWriteDedupeSet()
+
 	var tools []llm.Tool
+
 	for _, serverName := range a.mcpServerNames {
 		// L'identité vient de l'application, jamais du modèle : elle
 		// sélectionne la connexion propre au principal lorsque la
@@ -115,23 +115,24 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 		if err != nil {
 			return Result{}, fmt.Errorf("agent: récupération des outils du serveur mcp %q: %w", serverName, err)
 		}
+
+		// La politique est appliquée serveur par serveur : un même agent peut
+		// déclarer un service en lecture seule et un autre exigeant
+		// confirmation, chacun avec sa propre ressource.
+		serverCfg, ok := a.cfg.MCPServers[serverName]
+		if !ok {
+			return Result{}, fmt.Errorf("agent: serveur mcp %q absent de la configuration", serverName)
+		}
+
+		serverTools, err = applyServerPolicy(a.cfg, serverName, serverCfg, serverTools, req, collector, a.agentName, dedupe)
+		if err != nil {
+			return Result{}, err
+		}
+
 		tools = append(tools, serverTools...)
 	}
+
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
-
-	// Les outils réécrits d'un spécialiste peuvent produire des actions à
-	// confirmer plutôt que de s'exécuter (agenda, todo) : elles sont
-	// collectées ici puis remontées à l'orchestrateur via Result, qui les
-	// transforme en plan persisté (internal/action).
-	collector := newProposalCollector()
-
-	if a.toolsRewriter != nil {
-		rewritten, err := a.toolsRewriter(ctx, req, tools, collector)
-		if err != nil {
-			return Result{}, fmt.Errorf("agent: réécriture des outils mcp: %w", err)
-		}
-		tools = rewritten
-	}
 
 	messages := buildChatMessages(a.systemPrompt, a.agentName, a.orgDisplayName, req)
 
@@ -151,16 +152,6 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 		ProposedActions: collector.take(),
 		Attachments:     loopResult.Attachments,
 	}, nil
-}
-
-// WithToolsRewriter attache fn à a : les outils mcp bruts récupérés à
-// chaque Execute passent par fn avant d'être exposés au modèle. Retourne a
-// pour permettre le chaînage à la construction (voir
-// NewAgendaToolAgent). fn nil (comportement par défaut) ne modifie jamais
-// les outils, exactement le comportement de MCPToolAgent avant la Phase 13.
-func (a *MCPToolAgent) WithToolsRewriter(fn ToolsRewriterFunc) *MCPToolAgent {
-	a.toolsRewriter = fn
-	return a
 }
 
 // WithMaxToolContextBytes borne le cumul des résultats d'outils réinjectés

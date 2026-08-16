@@ -239,19 +239,52 @@ mcp_servers:
     url: ${GOOGLE_CALENDAR_MCP_URL}
     headers:
       Authorization: Bearer ${GOOGLE_CALENDAR_MCP_TOKEN}
+
+    resource:
+      key: calendar
+      parameter: calendar_id
+    permission_domain: calendar
+    tools:
+      confirm_writes: true
+      read_prefixes: [list_, get_, search_, find_]
+      require_rfc3339: [start, end]
+      dedupe_writes: false
 ```
 
 Seul le transport `http` existe. Pas de `stdio`, pas de serveur lancé en
 sous-processus.
 
-Les en-têtes déclarés ici valent pour tout le monde. Pour donner à chaque
-utilisateur son propre jeton, voir la section correspondante d'
-[agents.md](agents.md).
+Aucun nom de serveur n'a de signification pour l'application. Tout ce qui
+distingue un agenda d'une recherche web se déclare dans les champs ci-dessous,
+ce qui permet de brancher n'importe quel service sans écrire de code.
 
-Deux noms sont reconnus par l'application et déclenchent un traitement
-particulier, la résolution de ressource et le flux de confirmation :
-`google-calendar` et `todo`. Les autres sont exposés tels quels au
-spécialiste.
+| Champ | Effet |
+|---|---|
+| `resource.key` | Clé lue dans `channels[].resources` pour la portée courante |
+| `resource.parameter` | Nom du paramètre sous lequel le serveur attend cet identifiant |
+| `permission_domain` | Premier segment des permissions exigées (`calendar` donne `calendar.<portée>.write`) |
+| `tools.confirm_writes` | Transforme les écritures en actions à confirmer au lieu de les exécuter |
+| `tools.read_prefixes` | Préfixes identifiant une lecture. Tout le reste est une écriture |
+| `tools.require_rfc3339` | Paramètres devant être des dates avec fuseau explicite |
+| `tools.dedupe_writes` | Écarte deux écritures identiques proposées dans le même tour |
+
+Les valeurs par défaut donnent un service en lecture seule : sans `resource`,
+rien n'est injecté ; sans `confirm_writes`, tous les outils s'exécutent
+directement. C'est le réglage d'`internet-search` dans l'exemple livré.
+
+`permission_domain` devient obligatoire dès que `confirm_writes` est vrai.
+Sans lui, l'application ne saurait pas quelle permission exiger avant
+d'exécuter une action confirmée, et écrirait donc sans contrôle
+d'autorisation.
+
+La classification par préfixe de nom est un pis-aller assumé. Le protocole MCP
+expose bien une annotation `readOnlyHint`, mais la bibliothèque genai ne la
+transporte pas jusqu'aux outils : le nom est le seul signal disponible. Un
+outil hors de `read_prefixes` est donc traité en écriture, position prudente
+plutôt que l'inverse.
+
+Les en-têtes déclarés ici valent pour tout le monde. Pour donner à chaque
+utilisateur son propre jeton, voir [agents.md](agents.md).
 
 ## memory
 

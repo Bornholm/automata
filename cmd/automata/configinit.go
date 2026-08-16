@@ -210,14 +210,23 @@ type initChannel struct {
 	ScopeID     string
 	PrincipalID string
 	Members     []string
-	Calendar    string
-	Todo        string
+	// Resources associe une clé de ressource (déclarée par un serveur MCP) au
+	// nom de la variable d'environnement portant sa valeur.
+	Resources map[string]string
 }
 
 type initServer struct {
 	Name     string
 	URLVar   string
 	TokenVar string
+
+	// Politique applicative du serveur. Vide pour un service en lecture
+	// seule, dont tous les outils s'exécutent directement.
+	ResourceKey      string
+	ResourceParam    string
+	PermissionDomain string
+	RequireRFC3339   bool
+	DedupeWrites     bool
 }
 
 type initAgent struct {
@@ -395,15 +404,24 @@ func askSpecialists(w *wizard, a *initAnswers) {
 	fmt.Fprintln(w.out, "Vous pourrez en ajouter d'autres plus tard : voir docs/agents.md.")
 	fmt.Fprintln(w.out)
 
+	// Ce catalogue est une commodité d'amorçage, pas une liste de domaines
+	// connus de l'application : chaque entrée ne fait que pré-remplir une
+	// politique que l'opérateur aurait pu écrire à la main. N'importe quel
+	// autre service se déclare de la même façon, sans toucher au code.
 	catalogue := []struct {
-		server string
-		agent  string
-		label  string
-		asks   bool
+		server           string
+		agent            string
+		label            string
+		asks             bool
+		resourceKey      string
+		resourceParam    string
+		permissionDomain string
+		requireRFC3339   bool
+		dedupeWrites     bool
 	}{
-		{"google-calendar", "agenda", "Agenda (lecture et création d'événements)", true},
-		{"internet-search", "research", "Recherche Internet", false},
-		{"todo", "todo", "Listes de tâches", true},
+		{"google-calendar", "agenda", "Agenda (lecture et création d'événements)", true, "calendar", "calendar_id", "calendar", true, false},
+		{"internet-search", "research", "Recherche Internet", false, "", "", "", false, false},
+		{"todo", "todo", "Listes de tâches", true, "todo", "list_id", "todo", false, true},
 	}
 
 	for _, entry := range catalogue {
@@ -412,8 +430,13 @@ func askSpecialists(w *wizard, a *initAnswers) {
 		}
 
 		server := initServer{
-			Name:   entry.server,
-			URLVar: envVarName(entry.server, "mcp", "url"),
+			Name:             entry.server,
+			URLVar:           envVarName(entry.server, "mcp", "url"),
+			ResourceKey:      entry.resourceKey,
+			ResourceParam:    entry.resourceParam,
+			PermissionDomain: entry.permissionDomain,
+			RequireRFC3339:   entry.requireRFC3339,
+			DedupeWrites:     entry.dedupeWrites,
 		}
 
 		if w.askYesNo("  ce serveur demande-t-il un jeton d'authentification", entry.asks) {
@@ -441,17 +464,20 @@ func askSpecialists(w *wizard, a *initAnswers) {
 		})
 	}
 
-	// Les ressources par portée n'ont de sens que si le spécialiste
-	// correspondant existe.
-	hasCalendar := slicesContains(a.Servers, "google-calendar")
-	hasTodo := slicesContains(a.Servers, "todo")
-
-	for i := range a.Channels {
-		if hasCalendar {
-			a.Channels[i].Calendar = envVarName(a.Channels[i].ScopeID, "calendar", "id")
+	// Chaque serveur déclarant une ressource impose aux canaux de la fournir
+	// pour leur portée. La clé n'est pas connue d'avance : elle vient de la
+	// politique du serveur.
+	for _, server := range a.Servers {
+		if server.ResourceKey == "" {
+			continue
 		}
-		if hasTodo {
-			a.Channels[i].Todo = envVarName(a.Channels[i].ScopeID, "todo", "id")
+
+		for i := range a.Channels {
+			if a.Channels[i].Resources == nil {
+				a.Channels[i].Resources = map[string]string{}
+			}
+
+			a.Channels[i].Resources[server.ResourceKey] = envVarName(a.Channels[i].ScopeID, server.ResourceKey, "id")
 		}
 	}
 }
@@ -485,16 +511,6 @@ func askSchedule(w *wizard, a *initAnswers) {
 	}
 }
 
-func slicesContains(servers []initServer, name string) bool {
-	for _, server := range servers {
-		if server.Name == name {
-			return true
-		}
-	}
-
-	return false
-}
-
 // collectEnvVars rassemble, sans doublon, toutes les variables référencées.
 func (a *initAnswers) collectEnvVars() {
 	seen := map[string]bool{}
@@ -521,8 +537,9 @@ func (a *initAnswers) collectEnvVars() {
 
 	for _, channel := range a.Channels {
 		add(channel.IDVar)
-		add(channel.Calendar)
-		add(channel.Todo)
+		for _, key := range sortedResourceKeys(channel.Resources) {
+			add(channel.Resources[key])
+		}
 	}
 
 	for _, server := range a.Servers {
@@ -568,4 +585,17 @@ func writeIfAbsent(path, content string) error {
 	}
 
 	return nil
+}
+
+// sortedResourceKeys retourne les clés de resources triées, pour que la
+// génération soit reproductible d'une exécution à l'autre.
+func sortedResourceKeys(resources map[string]string) []string {
+	keys := make([]string, 0, len(resources))
+	for key := range resources {
+		keys = append(keys, key)
+	}
+
+	sort.Strings(keys)
+
+	return keys
 }

@@ -116,7 +116,7 @@ func TestMCPToolAgent_SimpleSearch(t *testing.T) {
 		},
 	}
 
-	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", m, []string{"internet-search"}, mcp.Limits{}, 5)
+	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", cfg, m, []string{"internet-search"}, mcp.Limits{}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Conversation: testConversation(), Input: "Quelle est la capitale du Portugal ?"})
 	if err != nil {
@@ -154,7 +154,7 @@ func TestMCPToolAgent_MultipleResultsAllReferencesCollected(t *testing.T) {
 		},
 	}
 
-	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", m, []string{"internet-search"}, mcp.Limits{}, 5)
+	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", cfg, m, []string{"internet-search"}, mcp.Limits{}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Conversation: testConversation(), Input: "Cherche des exemples"})
 	if err != nil {
@@ -188,7 +188,7 @@ func TestMCPToolAgent_NetworkErrorReturnsClearError(t *testing.T) {
 		},
 	}
 
-	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", m, []string{"internet-search"}, mcp.Limits{}, 5)
+	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", cfg, m, []string{"internet-search"}, mcp.Limits{}, 5)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
@@ -219,7 +219,7 @@ func TestMCPToolAgent_NoRelevantResultEmptyReferences(t *testing.T) {
 		},
 	}
 
-	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", m, []string{"internet-search"}, mcp.Limits{}, 5)
+	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", cfg, m, []string{"internet-search"}, mcp.Limits{}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Conversation: testConversation(), Input: "Cherche quelque chose d'improbable"})
 	if err != nil {
@@ -265,7 +265,7 @@ func TestMCPToolAgent_TruncatedResultStillCompletesTurn(t *testing.T) {
 		},
 	}
 
-	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", m, []string{"internet-search"}, mcp.Limits{MaxToolResultBytes: 40}, 5)
+	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", cfg, m, []string{"internet-search"}, mcp.Limits{MaxToolResultBytes: 40}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Conversation: testConversation(), Input: "Donne-moi une réponse longue"})
 	if err != nil {
@@ -302,7 +302,7 @@ func TestMCPToolAgent_ReferenceKeptFromToolResult(t *testing.T) {
 		},
 	}
 
-	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", m, []string{"internet-search"}, mcp.Limits{}, 5)
+	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", cfg, m, []string{"internet-search"}, mcp.Limits{}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Conversation: testConversation(), Input: "Trouve un article"})
 	if err != nil {
@@ -344,7 +344,7 @@ func TestMCPToolAgent_NoAccessToOtherSpecialistMCPServers(t *testing.T) {
 	// Le spécialiste "research" ne déclare que "internet-search" dans
 	// MCPServers : voir NewMCPToolAgent, mcpManager.GetTools ne doit jamais
 	// être appelé pour "google-calendar" ou "todo" pour cette session.
-	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", m, []string{"internet-search"}, mcp.Limits{}, 5)
+	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", cfg, m, []string{"internet-search"}, mcp.Limits{}, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{Conversation: testConversation(), Input: "Bonjour"})
 	if err != nil {
@@ -380,7 +380,7 @@ func TestMCPToolAgent_MaxToolCallsReached(t *testing.T) {
 	}
 
 	const maxSequentialToolCalls = 3
-	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", m, []string{"internet-search"}, mcp.Limits{}, maxSequentialToolCalls)
+	a := agent.NewMCPToolAgent(client, "system", "research", "Test Org", cfg, m, []string{"internet-search"}, mcp.Limits{}, maxSequentialToolCalls)
 
 	_, err := a.Execute(context.Background(), agent.Request{Conversation: testConversation(), Input: "Boucle"})
 	if !errors.Is(err, agent.ErrMaxToolCallsReached) {

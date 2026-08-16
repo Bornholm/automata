@@ -128,6 +128,9 @@ agents:
       max_tool_context_bytes: 32KiB
 {{ end }}
 {{- if .Servers }}
+# Tout le comportement applicatif d'un service se déclare ici : ressource à
+# injecter, outils exigeant confirmation, domaine de permission. L'application
+# ne connaît aucun domaine par son nom.
 mcp_servers:
 {{- range .Servers }}
   {{ .Name }}:
@@ -136,6 +139,27 @@ mcp_servers:
 {{- if .TokenVar }}
     headers:
       Authorization: Bearer ${{"{"}}{{ .TokenVar }}{{"}"}}
+{{- end }}
+{{- if .ResourceKey }}
+    # Identifiant injecté par l'application dans chaque appel, lu dans
+    # channels[].resources.{{ .ResourceKey }} selon la portée courante.
+    resource:
+      key: {{ .ResourceKey }}
+      parameter: {{ .ResourceParam }}
+    permission_domain: {{ .PermissionDomain }}
+    tools:
+      # Les outils d'écriture deviennent des actions à confirmer.
+      confirm_writes: true
+      read_prefixes: [list_, get_, search_, find_]
+{{- if .RequireRFC3339 }}
+      require_rfc3339: [start, end, start_time, end_time]
+{{- end }}
+{{- if .DedupeWrites }}
+      dedupe_writes: true
+{{- end }}
+{{- else }}
+    # Aucune ressource, aucune confirmation : tous les outils s'exécutent
+    # directement, réglage d'un service en lecture seule.
 {{- end }}
 {{- end }}
 {{- end }}
@@ -249,15 +273,13 @@ channels:
       - {{ . }}
 {{- end }}
 {{- end }}
-{{- if or .Calendar .Todo }}
+{{- if .Resources }}
     # Identifiants des ressources externes : résolus par l'application, jamais
-    # exposés au modèle ni acceptés de sa part.
+    # exposés au modèle ni acceptés de sa part. Chaque clé correspond à un
+    # mcp_servers.<nom>.resource.key.
     resources:
-{{- if .Calendar }}
-      calendar: ${{"{"}}{{ .Calendar }}{{"}"}}
-{{- end }}
-{{- if .Todo }}
-      todo: ${{"{"}}{{ .Todo }}{{"}"}}
+{{- range $key, $var := .Resources }}
+      {{ $key }}: ${{"{"}}{{ $var }}{{"}"}}
 {{- end }}
 {{- end }}
 {{- end }}

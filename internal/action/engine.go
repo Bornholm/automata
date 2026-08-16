@@ -676,12 +676,13 @@ func (e *Engine) executeAction(ctx context.Context, identity model.ExecutionIden
 	}
 
 	// 6. Résoudre à nouveau les ressources externes. L'identifiant n'est
-	// jamais lu depuis l'action persistée : les spécialistes le retirent au
-	// moment de la proposition (voir internal/agent, wrapCalendarWriteTool /
-	// wrapTodoWriteTool) et il est réinjecté ici depuis la portée du plan.
-	// Une action confirmée écrit donc toujours dans la ressource courante de
-	// sa portée, et jamais dans celle qu'un modèle aurait pu suggérer ou
-	// qu'une configuration antérieure aurait désignée.
+	// jamais lu depuis l'action persistée : le spécialiste le retire au
+	// moment de la proposition (voir internal/agent, wrapWriteTool) et il est
+	// réinjecté ici depuis la portée du plan, d'après ce que déclare
+	// mcp_servers.<nom>.resource. Une action confirmée écrit donc toujours
+	// dans la ressource courante de sa portée, jamais dans celle qu'un modèle
+	// aurait pu suggérer ni dans celle qu'une configuration antérieure
+	// désignait.
 	args, err = resource.InjectResolved(e.cfg, act.MCPServer, plan.Scope, plan.ScopeID, args)
 	if err != nil {
 		return e.failAction(ctx, act, "resource_not_configured", err)

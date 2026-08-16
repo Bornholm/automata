@@ -244,6 +244,31 @@ func validateMCPServers(cfg *Config) []error {
 		if server.URL == "" {
 			errs = append(errs, fmt.Errorf("mcp_servers.%s.url: requis", name))
 		}
+
+		if server.Resource != nil {
+			if server.Resource.Key == "" {
+				errs = append(errs, fmt.Errorf("mcp_servers.%s.resource.key: requis (clé lue dans channels[].resources)", name))
+			}
+
+			if server.Resource.Parameter == "" {
+				errs = append(errs, fmt.Errorf("mcp_servers.%s.resource.parameter: requis (nom du paramètre attendu par le serveur)", name))
+			}
+		}
+
+		// Sans domaine, l'application ne saurait pas quelle permission
+		// exiger avant d'exécuter une action confirmée : elle exécuterait
+		// donc une écriture externe sans contrôle d'autorisation.
+		if server.Tools.ConfirmWrites && server.PermissionDomain == "" {
+			errs = append(errs, fmt.Errorf("mcp_servers.%s.permission_domain: requis lorsque tools.confirm_writes est vrai", name))
+		}
+
+		if server.PermissionDomain != "" && strings.Contains(server.PermissionDomain, ".") {
+			errs = append(errs, fmt.Errorf("mcp_servers.%s.permission_domain: %q ne doit pas contenir de point (le domaine est le premier segment de <domaine>.<portée>.<action>)", name, server.PermissionDomain))
+		}
+
+		if len(server.Tools.ReadPrefixes) > 0 && !server.Tools.ConfirmWrites {
+			errs = append(errs, fmt.Errorf("mcp_servers.%s.tools.read_prefixes: sans effet lorsque tools.confirm_writes est faux (tous les outils s'exécutent déjà directement)", name))
+		}
 	}
 
 	return errs

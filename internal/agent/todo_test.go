@@ -114,7 +114,20 @@ func testTodoConfig(t *testing.T, todoServerURL string) *config.Config {
 	return &config.Config{
 		Organization: config.Organization{ID: "home", DisplayName: "Maison"},
 		MCPServers: map[string]config.MCPServer{
-			"todo": {Transport: "http", URL: todoServerURL},
+			// Même mécanisme que l'agenda, réglé autrement : ici la
+			// déduplication des écritures est active, et aucun paramètre n'est
+			// contraint au format RFC3339.
+			"todo": {
+				Transport:        "http",
+				URL:              todoServerURL,
+				Resource:         &config.MCPResource{Key: "todo", Parameter: "list_id"},
+				PermissionDomain: "todo",
+				Tools: config.MCPTools{
+					ConfirmWrites: true,
+					ReadPrefixes:  []string{"list_", "get_", "search_", "find_"},
+					DedupeWrites:  true,
+				},
+			},
 		},
 		Channels: []config.Channel{
 			{
@@ -137,7 +150,7 @@ func newTodoAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionCli
 	m := mcp.NewManager(cfg, nil)
 	t.Cleanup(func() { _ = m.Close() })
 
-	return agent.NewTodoToolAgent(client, "system", "todo", "Maison", m, []string{"todo"}, mcp.Limits{}, maxSequentialToolCalls, cfg)
+	return agent.NewMCPToolAgent(client, "system", "todo", "Maison", cfg, m, []string{"todo"}, mcp.Limits{}, maxSequentialToolCalls)
 }
 
 func todoPrivateConversation(id model.ConversationID) model.Conversation {

@@ -65,11 +65,11 @@ sécurité.**
   `internal/identity.EffectivePermissions` à partir de la configuration, et
   vérifiées par `internal/authorization.Authorizer.Authorize`, jamais par le
   contenu généré par le modèle.
-- Les **identifiants de ressources externes résolus** (`calendar_id`,
-  `list_id`) : résolus par `internal/resource.Resolve*` à partir de la
-  portée de la conversation et de la configuration, puis réinjectés de force
-  dans les arguments d'outil — toute valeur fournie par le modèle sous ces
-  noms est écrasée avant l'appel réel (voir §4, point A.2).
+- Les **identifiants de ressources externes** : résolus par
+  `internal/resource.Resolve` à partir de la portée de la conversation et de
+  la configuration, puis réinjectés de force dans les arguments d'outil. Toute
+  valeur fournie par le modèle sous le paramètre déclaré est écrasée avant
+  l'appel réel (voir §4, point A.2).
 - L'**autorisation d'une action sensible** : une action proposée n'est
   jamais exécutée sur la seule foi de la proposition ; elle exige une
   confirmation humaine explicite (commande littérale `confirmer`/`annuler`,
@@ -93,23 +93,29 @@ d'écriture/lecture sensible identifié :
   systématique des permissions au moment de la confirmation d'un plan
   d'actions, indépendamment de l'autorisation obtenue à la proposition.
 
-**Agenda/todo** : `internal/agent/agenda.go` et `internal/agent/todo.go`
-n'appellent pas `Authorizer.Authorize` eux-mêmes, et n'en ont pas besoin.
+**Spécialistes MCP** : `internal/agent/mcp_policy.go` n'appelle pas
+`Authorizer.Authorize` lui-même, et n'en a pas besoin.
 
-En **lecture**, `calendar_id`/`list_id` sont résolus une seule fois, à la
-construction des outils du tour, exclusivement à partir de
-`req.Conversation.Scope`/`ScopeID` (déjà déterminés par
+En **lecture**, l'identifiant de ressource est résolu exclusivement à partir
+de `req.Conversation.Scope`/`ScopeID` (déjà déterminés par
 `internal/identity.Resolver` avant que le LLM soit appelé), via
-`resource.ResolveCalendarID`/`ResolveTodoListID`. La valeur est capturée dans
-la fermeture du wrapper d'outil, jamais relue depuis les arguments du modèle :
-aucune portée alternative n'est atteignable.
+`resource.Resolve`. Il est injecté à chaque appel en écrasant ce que le modèle
+aurait pu fournir sous ce nom : aucune portée alternative n'est atteignable.
 
 En **écriture**, aucun appel MCP n'a lieu dans le tour : l'outil enregistre
 une `delegation.ProposedAction` portant la portée résolue et la permission
-requise (`calendar.<scope>.write`, `todo.<scope>.write`), qui devient un plan
-persisté. C'est `internal/action.Engine` qui exécute après confirmation, et
-qui applique alors les deux contrôles décrits ci-dessus : revérification de
-permission (étape 5) et résolution fraîche de la ressource (étape 6).
+requise, construite à partir du `permission_domain` déclaré pour le serveur.
+Elle devient un plan persisté. C'est `internal/action.Engine` qui exécute
+après confirmation, et qui applique alors les deux contrôles décrits
+ci-dessus : revérification de permission (étape 5) et résolution fraîche de la
+ressource (étape 6).
+
+Ce mécanisme est agnostique du domaine. Aucun service n'est connu du code :
+ressource, domaine de permission et classification lecture/écriture viennent
+de `mcp_servers.<nom>`. Conséquence pour la sécurité, un serveur mal déclaré
+est un risque de configuration, pas de code. La validation refuse donc
+`confirm_writes` sans `permission_domain`, cas où une écriture s'exécuterait
+sans contrôle d'autorisation.
 
 Aucune décision de portée, de permission ou de ressource ne dépend d'une
 valeur fournie par le modèle : vérifié par revue exhaustive des accès à
@@ -121,15 +127,13 @@ tool-call.
 
 **Conforme, vérifié sans régression.**
 
-- **Lectures** — `internal/agent/agenda.go` (`wrapCalendarReadTool`) et
-  `internal/agent/todo.go` (`wrapTodoReadTool`) écrasent systématiquement
-  `calendar_id`/`list_id` avec la valeur résolue par l'application, quelle que
-  soit celle envoyée par le modèle sous ce nom.
-- **Écritures** — `wrapCalendarWriteTool`/`wrapTodoWriteTool` **retirent**
-  l'identifiant des arguments au lieu de l'y figer. Un identifiant forgé par
-  le modèle ne survit donc pas jusqu'à l'action persistée
-  (tests `..._ForgedCalendarIDNeverReachesProposedAction`,
-  `..._ForgedListIDIgnored`).
+- **Lectures** — `wrapDirectTool` (`internal/agent/mcp_policy.go`) écrase
+  systématiquement le paramètre de ressource avec la valeur résolue par
+  l'application, quelle que soit celle envoyée par le modèle sous ce nom.
+- **Écritures** — `wrapWriteTool` **retire** l'identifiant des arguments au
+  lieu de l'y figer. Un identifiant forgé par le modèle ne survit donc pas
+  jusqu'à l'action persistée (tests `..._ForgedCalendarIDNeverReachesProposedAction`,
+  `..._ForgedListIDIgnored`, `TestUnknownDomain_WriteBecomesProposedAction`).
 - **Exécution après confirmation** — `internal/action/engine.go`
   (`executeAction`, étape 6) réinjecte l'identifiant via
   `resource.InjectResolved`, à partir de la portée du **plan persisté**, juste
@@ -144,9 +148,10 @@ le serveur MCP reçoit malgré tout le calendrier de la portée.
 
 Il n'existe donc aucun chemin où un argument MCP forgé contenant un
 identifiant de ressource externe atteindrait un appel MCP. Point de vigilance
-pour l'avenir : un nouveau serveur MCP porteur d'une ressource résolue par
-l'application doit être déclaré dans `internal/resource` (constantes et
-`InjectResolved`), faute de quoi ses arguments passeraient inchangés.
+pour l'avenir : un serveur porteur d'une ressource doit la déclarer sous
+`mcp_servers.<nom>.resource`, faute de quoi ses arguments passeraient
+inchangés. C'est désormais une erreur de configuration possible, plus un
+oubli de code.
 
 ### A.3 — Injection de prompt
 

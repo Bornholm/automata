@@ -56,56 +56,105 @@ serait impossible.
 
 ## Ajouter un spécialiste
 
-Prenons un spécialiste météo branché sur un serveur MCP maison.
+Aucun domaine n'est connu du code. Agenda, tâches, météo, domotique, comptabilité :
+tous se déclarent de la même façon, et l'application applique le même
+mécanisme. Ajouter un spécialiste ne demande jamais de modifier du Go.
 
-### 1. Déclarer le serveur MCP
+Prenons un suivi de ruches, pour bien montrer qu'aucun domaine n'est
+privilégié.
+
+### 1. Déclarer le serveur MCP et sa politique
 
 ```yaml
 mcp_servers:
-  meteo:
+  ruches:
     transport: http
-    url: ${METEO_MCP_URL}
+    url: ${RUCHES_MCP_URL}
     headers:
-      Authorization: Bearer ${METEO_MCP_TOKEN}
+      Authorization: Bearer ${RUCHES_MCP_TOKEN}
+
+    # L'application injecte cet identifiant dans chaque appel, en le lisant
+    # dans channels[].resources.apiary selon la portée de la conversation.
+    resource:
+      key: apiary
+      parameter: apiary_id
+
+    # Les permissions exigées seront apiary.<portée>.write.
+    permission_domain: apiary
+
+    tools:
+      # Les écritures deviennent des actions à confirmer.
+      confirm_writes: true
+      read_prefixes: [list_, get_]
+      dedupe_writes: true
 ```
+
+Puis les ressources correspondantes sur les canaux :
+
+```yaml
+channels:
+  - provider: whatsapp
+    channel_id: ${ALICE_PRIVATE_CHANNEL_ID}
+    kind: private
+    scope: personal
+    scope_id: alice
+    principal_id: alice
+    resources:
+      apiary: ${ALICE_APIARY_ID}
+```
+
+À partir de là, `list_hives` s'exécute directement avec le bon `apiary_id`, et
+`register_harvest` produit une action que l'utilisateur devra confirmer, sous
+la permission `apiary.personal.write`. Sans écrire de code.
+
+Un service en lecture seule se déclare sans rien de tout cela :
+
+```yaml
+mcp_servers:
+  internet-search:
+    transport: http
+    url: ${SEARCH_MCP_URL}
+```
+
+Tous ses outils s'exécutent directement, aucune ressource n'est injectée.
 
 Seul le transport `http` existe. Un serveur lancé en sous-processus (`stdio`)
 n'est pas représentable.
 
 ### 2. Écrire son prompt
 
-`prompts/meteo.md` :
+`prompts/ruches.md` :
 
 ```markdown
-Tu es le spécialiste météo. Tu n'échanges pas avec l'utilisateur : tu reçois
-un objectif de l'agent généraliste et tu lui rends un résultat.
+Tu es le spécialiste du rucher. Tu n'échanges pas avec l'utilisateur : tu
+reçois un objectif de l'agent généraliste et tu lui rends un résultat.
 
 ## Ton, personnalité
 
-Bref et factuel. Températures en degrés Celsius, jamais de longue narration.
+Bref et factuel. Poids en kilogrammes, jamais de longue narration.
 
 ## Ta mission
 
-Consulter les prévisions demandées et les résumer en deux ou trois lignes.
+Consulter l'état des ruches et enregistrer les récoltes.
 
-Si une localité est ambiguë, tu demandes une précision plutôt que de choisir.
-Tu ne prévois rien au-delà de ce que la source te donne.
+Si une ruche est désignée de façon ambiguë, tu demandes une précision plutôt
+que de choisir. Tu n'inventes jamais un relevé que la source ne donne pas.
 ```
 
 ### 3. Déclarer l'agent
 
 ```yaml
 agents:
-  meteo:
+  ruches:
     type: specialist
     client: main
     system_prompt:
-      file: ../prompts/meteo.md
+      file: ../prompts/ruches.md
     mcp_servers:
-      - meteo
+      - ruches
     limits:
       max_sequential_tool_calls: 4
-      max_actions_per_turn: 1
+      max_actions_per_turn: 3
       tool_timeout: 20s
       max_tool_result_bytes: 8KiB
       max_tool_context_bytes: 16KiB
@@ -123,7 +172,7 @@ agents:
       - agenda
       - research
       - todo
-      - meteo
+      - ruches
 ```
 
 L'orchestrateur expose alors un outil `delegate_to_meteo`. Un spécialiste
@@ -238,13 +287,9 @@ surcharges de ce principal, s'il en a.
 
 ## Résolution des ressources
 
-Deux noms de serveur déclenchent un traitement supplémentaire :
-`google-calendar` et `todo`.
-
-Pour ces deux-là, l'application injecte elle-même l'identifiant de la
-ressource, `calendar_id` ou `list_id`, à partir de `channels[].resources` et
-de la portée de la conversation. Une valeur fournie par le modèle sous ce nom
-est écartée.
+Un serveur qui déclare `resource` voit son identifiant injecté par
+l'application, à partir de `channels[].resources` et de la portée de la
+conversation. Une valeur fournie par le modèle sous ce nom est écartée.
 
 En lecture, l'identifiant est injecté à l'appel. En écriture, l'outil
 n'exécute rien : il enregistre une action à confirmer, dont les arguments ne
@@ -252,11 +297,9 @@ contiennent délibérément aucun identifiant de ressource. Celui-ci est résolu
 nouveau au moment de la confirmation, depuis la portée du plan. Une action
 confirmée écrit donc toujours dans la ressource courante de sa portée.
 
-Pour brancher un troisième service sur ce mécanisme, le nom du serveur et le
-nom du paramètre doivent être déclarés dans `internal/resource`. C'est du code,
-pas de la configuration. Sans cette déclaration, les arguments passent tels
-quels, ce qui convient à un service sans notion de ressource par utilisateur,
-comme une recherche web.
+Si la portée courante ne déclare pas la ressource, le spécialiste échoue avec
+une erreur claire avant tout appel au modèle, plutôt qu'au moment de confirmer
+un plan déjà annoncé à l'utilisateur.
 
 ## Écritures et confirmation
 

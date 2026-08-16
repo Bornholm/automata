@@ -231,11 +231,67 @@ type AgentLimits struct {
 	MaxToolContextBytes    ByteSize `yaml:"max_tool_context_bytes"`
 }
 
-// MCPServer décrit un serveur MCP accessible aux agents.
+// MCPServer décrit un serveur MCP accessible aux agents, et la façon dont
+// l'application traite ses outils.
+//
+// Tout ce qui distingue un serveur d'agenda d'un serveur de recherche est
+// déclaré ici : l'application ne connaît aucun service par son nom. Brancher
+// un nouveau domaine (météo, CRM, domotique) se fait entièrement en
+// configuration.
 type MCPServer struct {
 	Transport string            `yaml:"transport"`
 	URL       string            `yaml:"url"`
 	Headers   map[string]string `yaml:"headers"`
+	// Resource, si déclarée, fait injecter par l'application un identifiant
+	// de ressource dans chaque appel d'outil. Absente, les arguments passent
+	// tels quels.
+	Resource *MCPResource `yaml:"resource"`
+	// PermissionDomain est le premier segment des permissions exigées par ce
+	// serveur ("calendar" produit calendar.<portée>.write). Requis dès que
+	// Tools.ConfirmWrites est vrai.
+	PermissionDomain string `yaml:"permission_domain"`
+	// Tools décrit comment classer et encadrer les outils du serveur.
+	Tools MCPTools `yaml:"tools"`
+}
+
+// MCPResource associe un serveur MCP à une ressource déclarée par canal.
+//
+// Key est la clé lue dans channels[].resources. Parameter est le nom sous
+// lequel le serveur attend l'identifiant. Une valeur fournie par le modèle
+// sous ce nom est toujours écartée : l'application résout la ressource depuis
+// la portée de la conversation, jamais depuis les arguments du modèle
+// (PLAN.md §9.2).
+type MCPResource struct {
+	Key       string `yaml:"key"`
+	Parameter string `yaml:"parameter"`
+}
+
+// MCPTools décrit le traitement appliqué aux outils d'un serveur.
+type MCPTools struct {
+	// ConfirmWrites transforme les outils d'écriture en actions soumises à
+	// la confirmation de l'utilisateur, au lieu de les exécuter. Faux par
+	// défaut : tous les outils s'exécutent directement, ce qui convient à un
+	// service en lecture seule comme une recherche web.
+	ConfirmWrites bool `yaml:"confirm_writes"`
+	// ReadPrefixes énumère les préfixes de nom identifiant un outil de
+	// lecture, exécuté directement. Tout outil hors de cette liste est
+	// considéré en écriture lorsque ConfirmWrites est vrai.
+	//
+	// Le protocole MCP expose bien une annotation readOnlyHint, mais elle
+	// n'est pas transportée jusqu'aux outils par la bibliothèque genai : la
+	// classification par nom est le seul signal disponible côté application.
+	// Liste vide avec ConfirmWrites vrai : tous les outils exigent une
+	// confirmation, position prudente par défaut.
+	ReadPrefixes []string `yaml:"read_prefixes"`
+	// DedupeWrites écarte deux actions d'écriture strictement identiques
+	// proposées dans le même tour. Utile pour un service où une double
+	// création est un incident, inutile ailleurs.
+	DedupeWrites bool `yaml:"dedupe_writes"`
+	// RequireRFC3339 énumère les paramètres qui doivent être des dates
+	// RFC3339 avec fuseau explicite. Un paramètre ambigu fait échouer la
+	// proposition avec un message clair, plutôt que d'enregistrer une action
+	// dont personne ne sait à quelle heure elle aura lieu.
+	RequireRFC3339 []string `yaml:"require_rfc3339"`
 }
 
 // Memory décrit la configuration du système de mémoire (Amoxtli).

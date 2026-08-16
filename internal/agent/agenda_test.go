@@ -111,7 +111,19 @@ func testCalendarConfig(t *testing.T, calendarServerURL string) *config.Config {
 	return &config.Config{
 		Organization: config.Organization{ID: "home", DisplayName: "Maison"},
 		MCPServers: map[string]config.MCPServer{
-			"google-calendar": {Transport: "http", URL: calendarServerURL},
+			// Toute la spécificité « agenda » vit ici, en configuration :
+			// l'application ne connaît pas ce domaine.
+			"google-calendar": {
+				Transport:        "http",
+				URL:              calendarServerURL,
+				Resource:         &config.MCPResource{Key: "calendar", Parameter: "calendar_id"},
+				PermissionDomain: "calendar",
+				Tools: config.MCPTools{
+					ConfirmWrites:  true,
+					ReadPrefixes:   []string{"list_", "get_", "search_", "find_"},
+					RequireRFC3339: []string{"start", "end"},
+				},
+			},
 		},
 		Channels: []config.Channel{
 			{
@@ -139,7 +151,7 @@ func newAgendaAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionC
 	m := mcp.NewManager(cfg, nil)
 	t.Cleanup(func() { _ = m.Close() })
 
-	return agent.NewAgendaToolAgent(client, "system", "agenda", "Maison", m, []string{"google-calendar"}, mcp.Limits{}, maxSequentialToolCalls, cfg)
+	return agent.NewMCPToolAgent(client, "system", "agenda", "Maison", cfg, m, []string{"google-calendar"}, mcp.Limits{}, maxSequentialToolCalls)
 }
 
 func privateConversation(id model.ConversationID) model.Conversation {

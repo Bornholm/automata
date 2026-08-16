@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"github.com/bornholm/genai/llm"
 	"github.com/bornholm/genai/llm/provider"
@@ -15,20 +14,6 @@ import (
 	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/observability"
-	"github.com/bornholm/automata/internal/resource"
-)
-
-// Noms conventionnels des serveurs MCP déclarés par
-// agents.<nom>.mcp_servers (PLAN.md §9.1, Phases 13 et 14) : c'est leur
-// présence dans agentCfg.MCPServers qui identifie le spécialiste agenda ou
-// todo (voir NewRegistryWithMemory ci-dessous).
-//
-// Ils sont repris de internal/resource, qui les partage avec
-// internal/action : le même nom sert à décider du type de spécialiste ici, et
-// à résoudre la ressource au moment d'exécuter une action confirmée.
-const (
-	calendarMCPServerName = resource.CalendarMCPServerName
-	todoMCPServerName     = resource.TodoMCPServerName
 )
 
 // Registry construit et détient un Agent isolé pour chaque agent déclaré
@@ -124,53 +109,22 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 					MaxToolResultBytes: int64(agentCfg.Limits.MaxToolResultBytes.Bytes()),
 				}
 
-				// Le spécialiste agenda est identifié par la présence du
-				// serveur MCP "google-calendar" parmi ses MCPServers, plutôt
-				// que par son nom d'agent : un nom (ex: "agenda") est un
-				// choix arbitraire de l'opérateur qui configure agents.yaml,
-				// alors que le serveur MCP déclaré décrit sans ambiguïté ce
-				// que l'agent peut effectivement faire (PLAN.md Phase 13).
-				// Tout autre spécialiste MCP (ex: "research", Phase 12) qui
-				// ne déclare pas ce serveur reste un MCPToolAgent nu, sans
-				// aucune résolution de ressource ni confirmation.
-				var specialist *MCPToolAgent
-
-				if slices.Contains(agentCfg.MCPServers, calendarMCPServerName) {
-					specialist = NewAgendaToolAgent(
-						clients[name],
-						prompts[name],
-						name,
-						cfg.Organization.DisplayName,
-						mcpManager,
-						agentCfg.MCPServers,
-						limits,
-						agentCfg.Limits.MaxSequentialToolCalls,
-						cfg,
-					)
-				} else if slices.Contains(agentCfg.MCPServers, todoMCPServerName) {
-					specialist = NewTodoToolAgent(
-						clients[name],
-						prompts[name],
-						name,
-						cfg.Organization.DisplayName,
-						mcpManager,
-						agentCfg.MCPServers,
-						limits,
-						agentCfg.Limits.MaxSequentialToolCalls,
-						cfg,
-					)
-				} else {
-					specialist = NewMCPToolAgent(
-						clients[name],
-						prompts[name],
-						name,
-						cfg.Organization.DisplayName,
-						mcpManager,
-						agentCfg.MCPServers,
-						limits,
-						agentCfg.Limits.MaxSequentialToolCalls,
-					)
-				}
+				// Un seul type de spécialiste MCP, quel que soit le domaine.
+				// Ce qui distingue un agenda d'une recherche web est déclaré
+				// sous mcp_servers.<nom> : ressource à injecter, outils
+				// exigeant confirmation, domaine de permission. Le registre
+				// n'a donc aucun nom de service à connaître.
+				specialist := NewMCPToolAgent(
+					clients[name],
+					prompts[name],
+					name,
+					cfg.Organization.DisplayName,
+					cfg,
+					mcpManager,
+					agentCfg.MCPServers,
+					limits,
+					agentCfg.Limits.MaxSequentialToolCalls,
+				)
 
 				agents[name] = specialist.WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes()))
 			}

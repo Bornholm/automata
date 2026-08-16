@@ -203,6 +203,9 @@ agents:
       max_tool_result_bytes: 16KiB
       max_tool_context_bytes: 32KiB
 
+# Serveurs MCP. Tout le comportement applicatif d'un service se déclare ici :
+# l'application ne connaît aucun domaine par son nom. Brancher un service
+# (agenda, tâches, météo, domotique) ne demande jamais de modifier le code.
 mcp_servers:
   google-calendar:
     transport: http
@@ -210,13 +213,45 @@ mcp_servers:
     headers:
       Authorization: Bearer ${GOOGLE_CALENDAR_MCP_TOKEN}
 
+    # Identifiant injecté par l'application dans chaque appel d'outil. Il est
+    # lu dans channels[].resources.<key> selon la portée de la conversation,
+    # jamais dans les arguments du modèle.
+    resource:
+      key: calendar
+      parameter: calendar_id
+
+    # Premier segment des permissions exigées : produit ici
+    # calendar.<portée>.write.
+    permission_domain: calendar
+
+    tools:
+      # Les outils d'écriture deviennent des actions soumises à confirmation
+      # au lieu de s'exécuter.
+      confirm_writes: true
+      # Tout outil hors de ces préfixes est considéré en écriture.
+      read_prefixes: [list_, get_, search_, find_]
+      # Refuse une date ambiguë plutôt que d'enregistrer un rendez-vous dont
+      # personne ne connaît l'heure.
+      require_rfc3339: [start, end, start_time, end_time]
+
   internet-search:
     transport: http
     url: ${SEARCH_MCP_URL}
+    # Aucune ressource, aucune confirmation : tous les outils s'exécutent
+    # directement. C'est le réglage d'un service en lecture seule.
 
   todo:
     transport: http
     url: ${TODO_MCP_URL}
+    resource:
+      key: todo
+      parameter: list_id
+    permission_domain: todo
+    tools:
+      confirm_writes: true
+      read_prefixes: [list_, get_, search_, find_]
+      # Écarte deux créations identiques proposées dans le même tour.
+      dedupe_writes: true
 
 memory:
   store:

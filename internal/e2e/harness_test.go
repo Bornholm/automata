@@ -363,7 +363,7 @@ func newAgendaAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionC
 	m := mcp.NewManager(cfg, nil)
 	t.Cleanup(func() { _ = m.Close() })
 
-	return agent.NewAgendaToolAgent(client, "system", "agenda", cfg.Organization.DisplayName, m, []string{"google-calendar"}, mcp.Limits{}, 5, cfg), m
+	return agent.NewMCPToolAgent(client, "system", "agenda", cfg.Organization.DisplayName, cfg, m, []string{"google-calendar"}, mcp.Limits{}, 5), m
 }
 
 // mustAgendaAgent est newAgendaAgent pour les scénarios de LECTURE seule, qui
@@ -376,12 +376,24 @@ func mustAgendaAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletion
 	return a
 }
 
-// withCalendarResources déclare le serveur MCP google-calendar et les
-// ressources "calendar" des canaux alice-priv/group-chan, indispensables à
-// resource.ResolveCalendarID (internal/resource).
+// withCalendarResources déclare un serveur MCP d'agenda et les ressources
+// correspondantes des canaux alice-priv et group-chan.
+//
+// Toute la spécificité du domaine est déclarative : l'application ne connaît
+// pas la notion d'agenda, elle applique la politique déclarée ici.
 func withCalendarResources(cfg *config.Config, calendarServerURL string) {
 	cfg.MCPServers = map[string]config.MCPServer{
-		"google-calendar": {Transport: "http", URL: calendarServerURL},
+		"google-calendar": {
+			Transport:        "http",
+			URL:              calendarServerURL,
+			Resource:         &config.MCPResource{Key: "calendar", Parameter: "calendar_id"},
+			PermissionDomain: "calendar",
+			Tools: config.MCPTools{
+				ConfirmWrites:  true,
+				ReadPrefixes:   []string{"list_", "get_", "search_", "find_"},
+				RequireRFC3339: []string{"start", "end"},
+			},
+		},
 	}
 
 	for i := range cfg.Channels {
