@@ -195,7 +195,7 @@ func TestExtractText_UnsupportedFormat(t *testing.T) {
 	}
 }
 
-func TestFindVoiceNote(t *testing.T) {
+func TestFindAudio(t *testing.T) {
 	voiceNote := courier.NewAttachment("note.ogg", "audio/ogg", func(ctx context.Context) (io.ReadCloser, error) {
 		return io.NopCloser(bytes.NewReader(nil)), nil
 	}, courier.WithAttachmentVoiceNote(3*time.Second))
@@ -212,7 +212,7 @@ func TestFindVoiceNote(t *testing.T) {
 		courier.WithMessagePart(voiceNote),
 	)
 
-	found, ok := audio.FindVoiceNote(msg)
+	found, ok := audio.FindAudio(msg)
 	if !ok {
 		t.Fatal("note vocale attendue trouvée")
 	}
@@ -221,7 +221,52 @@ func TestFindVoiceNote(t *testing.T) {
 	}
 }
 
-func TestFindVoiceNote_None(t *testing.T) {
+// TestFindAudio_PlainAudioFile couvre l'exigence de PLAN.md Phase 9
+// (« détecter VoiceNote OU les types MIME audio ») : un enregistrement joint
+// comme fichier ordinaire, sans marqueur de note vocale, doit lui aussi être
+// transcrit. Du point de vue de l'utilisateur, joindre un fichier plutôt que
+// d'appuyer sur le bouton micro ne change pas l'intention.
+func TestFindAudio_PlainAudioFile(t *testing.T) {
+	plainAudio := courier.NewAttachment("enregistrement.mp3", "audio/mpeg", func(ctx context.Context) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	})
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannelRef("chan-1"),
+		courier.NewUser("user-1", "User"),
+		courier.WithMessagePart(plainAudio),
+	)
+
+	found, ok := audio.FindAudio(msg)
+	if !ok {
+		t.Fatal("un fichier audio ordinaire devrait être détecté pour transcription")
+	}
+	if found.Filename() != "enregistrement.mp3" {
+		t.Fatalf("pièce jointe inattendue: %q", found.Filename())
+	}
+}
+
+// TestFindAudio_NonAudioIgnored vérifie qu'une pièce jointe qui n'est pas
+// audio n'est jamais envoyée à la transcription.
+func TestFindAudio_NonAudioIgnored(t *testing.T) {
+	image := courier.NewAttachment("photo.png", "image/png", func(ctx context.Context) (io.ReadCloser, error) {
+		return io.NopCloser(bytes.NewReader(nil)), nil
+	})
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannelRef("chan-1"),
+		courier.NewUser("user-1", "User"),
+		courier.WithMessagePart(image),
+	)
+
+	if _, ok := audio.FindAudio(msg); ok {
+		t.Fatal("une image ne doit jamais être envoyée à la transcription")
+	}
+}
+
+func TestFindAudio_None(t *testing.T) {
 	msg := courier.NewMessage(
 		courier.RandomMessageID(),
 		courier.NewChannelRef("chan-1"),
@@ -229,7 +274,7 @@ func TestFindVoiceNote_None(t *testing.T) {
 		courier.WithMessageMainPart("bonjour"),
 	)
 
-	_, ok := audio.FindVoiceNote(msg)
+	_, ok := audio.FindAudio(msg)
 	if ok {
 		t.Fatal("aucune note vocale ne devrait être trouvée")
 	}

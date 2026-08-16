@@ -1,15 +1,21 @@
 package e2e_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/bornholm/genai/llm"
+	"github.com/bornholm/go-courier"
 
+	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/authorization"
+	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
 )
@@ -301,6 +307,91 @@ func TestPrivate_Confirmation(t *testing.T) {
 	if found {
 		t.Fatal("la mémoire aurait dû être supprimée après confirmation")
 	}
+}
+
+// TestPrivate_ImageSeenByAgentAndMediaReplied couvre la chaîne multimodale
+// complète, à travers le système assemblé : une image envoyée par
+// l'utilisateur traverse l'ingress, est extraite, parvient au modèle sur le
+// message "user", et un média produit en réponse repart réellement sur le
+// canal.
+func TestPrivate_ImageSeenByAgentAndMediaReplied(t *testing.T) {
+	cfg := baseOrgConfig()
+
+	sent := []byte("octets de la photo")
+	produced := media.Media{
+		Kind:     media.KindImage,
+		MimeType: "image/png",
+		Filename: "annotee.png",
+		Data:     []byte("octets annotés"),
+	}
+
+	var seen []llm.Attachment
+
+	client := &fakeCompletionClient{}
+	client.responseFunc = func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+		for _, m := range opts.Messages {
+			if m.Role() == llm.RoleUser {
+				seen = append(seen, m.Attachments()...)
+			}
+		}
+		return scriptedFinalResponse("Je vois un cèpe."), nil
+	}
+
+	sys := newTestSystem(t, cfg,
+		&mediaProducingAgent{client: client, produced: []media.Media{produced}},
+		withAttachments(media.Config{
+			Enabled:       true,
+			MaxSize:       4096,
+			MaxCount:      3,
+			AcceptedTypes: []string{"image/png"},
+			MaxHistory:    4,
+			MaxReply:      2,
+		}),
+	)
+
+	sys.sendImage("alice-ext", "alice-priv", "C'est quoi ce champignon ?", "photo.png", sent)
+	delivered := sys.waitSent(1)
+
+	// L'image a bien atteint le modèle, portée par un message "user".
+	if len(seen) != 1 {
+		t.Fatalf("pièces jointes vues par le modèle: got %d, expected 1", len(seen))
+	}
+	decoded, err := base64.StdEncoding.DecodeString(seen[0].Data())
+	if err != nil {
+		t.Fatalf("données non décodables: %v", err)
+	}
+	if !bytes.Equal(decoded, sent) {
+		t.Errorf("l'image reçue par le modèle est altérée: %q", decoded)
+	}
+
+	// Le média produit est réellement reparti sur le canal.
+	attachments := courier.Attachments(delivered[0])
+	if len(attachments) != 1 {
+		t.Fatalf("pièces jointes envoyées à l'utilisateur: got %d, expected 1", len(attachments))
+	}
+	if got := attachments[0].Filename(); got != "annotee.png" {
+		t.Errorf("filename = %q, attendu annotee.png", got)
+	}
+}
+
+// mediaProducingAgent est un OrchestratorAgent réel auquel on ajoute des
+// médias en réponse, pour simuler un outil qui en produit.
+type mediaProducingAgent struct {
+	client   llm.ChatCompletionClient
+	produced []media.Media
+}
+
+func (a *mediaProducingAgent) Execute(ctx context.Context, req agent.Request) (agent.Result, error) {
+	inner := agent.NewOrchestratorAgent(a.client, "system", "main", "Maison", map[string]delegation.Specialist{}, 5)
+
+	result, err := inner.Execute(ctx, req)
+	if err != nil {
+		return agent.Result{}, err
+	}
+
+	result.Attachments = append(result.Attachments, a.produced...)
+
+	return result, nil
 }
 
 // TestPrivate_AgendaWriteConfirmedExecutesWithResolvedResource couvre le

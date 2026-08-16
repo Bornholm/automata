@@ -77,6 +77,11 @@ type Config struct {
 	// MaxReply borne le nombre de pièces jointes jointes à une réponse.
 	// <= 0 : pas de borne.
 	MaxReply int
+	// SkipAudio écarte silencieusement toute pièce jointe audio, sans la
+	// signaler comme rejetée : elle est prise en charge ailleurs, par la
+	// transcription (internal/audio). Sans cela, un fichier audio accepté
+	// par AcceptedTypes serait à la fois transcrit ET transmis au modèle.
+	SkipAudio bool
 }
 
 // accepts indique si mimeType figure parmi les types acceptés.
@@ -148,6 +153,12 @@ func Extract(ctx context.Context, msg courier.Message, cfg Config) ([]Media, []s
 
 		name := courier.FilenameFor(attachment)
 		mimeType := normalizeMIME(attachment.ContentType())
+
+		// Pris en charge par la transcription, pas ici : ce n'est pas un
+		// rejet, il n'y a donc rien à signaler à l'agent.
+		if cfg.SkipAudio && strings.HasPrefix(mimeType, "audio/") {
+			continue
+		}
 
 		if !cfg.Enabled {
 			rejected = append(rejected, fmt.Sprintf("%s (%s) : pièces jointes désactivées", name, mimeType))

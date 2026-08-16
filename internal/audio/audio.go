@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/bornholm/go-courier"
@@ -76,20 +77,32 @@ func ExtractText(ctx context.Context, cfg Config, transcriber Transcriber, attac
 	return text, nil
 }
 
-// FindVoiceNote recherche la première pièce jointe note vocale du message.
-func FindVoiceNote(msg courier.Message) (courier.Attachment, bool) {
+// FindAudio recherche la première pièce jointe audio du message : une note
+// vocale enregistrée au micro, ou tout fichier de type MIME "audio/*"
+// (PLAN.md Phase 9, travail 1 : « détecter VoiceNote OU les types MIME
+// audio »).
+//
+// Les deux comptent : du point de vue de l'utilisateur, joindre un
+// enregistrement plutôt que d'appuyer sur le bouton micro ne change pas
+// l'intention, et n'a aucune raison de rendre le message inaudible pour
+// l'assistant.
+func FindAudio(msg courier.Message) (courier.Attachment, bool) {
 	for _, part := range msg.Parts() {
-		if !courier.IsVoiceNote(part) {
-			continue
-		}
-
 		attachment, ok := part.(courier.Attachment)
 		if !ok {
 			continue
 		}
 
-		return attachment, true
+		if courier.IsVoiceNote(part) || isAudioMIME(attachment.ContentType()) {
+			return attachment, true
+		}
 	}
 
 	return nil, false
+}
+
+// isAudioMIME reconnaît un type MIME audio, paramètres éventuels compris
+// ("audio/ogg; codecs=opus").
+func isAudioMIME(contentType string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "audio/")
 }

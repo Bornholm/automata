@@ -50,6 +50,7 @@ import (
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/ingress"
 	"github.com/bornholm/automata/internal/mcp"
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
@@ -414,11 +415,12 @@ func simpleAgent(client llm.ChatCompletionClient) agent.Agent {
 // sysConfig regroupe les dépendances optionnelles d'un testSystem,
 // composées via des sysOption.
 type sysConfig struct {
-	audioCfg    audio.Config
-	transcriber audio.Transcriber
-	memStore    *memory.AmoxtliStore
-	engineOpts  []action.Option
-	mcpManager  *mcp.Manager
+	audioCfg       audio.Config
+	transcriber    audio.Transcriber
+	memStore       *memory.AmoxtliStore
+	engineOpts     []action.Option
+	mcpManager     *mcp.Manager
+	attachmentsCfg media.Config
 }
 
 type sysOption func(*sysConfig)
@@ -442,6 +444,32 @@ func withMemoryStore(store *memory.AmoxtliStore) sysOption {
 // internes comme memory.forget disposent d'un exécuteur.
 func withMCPManager(m *mcp.Manager) sysOption {
 	return func(sc *sysConfig) { sc.mcpManager = m }
+}
+
+// withAttachments active le traitement des pièces jointes non vocales.
+func withAttachments(cfg media.Config) sysOption {
+	return func(sc *sysConfig) { sc.attachmentsCfg = cfg }
+}
+
+// sendImage envoie un message texte accompagné d'une image.
+func (s *testSystem) sendImage(fromExternalID, channelID, text, filename string, data []byte) {
+	s.t.Helper()
+
+	part := courier.NewAttachment(filename, "image/png", func(ctx context.Context) (io.ReadCloser, error) {
+		return io.NopCloser(&byteReader{data: data}), nil
+	}, courier.WithAttachmentSize(int64(len(data))))
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannelRef(courier.ChannelID(channelID)),
+		courier.NewUser(courier.UserID(fromExternalID), fromExternalID),
+		courier.WithMessageMainPart(text),
+		courier.WithMessagePart(part),
+	)
+
+	if err := s.provider.Deliver(context.Background(), msg); err != nil {
+		s.t.Fatalf("Deliver: %v", err)
+	}
 }
 
 // readyProvider signale, via un canal fermé, que Listen a bien été appelé,
@@ -541,7 +569,8 @@ func newTestSystem(t *testing.T, cfg *config.Config, mainAgent agent.Agent, opts
 
 	actionEngine := action.NewEngine(db, authorizer, sc.mcpManager, cfg, engineOpts...)
 
-	handler := conversation.NewHandler(db, mainAgent, actionEngine, 0, sc.audioCfg, sc.transcriber, false, nil)
+	handler := conversation.NewHandler(db, mainAgent, actionEngine, 0, sc.audioCfg, sc.transcriber, false, nil).
+		WithAttachments(sc.attachmentsCfg)
 
 	channels := make([]courier.Channel, 0, len(cfg.Channels))
 	for _, ch := range cfg.Channels {

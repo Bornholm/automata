@@ -193,6 +193,26 @@ func TestExtract_VoiceNoteIgnored(t *testing.T) {
 	}
 }
 
+// TestExtract_SkipAudioIsSilent vérifie qu'un fichier audio pris en charge
+// par la transcription n'est ni transmis comme pièce jointe, ni signalé comme
+// rejeté : ce n'est pas un rejet, il est simplement traité ailleurs.
+func TestExtract_SkipAudioIsSilent(t *testing.T) {
+	cfg := defaultTestConfig()
+	cfg.AcceptedTypes = append(cfg.AcceptedTypes, "audio/ogg")
+	cfg.SkipAudio = true
+
+	msg := messageWith(attachmentPart("enregistrement.ogg", "audio/ogg", []byte("audio")))
+
+	kept, rejected := media.Extract(context.Background(), msg, cfg)
+
+	if len(kept) != 0 {
+		t.Fatalf("l'audio est pris en charge par la transcription, il ne doit pas être retenu ici (obtenu %d)", len(kept))
+	}
+	if len(rejected) != 0 {
+		t.Fatalf("aucun rejet ne doit être signalé pour un audio transcrit, obtenu %v", rejected)
+	}
+}
+
 // TestExtract_DisabledSignalsRejection vérifie que la désactivation n'est pas
 // silencieuse : l'agent doit pouvoir expliquer pourquoi il n'a rien vu.
 func TestExtract_DisabledSignalsRejection(t *testing.T) {

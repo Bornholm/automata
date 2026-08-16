@@ -127,7 +127,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 	persistedContent := text
 
 	if text == "" && h.audioCfg.Enabled {
-		voiceNote, found := audio.FindVoiceNote(msg)
+		voiceNote, found := audio.FindAudio(msg)
 		if found {
 			transcriptionStart := time.Now()
 			transcribed, err := audio.ExtractText(ctx, h.audioCfg, h.transcriber, voiceNote)
@@ -149,7 +149,10 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 	// (type refusé, trop volumineuses) ne disparaissent pas en silence : elles
 	// sont annoncées à l'agent, qui peut alors l'expliquer plutôt que de
 	// répondre à côté d'une image qu'il n'a jamais vue.
-	attachments, rejected := media.Extract(ctx, msg, h.attachmentsCfg)
+	attachmentsCfg := h.attachmentsCfg
+	attachmentsCfg.SkipAudio = h.audioCfg.Enabled
+
+	attachments, rejected := media.Extract(ctx, msg, attachmentsCfg)
 	if len(rejected) > 0 {
 		text = strings.TrimSpace(text + "\n\n[pièces jointes non transmises : " + strings.Join(rejected, " ; ") + "]")
 		persistedContent = text
