@@ -352,7 +352,18 @@ func (m *Manager) wrapTool(tool llm.Tool, sessionKey SessionKey, serverName stri
 		return llm.NewToolResult(text, result.Attachments()...), nil
 	}
 
-	return llm.NewFuncTool(tool.Name(), tool.Description(), tool.Parameters(), execute)
+	wrapped := llm.NewFuncTool(tool.Name(), tool.Description(), tool.Parameters(), execute)
+
+	// Ce wrapper reconstruit l'outil pour appliquer timeout et troncature : il
+	// perdrait l'annotation readOnlyHint reçue du serveur si on ne la
+	// reportait pas explicitement ici.
+	if annotated, ok := tool.(llm.AnnotatedTool); ok {
+		if readOnly, known := annotated.ReadOnly(); known {
+			wrapped = wrapped.WithReadOnlyHint(readOnly)
+		}
+	}
+
+	return wrapped
 }
 
 // truncateText tronque s à au plus max octets, sans couper au milieu d'un

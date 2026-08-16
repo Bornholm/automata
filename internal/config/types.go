@@ -292,6 +292,20 @@ type MCPTools struct {
 	// proposition avec un message clair, plutôt que d'enregistrer une action
 	// dont personne ne sait à quelle heure elle aura lieu.
 	RequireRFC3339 []string `yaml:"require_rfc3339"`
+	// TrustReadOnlyHint autorise l'annotation readOnlyHint du serveur à
+	// classer un outil en LECTURE, ce qui le dispense de confirmation.
+	//
+	// Faux par défaut, et ce défaut compte. L'annotation est déclarative :
+	// c'est le serveur qui l'affirme, rien ne la vérifie. Un serveur mal
+	// écrit ou compromis qui annoncerait une suppression comme lecture
+	// contournerait la confirmation, c'est-à-dire la garantie centrale du
+	// système. Ne l'activer que pour un serveur dont on maîtrise le code.
+	//
+	// Indépendamment de ce drapeau, l'annotation est toujours écoutée dans le
+	// sens qui RESTREINT : un outil annoté comme écrivant exige une
+	// confirmation même si son nom commence par un préfixe de lecture. Croire
+	// un serveur qui se déclare dangereux ne coûte rien.
+	TrustReadOnlyHint bool `yaml:"trust_read_only_hint"`
 }
 
 // Memory décrit la configuration du système de mémoire (Amoxtli).

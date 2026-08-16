@@ -53,7 +53,7 @@ func applyServerPolicy(
 	wrapped := make([]llm.Tool, 0, len(tools))
 
 	for _, tool := range tools {
-		if server.Tools.ConfirmWrites && isWriteTool(tool.Name(), server.Tools.ReadPrefixes) {
+		if server.Tools.ConfirmWrites && isWriteTool(tool, server.Tools) {
 			wrapped = append(wrapped, wrapWriteTool(tool, server, serverName, collector, dedupe, agentName, req))
 			continue
 		}
@@ -64,12 +64,38 @@ func applyServerPolicy(
 	return wrapped, nil
 }
 
-// isWriteTool classe un outil par son nom. Tout ce qui ne commence pas par un
-// préfixe de lecture déclaré est une écriture : position prudente, jamais
-// l'inverse.
-func isWriteTool(name string, readPrefixes []string) bool {
-	for _, prefix := range readPrefixes {
-		if strings.HasPrefix(name, prefix) {
+// isWriteTool classe un outil, en croisant l'annotation readOnlyHint du
+// serveur et la convention de nommage déclarée.
+//
+// L'annotation est déclarative et invérifiable : le serveur l'affirme sur
+// lui-même. Elle est donc écoutée de façon asymétrique.
+//
+//   - « cet outil écrit » est toujours cru. Un serveur qui se déclare
+//     dangereux ne gagne rien à mentir, et le croire ne coûte qu'une
+//     confirmation supplémentaire.
+//   - « cet outil ne fait que lire » n'est cru que si la configuration
+//     l'autorise explicitement (trust_read_only_hint). Sinon un serveur
+//     compromis annonçant une suppression comme lecture contournerait la
+//     confirmation.
+//
+// Sans annotation exploitable, la classification retombe sur les préfixes de
+// nom : tout ce qui ne commence pas par un préfixe de lecture est une
+// écriture, position prudente plutôt que l'inverse.
+func isWriteTool(tool llm.Tool, policy config.MCPTools) bool {
+	if annotated, ok := tool.(llm.AnnotatedTool); ok {
+		if readOnly, known := annotated.ReadOnly(); known {
+			if !readOnly {
+				return true
+			}
+
+			if policy.TrustReadOnlyHint {
+				return false
+			}
+		}
+	}
+
+	for _, prefix := range policy.ReadPrefixes {
+		if strings.HasPrefix(tool.Name(), prefix) {
 			return false
 		}
 	}

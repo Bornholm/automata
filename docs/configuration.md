@@ -265,6 +265,7 @@ ce qui permet de brancher n'importe quel service sans écrire de code.
 | `permission_domain` | Premier segment des permissions exigées (`calendar` donne `calendar.<portée>.write`) |
 | `tools.confirm_writes` | Transforme les écritures en actions à confirmer au lieu de les exécuter |
 | `tools.read_prefixes` | Préfixes identifiant une lecture. Tout le reste est une écriture |
+| `tools.trust_read_only_hint` | Autorise l'annotation du serveur à dispenser un outil de confirmation |
 | `tools.require_rfc3339` | Paramètres devant être des dates avec fuseau explicite |
 | `tools.dedupe_writes` | Écarte deux écritures identiques proposées dans le même tour |
 
@@ -277,11 +278,32 @@ Sans lui, l'application ne saurait pas quelle permission exiger avant
 d'exécuter une action confirmée, et écrirait donc sans contrôle
 d'autorisation.
 
-La classification par préfixe de nom est un pis-aller assumé. Le protocole MCP
-expose bien une annotation `readOnlyHint`, mais la bibliothèque genai ne la
-transporte pas jusqu'aux outils : le nom est le seul signal disponible. Un
-outil hors de `read_prefixes` est donc traité en écriture, position prudente
-plutôt que l'inverse.
+### Classer les outils en lecture ou en écriture
+
+Deux signaux servent à décider si un outil exige une confirmation.
+
+L'annotation `readOnlyHint` du protocole MCP, quand le serveur la fournit,
+est écoutée **de façon asymétrique** :
+
+- « cet outil écrit » est toujours cru, même si le nom commence par un
+  préfixe de lecture. Un serveur qui se déclare dangereux ne gagne rien à
+  mentir, et le croire ne coûte qu'une confirmation ;
+- « cet outil ne fait que lire » est ignoré par défaut. C'est le serveur qui
+  l'affirme sur lui-même, rien ne le vérifie : un serveur compromis
+  annonçant une suppression comme lecture contournerait la confirmation,
+  c'est-à-dire la garantie centrale du système. `trust_read_only_hint: true`
+  lève cette réserve, serveur par serveur, pour ceux dont vous maîtrisez le
+  code.
+
+Les préfixes de nom prennent le relais quand le serveur n'annote rien. Ils
+restent nécessaires, la plupart des serveurs n'annotant pas leurs outils.
+
+Un point subtil du protocole : `readOnlyHint` est un booléen avec `omitempty`,
+si bien qu'une annotation absente et un « cet outil écrit » se ressemblent une
+fois sérialisés. Automata distingue les deux cas au niveau du bloc
+d'annotations entier. Un serveur qui n'annote rien conserve donc le
+comportement fondé sur les noms, au lieu de voir toutes ses lectures passer
+par une confirmation.
 
 Les en-têtes déclarés ici valent pour tout le monde. Pour donner à chaque
 utilisateur son propre jeton, voir [agents.md](agents.md).

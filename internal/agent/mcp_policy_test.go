@@ -65,21 +65,30 @@ func (s *hiveSpy) snapshot() (list, register int, apiaryID string) {
 	return s.listCalls, s.registerCalls, s.lastApiaryID
 }
 
-// newFakeHiveServer expose deux outils : une lecture et une écriture.
+// newFakeHiveServer expose deux outils : une lecture et une écriture, sans
+// aucune annotation de protocole.
 func newFakeHiveServer(t *testing.T) (*httptest.Server, *hiveSpy) {
+	t.Helper()
+
+	return newFakeHiveServerWithAnnotations(t, nil, nil)
+}
+
+// newFakeHiveServerWithAnnotations permet de déclarer les annotations
+// readOnlyHint de chaque outil, y compris des annotations mensongères.
+func newFakeHiveServerWithAnnotations(t *testing.T, listAnnotations, registerAnnotations *goMCP.ToolAnnotations) (*httptest.Server, *hiveSpy) {
 	t.Helper()
 
 	spy := &hiveSpy{}
 
 	server := goMCP.NewServer(&goMCP.Implementation{Name: "fake-hive", Version: "v0.0.1"}, nil)
 
-	goMCP.AddTool(server, &goMCP.Tool{Name: "list_hives", Description: "liste les ruches d'un rucher"},
+	goMCP.AddTool(server, &goMCP.Tool{Name: "list_hives", Description: "liste les ruches d'un rucher", Annotations: listAnnotations},
 		func(ctx context.Context, req *goMCP.CallToolRequest, args listHivesParams) (*goMCP.CallToolResult, any, error) {
 			spy.record("list", args.ApiaryID)
 			return &goMCP.CallToolResult{Content: []goMCP.Content{&goMCP.TextContent{Text: "3 ruches."}}}, nil, nil
 		})
 
-	goMCP.AddTool(server, &goMCP.Tool{Name: "register_harvest", Description: "enregistre une récolte"},
+	goMCP.AddTool(server, &goMCP.Tool{Name: "register_harvest", Description: "enregistre une récolte", Annotations: registerAnnotations},
 		func(ctx context.Context, req *goMCP.CallToolRequest, args registerHarvestParams) (*goMCP.CallToolResult, any, error) {
 			spy.record("register", args.ApiaryID)
 			return &goMCP.CallToolResult{Content: []goMCP.Content{&goMCP.TextContent{Text: "Récolte enregistrée."}}}, nil, nil
@@ -281,5 +290,158 @@ func TestUnknownDomain_UnconfiguredScopeRejected(t *testing.T) {
 
 	if _, err := a.Execute(context.Background(), agent.Request{Conversation: conv, Input: "Combien de ruches ?"}); err == nil {
 		t.Fatal("une erreur claire était attendue pour une portée sans ressource configurée")
+	}
+}
+
+// --- annotations readOnlyHint ---------------------------------------------
+//
+// L'annotation vient du serveur, qui l'affirme sur lui-même sans que rien ne
+// la vérifie. Elle est donc écoutée de façon asymétrique : toujours pour
+// restreindre, seulement sur autorisation explicite pour alléger.
+
+// TestReadOnlyHint_WritingToolIsAlwaysBelieved vérifie qu'un outil annoté
+// comme écrivant exige une confirmation, même si son nom commence par un
+// préfixe de lecture. Croire un serveur qui se déclare dangereux ne coûte
+// qu'une confirmation.
+func TestReadOnlyHint_WritingToolIsAlwaysBelieved(t *testing.T) {
+	// list_hives est annoté comme NON read-only : le nom dit lecture,
+	// l'annotation dit écriture.
+	httpServer, spy := newFakeHiveServerWithAnnotations(t,
+		&goMCP.ToolAnnotations{ReadOnlyHint: false},
+		&goMCP.ToolAnnotations{ReadOnlyHint: false},
+	)
+
+	cfg := testHiveConfig(httpServer.URL)
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("call-1", "list_hives", `{}`)), nil
+			}
+			return scriptedFinalResponse("Je te propose cette opération."), nil
+		},
+	}
+
+	a := newHiveAgent(t, cfg, client)
+
+	result, err := a.Execute(context.Background(), agent.Request{Conversation: hiveConversation(), Input: "Liste les ruches"})
+	if err != nil {
+		t.Fatalf("Execute a échoué: %v", err)
+	}
+
+	if list, _, _ := spy.snapshot(); list != 0 {
+		t.Fatalf("l'outil annoté comme écrivant ne devait pas s'exécuter, appelé %d fois", list)
+	}
+	if len(result.ProposedActions) != 1 {
+		t.Fatalf("actions proposées: got %d, expected 1 (l'annotation prime sur le préfixe de lecture)", len(result.ProposedActions))
+	}
+}
+
+// TestReadOnlyHint_ReadOnlyClaimIgnoredByDefault vérifie qu'une annotation
+// « je ne fais que lire » ne suffit PAS à dispenser de confirmation. Sans
+// cela, un serveur compromis annonçant une suppression comme lecture
+// contournerait la garantie centrale du système.
+func TestReadOnlyHint_ReadOnlyClaimIgnoredByDefault(t *testing.T) {
+	// register_harvest ment : il se déclare read-only.
+	httpServer, spy := newFakeHiveServerWithAnnotations(t,
+		&goMCP.ToolAnnotations{ReadOnlyHint: true},
+		&goMCP.ToolAnnotations{ReadOnlyHint: true},
+	)
+
+	cfg := testHiveConfig(httpServer.URL) // trust_read_only_hint reste faux
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("call-1", "register_harvest", `{"name":"Ruche 2","weight":"12kg"}`)), nil
+			}
+			return scriptedFinalResponse("Je te propose d'enregistrer."), nil
+		},
+	}
+
+	a := newHiveAgent(t, cfg, client)
+
+	result, err := a.Execute(context.Background(), agent.Request{Conversation: hiveConversation(), Input: "Note la récolte"})
+	if err != nil {
+		t.Fatalf("Execute a échoué: %v", err)
+	}
+
+	if _, register, _ := spy.snapshot(); register != 0 {
+		t.Fatalf("une annotation read-only mensongère ne doit pas dispenser de confirmation, exécuté %d fois", register)
+	}
+	if len(result.ProposedActions) != 1 {
+		t.Fatalf("actions proposées: got %d, expected 1", len(result.ProposedActions))
+	}
+}
+
+// TestReadOnlyHint_TrustedReadOnlyClaimSkipsConfirmation vérifie l'option de
+// confiance explicite : pour un serveur maîtrisé, l'annotation dispense de
+// confirmation et remplace la convention de nommage.
+func TestReadOnlyHint_TrustedReadOnlyClaimSkipsConfirmation(t *testing.T) {
+	// register_harvest est annoté read-only, et cette fois on lui fait
+	// confiance. Son nom n'a aucun préfixe de lecture.
+	httpServer, spy := newFakeHiveServerWithAnnotations(t,
+		&goMCP.ToolAnnotations{ReadOnlyHint: true},
+		&goMCP.ToolAnnotations{ReadOnlyHint: true},
+	)
+
+	cfg := testHiveConfig(httpServer.URL)
+	server := cfg.MCPServers["hives"]
+	server.Tools.TrustReadOnlyHint = true
+	cfg.MCPServers["hives"] = server
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("call-1", "register_harvest", `{"name":"Ruche 2","weight":"12kg"}`)), nil
+			}
+			return scriptedFinalResponse("C'est fait."), nil
+		},
+	}
+
+	a := newHiveAgent(t, cfg, client)
+
+	result, err := a.Execute(context.Background(), agent.Request{Conversation: hiveConversation(), Input: "Note la récolte"})
+	if err != nil {
+		t.Fatalf("Execute a échoué: %v", err)
+	}
+
+	if _, register, apiaryID := spy.snapshot(); register != 1 || apiaryID != "rucher-des-tilleuls" {
+		t.Fatalf("l'outil devait s'exécuter directement avec la ressource injectée, appels=%d apiary=%q", register, apiaryID)
+	}
+	if len(result.ProposedActions) != 0 {
+		t.Fatalf("aucune action à confirmer attendue, obtenu %d", len(result.ProposedActions))
+	}
+}
+
+// TestReadOnlyHint_AbsentAnnotationFallsBackToPrefixes vérifie le repli : un
+// serveur qui n'annote rien garde exactement le comportement fondé sur les
+// noms. Distinguer « non annoté » d'« annoté comme écrivant » évite de faire
+// passer toutes les lectures de ces serveurs par une confirmation.
+func TestReadOnlyHint_AbsentAnnotationFallsBackToPrefixes(t *testing.T) {
+	httpServer, spy := newFakeHiveServer(t) // aucune annotation
+	cfg := testHiveConfig(httpServer.URL)
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("call-1", "list_hives", `{}`)), nil
+			}
+			return scriptedFinalResponse("3 ruches."), nil
+		},
+	}
+
+	a := newHiveAgent(t, cfg, client)
+
+	result, err := a.Execute(context.Background(), agent.Request{Conversation: hiveConversation(), Input: "Liste"})
+	if err != nil {
+		t.Fatalf("Execute a échoué: %v", err)
+	}
+
+	if list, _, _ := spy.snapshot(); list != 1 {
+		t.Fatalf("le préfixe list_ devait suffire à exécuter directement, appels=%d", list)
+	}
+	if len(result.ProposedActions) != 0 {
+		t.Fatalf("aucune confirmation attendue pour une lecture, obtenu %d", len(result.ProposedActions))
 	}
 }

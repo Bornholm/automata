@@ -117,6 +117,16 @@ est un risque de configuration, pas de code. La validation refuse donc
 `confirm_writes` sans `permission_domain`, cas où une écriture s'exécuterait
 sans contrôle d'autorisation.
 
+**Annotation `readOnlyHint`** : elle est prise en compte, mais jamais comme
+une autorité. Un serveur l'affirme sur lui-même et rien ne la vérifie. Elle
+est donc écoutée seulement dans le sens qui restreint : un outil annoté comme
+écrivant exige une confirmation même si son nom suggère une lecture. La
+proposition inverse, dispenser un outil de confirmation parce qu'il se déclare
+en lecture seule, exige `trust_read_only_hint: true`, à réserver aux serveurs
+dont l'opérateur maîtrise le code. Par défaut, un serveur compromis qui
+annoncerait une suppression comme lecture ne gagne rien
+(`TestReadOnlyHint_ReadOnlyClaimIgnoredByDefault`).
+
 Aucune décision de portée, de permission ou de ressource ne dépend d'une
 valeur fournie par le modèle : vérifié par revue exhaustive des accès à
 `internal/resource`, tous alimentés par le `model.Scope`/`model.ScopeID` d'une

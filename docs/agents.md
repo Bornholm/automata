@@ -87,6 +87,9 @@ mcp_servers:
       confirm_writes: true
       read_prefixes: [list_, get_]
       dedupe_writes: true
+      # Si votre serveur annote correctement ses outils (readOnlyHint) et que
+      # vous en maîtrisez le code, ceci remplace la convention de nommage :
+      # trust_read_only_hint: true
 ```
 
 Puis les ressources correspondantes sur les canaux :

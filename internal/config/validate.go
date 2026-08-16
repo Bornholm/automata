@@ -269,6 +269,10 @@ func validateMCPServers(cfg *Config) []error {
 		if len(server.Tools.ReadPrefixes) > 0 && !server.Tools.ConfirmWrites {
 			errs = append(errs, fmt.Errorf("mcp_servers.%s.tools.read_prefixes: sans effet lorsque tools.confirm_writes est faux (tous les outils s'exécutent déjà directement)", name))
 		}
+
+		if server.Tools.TrustReadOnlyHint && !server.Tools.ConfirmWrites {
+			errs = append(errs, fmt.Errorf("mcp_servers.%s.tools.trust_read_only_hint: sans effet lorsque tools.confirm_writes est faux (aucun outil n'est soumis à confirmation)", name))
+		}
 	}
 
 	return errs
