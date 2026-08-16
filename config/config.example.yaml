@@ -1,0 +1,334 @@
+# Configuration d'exemple Automata.
+#
+# Copier ce fichier en config/config.yaml puis l'adapter :
+#
+#   cp config/config.example.yaml config/config.yaml
+#
+# config/config.yaml n'est PAS versionné (voir .gitignore) : il porte les
+# choix propres à un déploiement. Aucun secret ne doit figurer ici — toutes
+# les valeurs sensibles sont référencées par une variable d'environnement
+# (voir les références plus bas) et lues au chargement. Une variable
+# référencée mais absente est une erreur de démarrage, jamais une chaîne
+# vide.
+#
+# Attention : l'expansion des variables s'applique au fichier entier, y
+# compris aux commentaires. Écrire une référence d'environnement dans un
+# commentaire, ne serait-ce qu'à titre d'illustration, fait échouer le
+# chargement si la variable correspondante n'existe pas.
+#
+# Les chemins relatifs sont résolus depuis le répertoire de CE fichier. Les
+# prompts sont donc référencés par ../prompts/, ce qui vise le bon répertoire
+# aussi bien depuis le dépôt (config/ et prompts/ côte à côte) que dans le
+# conteneur (/config et /prompts montés séparément).
+#
+# Les chemins de données sont absolus (/data), conformes aux volumes montés
+# par compose.yaml. Pour une exécution hors conteneur, les remplacer par des
+# chemins locaux (ex. ../data/app.sqlite).
+#
+# Valider la configuration avant tout démarrage :
+#
+#   automata config validate -config config/config.yaml
+
+version: 1
+
+organization:
+  id: home
+  display_name: Maison
+
+storage:
+  application:
+    driver: sqlite
+    path: /data/app.sqlite
+    pragmas:
+      foreign_keys: true
+      journal_mode: WAL
+      busy_timeout: 5s
+
+courier:
+  providers:
+    whatsapp:
+      type: whatsapp
+      # Ce répertoire doit exister et être accessible en écriture à l'UID du
+      # conteneur (65532) avant le premier démarrage — voir
+      # docs/deployment.md §5.
+      session_path: /data/courier/whatsapp
+
+# Serveur HTTP local de santé et de métriques. Doit rester activé pour que la
+# sonde de l'image (`automata healthcheck`) fonctionne — voir
+# docs/deployment.md §7.
+observability:
+  enabled: true
+  addr: 127.0.0.1:9090
+
+audio:
+  enabled: true
+  transcription_client: transcription
+  max_size: 20MiB
+  timeout: 2m
+  # Ne jamais activer ces deux options sans décision explicite : le plan
+  # impose de ne conserver ni l'audio ni sa transcription (PLAN.md §3.4).
+  persist_audio: false
+  persist_transcription: false
+
+llm_clients:
+  main:
+    provider: openai
+    model: ${MAIN_MODEL}
+    api_key: ${MAIN_API_KEY}
+    base_url: ${MAIN_BASE_URL}
+
+  transcription:
+    provider: openai
+    model: ${TRANSCRIPTION_MODEL}
+    api_key: ${TRANSCRIPTION_API_KEY}
+
+agents:
+  # L'orchestrateur ne reçoit jamais les outils des serveurs MCP : il ne
+  # dispose que d'outils conceptuels (déléguer, chercher/écrire/oublier en
+  # mémoire). Voir PLAN.md §6.1.
+  main:
+    type: orchestrator
+    client: main
+    system_prompt:
+      file: ../prompts/main.md
+    delegates:
+      - agenda
+      - research
+      - todo
+    memory:
+      search: true
+      remember: true
+      forget: true
+    limits:
+      # Nombre de tours d'appels d'outils enchaînés dans un même échange.
+      max_sequential_tool_calls: 8
+      # Au-delà, le lot d'actions à confirmer est rejeté en entier plutôt
+      # que tronqué.
+      max_actions_per_turn: 10
+      tool_timeout: 30s
+      # Taille maximale d'UN résultat d'outil.
+      max_tool_result_bytes: 16KiB
+      # Budget CUMULÉ des résultats d'outils réinjectés durant un échange.
+      max_tool_context_bytes: 64KiB
+
+  agenda:
+    type: specialist
+    client: main
+    system_prompt:
+      file: ../prompts/agenda.md
+    mcp_servers:
+      - google-calendar
+    capabilities:
+      - calendar.personal.read
+      - calendar.personal.write
+      - calendar.group.read
+      - calendar.group.write
+      - calendar.org.read
+      - calendar.org.write
+    limits:
+      max_sequential_tool_calls: 6
+      max_actions_per_turn: 5
+      tool_timeout: 30s
+      max_tool_result_bytes: 16KiB
+      max_tool_context_bytes: 32KiB
+
+  research:
+    type: specialist
+    client: main
+    system_prompt:
+      file: ../prompts/research.md
+    mcp_servers:
+      - internet-search
+    limits:
+      max_sequential_tool_calls: 6
+      max_actions_per_turn: 5
+      tool_timeout: 30s
+      max_tool_result_bytes: 16KiB
+      max_tool_context_bytes: 32KiB
+
+  todo:
+    type: specialist
+    client: main
+    system_prompt:
+      file: ../prompts/todo.md
+    mcp_servers:
+      - todo
+    capabilities:
+      - todo.personal.read
+      - todo.personal.write
+      - todo.group.read
+      - todo.group.write
+    limits:
+      max_sequential_tool_calls: 6
+      max_actions_per_turn: 10
+      tool_timeout: 30s
+      max_tool_result_bytes: 16KiB
+      max_tool_context_bytes: 32KiB
+
+mcp_servers:
+  google-calendar:
+    transport: http
+    url: ${GOOGLE_CALENDAR_MCP_URL}
+    headers:
+      Authorization: Bearer ${GOOGLE_CALENDAR_MCP_TOKEN}
+
+  internet-search:
+    transport: http
+    url: ${SEARCH_MCP_URL}
+
+  todo:
+    transport: http
+    url: ${TODO_MCP_URL}
+
+memory:
+  store:
+    driver: sqlite
+    path: /data/amoxtli.sqlite
+
+  indexes:
+    - id: lexical
+      type: bleve
+      path: /data/memory.bleve
+      weight: 1
+
+  policies:
+    private_can_write_org: false
+    org_readable_by_children: true
+
+identities:
+  roles:
+    adult:
+      permissions:
+        - memory.personal.read
+        - memory.personal.write
+        - memory.personal.delete
+        - memory.group.read
+        - memory.group.write
+        - memory.group.delete
+        - memory.org.read
+        - memory.org.write
+        - memory.org.delete
+        - calendar.personal.read
+        - calendar.personal.write
+        - calendar.group.read
+        - calendar.group.write
+        - calendar.org.read
+        - calendar.org.write
+        - todo.personal.read
+        - todo.personal.write
+        - todo.group.read
+        - todo.group.write
+
+    child:
+      permissions:
+        - memory.personal.read
+        - memory.personal.write
+        - memory.group.read
+        - memory.org.read
+        - calendar.personal.read
+        - calendar.group.read
+        - calendar.org.read
+        - todo.personal.read
+        - todo.group.read
+
+    # Principal technique des tâches planifiées : lecture seule, jamais les
+    # permissions d'un administrateur (PLAN.md §11.2).
+    scheduled-reader:
+      permissions:
+        - memory.org.read
+        - calendar.org.read
+        - todo.org.read
+
+  principals:
+    - id: alice
+      kind: human
+      display_name: Alice
+      roles: [adult]
+
+    - id: leo
+      kind: human
+      display_name: Léo
+      roles: [child]
+
+    - id: scheduler-readonly
+      kind: service
+      display_name: Planificateur
+      roles: [scheduled-reader]
+
+# Un message dont l'origine n'est pas déclarée ici est ignoré sans aucun
+# appel LLM (PLAN.md §17, critère 1).
+origins:
+  - provider: whatsapp
+    external_user_id: ${ALICE_WHATSAPP_ID}
+    principal_id: alice
+
+  - provider: whatsapp
+    external_user_id: ${LEO_WHATSAPP_ID}
+    principal_id: leo
+
+channels:
+  - provider: whatsapp
+    channel_id: ${ORG_GROUP_CHANNEL_ID}
+    display_name: Groupe principal
+    kind: group
+    org_id: home
+    scope: group
+    scope_id: main-group
+    # Dans un groupe, un message sans mention explicite est ignoré avant
+    # tout appel LLM.
+    activation: mention
+    members:
+      - alice
+      - leo
+    # Identifiants des ressources externes : résolus par l'application, et
+    # jamais exposés au modèle ni acceptés de sa part (PLAN.md §9.2).
+    resources:
+      calendar: ${ORG_GROUP_CALENDAR_ID}
+      todo: ${ORG_GROUP_TODO_ID}
+
+  - provider: whatsapp
+    channel_id: ${ALICE_PRIVATE_CHANNEL_ID}
+    kind: private
+    org_id: home
+    scope: personal
+    scope_id: alice
+    principal_id: alice
+    resources:
+      calendar: ${ALICE_CALENDAR_ID}
+      todo: ${ALICE_TODO_ID}
+
+schedules:
+  - id: morning-summary
+    enabled: true
+
+    schedule:
+      cron: "0 7 * * *"
+      # Fuseau explicite obligatoire. Éviter une heure située entre 02:00 et
+      # 02:59 : c'est la plage rejouée au retour à l'heure d'hiver (le
+      # scheduler la protège, mais une heure hors de cette plage évite le
+      # sujet).
+      timezone: Europe/Paris
+
+    execution:
+      principal_id: scheduler-readonly
+      org_id: home
+      scope: org
+      scope_id: home
+      agent: main
+      prompt: |
+        Prépare un résumé des événements et tâches importants de la journée.
+      # read_only : les actions proposées sont ignorées. Avec
+      # require_confirmation, elles deviennent un plan qu'un humain habilité
+      # du canal de livraison peut confirmer. Aucune écriture autonome n'est
+      # possible dans les deux cas (PLAN.md §11.3).
+      actions:
+        policy: read_only
+
+    delivery:
+      provider: whatsapp
+      channel_id: ${ORG_GROUP_CHANNEL_ID}
+      mode: on_content
+
+    concurrency:
+      policy: forbid
+      timeout: 10m

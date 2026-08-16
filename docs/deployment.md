@@ -153,9 +153,41 @@ memory:
       weight: 1
 ```
 
-(Voir `internal/config/testdata/valid/config.yaml` pour un exemple complet
-et couvrant toutes les sections — identités, origines, canaux, agendas —
-non répété ici.)
+### Point de départ : `config/config.example.yaml`
+
+Le dépôt fournit une configuration complète et commentée, couvrant toutes
+les sections (identités, rôles, origines, canaux, ressources, agents,
+serveurs MCP, mémoire, planification, observabilité), ainsi que les quatre
+fichiers de prompts correspondants dans `prompts/`.
+
+```bash
+cp config/config.example.yaml config/config.yaml
+```
+
+`config/config.yaml` est ignoré par git (voir `.gitignore`) : il porte les
+choix d'un déploiement donné. Les secrets ne figurent dans aucun des deux
+fichiers — ils sont référencés par variables d'environnement et lus au
+chargement.
+
+Cet exemple référence les prompts par `../prompts/...` plutôt que par
+`/prompts/...` : depuis `/config/config.yaml`, la résolution donne bien
+`/prompts/...` dans le conteneur, et le même fichier reste utilisable
+directement depuis le dépôt, où `config/` et `prompts/` sont côte à côte.
+Un chemin absolu `/prompts/...` reste évidemment valable si la
+configuration n'est destinée qu'au conteneur.
+
+Valider avant tout démarrage — la commande échoue sur la moindre variable
+absente, référence inconnue ou expression cron invalide, avant toute
+connexion externe :
+
+```bash
+automata config validate -config config/config.yaml
+```
+
+**Piège à connaître** : l'expansion des variables d'environnement s'applique
+au fichier entier, **y compris aux commentaires**. Une référence
+d'environnement écrite dans un commentaire, même à titre d'illustration,
+fait échouer le chargement si la variable n'existe pas.
 
 ## 3. Construire l'image
 
