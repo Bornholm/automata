@@ -70,6 +70,44 @@ audio:
   persist_audio: false
   persist_transcription: false
 
+# Pièces jointes non vocales (images, documents). Les notes vocales et les
+# fichiers audio relèvent de la section audio ci-dessus : ils sont transcrits,
+# jamais transmis tels quels au modèle.
+attachments:
+  enabled: true
+
+  # Taille maximale d'UNE pièce jointe reçue. Au-delà, elle est écartée et
+  # l'agent en est informé, afin qu'il puisse l'expliquer plutôt que de
+  # répondre à côté d'une image qu'il n'a jamais vue.
+  max_size: 8MiB
+  max_count: 4
+
+  # Types transmis au modèle. Ce filtre protège le tour entier : un
+  # fournisseur refuse la requête COMPLÈTE lorsqu'une pièce jointe ne lui
+  # convient pas, laissant l'utilisateur sans réponse. Il doit donc rester
+  # aligné sur ce que le modèle configuré accepte réellement.
+  #
+  # Ci-dessous, ce que le provider openai admet : images png/jpeg/webp/gif, et
+  # documents text/* uniquement (un PDF n'est PAS accepté par cette voie).
+  # Vérifier la compatibilité du modèle visé avant d'élargir cette liste.
+  accepted_types:
+    - image/png
+    - image/jpeg
+    - image/webp
+    - image/gif
+    - text/plain
+
+  # Pièces jointes rejouées depuis l'historique à chaque tour, les plus
+  # récentes d'abord. C'est ce qui permet de dire « et sur la photo d'avant ? ».
+  #
+  # Attention au coût : chaque image rejouée est renvoyée au modèle à CHAQUE
+  # message suivant. Une valeur élevée alourdit toutes les requêtes.
+  max_history: 4
+
+  # Pièces jointes jointes à une réponse, pour qu'un outil prolixe n'inonde
+  # pas la conversation.
+  max_reply: 3
+
 llm_clients:
   main:
     provider: openai

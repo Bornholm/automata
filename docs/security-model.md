@@ -231,8 +231,12 @@ message complet.
 
 **Limitation connue, documentée, non corrigée dans cette phase.** Limites
 déjà en place et cohérentes : `audio.Config.MaxSize` (lecture en flux borné,
-`io.LimitReader`), `mcp.Limits.MaxToolResultBytes` (troncature des résultats
-d'outil), `internal/conversation.defaultHistoryLimit` (20 messages
+`io.LimitReader`), `attachments.max_size` / `max_count` / `max_history` /
+`max_reply` (pièces jointes reçues, rejouées et renvoyées, également en
+lecture bornée), `mcp.Limits.MaxToolResultBytes` (troncature des résultats
+d'outil), `agents.*.limits.max_tool_context_bytes` (budget cumulé des
+résultats d'outils), `agents.*.limits.max_actions_per_turn` (lot d'actions à
+confirmer), `internal/conversation.defaultHistoryLimit` (20 messages
 rechargés). **Aucune limite** n'existe en revanche sur la taille d'un
 message texte brut avant persistance et envoi au LLM
 (`courier.GetMessageMainContent` dans `internal/conversation/handler.go`) :
@@ -300,14 +304,39 @@ verts (`go test ./...`, `go test -race ./...`).
   clair. La restriction de permissions apportée en A.5 réduit la surface
   d'exposition (accès local uniquement, propriétaire du processus) mais ne
   remplace pas un chiffrement au repos, hors périmètre de cette phase.
+- **Pièces jointes conservées en clair dans la base** : la table
+  `message_attachments` stocke les octets bruts des images et documents reçus,
+  afin de pouvoir les rejouer dans l'historique remis au modèle. C'est une
+  décision explicite d'exploitation, à connaître pour trois raisons :
+  - ce sont des **données personnelles**, souvent plus sensibles qu'un
+    message texte (photo d'un lieu, d'un document, d'une personne) ; la
+    sauvegarde de `/data/app.sqlite` les emporte avec elle ;
+  - la base **grossit bien plus vite** qu'avec du texte seul (voir
+    `docs/operations.md` §1) ;
+  - **aucune purge automatique** n'est implémentée : rien ne supprime les
+    pièces jointes anciennes.
+
+  Les audios font exception et ne sont jamais stockés : notes vocales comme
+  fichiers audio sont transcrits sans conservation (PLAN.md §3.4). Pour ne
+  rien conserver du tout, mettre `attachments.max_history` à `0` — les images
+  restent alors visibles du modèle pour le tour courant, sans être relues
+  ensuite — ou `attachments.enabled` à `false`.
+- **Contenu des pièces jointes non inspecté** : une image ou un document est
+  transmis au fournisseur de modèle sans analyse de son contenu (ni
+  antivirus, ni détection de charge utile). Le filtre `accepted_types` porte
+  sur le type MIME **déclaré par la plateforme**, jamais sur les octets
+  réellement reçus : un fichier annoncé `image/png` qui n'en est pas un
+  atteindra le fournisseur, qui le rejettera. Acceptable ici parce que les
+  origines sont déclarées une à une (§2) — un inconnu ne peut rien envoyer —
+  mais à réévaluer si les origines devenaient ouvertes.
 - **Chemin de fichier de prompt non neutralisé** (A.4) : accepté, la
   configuration étant administrée, pas fournie par un attaquant distant.
 - **Aucune limite de taille sur un message texte brut** (A.7) : accepté
   pour cette phase, risque modéré.
-- **`mcpExecutor` (internal/action) sans résolution fraîche de ressource
-  externe** (A.2) : accepté car aucun producteur d'action actuel n'expose de
-  ressource externe par ce chemin ; point d'extension existant si cela
-  change.
+- **Nouveau serveur MCP porteur d'une ressource résolue** (A.2) : il doit
+  être déclaré dans `internal/resource` (constantes et `InjectResolved`),
+  faute de quoi ses arguments atteindraient l'appel réel sans réinjection de
+  la ressource de la portée.
 - **Fichier SQLite du store mémoire Amoxtli** : permissions dépendantes de
   l'umask du processus, hors du contrôle direct d'`automata` (bibliothèque
   externe) ; seul le répertoire parent est garanti restreint (A.5).

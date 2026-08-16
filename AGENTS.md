@@ -17,6 +17,14 @@ Règles d'implémentation pour ce dépôt. Voir `PLAN.md` pour le plan complet.
 - Ne pas déplacer les règles de sécurité dans les prompts.
 - Ne pas exposer les identifiants de ressources externes aux modèles.
 - Ne pas stocker les audios ou transcriptions.
+- Les pièces jointes non vocales (images, documents) sont conservées, elles :
+  voir `internal/media` et la table `message_attachments`. Ne jamais
+  journaliser leurs octets, ni les transmettre au modèle sans passer par le
+  filtre de `config.Attachments` — un fournisseur refuse la requête ENTIÈRE
+  lorsqu'une pièce jointe ne lui convient pas.
+- Ne jamais attacher de média à un message `system` ou `assistant` : les
+  fournisseurs les rejettent. Seuls les messages `user` et les résultats
+  d'outils peuvent en porter.
 - Ne pas journaliser les contenus privés.
 - Toujours consommer les canaux de streaming jusqu'à fermeture ou annulation.
 - Toujours fermer les lecteurs, connexions et goroutines.

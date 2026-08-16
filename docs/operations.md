@@ -16,7 +16,7 @@ ci-dessous — adapter à `storage.application.path`, `memory.store.path` et au
 
 | Emplacement                          | Contenu                                                              | Config source                     |
 |---------------------------------------|------------------------------------------------------------------------|------------------------------------|
-| `/data/app.sqlite` (+ `-wal`, `-shm` si présents) | Base applicative : conversations, messages, plans d'actions, exécutions planifiées, tentatives de livraison, audit | `storage.application.path`         |
+| `/data/app.sqlite` (+ `-wal`, `-shm` si présents) | Base applicative : conversations, messages, **pièces jointes**, plans d'actions, exécutions planifiées, tentatives de livraison, audit | `storage.application.path`         |
 | `/data/amoxtli.sqlite`                | Métadonnées de la mémoire persistante (Amoxtli)                       | `memory.store.path`                |
 | `/data/memory.bleve/`                 | Index de recherche plein texte de la mémoire                          | `memory.indexes[].path`            |
 | `/data/courier/`                      | Session WhatsApp (identifiants d'appareil liés, état Go Courier)      | `courier.providers.<nom>.session_path` |
@@ -25,6 +25,40 @@ La base applicative fonctionne en mode WAL (`storage.application.pragmas.journal
 les fichiers `-wal` et `-shm` associés à `app.sqlite`, lorsqu'ils existent,
 font partie intégrante de l'état non encore consolidé dans le fichier
 principal et doivent être copiés avec lui, jamais séparément.
+
+### Croissance liée aux pièces jointes
+
+Lorsque `attachments.enabled` vaut `true`, la table `message_attachments`
+conserve les **octets bruts** des images et documents reçus, afin de pouvoir
+les rejouer dans l'historique remis au modèle. `app.sqlite` grossit alors bien
+plus vite qu'avec du texte seul : avec `max_size: 8MiB` et `max_count: 4`, un
+seul message peut ajouter jusqu'à 32 Mio.
+
+Trois conséquences pratiques :
+
+- **Aucune purge automatique n'est implémentée.** Rien ne supprime les pièces
+  jointes anciennes ; la base croît de façon monotone tant qu'un opérateur
+  n'intervient pas.
+- Ces octets sont des **données personnelles** et partent dans chaque
+  sauvegarde (voir `docs/security-model.md` §4).
+- Les audios ne sont jamais concernés : notes vocales et fichiers audio sont
+  transcrits sans conservation.
+
+Surveiller la taille et, au besoin, purger les pièces jointes antérieures à
+une date, service arrêté :
+
+```bash
+sqlite3 /data/app.sqlite "SELECT COUNT(*), SUM(LENGTH(data))/1024/1024 || ' Mio' FROM message_attachments;"
+
+# Purge des pièces jointes de plus de 90 jours. Les messages, eux, sont
+# conservés : seul leur média disparaît de l'historique rejoué.
+sqlite3 /data/app.sqlite "DELETE FROM message_attachments WHERE created_at < date('now', '-90 days');"
+sqlite3 /data/app.sqlite "VACUUM;"
+```
+
+Pour ne rien conserver du tout, mettre `attachments.max_history` à `0` : les
+pièces jointes restent visibles du modèle pour le tour courant, mais ne sont
+plus relues ensuite.
 
 ## 2. Procédure de sauvegarde
 
