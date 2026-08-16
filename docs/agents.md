@@ -1,0 +1,327 @@
+# Agents, spécialistes et serveurs MCP
+
+Ce document explique comment ajouter vos propres sous-agents, leur brancher
+des serveurs MCP, et faire en sorte que chaque utilisateur se connecte à ces
+serveurs avec ses propres identifiants.
+
+## Comment les agents sont organisés
+
+Un orchestrateur parle à l'utilisateur. Il ne connaît aucun outil métier. Il
+dispose seulement d'outils conceptuels : déléguer à tel spécialiste, chercher
+en mémoire, y écrire, y supprimer.
+
+Un spécialiste ne parle jamais à l'utilisateur. Il reçoit un objectif de
+l'orchestrateur, travaille avec ses propres serveurs MCP, et rend un résumé.
+
+Cette séparation a une raison précise. Charger tous les schémas d'outils dans
+un seul agent noierait le modèle, coûterait cher à chaque tour, et donnerait à
+un agent généraliste le pouvoir d'appeler n'importe quoi. Un spécialiste ne
+voit que ses propres outils, et rien de ce que voient les autres.
+
+```text
+utilisateur
+   │
+   ▼
+orchestrateur "main"          outils : delegate_to_*, search_memory, remember, forget_memory
+   │
+   ├── spécialiste "agenda"   outils : ceux du serveur MCP google-calendar
+   ├── spécialiste "research" outils : ceux du serveur MCP internet-search
+   └── spécialiste "todo"     outils : ceux du serveur MCP todo
+```
+
+## Ce que reçoit un agent
+
+Son prompt système est composé par l'application, dans cet ordre :
+
+1. Les règles de sécurité invariantes. Codées en dur, jamais issues de la
+   configuration, impossibles à désactiver.
+2. Votre contenu, sous le titre « Personnalité et mission ».
+3. Ses capacités effectives, listées à partir de `capabilities`.
+
+Puis, à chaque requête, un bloc de contexte séparé : nom de l'agent,
+organisation, portée d'exécution, type de canal.
+
+Vos fichiers de prompt ne portent donc que la personnalité et la mission.
+N'y écrivez pas de règles de sécurité. Elles y seraient redondantes, et
+surtout elles donneraient l'illusion qu'une règle de sécurité peut se
+configurer. Ce n'est pas le cas : aucune décision d'autorisation ne dépend du
+texte d'un prompt.
+
+Un spécialiste ne reçoit pas l'historique de la conversation principale. Il
+obtient l'objectif, les éléments que l'orchestrateur a jugé utiles, la portée
+résolue et les pièces jointes du tour. Les pièces jointes font exception à la
+règle d'isolation parce qu'un modèle ne peut pas recopier une image dans une
+chaîne de caractères : sans cela, « lis cette affiche et crée le rendez-vous »
+serait impossible.
+
+## Ajouter un spécialiste
+
+Prenons un spécialiste météo branché sur un serveur MCP maison.
+
+### 1. Déclarer le serveur MCP
+
+```yaml
+mcp_servers:
+  meteo:
+    transport: http
+    url: ${METEO_MCP_URL}
+    headers:
+      Authorization: Bearer ${METEO_MCP_TOKEN}
+```
+
+Seul le transport `http` existe. Un serveur lancé en sous-processus (`stdio`)
+n'est pas représentable.
+
+### 2. Écrire son prompt
+
+`prompts/meteo.md` :
+
+```markdown
+Tu es le spécialiste météo. Tu n'échanges pas avec l'utilisateur : tu reçois
+un objectif de l'agent généraliste et tu lui rends un résultat.
+
+## Ton, personnalité
+
+Bref et factuel. Températures en degrés Celsius, jamais de longue narration.
+
+## Ta mission
+
+Consulter les prévisions demandées et les résumer en deux ou trois lignes.
+
+Si une localité est ambiguë, tu demandes une précision plutôt que de choisir.
+Tu ne prévois rien au-delà de ce que la source te donne.
+```
+
+### 3. Déclarer l'agent
+
+```yaml
+agents:
+  meteo:
+    type: specialist
+    client: main
+    system_prompt:
+      file: ../prompts/meteo.md
+    mcp_servers:
+      - meteo
+    limits:
+      max_sequential_tool_calls: 4
+      max_actions_per_turn: 1
+      tool_timeout: 20s
+      max_tool_result_bytes: 8KiB
+      max_tool_context_bytes: 16KiB
+```
+
+Les cinq limites sont obligatoires. Une valeur nulle ou négative fait échouer
+la validation.
+
+### 4. Le rendre joignable
+
+```yaml
+agents:
+  main:
+    delegates:
+      - agenda
+      - research
+      - todo
+      - meteo
+```
+
+L'orchestrateur expose alors un outil `delegate_to_meteo`. Un spécialiste
+absent de `delegates` n'est jamais atteignable.
+
+### 5. Valider
+
+```bash
+automata config validate -config config/config.yaml
+```
+
+La validation vérifie que chaque délégué existe, que chaque serveur MCP
+référencé est déclaré, qu'aucun cycle de délégation ne se forme, et que le
+fichier de prompt est lisible.
+
+## Sessions MCP
+
+Le gestionnaire ouvre une connexion par couple (session, serveur), et la
+réutilise ensuite. La clé de session est l'identifiant de conversation, soit
+`<provider>:<channel_id>`.
+
+Deux conversations n'obtiennent donc jamais la même connexion. Cela compte
+pour les serveurs qui gardent un état entre les appels : le contexte d'un
+canal ne peut pas fuir dans un autre.
+
+Une connexion vit aussi longtemps que le processus, pas le temps d'un message.
+Une action proposée dans un message et confirmée dans un autre réutilise la
+même connexion.
+
+Les connexions se ferment à l'arrêt du processus, ou explicitement pour une
+session donnée.
+
+## Donner à chaque utilisateur ses propres identifiants
+
+Les en-têtes déclarés sous `mcp_servers` valent pour tout le monde. Cela
+convient à un serveur de recherche web. Cela ne convient pas à un agenda : si
+Alice et Léo partagent le même jeton, Léo lit l'agenda d'Alice.
+
+Déclarez alors la connexion au niveau du principal :
+
+```yaml
+identities:
+  principals:
+    - id: alice
+      kind: human
+      display_name: Alice
+      roles: [adult]
+      mcp:
+        google-calendar:
+          headers:
+            Authorization: Bearer ${ALICE_GCAL_TOKEN}
+
+    - id: leo
+      kind: human
+      display_name: Léo
+      roles: [child]
+      mcp:
+        google-calendar:
+          headers:
+            Authorization: Bearer ${LEO_GCAL_TOKEN}
+```
+
+Ce qui se passe alors, quand un spécialiste appelle `google-calendar` :
+
+- l'application lit le principal de l'identité d'exécution, résolue depuis
+  `origins` avant tout appel au modèle ;
+- si ce principal déclare une surcharge pour ce serveur, la connexion utilise
+  ses en-têtes ;
+- la clé de session inclut son identifiant, ce qui lui donne une connexion
+  distincte.
+
+Ce dernier point est ce qui rend le mécanisme sûr. Dans un canal de groupe,
+Alice et Léo parlent dans la même conversation. Sans cette séparation, le
+premier à déclencher un appel imposerait son jeton au second, qui lirait alors
+l'agenda de quelqu'un d'autre. Chacun a donc sa connexion, y compris dans un
+groupe partagé.
+
+Un principal sans surcharge garde le comportement d'origine : une connexion
+commune à la conversation, avec les en-têtes du serveur.
+
+### Surcharger l'URL
+
+```yaml
+      mcp:
+        crm:
+          url: https://crm.example.test/tenants/alice/mcp
+          headers:
+            Authorization: Bearer ${ALICE_CRM_TOKEN}
+```
+
+`url` vide conserve celle du serveur. Les en-têtes du principal s'ajoutent à
+ceux du serveur et l'emportent en cas de même nom, ce qui permet de ne
+surcharger que l'autorisation.
+
+### Ce qui est vérifié au démarrage
+
+Une surcharge visant un serveur inexistant est une erreur de validation, pas
+un avertissement. Sans cela, le principal se rabattrait silencieusement sur le
+jeton commun, donc potentiellement sur les ressources de quelqu'un d'autre.
+Une surcharge vide est refusée pour la même raison.
+
+### Ce que le mécanisme ne fait pas
+
+Il ne gère pas un flux OAuth. Il n'y a ni rafraîchissement de jeton, ni
+stockage de jeton par utilisateur : vous fournissez des jetons durables par
+variable d'environnement, et vous les faites tourner vous-même. Un jeton
+expiré produit une erreur MCP que le spécialiste remonte en clair.
+
+Il ne s'applique pas aux tâches planifiées autrement que par leur principal de
+service. Une tâche s'exécutant sous `scheduler-readonly` utilise les
+surcharges de ce principal, s'il en a.
+
+## Résolution des ressources
+
+Deux noms de serveur déclenchent un traitement supplémentaire :
+`google-calendar` et `todo`.
+
+Pour ces deux-là, l'application injecte elle-même l'identifiant de la
+ressource, `calendar_id` ou `list_id`, à partir de `channels[].resources` et
+de la portée de la conversation. Une valeur fournie par le modèle sous ce nom
+est écartée.
+
+En lecture, l'identifiant est injecté à l'appel. En écriture, l'outil
+n'exécute rien : il enregistre une action à confirmer, dont les arguments ne
+contiennent délibérément aucun identifiant de ressource. Celui-ci est résolu à
+nouveau au moment de la confirmation, depuis la portée du plan. Une action
+confirmée écrit donc toujours dans la ressource courante de sa portée.
+
+Pour brancher un troisième service sur ce mécanisme, le nom du serveur et le
+nom du paramètre doivent être déclarés dans `internal/resource`. C'est du code,
+pas de la configuration. Sans cette déclaration, les arguments passent tels
+quels, ce qui convient à un service sans notion de ressource par utilisateur,
+comme une recherche web.
+
+## Écritures et confirmation
+
+Un spécialiste ne réalise jamais une écriture externe dans le tour où il la
+décide. Il produit une action, qui devient un plan persisté. L'utilisateur
+répond « confirmer » ou « annuler » en toutes lettres. Ces deux mots sont
+interceptés avant tout appel au modèle : le modèle ne peut pas se
+confirmer lui-même.
+
+À la confirmation, l'application recharge le plan, vérifie son état et son
+expiration, contrôle qui confirme, **revérifie les permissions**, résout à
+nouveau les ressources, puis exécute les actions une par une. Le rapport
+distingue chaque succès et chaque échec.
+
+La revérification des permissions surprend parfois : une action proposée peut
+échouer à la confirmation si le rôle a changé entre-temps, ou si la permission
+n'a jamais été accordée. C'est voulu. L'autorisation obtenue au moment de la
+proposition ne vaut rien au moment d'écrire.
+
+Un spécialiste qui déclare `calendar.personal.write` dans `capabilities` doit
+aussi voir cette permission accordée au **rôle du principal**. Les deux sont
+nécessaires : les capacités de l'agent et les permissions de l'utilisateur se
+croisent.
+
+## Choisir les limites
+
+`max_sequential_tool_calls` doit couvrir le pire enchaînement légitime. Un
+spécialiste agenda qui consulte les événements avant de proposer une création
+a besoin d'au moins trois tours. Trop bas, le tour échoue au lieu d'aboutir.
+
+`max_actions_per_turn` reflète ce que l'utilisateur peut relire d'un coup
+avant de confirmer. Au-delà, le lot entier est rejeté avec un message
+demandant de découper la demande.
+
+`max_tool_result_bytes` et `max_tool_context_bytes` protègent votre facture.
+Un serveur de recherche renvoyant des pages entières épuise le second bien
+avant le premier.
+
+## Déboguer un spécialiste
+
+Les journaux MCP donnent l'essentiel sans exposer de contenu :
+
+```json
+{"level":"INFO","msg":"mcp: connexion établie","server":"meteo","session":"whatsapp:33612345678@s.whatsapp.net"}
+{"level":"INFO","msg":"mcp: appel d'outil terminé","server":"meteo","tool":"forecast","duration":"120ms","status":"success","result_bytes":842,"truncated":false}
+```
+
+La session affichée indique quelle connexion a servi. Une session suffixée par
+un identifiant de principal signale une connexion par utilisateur.
+
+`truncated: true` veut dire que le modèle a reçu un résultat coupé. Il en est
+informé, mais si cela arrive souvent, augmentez `max_tool_result_bytes` ou
+demandez au serveur de répondre plus court.
+
+Quelques symptômes fréquents :
+
+Le spécialiste n'est jamais appelé. Vérifiez qu'il figure dans `delegates`, et
+que son rôle est clair dans le prompt de l'orchestrateur. Un modèle ne délègue
+pas à un agent dont il ne comprend pas l'utilité.
+
+Le tour échoue avec un plafond atteint. `max_sequential_tool_calls` est trop
+bas pour la tâche.
+
+Une écriture reste sans effet. Elle attend une confirmation. Cherchez le plan
+avec `automata admin inspect -kind plans`.
+
+Un utilisateur voit les données d'un autre. Le serveur est déclaré sans
+surcharge par principal : tout le monde partage le même jeton.

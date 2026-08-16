@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -107,7 +109,69 @@ func newConfigCommand() *cobra.Command {
 		Short: "Gestion de la configuration Automata",
 	}
 
+	cmd.AddCommand(newConfigInitCommand())
 	cmd.AddCommand(newConfigValidateCommand())
+
+	return cmd
+}
+
+// newConfigInitCommand construit la sous-commande "config init" : un
+// entretien en ligne de commande qui produit une configuration complète et
+// le fichier d'environnement correspondant.
+//
+// Elle n'écrit aucun secret : les valeurs sensibles deviennent des références
+// d'environnement, listées dans le fichier généré à côté.
+func newConfigInitCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                "init",
+		Short:              "Génère un fichier de configuration en répondant à quelques questions",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fs := flag.NewFlagSet("init", flag.ContinueOnError)
+			fs.SetOutput(cmd.ErrOrStderr())
+
+			output := fs.String("output", "config/config.yaml", "chemin du fichier de configuration à écrire")
+			envOutput := fs.String("env-output", "", "chemin du fichier d'environnement à écrire (défaut : <output>.env)")
+
+			if err := fs.Parse(args); err != nil {
+				return errSilent
+			}
+
+			envPath := *envOutput
+			if envPath == "" {
+				envPath = strings.TrimSuffix(*output, filepath.Ext(*output)) + ".env"
+			}
+
+			configYAML, envExample, err := runConfigInit(cmd.InOrStdin(), cmd.OutOrStdout())
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+				return errSilent
+			}
+
+			// Les deux fichiers sont écrits seulement une fois l'entretien
+			// terminé : une interruption en cours de route ne laisse rien
+			// derrière elle.
+			if err := writeIfAbsent(*output, configYAML); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+				return errSilent
+			}
+
+			if err := writeIfAbsent(envPath, envExample); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+				return errSilent
+			}
+
+			out := cmd.OutOrStdout()
+			fmt.Fprintf(out, "\nConfiguration écrite dans %s\n", *output)
+			fmt.Fprintf(out, "Variables à renseigner dans %s\n", envPath)
+			fmt.Fprintln(out, "\nEnsuite :")
+			fmt.Fprintf(out, "  1. renseigner les variables, puis les charger dans l'environnement\n")
+			fmt.Fprintf(out, "  2. automata config validate -config %s\n", *output)
+			fmt.Fprintf(out, "  3. automata -config %s\n", *output)
+
+			return nil
+		},
+	}
 
 	return cmd
 }

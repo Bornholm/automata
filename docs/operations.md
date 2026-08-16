@@ -192,7 +192,20 @@ sans modifier `internal/observability`.
 4. Valider avec `GET /healthz/ready` (si activé) et `automata admin
    inspect -kind runs` que le service a repris normalement.
 
-## 6. Commandes d'administration disponibles
+## 6. Commandes disponibles
+
+| Commande | Rôle |
+|---|---|
+| `automata -config <fichier>` | Démarre le service |
+| `automata config init [-output f] [-env-output f]` | Génère une configuration en répondant à des questions |
+| `automata config validate -config <fichier>` | Valide sans rien démarrer |
+| `automata healthcheck [-addr h:p] [-timeout d]` | Sonde de santé, code de sortie 0 ou 1 |
+| `automata memory reindex -config <fichier>` | Reconstruit l'index de la mémoire depuis le store |
+| `automata admin inspect -config <fichier> [-kind plans\|runs]` | Inspecte les plans d'actions ou les exécutions planifiées |
+
+Toutes utilisent le tiret simple, convention Go, pas le double tiret.
+
+## 6.1 Commandes d'administration en détail
 
 Ces commandes existent déjà (Phases 2, 10, 18) ; ce paragraphe n'en est
 qu'un récapitulatif opérationnel, pas une redocumentation complète (voir
