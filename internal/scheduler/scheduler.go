@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/bits"
 	"time"
 
 	"github.com/google/uuid"
@@ -214,13 +215,42 @@ func (s *Scheduler) tickSchedule(ctx context.Context, sched config.Schedule, at 
 		return fmt.Errorf("expression cron %q invalide: %w", sched.Schedule.Cron, err)
 	}
 
-	anchor, err := s.anchorTime(ctx, sched, at)
+	anchor, anchorFromRun, err := s.anchorTime(ctx, sched, at)
 	if err != nil {
 		return fmt.Errorf("calcul de l'ancre d'occurrence: %w", err)
 	}
 
+	// Voir hasFixedHour : seules les expressions ancrées sur une heure du
+	// jour unique doivent être protégées contre l'heure murale répétée.
+	guardRepeatedHour := hasFixedHour(cronSchedule)
+
 	for {
 		next := cronSchedule.Next(anchor.In(loc))
+
+		// Retour à l'heure d'hiver : l'heure murale visée par l'expression
+		// cron est vécue deux fois (ex. 02:30 le 27/10/2024 en Europe/Paris,
+		// à 00:30Z puis 01:30Z). cron.Next produit bien les deux instants et,
+		// scheduled_for étant stocké en UTC, la contrainte
+		// UNIQUE(schedule_id, scheduled_for) ne les confond pas : sans cette
+		// garde, un "0 7 * * *" serait exécuté deux fois cette nuit-là, ce
+		// qu'interdisent PLAN.md §2.3 (règle 10) et §11.7.
+		//
+		// La comparaison ne vaut que contre une ancre issue d'une occurrence
+		// réellement enregistrée : l'ancre artificielle du premier Tick
+		// porte une heure murale arbitraire, avec laquelle une collision
+		// ferait sauter une occurrence légitime.
+		if guardRepeatedHour && anchorFromRun && sameWallClock(anchor, next, loc) {
+			s.logger.InfoContext(ctx, "scheduler: occurrence ignorée (heure murale répétée par le retour à l'heure d'hiver)",
+				"schedule_id", sched.ID,
+				"timezone", sched.Schedule.Timezone,
+				"scheduled_for", next.UTC().Format(time.RFC3339),
+			)
+
+			anchor = next
+
+			continue
+		}
+
 		if next.After(at) {
 			return nil
 		}
@@ -235,7 +265,57 @@ func (s *Scheduler) tickSchedule(ctx context.Context, sched config.Schedule, at 
 		}
 
 		anchor = next
+		anchorFromRun = true
 	}
+}
+
+// hasFixedHour indique si schedule désigne une heure du jour unique (ex.
+// "30 2 * * *"), par opposition à une expression qui balaie plusieurs heures
+// ("0 * * * *", "*/30 * * * *", "@every 1h").
+//
+// Cette distinction décide du traitement de l'heure murale répétée par le
+// retour à l'heure d'hiver, et reprend la convention de cron(8) et de
+// systemd :
+//
+//   - heure unique : l'expression exprime "une fois par jour, à telle heure".
+//     Ses deux passages sont le même rendez-vous quotidien vécu deux fois, et
+//     le déclencher deux fois trahirait l'intention (un résumé du matin
+//     envoyé en double). Le second passage est ignoré.
+//   - heures multiples : l'expression exprime une cadence. Ses occurrences
+//     suivent l'écoulement réel du temps, la journée en compte légitimement
+//     une de plus, et toutes doivent être déclenchées.
+//
+// Le cas intermédiaire d'une liste d'heures fixes ("30 2,14 * * *") est
+// traité comme une cadence : rare, et le sur-déclenchement y est moins
+// dommageable que l'escamotage d'une occurrence.
+//
+// Une expression que cron ne représente pas par un *cron.SpecSchedule
+// (typiquement "@every") est par nature une cadence : non protégée.
+func hasFixedHour(schedule cron.Schedule) bool {
+	spec, ok := schedule.(*cron.SpecSchedule)
+	if !ok {
+		return false
+	}
+
+	// Les 24 bits de poids faible portent les heures 0 à 23 ; les bits
+	// supérieurs (dont le marqueur "*" interne à cron) sont hors sujet.
+	const hoursMask = 1<<24 - 1
+
+	return bits.OnesCount64(spec.Hour&hoursMask) == 1
+}
+
+// sameWallClock indique si a et b désignent la même heure murale (date et
+// heure locales identiques) dans loc tout en étant deux instants distincts.
+// C'est exactement la signature d'une heure répétée par un retour à l'heure
+// d'hiver.
+func sameWallClock(a, b time.Time, loc *time.Location) bool {
+	const wallClockLayout = "2006-01-02T15:04:05"
+
+	if a.Equal(b) {
+		return false
+	}
+
+	return a.In(loc).Format(wallClockLayout) == b.In(loc).Format(wallClockLayout)
 }
 
 // anchorTime retourne l'instant à partir duquel chercher la prochaine
@@ -244,7 +324,14 @@ func (s *Scheduler) tickSchedule(ctx context.Context, sched config.Schedule, at 
 // rattraper un historique arbitrairement long pour un schedule qui n'a
 // jamais tourné (rien avant le premier Tick ne peut être considéré comme
 // "manqué").
-func (s *Scheduler) anchorTime(ctx context.Context, sched config.Schedule, at time.Time) (time.Time, error) {
+//
+// Le booléen retourné indique laquelle des deux ancres a été produite : il
+// vaut true lorsqu'elle provient d'une occurrence réellement enregistrée, et
+// false pour l'ancre artificielle du premier Tick. Seule la première peut
+// servir de référence pour détecter une heure murale répétée (voir
+// tickSchedule) ; comparer une heure murale arbitraire ferait sauter une
+// occurrence légitime.
+func (s *Scheduler) anchorTime(ctx context.Context, sched config.Schedule, at time.Time) (time.Time, bool, error) {
 	var (
 		latest persistence.ScheduledRun
 		found  bool
@@ -256,19 +343,19 @@ func (s *Scheduler) anchorTime(ctx context.Context, sched config.Schedule, at ti
 		return err
 	})
 	if err != nil {
-		return time.Time{}, fmt.Errorf("lecture de la dernière occurrence de %q: %w", sched.ID, err)
+		return time.Time{}, false, fmt.Errorf("lecture de la dernière occurrence de %q: %w", sched.ID, err)
 	}
 
 	if !found {
-		return at.Add(-time.Minute), nil
+		return at.Add(-time.Minute), false, nil
 	}
 
 	parsed, err := time.Parse(time.RFC3339, latest.ScheduledFor)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("horodatage d'occurrence invalide %q pour %q: %w", latest.ScheduledFor, sched.ID, err)
+		return time.Time{}, false, fmt.Errorf("horodatage d'occurrence invalide %q pour %q: %w", latest.ScheduledFor, sched.ID, err)
 	}
 
-	return parsed, nil
+	return parsed, true, nil
 }
 
 // triggerOccurrence traite une unique occurrence due de sched, à l'instant

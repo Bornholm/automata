@@ -447,6 +447,183 @@ func TestScheduler_Tick_DaylightSavingTransition(t *testing.T) {
 	}
 }
 
+// TestScheduler_Tick_DaylightSavingNonexistentHourSkipped couvre le cas
+// "heures inexistantes" exigé par PLAN.md §11.7 : le 31/03/2024 en
+// Europe/Paris, l'heure murale 02:30 n'existe pas (saut direct de 02:00 à
+// 03:00). L'occurrence de ce jour-là doit être purement et simplement
+// sautée, sans être rattrapée ni décalée sur une autre heure.
+func TestScheduler_Tick_DaylightSavingNonexistentHourSkipped(t *testing.T) {
+	db := openTestDB(t)
+
+	parisLoc, err := time.LoadLocation("Europe/Paris")
+	if err != nil {
+		t.Fatalf("LoadLocation Europe/Paris: %v", err)
+	}
+
+	sched := baseSchedule("dst-spring", "30 2 * * *", "Europe/Paris", "main", "whatsapp")
+	cfg := &config.Config{Schedules: []config.Schedule{sched}}
+
+	fake := replyingAgent("printemps")
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	// Première occurrence le 30/03 à 02:30 (heure d'hiver), pour ancrer le
+	// schedule avant la transition.
+	before := time.Date(2024, 3, 30, 2, 30, 0, 0, parisLoc)
+	clock := newFakeClock(before.UTC())
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
+
+	if err := s.Tick(context.Background(), before.UTC()); err != nil {
+		t.Fatalf("Tick (30/03): %v", err)
+	}
+	if got := fake.callCount(); got != 1 {
+		t.Fatalf("appels après le 30/03: got %d, expected 1", got)
+	}
+
+	// Tick couvrant toute la journée du 31/03 : 02:30 n'existe pas ce
+	// jour-là, aucune occurrence ne doit être déclenchée.
+	duringDST := time.Date(2024, 3, 31, 12, 0, 0, 0, parisLoc)
+	clock.Set(duringDST.UTC())
+	if err := s.Tick(context.Background(), duringDST.UTC()); err != nil {
+		t.Fatalf("Tick (31/03): %v", err)
+	}
+	if got := fake.callCount(); got != 1 {
+		t.Fatalf("appels après le 31/03: got %d, expected 1 (l'heure murale 02:30 n'existe pas ce jour-là)", got)
+	}
+
+	// Le lendemain, l'occurrence reprend normalement en heure d'été.
+	after := time.Date(2024, 4, 1, 12, 0, 0, 0, parisLoc)
+	clock.Set(after.UTC())
+	if err := s.Tick(context.Background(), after.UTC()); err != nil {
+		t.Fatalf("Tick (01/04): %v", err)
+	}
+	if got := fake.callCount(); got != 2 {
+		t.Fatalf("appels après le 01/04: got %d, expected 2", got)
+	}
+
+	if count := countRuns(t, db, sched.ID); count != 2 {
+		t.Fatalf("scheduled_runs pour %q: got %d, expected 2", sched.ID, count)
+	}
+}
+
+// TestScheduler_Tick_DaylightSavingRepeatedHourRunsOnce couvre le cas
+// "heures répétées" exigé par PLAN.md §11.7, et avec lui la règle
+// fondamentale §2.3 (10) : le 27/10/2024 en Europe/Paris, l'heure murale
+// 02:30 est vécue deux fois (02:30+02:00 puis 02:30+01:00, soit 00:30Z et
+// 01:30Z). cron.Next produit ces deux instants et, scheduled_for étant
+// stocké en UTC, la contrainte UNIQUE(schedule_id, scheduled_for) ne suffit
+// pas à les confondre : l'occurrence ne doit malgré tout être exécutée
+// qu'une seule fois.
+func TestScheduler_Tick_DaylightSavingRepeatedHourRunsOnce(t *testing.T) {
+	db := openTestDB(t)
+
+	parisLoc, err := time.LoadLocation("Europe/Paris")
+	if err != nil {
+		t.Fatalf("LoadLocation Europe/Paris: %v", err)
+	}
+
+	// Vérifie la prémisse du test : les deux instants UTC sont bien
+	// distincts, donc non dédupliqués par la seule contrainte SQL.
+	firstPass := time.Date(2024, 10, 27, 0, 30, 0, 0, time.UTC)
+	secondPass := time.Date(2024, 10, 27, 1, 30, 0, 0, time.UTC)
+	if firstPass.In(parisLoc).Format("15:04") != secondPass.In(parisLoc).Format("15:04") {
+		t.Fatalf("fixture invalide : les deux instants devraient partager la même heure murale")
+	}
+
+	sched := baseSchedule("dst-autumn", "30 2 * * *", "Europe/Paris", "main", "whatsapp")
+	cfg := &config.Config{Schedules: []config.Schedule{sched}}
+
+	fake := replyingAgent("automne")
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	// Ancrage la veille, puis un tick couvrant les deux passages de 02:30.
+	before := time.Date(2024, 10, 26, 2, 30, 0, 0, parisLoc)
+	clock := newFakeClock(before.UTC())
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
+
+	if err := s.Tick(context.Background(), before.UTC()); err != nil {
+		t.Fatalf("Tick (26/10): %v", err)
+	}
+	if got := fake.callCount(); got != 1 {
+		t.Fatalf("appels après le 26/10: got %d, expected 1", got)
+	}
+
+	duringFallBack := time.Date(2024, 10, 27, 12, 0, 0, 0, parisLoc)
+	clock.Set(duringFallBack.UTC())
+	if err := s.Tick(context.Background(), duringFallBack.UTC()); err != nil {
+		t.Fatalf("Tick (27/10): %v", err)
+	}
+	if got := fake.callCount(); got != 2 {
+		t.Fatalf("appels après le 27/10: got %d, expected 2 (l'heure murale répétée ne doit déclencher qu'une occurrence)", got)
+	}
+
+	// Le lendemain reprend normalement, en heure d'hiver.
+	after := time.Date(2024, 10, 28, 12, 0, 0, 0, parisLoc)
+	clock.Set(after.UTC())
+	if err := s.Tick(context.Background(), after.UTC()); err != nil {
+		t.Fatalf("Tick (28/10): %v", err)
+	}
+	if got := fake.callCount(); got != 3 {
+		t.Fatalf("appels après le 28/10: got %d, expected 3", got)
+	}
+
+	if count := countRuns(t, db, sched.ID); count != 3 {
+		t.Fatalf("scheduled_runs pour %q: got %d, expected 3", sched.ID, count)
+	}
+}
+
+// TestScheduler_Tick_DaylightSavingRepeatedHourIntervalStillRunsTwice
+// documente la contrepartie de la garde ci-dessus : une expression à
+// intervalle alterne les heures murales pendant la fenêtre répétée, ses
+// occurrences y sont donc toutes distinctes et doivent toutes être
+// déclenchées. Sans cette distinction, la protection contre l'heure répétée
+// escamoterait des exécutions légitimes.
+func TestScheduler_Tick_DaylightSavingRepeatedHourIntervalStillRunsTwice(t *testing.T) {
+	db := openTestDB(t)
+
+	parisLoc, err := time.LoadLocation("Europe/Paris")
+	if err != nil {
+		t.Fatalf("LoadLocation Europe/Paris: %v", err)
+	}
+
+	sched := baseSchedule("dst-interval", "0 * * * *", "Europe/Paris", "main", "whatsapp")
+	cfg := &config.Config{Schedules: []config.Schedule{sched}}
+
+	fake := replyingAgent("intervalle")
+	registry := newRegistry(map[string]agent.Agent{"main": fake})
+
+	provider := memory.NewProvider()
+	senders := map[string]courier.Provider{"whatsapp": provider}
+
+	// Ancrage à 01:00 CEST, juste avant la fenêtre répétée.
+	before := time.Date(2024, 10, 27, 1, 0, 0, 0, parisLoc)
+	clock := newFakeClock(before.UTC())
+	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
+
+	if err := s.Tick(context.Background(), before.UTC()); err != nil {
+		t.Fatalf("Tick (01:00 CEST): %v", err)
+	}
+	if got := fake.callCount(); got != 1 {
+		t.Fatalf("appels après 01:00 CEST: got %d, expected 1", got)
+	}
+
+	// 02:00 CEST (00:00Z), 03:00 CEST == 02:00 CET (01:00Z) puis 03:00 CET
+	// (02:00Z) : trois occurrences horaires réelles, toutes distinctes.
+	end := time.Date(2024, 10, 27, 2, 0, 0, 0, time.UTC)
+	clock.Set(end)
+	if err := s.Tick(context.Background(), end); err != nil {
+		t.Fatalf("Tick (fenêtre répétée): %v", err)
+	}
+	if got := fake.callCount(); got != 4 {
+		t.Fatalf("appels après la fenêtre répétée: got %d, expected 4 (une expression horaire garde toutes ses occurrences réelles)", got)
+	}
+}
+
 func TestScheduler_Tick_DuplicateOccurrence(t *testing.T) {
 	db := openTestDB(t)
 
