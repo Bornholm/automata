@@ -49,6 +49,7 @@ type OrchestratorAgent struct {
 	specialists            map[string]delegation.Specialist
 	maxSequentialToolCalls int
 	maxActionsPerTurn      int
+	maxToolContextBytes    int64
 	memoryTools            MemoryTools
 	metrics                *observability.Metrics
 }
@@ -91,7 +92,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 		maxIterations = 1
 	}
 
-	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, ErrMaxDelegationsReached)
+	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxDelegationsReached)
 	if err != nil {
 		return Result{}, err
 	}
@@ -122,6 +123,14 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 // le nombre d'actions non borné. Retourne a pour permettre le chaînage.
 func (a *OrchestratorAgent) WithMaxActionsPerTurn(max int) *OrchestratorAgent {
 	a.maxActionsPerTurn = max
+	return a
+}
+
+// WithMaxToolContextBytes borne le cumul des résultats d'outils réinjectés
+// dans la conversation durant un tour (PLAN.md §9.4). Une valeur <= 0
+// (défaut) laisse ce budget illimité. Retourne a pour permettre le chaînage.
+func (a *OrchestratorAgent) WithMaxToolContextBytes(max int64) *OrchestratorAgent {
+	a.maxToolContextBytes = max
 	return a
 }
 

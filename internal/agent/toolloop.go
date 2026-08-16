@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/bornholm/genai/llm"
 
@@ -79,14 +80,25 @@ type toolLoopResult struct {
 // finale du modèle : chaque appelant fournit son propre sentinel (voir
 // ErrMaxDelegationsReached, ErrMaxToolCallsReached) pour que
 // errors.Is continue de distinguer les deux origines côté appelant.
-func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages []llm.Message, tools []llm.Tool, maxIterations int, maxReachedErr error) (toolLoopResult, error) {
+//
+// maxContextBytes borne le cumul des résultats d'outils réinjectés dans la
+// conversation au fil du tour (PLAN.md §9.4, "budget total des résultats",
+// agents.<nom>.limits.max_tool_context_bytes) ; <= 0 le laisse illimité. Ce
+// budget est distinct du plafond par résultat appliqué côté MCP
+// (mcp.Limits.MaxToolResultBytes) : sans lui, maxIterations appels tenant
+// chacun sous le plafond unitaire dépassent tout de même largement le
+// contexte annoncé.
+func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages []llm.Message, tools []llm.Tool, maxIterations int, maxContextBytes int64, maxReachedErr error) (toolLoopResult, error) {
 	if maxIterations <= 0 {
 		maxIterations = 1
 	}
 
-	var toolResults []string
+	var (
+		toolResults []string
+		usedBytes   int64
+	)
 
-	for i := 0; i < maxIterations; i++ {
+	for range maxIterations {
 		resp, err := client.ChatCompletion(ctx, llm.WithMessages(messages...), llm.WithTools(tools...))
 		if err != nil {
 			return toolLoopResult{}, fmt.Errorf("agent: appel du client llm: %w", err)
@@ -118,6 +130,18 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 				// newDelegationTool), pour qu'il puisse s'adapter.
 				toolMessage = llm.NewToolMessage(tc.ID(), llm.NewToolResult(fmt.Sprintf("erreur d'exécution de l'outil %q: %v", tc.Name(), err)))
 			}
+
+			// Le budget ne s'applique qu'au texte réinjecté dans la
+			// conversation : l'outil a déjà été exécuté, ses effets (actions
+			// proposées, appels MCP en lecture) sont donc préservés. Seul ce
+			// que le modèle relit est borné, et toute réduction lui est
+			// signalée explicitement (PLAN.md §9.4).
+			content, used := applyContextBudget(toolMessage.Content(), maxContextBytes, usedBytes)
+			if content != toolMessage.Content() {
+				toolMessage = llm.NewToolMessage(tc.ID(), llm.NewToolResult(content))
+			}
+			usedBytes = used
+
 			messages = append(messages, toolMessage)
 			toolResults = append(toolResults, toolMessage.Content())
 		}
@@ -128,4 +152,49 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 	}
 
 	return toolLoopResult{}, maxReachedErr
+}
+
+// applyContextBudget réduit content pour tenir dans ce qu'il reste de
+// maxBytes après usedBytes déjà consommés, et retourne le texte à réinjecter
+// ainsi que le nouveau cumul. maxBytes <= 0 désactive le budget.
+//
+// Une fois le budget épuisé, les résultats suivants ne sont pas simplement
+// omis en silence : le modèle reçoit une note explicite, sans quoi il
+// interpréterait un résultat vide comme "l'outil n'a rien trouvé" et
+// conclurait à tort.
+func applyContextBudget(content string, maxBytes, usedBytes int64) (string, int64) {
+	if maxBytes <= 0 {
+		return content, usedBytes
+	}
+
+	remaining := maxBytes - usedBytes
+	if remaining <= 0 {
+		return "[budget de contexte d'outils épuisé : résultat non transmis]", usedBytes
+	}
+
+	if int64(len(content)) <= remaining {
+		return content, usedBytes + int64(len(content))
+	}
+
+	truncated := truncateUTF8(content, remaining)
+
+	return truncated + fmt.Sprintf("\n[résultat tronqué : budget de contexte d'outils de %d octets atteint]", maxBytes), maxBytes
+}
+
+// truncateUTF8 coupe s à max octets au plus, sans jamais laisser une
+// séquence UTF-8 incomplète en fin de chaîne.
+func truncateUTF8(s string, max int64) string {
+	if max <= 0 {
+		return ""
+	}
+	if int64(len(s)) <= max {
+		return s
+	}
+
+	b := s[:max]
+	for len(b) > 0 && !utf8.ValidString(b) {
+		b = b[:len(b)-1]
+	}
+
+	return b
 }

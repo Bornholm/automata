@@ -402,6 +402,114 @@ func TestOrchestratorAgent_MaxActionsPerTurnUnsetIsUnbounded(t *testing.T) {
 	}
 }
 
+// scriptTwoDelegationsThenReply pilote le modèle simulé pour déléguer deux
+// fois de suite (un tour chacun), puis répondre. collect reçoit, au dernier
+// tour, le contenu de tous les messages de rôle "tool" vus par le modèle.
+func scriptTwoDelegationsThenReply(collect *[]string) *fakeCompletionClient {
+	return &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			switch turn {
+			case 0:
+				return scriptedToolCallResponse(llm.NewToolCall("call-1", "delegate_to_research", `{"goal":"Première recherche"}`)), nil
+			case 1:
+				return scriptedToolCallResponse(llm.NewToolCall("call-2", "delegate_to_research", `{"goal":"Seconde recherche"}`)), nil
+			default:
+				for _, m := range opts.Messages {
+					if m.Role() == llm.RoleTool {
+						*collect = append(*collect, m.Content())
+					}
+				}
+
+				return scriptedFinalResponse("Synthèse finale."), nil
+			}
+		},
+	}
+}
+
+// verboseSpecialist retourne un spécialiste dont le résumé fait size octets,
+// pour éprouver le budget de contexte.
+func verboseSpecialist(size int) *fakeSpecialist {
+	return &fakeSpecialist{
+		executeFunc: func(ctx context.Context, req delegation.Request) (delegation.Result, error) {
+			return delegation.Result{Summary: strings.Repeat("a", size)}, nil
+		},
+	}
+}
+
+// TestOrchestratorAgent_MaxToolContextBytesBoundsCumulativeResults vérifie le
+// budget CUMULÉ des résultats d'outils (PLAN.md §9.4) : plusieurs appels
+// tenant chacun sous le plafond unitaire ne doivent pas, ensemble, dépasser
+// le budget de contexte déclaré. La réduction est signalée au modèle plutôt
+// que silencieuse, sans quoi il lirait un résultat vide comme une absence de
+// données.
+func TestOrchestratorAgent_MaxToolContextBytesBoundsCumulativeResults(t *testing.T) {
+	const budget = 150
+
+	var toolContents []string
+
+	research := verboseSpecialist(200)
+	client := scriptTwoDelegationsThenReply(&toolContents)
+
+	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"research": research}, 5).
+		WithMaxToolContextBytes(budget)
+
+	if _, err := a.Execute(context.Background(), agent.Request{Input: "Cherche"}); err != nil {
+		t.Fatalf("Execute a échoué: %v", err)
+	}
+
+	if len(toolContents) != 2 {
+		t.Fatalf("résultats d'outils vus par le modèle: got %d, expected 2", len(toolContents))
+	}
+
+	// Premier résultat : tronqué au budget, avec mention explicite.
+	if !strings.Contains(toolContents[0], "tronqué") {
+		t.Errorf("le premier résultat devrait signaler la troncature, obtenu: %q", toolContents[0])
+	}
+
+	// Second résultat : budget déjà épuisé, contenu non transmis mais annoncé.
+	if !strings.Contains(toolContents[1], "budget de contexte d'outils épuisé") {
+		t.Errorf("le second résultat devrait signaler l'épuisement du budget, obtenu: %q", toolContents[1])
+	}
+
+	// Le texte utile réinjecté reste borné par le budget : seules les notes
+	// de signalement, courtes et de taille connue, s'y ajoutent. Le contenu
+	// utile est le préfixe de "a" produit par le spécialiste, mesuré ici sans
+	// les libellés des notes (qui contiennent eux aussi la lettre "a").
+	var payload int
+	for _, c := range toolContents {
+		payload += len(c) - len(strings.TrimLeft(c, "a"))
+	}
+	if payload > budget {
+		t.Errorf("contenu utile cumulé = %d octets, au-delà du budget de %d", payload, budget)
+	}
+}
+
+// TestOrchestratorAgent_MaxToolContextBytesUnsetIsUnbounded documente le
+// comportement par défaut : sans budget configuré, les résultats d'outils
+// sont transmis intégralement.
+func TestOrchestratorAgent_MaxToolContextBytesUnsetIsUnbounded(t *testing.T) {
+	var toolContents []string
+
+	research := verboseSpecialist(200)
+	client := scriptTwoDelegationsThenReply(&toolContents)
+
+	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"research": research}, 5)
+
+	if _, err := a.Execute(context.Background(), agent.Request{Input: "Cherche"}); err != nil {
+		t.Fatalf("Execute a échoué: %v", err)
+	}
+
+	if len(toolContents) != 2 {
+		t.Fatalf("résultats d'outils vus par le modèle: got %d, expected 2", len(toolContents))
+	}
+
+	for i, c := range toolContents {
+		if got := len(c) - len(strings.TrimLeft(c, "a")); got != 200 {
+			t.Errorf("résultat %d: contenu attendu intégral (200 octets), obtenu %d", i+1, got)
+		}
+	}
+}
+
 func TestOrchestratorAgent_SpecialistError(t *testing.T) {
 	agenda := &fakeSpecialist{
 		executeFunc: func(ctx context.Context, req delegation.Request) (delegation.Result, error) {

@@ -52,6 +52,7 @@ type MCPToolAgent struct {
 	mcpServerNames         []string
 	mcpLimits              mcp.Limits
 	maxSequentialToolCalls int
+	maxToolContextBytes    int64
 	toolsRewriter          ToolsRewriterFunc
 }
 
@@ -126,7 +127,7 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 		maxIterations = 1
 	}
 
-	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, ErrMaxToolCallsReached)
+	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached)
 	if err != nil {
 		return Result{}, err
 	}
@@ -141,6 +142,14 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 // les outils, exactement le comportement de MCPToolAgent avant la Phase 13.
 func (a *MCPToolAgent) WithToolsRewriter(fn ToolsRewriterFunc) *MCPToolAgent {
 	a.toolsRewriter = fn
+	return a
+}
+
+// WithMaxToolContextBytes borne le cumul des résultats d'outils réinjectés
+// dans la conversation durant un tour (PLAN.md §9.4). Une valeur <= 0
+// (défaut) laisse ce budget illimité. Retourne a pour permettre le chaînage.
+func (a *MCPToolAgent) WithMaxToolContextBytes(max int64) *MCPToolAgent {
+	a.maxToolContextBytes = max
 	return a
 }
 

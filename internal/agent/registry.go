@@ -131,8 +131,10 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 				// Tout autre spécialiste MCP (ex: "research", Phase 12) qui
 				// ne déclare pas ce serveur reste un MCPToolAgent nu, sans
 				// aucune résolution de ressource ni confirmation.
+				var specialist *MCPToolAgent
+
 				if slices.Contains(agentCfg.MCPServers, calendarMCPServerName) {
-					agents[name] = NewAgendaToolAgent(
+					specialist = NewAgendaToolAgent(
 						clients[name],
 						prompts[name],
 						name,
@@ -145,7 +147,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 						nil,
 					)
 				} else if slices.Contains(agentCfg.MCPServers, todoMCPServerName) {
-					agents[name] = NewTodoToolAgent(
+					specialist = NewTodoToolAgent(
 						clients[name],
 						prompts[name],
 						name,
@@ -158,7 +160,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 						nil,
 					)
 				} else {
-					agents[name] = NewMCPToolAgent(
+					specialist = NewMCPToolAgent(
 						clients[name],
 						prompts[name],
 						name,
@@ -169,6 +171,8 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 						agentCfg.Limits.MaxSequentialToolCalls,
 					)
 				}
+
+				agents[name] = specialist.WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes()))
 			}
 
 			continue
@@ -201,6 +205,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 		agents[name] = orchestrator.
 			WithMemoryTools(agentMemoryTools).
 			WithMaxActionsPerTurn(agentCfg.Limits.MaxActionsPerTurn).
+			WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes())).
 			WithMetrics(metrics)
 	}
 
