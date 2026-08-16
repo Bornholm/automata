@@ -65,6 +65,35 @@ func (r *ActionPlanRepository) UpdateStatus(ctx context.Context, q Querier, id A
 	return nil
 }
 
+// CompareAndSwapStatus fait passer un plan d'actions de fromStatus à
+// toStatus et retourne false si le plan n'était pas (ou plus) dans
+// fromStatus. C'est la transition à utiliser pour toute étape qui ne doit se
+// produire qu'une fois — au premier chef le passage d'un plan à l'exécution
+// (PLAN.md §10.5 point 2, "empêcher les doubles exécutions").
+//
+// Contrairement à UpdateStatus, la garde est portée par la base et non par
+// une lecture préalable : un "lire le statut puis écrire" laisse une fenêtre
+// entre les deux pendant laquelle un second confirmateur peut passer la même
+// garde, et déclencher une seconde fois des écritures externes réelles. Cette
+// fenêtre est aujourd'hui inatteignable (l'ingress traite les messages d'une
+// conversation séquentiellement), mais l'invariant ne doit pas dépendre de
+// cette seule propriété d'ordonnancement.
+func (r *ActionPlanRepository) CompareAndSwapStatus(ctx context.Context, q Querier, id ActionPlanID, fromStatus, toStatus string, updatedAt string) (bool, error) {
+	res, err := q.ExecContext(ctx, `
+		UPDATE action_plans SET status = ?, updated_at = ? WHERE id = ? AND status = ?
+	`, toStatus, updatedAt, id, fromStatus)
+	if err != nil {
+		return false, fmt.Errorf("transition du plan d'actions %q de %q vers %q: %w", id, fromStatus, toStatus, err)
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("transition du plan d'actions %q: lecture du nombre de lignes affectées: %w", id, err)
+	}
+
+	return affected > 0, nil
+}
+
 // ListActiveByConversation retourne les plans d'actions de la conversation
 // conversationID dont le statut est "awaiting_confirmation", triés par
 // date de création croissante (PLAN.md §10.4 : c'est cet ordre qui numérote

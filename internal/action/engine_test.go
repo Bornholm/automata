@@ -485,6 +485,82 @@ func TestEngine_DoubleConfirmation(t *testing.T) {
 	}
 }
 
+// TestEngine_ConcurrentConfirmationExecutesOnce vérifie que deux
+// confirmations simultanées du même plan ne déclenchent qu'une seule
+// exécution (PLAN.md §10.5 point 2, "empêcher les doubles exécutions").
+//
+// Le pipeline d'ingress traite aujourd'hui les messages d'une conversation
+// séquentiellement, ce qui rend ce scénario inatteignable en production :
+// l'invariant est vérifié ici pour qu'il tienne par lui-même, indépendamment
+// de cette propriété d'ordonnancement.
+func TestEngine_ConcurrentConfirmationExecutesOnce(t *testing.T) {
+	storageCfg := testStorageConfig(t)
+	db := openTestDB(t, storageCfg)
+
+	store := newFakeMemoryStore()
+	store.seed("m1", "note à supprimer", "alice")
+
+	authorizer := authorization.NewAuthorizer(appConfig(true))
+	engine := action.NewEngine(db, authorizer, nil, appConfig(true), action.WithMemoryStore(store))
+
+	identity := privateIdentity("alice", "conv-1")
+	conv := testConversation("conv-1")
+	ensureConversation(t, db, conv)
+
+	if _, _, err := engine.CreatePlan(context.Background(), identity, []delegation.ProposedAction{
+		memoryForgetProposal("m1", "Supprimer la mémoire m1"),
+	}); err != nil {
+		t.Fatalf("CreatePlan: %v", err)
+	}
+
+	cmd, _ := action.ParseCommand("confirmer")
+
+	const confirmations = 8
+
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		reports []string
+	)
+
+	start := make(chan struct{})
+
+	for range confirmations {
+		wg.Go(func() {
+			<-start
+
+			report, err := engine.HandleCommand(context.Background(), identity, conv, cmd)
+			if err != nil {
+				t.Errorf("HandleCommand: %v", err)
+				return
+			}
+
+			mu.Lock()
+			reports = append(reports, report)
+			mu.Unlock()
+		})
+	}
+
+	close(start)
+	wg.Wait()
+
+	// Seule compte l'unicité de l'effet externe : la suppression ne doit
+	// avoir eu lieu qu'une fois, quel que soit l'entrelacement.
+	if got := len(store.forgotten); got != 1 {
+		t.Fatalf("suppressions effectuées: got %d, expected 1 (%v)", got, store.forgotten)
+	}
+
+	var succeeded int
+	for _, r := range reports {
+		if strings.Contains(r, "succès") {
+			succeeded++
+		}
+	}
+	if succeeded != 1 {
+		t.Fatalf("rapports annonçant un succès: got %d, expected 1 (%q)", succeeded, reports)
+	}
+}
+
 func TestEngine_PermissionsRetirees(t *testing.T) {
 	storageCfg := testStorageConfig(t)
 	db := openTestDB(t, storageCfg)

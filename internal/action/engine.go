@@ -456,11 +456,20 @@ func (e *Engine) confirmPlan(ctx context.Context, identity model.ExecutionIdenti
 		return "Vous n'êtes pas autorisé à confirmer ce plan d'actions.", nil
 	}
 
-	e.metrics.IncActionConfirmed()
-
-	if err := e.setPlanStatus(ctx, plan.ID, StatusConfirmed); err != nil {
+	// Verrou d'exécution : la vérification d'état de l'étape 2 a été faite
+	// sur une lecture, donc sur un instantané. C'est cette transition gardée
+	// par la base qui garantit réellement qu'un plan n'est exécuté qu'une
+	// fois — voir ActionPlanRepository.CompareAndSwapStatus.
+	swapped, err := e.swapPlanStatus(ctx, plan.ID, StatusAwaitingConfirmation, StatusConfirmed)
+	if err != nil {
 		return "", err
 	}
+	if !swapped {
+		return "Ce plan d'actions vient d'être traité.", nil
+	}
+
+	e.metrics.IncActionConfirmed()
+
 	if err := e.setPlanStatus(ctx, plan.ID, StatusExecuting); err != nil {
 		return "", err
 	}
@@ -740,6 +749,25 @@ func (e *Engine) setPlanStatus(ctx context.Context, id persistence.ActionPlanID,
 		return fmt.Errorf("action: mise à jour du statut du plan %q vers %q: %w", id, status, err)
 	}
 	return nil
+}
+
+// swapPlanStatus applique une transition de statut gardée : elle n'a lieu que
+// si le plan est encore dans fromStatus, et retourne false sinon.
+func (e *Engine) swapPlanStatus(ctx context.Context, id persistence.ActionPlanID, fromStatus, toStatus string) (bool, error) {
+	now := e.now().UTC().Format(time.RFC3339)
+
+	var swapped bool
+
+	err := e.db.WithTx(ctx, func(tx *sql.Tx) error {
+		var err error
+		swapped, err = e.plans.CompareAndSwapStatus(ctx, tx, id, fromStatus, toStatus, now)
+		return err
+	})
+	if err != nil {
+		return false, fmt.Errorf("action: transition du plan %q de %q vers %q: %w", id, fromStatus, toStatus, err)
+	}
+
+	return swapped, nil
 }
 
 // setActionStatus persiste le nouveau statut d'une action.
