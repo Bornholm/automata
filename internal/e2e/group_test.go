@@ -161,7 +161,7 @@ func TestGroup_Agenda(t *testing.T) {
 		return scriptedFinalResponse("Rien de prévu pour le groupe."), nil
 	}
 
-	sys := newTestSystem(t, cfg, newAgendaAgent(t, cfg, client))
+	sys := newTestSystem(t, cfg, mustAgendaAgent(t, cfg, client))
 
 	sys.sendGroup("alice-ext", "group-chan", "@assistant qu'est-ce qu'on a de prévu ?", true)
 	sys.waitSent(1)
@@ -188,7 +188,7 @@ func TestGroup_AgendaPersonalRejected(t *testing.T) {
 		return scriptedFinalResponse("Voilà."), nil
 	}
 
-	sys := newTestSystem(t, cfg, newAgendaAgent(t, cfg, client))
+	sys := newTestSystem(t, cfg, mustAgendaAgent(t, cfg, client))
 
 	sys.sendGroup("alice-ext", "group-chan", "@assistant donne-moi mon agenda perso", true)
 	sys.waitSent(1)

@@ -61,11 +61,15 @@ type MCPToolAgent struct {
 // la Phase 13 (agenda) : un spécialiste MCP nu (ex: "research", Phase 12)
 // n'a besoin d'aucune transformation, mais le spécialiste agenda doit
 // réécrire systématiquement calendar_id (PLAN.md §9.2) et transformer les
-// outils d'écriture en un flux proposition/confirmation (PLAN.md §10.1) —
-// voir agenda.go. Un rewriter reçoit les outils déjà triés par nom et peut
-// retourner un ensemble différent (nombre, noms, schémas) : MCPToolAgent ne
-// suppose rien de plus que "une liste d'outils exploitable par le modèle".
-type ToolsRewriterFunc func(ctx context.Context, req Request, tools []llm.Tool) ([]llm.Tool, error)
+// outils d'écriture en actions à confirmer (PLAN.md §10.1) — voir agenda.go.
+// Un rewriter reçoit les outils déjà triés par nom et peut retourner un
+// ensemble différent (nombre, noms, schémas) : MCPToolAgent ne suppose rien
+// de plus que "une liste d'outils exploitable par le modèle".
+//
+// collector reçoit les actions qu'un outil réécrit propose au lieu de les
+// exécuter. Il n'est jamais nil : un rewriter qui n'en produit aucune peut
+// simplement l'ignorer.
+type ToolsRewriterFunc func(ctx context.Context, req Request, tools []llm.Tool, collector *proposalCollector) ([]llm.Tool, error)
 
 // NewMCPToolAgent construit un MCPToolAgent. mcpServerNames est la liste des
 // NOMS de serveurs MCP déclarés par l'agent (agentCfg.MCPServers) : Execute
@@ -112,8 +116,14 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 	}
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
+	// Les outils réécrits d'un spécialiste peuvent produire des actions à
+	// confirmer plutôt que de s'exécuter (agenda, todo) : elles sont
+	// collectées ici puis remontées à l'orchestrateur via Result, qui les
+	// transforme en plan persisté (internal/action).
+	collector := newProposalCollector()
+
 	if a.toolsRewriter != nil {
-		rewritten, err := a.toolsRewriter(ctx, req, tools)
+		rewritten, err := a.toolsRewriter(ctx, req, tools, collector)
 		if err != nil {
 			return Result{}, fmt.Errorf("agent: réécriture des outils mcp: %w", err)
 		}
@@ -132,7 +142,11 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 		return Result{}, err
 	}
 
-	return Result{Reply: loopResult.Text, References: extractReferences(loopResult.ToolResults)}, nil
+	return Result{
+		Reply:           loopResult.Text,
+		References:      extractReferences(loopResult.ToolResults),
+		ProposedActions: collector.take(),
+	}, nil
 }
 
 // WithToolsRewriter attache fn à a : les outils mcp bruts récupérés à

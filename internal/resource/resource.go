@@ -17,6 +17,66 @@ import (
 	"github.com/bornholm/automata/internal/model"
 )
 
+// Noms des serveurs MCP porteurs d'une ressource résolue par l'application,
+// et nom du paramètre sous lequel chacun l'attend.
+//
+// Ces conventions sont partagées par le spécialiste qui propose l'action
+// (internal/agent) et par le moteur qui l'exécute après confirmation
+// (internal/action) : c'est ce qui permet à l'identifiant d'être RETIRÉ des
+// arguments au moment de la proposition, puis résolu à nouveau juste avant
+// l'exécution réelle (PLAN.md §9.2 et §10.5 point 6). Elles vivent ici, au
+// point de résolution, plutôt que d'être dupliquées de part et d'autre.
+//
+// Aucun serveur MCP réel n'étant disponible dans ce dépôt, ces noms sont
+// ceux des serveurs fakes des tests ; ils doivent correspondre aux clés
+// déclarées sous mcp_servers dans la configuration.
+const (
+	CalendarMCPServerName = "google-calendar"
+	CalendarIDParam       = "calendar_id"
+
+	TodoMCPServerName = "todo"
+	TodoListIDParam   = "list_id"
+)
+
+// InjectResolved retourne args augmenté de l'identifiant de ressource attendu
+// par mcpServer pour la portée (scope, scopeID), en écrasant toute valeur
+// préexistante. Un serveur qui ne porte aucune ressource résolue par
+// l'application laisse args inchangé.
+//
+// Appelée juste avant l'exécution réelle d'une action confirmée : entre la
+// proposition et la confirmation, la configuration a pu changer, et c'est
+// l'identifiant courant de la portée du plan qui fait foi — jamais celui
+// qu'aurait pu contenir l'action persistée.
+func InjectResolved(cfg *config.Config, mcpServer string, scope model.Scope, scopeID model.ScopeID, args map[string]any) (map[string]any, error) {
+	var (
+		param string
+		value string
+		err   error
+	)
+
+	switch mcpServer {
+	case CalendarMCPServerName:
+		param = CalendarIDParam
+		value, err = ResolveCalendarID(cfg, scope, scopeID)
+	case TodoMCPServerName:
+		param = TodoListIDParam
+		value, err = ResolveTodoListID(cfg, scope, scopeID)
+	default:
+		return args, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if args == nil {
+		args = make(map[string]any, 1)
+	}
+	args[param] = value
+
+	return args, nil
+}
+
 // ErrCalendarNotConfigured est retournée par ResolveCalendarID lorsqu'aucun
 // canal de la configuration ne déclare de ressource "calendar" pour la
 // portée demandée.

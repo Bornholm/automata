@@ -315,6 +315,65 @@ func TestManagerSessionIsolation(t *testing.T) {
 	}
 }
 
+// toolNamed retrouve un outil par son nom parmi ceux retournés par GetTools.
+func toolNamed(t *testing.T, tools []llm.Tool, name string) llm.Tool {
+	t.Helper()
+
+	for _, tool := range tools {
+		if tool.Name() == name {
+			return tool
+		}
+	}
+
+	t.Fatalf("outil %q introuvable parmi les outils retournés", name)
+
+	return nil
+}
+
+// TestManagerSessionSurvivesRequestContextCancellation vérifie qu'une
+// connexion mise en cache reste utilisable après l'annulation du contexte de
+// la requête qui l'a créée.
+//
+// Régression : le client était démarré avec le contexte de cette requête.
+// Comme l'ingress borne le traitement d'un message par un timeout, la
+// connexion mourait dès la fin du message tout en restant référencée, et le
+// message suivant réutilisait un client fermé ("client is closing"). Le cas
+// se produit dès qu'une session sert à plus d'un message — une action agenda
+// ou todo proposée dans un message puis exécutée après confirmation dans un
+// autre.
+func TestManagerSessionSurvivesRequestContextCancellation(t *testing.T) {
+	httpServer, connections := newFakeMCPServer(t, 0, 0)
+	cfg := newTestConfig("fake", httpServer.URL)
+	m := NewManager(cfg, nil)
+	t.Cleanup(func() { _ = m.Close() })
+
+	// Premier message : établit la connexion, puis son contexte est annulé.
+	firstCtx, cancelFirst := context.WithTimeout(context.Background(), 5*time.Second)
+	if _, err := m.GetTools(firstCtx, "session-a", "fake", Limits{}); err != nil {
+		t.Fatalf("GetTools (premier message): %v", err)
+	}
+	cancelFirst()
+
+	// Message suivant, même session : la connexion en cache doit encore
+	// servir, et aucun outil ne doit échouer.
+	secondCtx, cancelSecond := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelSecond()
+
+	tools, err := m.GetTools(secondCtx, "session-a", "fake", Limits{})
+	if err != nil {
+		t.Fatalf("GetTools après annulation du contexte du premier message: %v", err)
+	}
+
+	echo := toolNamed(t, tools, "echo")
+	if _, err := echo.Execute(secondCtx, map[string]any{"text": "ping"}); err != nil {
+		t.Fatalf("exécution d'un outil sur une session réutilisée: %v", err)
+	}
+
+	if got := connections.Load(); got != 1 {
+		t.Errorf("connexions établies = %d, attendu 1 (la session doit être réutilisée, pas rouverte)", got)
+	}
+}
+
 func TestManagerCloseSessionRecreatesConnection(t *testing.T) {
 	httpServer, connections := newFakeMCPServer(t, 0, 0)
 	cfg := newTestConfig("fake", httpServer.URL)

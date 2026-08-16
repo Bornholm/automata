@@ -93,55 +93,60 @@ d'écriture/lecture sensible identifié :
   systématique des permissions au moment de la confirmation d'un plan
   d'actions, indépendamment de l'autorisation obtenue à la proposition.
 
-**Cas particulier documenté — agenda/todo** : `internal/agent/agenda.go` et
-`internal/agent/todo.go` n'appellent **pas** `Authorizer.Authorize`
-directement. La protection y est obtenue par un mécanisme différent mais
-équivalent : `calendar_id`/`list_id` sont résolus une seule fois, à la
+**Agenda/todo** : `internal/agent/agenda.go` et `internal/agent/todo.go`
+n'appellent pas `Authorizer.Authorize` eux-mêmes, et n'en ont pas besoin.
+
+En **lecture**, `calendar_id`/`list_id` sont résolus une seule fois, à la
 construction des outils du tour, exclusivement à partir de
 `req.Conversation.Scope`/`ScopeID` (déjà déterminés par
 `internal/identity.Resolver` avant que le LLM soit appelé), via
-`resource.ResolveCalendarID`/`ResolveTodoListID`. Aucun appel de tool-call,
-qu'il s'agisse de la proposition ou de la confirmation, ne peut faire varier
-la ressource ciblée : la valeur est capturée dans la fermeture du wrapper
-d'outil, pas relue depuis les arguments du modèle. Ce choix est assumé et
-documenté dans le code (`agenda.go` lignes 344-356, `todo.go` équivalent) :
-il n'y a donc pas de contournement de l'autorisation, mais une architecture
-où la question ne se pose pas (aucune portée alternative n'est jamais
-atteignable). Aucune décision de portée/permission/ressource ne dépend d'une
-valeur fournie par le modèle : vérifié par grep exhaustif des accès à
-`internal/resource` (deux points d'entrée seulement, tous deux alimentés par
-`model.Scope`/`model.ScopeID` de l'identité résolue, jamais par
-`map[string]any` d'un tool-call).
+`resource.ResolveCalendarID`/`ResolveTodoListID`. La valeur est capturée dans
+la fermeture du wrapper d'outil, jamais relue depuis les arguments du modèle :
+aucune portée alternative n'est atteignable.
+
+En **écriture**, aucun appel MCP n'a lieu dans le tour : l'outil enregistre
+une `delegation.ProposedAction` portant la portée résolue et la permission
+requise (`calendar.<scope>.write`, `todo.<scope>.write`), qui devient un plan
+persisté. C'est `internal/action.Engine` qui exécute après confirmation, et
+qui applique alors les deux contrôles décrits ci-dessus : revérification de
+permission (étape 5) et résolution fraîche de la ressource (étape 6).
+
+Aucune décision de portée, de permission ou de ressource ne dépend d'une
+valeur fournie par le modèle : vérifié par revue exhaustive des accès à
+`internal/resource`, tous alimentés par le `model.Scope`/`model.ScopeID` d'une
+identité résolue ou d'un plan persisté, jamais par le `map[string]any` d'un
+tool-call.
 
 ### A.2 — Arguments MCP forgés
 
 **Conforme, vérifié sans régression.**
 
-- `internal/agent/agenda.go` (`wrapCalendarWriteTool`, `wrapCalendarReadTool`)
-  et `internal/agent/todo.go` (mécanisme équivalent) réécrivent
-  systématiquement `calendar_id`/`list_id` avec la valeur résolue par
-  l'application, quelle que soit la valeur envoyée par le modèle sous ce nom
-  — pour les lectures directement à l'exécution, pour les écritures à la
-  fois à la proposition (`propose`) et implicitement à la confirmation
-  (`consume` ne relit jamais les arguments d'un nouvel appel du modèle : il
-  retourne les arguments déjà résolus et figés à la proposition, stockés en
-  mémoire process, jamais fournis à nouveau par le modèle).
-- `internal/action/executors.go` (`mcpExecutor.Execute`, Phase 15/18) :
-  **limitation connue, correctement documentée dans le code** (`engine.go`,
-  commentaire de l'étape 6 dans `executeAction`) — cet exécuteur générique ne
-  résout aucune ressource externe fraîche au moment de la confirmation, car
-  aucun producteur d'action actuel (seul `memory.forget` passe par
-  `internal/action` à ce jour) n'a de ressource externe à réécrire ; le point
-  d'extension existe (`Executor.Execute` reçoit `plan`/`act` et peut
-  résoudre toute ressource nécessaire) mais n'est pas encore exercé.
-  Agenda/todo, qui ont de vraies ressources externes à protéger, ne
-  transitent **pas** par ce chemin (voir A.1) : ils utilisent leur propre
-  mécanisme de proposition/confirmation en mémoire, qui réécrit
-  systématiquement la ressource, comme démontré ci-dessus. Il n'existe donc
-  aujourd'hui aucun chemin réel où un argument MCP forgé contenant un
-  identifiant de ressource externe atteindrait un appel MCP sans réécriture.
-  À surveiller si un futur producteur d'action MCP-externe est migré vers
-  `internal/action` sans porter sa propre logique de résolution.
+- **Lectures** — `internal/agent/agenda.go` (`wrapCalendarReadTool`) et
+  `internal/agent/todo.go` (`wrapTodoReadTool`) écrasent systématiquement
+  `calendar_id`/`list_id` avec la valeur résolue par l'application, quelle que
+  soit celle envoyée par le modèle sous ce nom.
+- **Écritures** — `wrapCalendarWriteTool`/`wrapTodoWriteTool` **retirent**
+  l'identifiant des arguments au lieu de l'y figer. Un identifiant forgé par
+  le modèle ne survit donc pas jusqu'à l'action persistée
+  (tests `..._ForgedCalendarIDNeverReachesProposedAction`,
+  `..._ForgedListIDIgnored`).
+- **Exécution après confirmation** — `internal/action/engine.go`
+  (`executeAction`, étape 6) réinjecte l'identifiant via
+  `resource.InjectResolved`, à partir de la portée du **plan persisté**, juste
+  avant l'appel MCP réel. L'action écrit donc toujours dans la ressource
+  courante de sa portée, jamais dans celle qu'un modèle aurait suggérée ni
+  dans celle qu'une configuration antérieure désignait.
+
+Le scénario complet est vérifié de bout en bout par
+`internal/e2e.TestPrivate_AgendaWriteConfirmedExecutesWithResolvedResource` :
+le modèle y tente explicitement d'imposer `calendar_id: "forged-by-model"`, et
+le serveur MCP reçoit malgré tout le calendrier de la portée.
+
+Il n'existe donc aucun chemin où un argument MCP forgé contenant un
+identifiant de ressource externe atteindrait un appel MCP. Point de vigilance
+pour l'avenir : un nouveau serveur MCP porteur d'une ressource résolue par
+l'application doit être déclaré dans `internal/resource` (constantes et
+`InjectResolved`), faute de quoi ses arguments passeraient inchangés.
 
 ### A.3 — Injection de prompt
 

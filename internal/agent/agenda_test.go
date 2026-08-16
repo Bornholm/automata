@@ -4,8 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -135,13 +133,13 @@ func testCalendarConfig(t *testing.T, calendarServerURL string) *config.Config {
 	}
 }
 
-func newAgendaAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionClient, store *agent.CalendarProposalStore, maxSequentialToolCalls int) agent.Agent {
+func newAgendaAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionClient, maxSequentialToolCalls int) agent.Agent {
 	t.Helper()
 
 	m := mcp.NewManager(cfg, nil)
 	t.Cleanup(func() { _ = m.Close() })
 
-	return agent.NewAgendaToolAgent(client, "system", "agenda", "Maison", m, []string{"google-calendar"}, mcp.Limits{}, maxSequentialToolCalls, cfg, store)
+	return agent.NewAgendaToolAgent(client, "system", "agenda", "Maison", m, []string{"google-calendar"}, mcp.Limits{}, maxSequentialToolCalls, cfg)
 }
 
 func privateConversation(id model.ConversationID) model.Conversation {
@@ -169,7 +167,7 @@ func TestAgendaToolAgent_ReadPersonalFromPrivate(t *testing.T) {
 		},
 	}
 
-	a := newAgendaAgent(t, cfg, client, nil, 5)
+	a := newAgendaAgent(t, cfg, client, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Conversation: privateConversation("conv-1"), Input: "Qu'est-ce que j'ai de prévu ?"})
 	if err != nil {
@@ -204,7 +202,7 @@ func TestAgendaToolAgent_ReadGroupFromGroup(t *testing.T) {
 		},
 	}
 
-	a := newAgendaAgent(t, cfg, client, nil, 5)
+	a := newAgendaAgent(t, cfg, client, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{Conversation: groupConversation("conv-2"), Input: "Qu'est-ce qu'on a de prévu ?"})
 	if err != nil {
@@ -235,7 +233,7 @@ func TestAgendaToolAgent_PersonalNeverLeaksFromGroup(t *testing.T) {
 		},
 	}
 
-	a := newAgendaAgent(t, cfg, client, nil, 5)
+	a := newAgendaAgent(t, cfg, client, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{Conversation: groupConversation("conv-3"), Input: "Donne-moi l'agenda perso d'Alice"})
 	if err != nil {
@@ -261,7 +259,7 @@ func TestAgendaToolAgent_OrgScopeResolvedFromConfiguredChannel(t *testing.T) {
 		},
 	}
 
-	a := newAgendaAgent(t, cfg, client, nil, 5)
+	a := newAgendaAgent(t, cfg, client, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{Conversation: orgConversation("conv-4"), Input: "Agenda de l'organisation ?"})
 	if err != nil {
@@ -285,7 +283,7 @@ func TestAgendaToolAgent_UnconfiguredScopeRejected(t *testing.T) {
 		},
 	}
 
-	a := newAgendaAgent(t, cfg, client, nil, 5)
+	a := newAgendaAgent(t, cfg, client, 5)
 
 	// "bob" n'a aucun canal déclaré dans testCalendarConfig : aucune
 	// ressource "calendar" n'est configurée pour cette portée.
@@ -310,7 +308,7 @@ func TestAgendaToolAgent_ForgedCalendarIDIgnored(t *testing.T) {
 		},
 	}
 
-	a := newAgendaAgent(t, cfg, client, nil, 5)
+	a := newAgendaAgent(t, cfg, client, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{Conversation: privateConversation("conv-6"), Input: "Mon agenda ?"})
 	if err != nil {
@@ -339,7 +337,7 @@ func TestAgendaToolAgent_CreateEventProposedNotExecuted(t *testing.T) {
 		},
 	}
 
-	a := newAgendaAgent(t, cfg, client, nil, 5)
+	a := newAgendaAgent(t, cfg, client, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Conversation: privateConversation("conv-7"), Input: "Ajoute un rendez-vous chez le dentiste"})
 	if err != nil {
@@ -353,105 +351,75 @@ func TestAgendaToolAgent_CreateEventProposedNotExecuted(t *testing.T) {
 	if !strings.Contains(result.Reply, "propose") {
 		t.Fatalf("réponse finale inattendue: %q", result.Reply)
 	}
+
+	// L'action remonte à l'orchestrateur, qui la transformera en plan
+	// persisté : c'est internal/action.Engine qui l'exécutera après
+	// confirmation, jamais l'agent lui-même (PLAN.md Phase 15).
+	if len(result.ProposedActions) != 1 {
+		t.Fatalf("actions proposées: got %d, expected 1", len(result.ProposedActions))
+	}
+
+	proposed := result.ProposedActions[0]
+
+	if proposed.ToolName != "create_event" {
+		t.Errorf("tool_name = %q, attendu create_event", proposed.ToolName)
+	}
+	if proposed.MCPServer != "google-calendar" {
+		t.Errorf("mcp_server = %q, attendu google-calendar", proposed.MCPServer)
+	}
+	if proposed.RequiredPermission != "calendar.personal.write" {
+		t.Errorf("permission requise = %q, attendu calendar.personal.write", proposed.RequiredPermission)
+	}
+	if proposed.Scope != model.ScopePersonal || proposed.ScopeID != "alice" {
+		t.Errorf("portée = %s/%s, attendu personal/alice", proposed.Scope, proposed.ScopeID)
+	}
+	if proposed.Arguments["title"] != "Dentiste" {
+		t.Errorf("argument title = %v, attendu Dentiste", proposed.Arguments["title"])
+	}
+
+	// L'identifiant de calendrier n'est PAS figé dans l'action : il est
+	// résolu à nouveau au moment de la confirmation (PLAN.md §10.5 point 6).
+	if _, present := proposed.Arguments["calendar_id"]; present {
+		t.Errorf("calendar_id ne doit jamais être figé dans une action proposée, obtenu %v", proposed.Arguments["calendar_id"])
+	}
+
+	// Le résumé est ce que l'utilisateur lira avant de confirmer.
+	if !strings.Contains(proposed.Summary, "Dentiste") {
+		t.Errorf("résumé de l'action = %q, attendu une mention lisible de l'événement", proposed.Summary)
+	}
 }
 
-var proposalIDPattern = regexp.MustCompile(`ID de proposition: (\S+)`)
-
-func TestAgendaToolAgent_ConfirmedCreateEventExecutesReally(t *testing.T) {
-	httpServer, spy := newFakeCalendarServer(t)
+// TestAgendaToolAgent_ForgedCalendarIDNeverReachesProposedAction complète
+// TestAgendaToolAgent_ForgedCalendarIDIgnored (côté lecture) pour le chemin
+// d'écriture : un identifiant forgé par le modèle ne doit pas davantage
+// survivre dans l'action persistée, qui serait exécutée plus tard sans que
+// personne ne le relise.
+func TestAgendaToolAgent_ForgedCalendarIDNeverReachesProposedAction(t *testing.T) {
+	httpServer, _ := newFakeCalendarServer(t)
 	cfg := testCalendarConfig(t, httpServer.URL)
 
 	client := &fakeCompletionClient{
 		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
-			switch turn {
-			case 0:
-				return scriptedToolCallResponse(llm.NewToolCall("call-1", "create_event", `{"title":"Dentiste","start":"2026-09-12T14:00:00+02:00","end":"2026-09-12T15:00:00+02:00"}`)), nil
-			case 1:
-				proposalID := extractProposalID(t, opts)
-				return scriptedToolCallResponse(llm.NewToolCall("call-2", "create_event", `{"proposal_id":"`+proposalID+`","confirm":true}`)), nil
-			default:
-				return scriptedFinalResponse("Rendez-vous confirmé."), nil
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("call-1", "create_event", `{"calendar_id":"forged-id-from-model","title":"Dentiste","start":"2026-09-12T14:00:00+02:00","end":"2026-09-12T15:00:00+02:00"}`)), nil
 			}
+			return scriptedFinalResponse("Je te propose ce rendez-vous."), nil
 		},
 	}
 
-	a := newAgendaAgent(t, cfg, client, nil, 5)
+	a := newAgendaAgent(t, cfg, client, 5)
 
-	result, err := a.Execute(context.Background(), agent.Request{Conversation: privateConversation("conv-8"), Input: "Ajoute puis confirme le rendez-vous chez le dentiste"})
+	result, err := a.Execute(context.Background(), agent.Request{Conversation: privateConversation("conv-8"), Input: "Ajoute un rendez-vous"})
 	if err != nil {
 		t.Fatalf("Execute a échoué: %v", err)
 	}
 
-	_, createCalls, _, lastCreateCalendarID := spy.snapshot()
-	if createCalls != 1 {
-		t.Fatalf("create_event aurait dû être exécuté réellement une fois après confirmation, appelé %d fois", createCalls)
-	}
-	if lastCreateCalendarID != "alice-personal-calendar" {
-		t.Fatalf("calendar_id reçu à l'exécution = %q, attendu %q", lastCreateCalendarID, "alice-personal-calendar")
-	}
-	if !strings.Contains(result.Reply, "confirmé") {
-		t.Fatalf("réponse finale inattendue: %q", result.Reply)
-	}
-}
-
-// extractProposalID retrouve l'identifiant de proposition dans le dernier
-// message "tool" des messages déjà échangés (le résultat du premier appel
-// de create_event).
-func extractProposalID(t *testing.T, opts *llm.ChatCompletionOptions) string {
-	t.Helper()
-
-	for _, msg := range slices.Backward(opts.Messages) {
-		if msg.Role() != llm.RoleTool {
-			continue
-		}
-		match := proposalIDPattern.FindStringSubmatch(msg.Content())
-		if match != nil {
-			return match[1]
-		}
+	if len(result.ProposedActions) != 1 {
+		t.Fatalf("actions proposées: got %d, expected 1", len(result.ProposedActions))
 	}
 
-	t.Fatal("aucun identifiant de proposition trouvé dans les messages")
-	return ""
-}
-
-func TestAgendaToolAgent_ExpiredProposalRejected(t *testing.T) {
-	httpServer, spy := newFakeCalendarServer(t)
-	cfg := testCalendarConfig(t, httpServer.URL)
-
-	current := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
-	store := agent.NewCalendarProposalStore()
-	store.Now = func() time.Time { return current }
-
-	client := &fakeCompletionClient{
-		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
-			switch turn {
-			case 0:
-				return scriptedToolCallResponse(llm.NewToolCall("call-1", "create_event", `{"title":"Dentiste","start":"2026-09-12T14:00:00+02:00","end":"2026-09-12T15:00:00+02:00"}`)), nil
-			case 1:
-				proposalID := extractProposalID(t, opts)
-				// Dépasse largement les 5 minutes d'expiration avant de
-				// confirmer.
-				current = current.Add(10 * time.Minute)
-				return scriptedToolCallResponse(llm.NewToolCall("call-2", "create_event", `{"proposal_id":"`+proposalID+`","confirm":true}`)), nil
-			default:
-				return scriptedFinalResponse("La proposition a expiré."), nil
-			}
-		},
-	}
-
-	a := newAgendaAgent(t, cfg, client, store, 5)
-
-	result, err := a.Execute(context.Background(), agent.Request{Conversation: privateConversation("conv-9"), Input: "Ajoute le rendez-vous"})
-	if err != nil {
-		t.Fatalf("Execute a échoué: %v", err)
-	}
-
-	_, createCalls, _, _ := spy.snapshot()
-	if createCalls != 0 {
-		t.Fatalf("create_event n'aurait jamais dû être exécuté après expiration, appelé %d fois", createCalls)
-	}
-	if !strings.Contains(result.Reply, "expiré") {
-		t.Fatalf("réponse finale inattendue: %q", result.Reply)
+	if got, present := result.ProposedActions[0].Arguments["calendar_id"]; present {
+		t.Fatalf("le calendar_id forgé par le modèle a survécu dans l'action proposée: %v", got)
 	}
 }
 
@@ -470,7 +438,7 @@ func TestAgendaToolAgent_AmbiguousDateRejected(t *testing.T) {
 		},
 	}
 
-	a := newAgendaAgent(t, cfg, client, nil, 5)
+	a := newAgendaAgent(t, cfg, client, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{Conversation: privateConversation("conv-10"), Input: "Ajoute un rendez-vous demain à 14h"})
 	if err != nil {
@@ -494,7 +462,7 @@ func TestAgendaToolAgent_MCPServerUnreachableReturnsClearError(t *testing.T) {
 		},
 	}
 
-	a := newAgendaAgent(t, cfg, client, nil, 5)
+	a := newAgendaAgent(t, cfg, client, 5)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

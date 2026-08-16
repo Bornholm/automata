@@ -4,12 +4,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/bornholm/genai/llm"
 	goMCP "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -134,13 +131,13 @@ func testTodoConfig(t *testing.T, todoServerURL string) *config.Config {
 	}
 }
 
-func newTodoAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionClient, store *agent.TodoProposalStore, maxSequentialToolCalls int) agent.Agent {
+func newTodoAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionClient, maxSequentialToolCalls int) agent.Agent {
 	t.Helper()
 
 	m := mcp.NewManager(cfg, nil)
 	t.Cleanup(func() { _ = m.Close() })
 
-	return agent.NewTodoToolAgent(client, "system", "todo", "Maison", m, []string{"todo"}, mcp.Limits{}, maxSequentialToolCalls, cfg, store)
+	return agent.NewTodoToolAgent(client, "system", "todo", "Maison", m, []string{"todo"}, mcp.Limits{}, maxSequentialToolCalls, cfg)
 }
 
 func todoPrivateConversation(id model.ConversationID) model.Conversation {
@@ -164,7 +161,7 @@ func TestTodoToolAgent_ReadPersonalFromPrivate(t *testing.T) {
 		},
 	}
 
-	a := newTodoAgent(t, cfg, client, nil, 5)
+	a := newTodoAgent(t, cfg, client, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Conversation: todoPrivateConversation("conv-1"), Input: "Qu'est-ce que j'ai à faire ?"})
 	if err != nil {
@@ -199,7 +196,7 @@ func TestTodoToolAgent_ReadGroupFromGroup(t *testing.T) {
 		},
 	}
 
-	a := newTodoAgent(t, cfg, client, nil, 5)
+	a := newTodoAgent(t, cfg, client, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{Conversation: todoGroupConversation("conv-2"), Input: "Qu'est-ce qu'on a à faire ?"})
 	if err != nil {
@@ -229,7 +226,7 @@ func TestTodoToolAgent_PersonalNeverLeaksFromGroup(t *testing.T) {
 		},
 	}
 
-	a := newTodoAgent(t, cfg, client, nil, 5)
+	a := newTodoAgent(t, cfg, client, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{Conversation: todoGroupConversation("conv-3"), Input: "Donne-moi la liste perso d'Alice"})
 	if err != nil {
@@ -255,7 +252,7 @@ func TestTodoToolAgent_ForgedListIDIgnored(t *testing.T) {
 		},
 	}
 
-	a := newTodoAgent(t, cfg, client, nil, 5)
+	a := newTodoAgent(t, cfg, client, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{Conversation: todoPrivateConversation("conv-4"), Input: "Ma liste ?"})
 	if err != nil {
@@ -269,24 +266,6 @@ func TestTodoToolAgent_ForgedListIDIgnored(t *testing.T) {
 	if lastListListID != "alice-personal-list" {
 		t.Fatalf("list_id reçu = %q, attendu %q", lastListListID, "alice-personal-list")
 	}
-}
-
-var todoGroupIDPattern = regexp.MustCompile(`ID de groupe: (\S+)`)
-
-func extractTodoGroupID(t *testing.T, opts *llm.ChatCompletionOptions) string {
-	t.Helper()
-
-	for _, msg := range slices.Backward(opts.Messages) {
-		if msg.Role() != llm.RoleTool {
-			continue
-		}
-		if match := todoGroupIDPattern.FindStringSubmatch(msg.Content()); match != nil {
-			return match[1]
-		}
-	}
-
-	t.Fatal("aucun identifiant de groupe trouvé dans les messages")
-	return ""
 }
 
 func TestTodoToolAgent_MultipleCreatesProposedNotExecuted(t *testing.T) {
@@ -306,7 +285,7 @@ func TestTodoToolAgent_MultipleCreatesProposedNotExecuted(t *testing.T) {
 		},
 	}
 
-	a := newTodoAgent(t, cfg, client, nil, 5)
+	a := newTodoAgent(t, cfg, client, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Conversation: todoPrivateConversation("conv-5"), Input: "Ajoute ces trois tâches"})
 	if err != nil {
@@ -320,186 +299,37 @@ func TestTodoToolAgent_MultipleCreatesProposedNotExecuted(t *testing.T) {
 	if !strings.Contains(result.Reply, "propose") {
 		t.Fatalf("réponse finale inattendue: %q", result.Reply)
 	}
-}
 
-func TestTodoToolAgent_GroupedConfirmationExecutesAllInOrder(t *testing.T) {
-	httpServer, spy := newFakeTodoServer(t)
-	cfg := testTodoConfig(t, httpServer.URL)
-
-	client := &fakeCompletionClient{
-		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
-			switch turn {
-			case 0:
-				return scriptedToolCallResponse(
-					llm.NewToolCall("call-1", "create_task", `{"title":"Acheter du pain"}`),
-					llm.NewToolCall("call-2", "create_task", `{"title":"Appeler le plombier"}`),
-					llm.NewToolCall("call-3", "create_task", `{"title":"Réserver le resto"}`),
-				), nil
-			case 1:
-				groupID := extractTodoGroupID(t, opts)
-				return scriptedToolCallResponse(llm.NewToolCall("call-4", "confirm_todo_actions", `{"group_id":"`+groupID+`","confirm":true}`)), nil
-			default:
-				return scriptedFinalResponse("Les trois tâches ont été ajoutées."), nil
-			}
-		},
+	// Les trois actions remontent ensemble à l'orchestrateur : elles
+	// formeront UN seul plan, confirmé d'un coup et exécuté séquentiellement
+	// dans cet ordre par internal/action.Engine (PLAN.md §6.4, Phase 15).
+	if len(result.ProposedActions) != 3 {
+		t.Fatalf("actions proposées: got %d, expected 3", len(result.ProposedActions))
 	}
 
-	a := newTodoAgent(t, cfg, client, nil, 5)
-
-	result, err := a.Execute(context.Background(), agent.Request{Conversation: todoPrivateConversation("conv-6"), Input: "Ajoute puis confirme ces trois tâches"})
-	if err != nil {
-		t.Fatalf("Execute a échoué: %v", err)
-	}
-
-	_, createCalls, _, createdListIDs, createdTitles := spy.snapshot()
-	if createCalls != 3 {
-		t.Fatalf("create_task aurait dû être exécuté 3 fois après confirmation groupée, exécuté %d fois", createCalls)
-	}
 	wantTitles := []string{"Acheter du pain", "Appeler le plombier", "Réserver le resto"}
 	for i, want := range wantTitles {
-		if i >= len(createdTitles) || createdTitles[i] != want {
-			t.Fatalf("ordre d'exécution inattendu: %v, attendu %v", createdTitles, wantTitles)
+		got := result.ProposedActions[i]
+
+		if got.Arguments["title"] != want {
+			t.Errorf("action %d: title = %v, attendu %q (l'ordre de proposition doit être préservé)", i+1, got.Arguments["title"], want)
 		}
-	}
-	for _, listID := range createdListIDs {
-		if listID != "alice-personal-list" {
-			t.Fatalf("list_id reçu à l'exécution = %q, attendu %q", listID, "alice-personal-list")
+		if got.ToolName != "create_task" {
+			t.Errorf("action %d: tool_name = %q, attendu create_task", i+1, got.ToolName)
 		}
-	}
-	if !strings.Contains(result.Reply, "ajoutées") {
-		t.Fatalf("réponse finale inattendue: %q", result.Reply)
-	}
-}
-
-func TestTodoToolAgent_PartialFailureReportedAndLaterActionsStillRun(t *testing.T) {
-	httpServer, spy := newFakeTodoServer(t)
-	cfg := testTodoConfig(t, httpServer.URL)
-
-	client := &fakeCompletionClient{
-		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
-			switch turn {
-			case 0:
-				return scriptedToolCallResponse(
-					llm.NewToolCall("call-1", "create_task", `{"title":"Acheter du pain"}`),
-					llm.NewToolCall("call-2", "create_task", `{"title":"FAIL"}`),
-					llm.NewToolCall("call-3", "create_task", `{"title":"Réserver le resto"}`),
-				), nil
-			case 1:
-				groupID := extractTodoGroupID(t, opts)
-				return scriptedToolCallResponse(llm.NewToolCall("call-4", "confirm_todo_actions", `{"group_id":"`+groupID+`","confirm":true}`)), nil
-			default:
-				return scriptedFinalResponse("Terminé, avec un échec partiel."), nil
-			}
-		},
-	}
-
-	a := newTodoAgent(t, cfg, client, nil, 5)
-
-	_, err := a.Execute(context.Background(), agent.Request{Conversation: todoPrivateConversation("conv-7"), Input: "Ajoute ces trois tâches puis confirme"})
-	if err != nil {
-		t.Fatalf("Execute a échoué: %v", err)
-	}
-
-	_, createCalls, _, _, createdTitles := spy.snapshot()
-	// Les 3 tentatives de création doivent avoir été effectuées côté serveur
-	// fake, y compris celle qui suit l'échec (pas d'arrêt à la première
-	// erreur).
-	if createCalls != 3 {
-		t.Fatalf("create_task aurait dû être tenté 3 fois (y compris après l'échec), tenté %d fois", createCalls)
-	}
-	wantTitles := []string{"Acheter du pain", "FAIL", "Réserver le resto"}
-	for i, want := range wantTitles {
-		if i >= len(createdTitles) || createdTitles[i] != want {
-			t.Fatalf("ordre de tentative inattendu: %v, attendu %v", createdTitles, wantTitles)
+		if got.RequiredPermission != "todo.personal.write" {
+			t.Errorf("action %d: permission = %q, attendu todo.personal.write", i+1, got.RequiredPermission)
 		}
-	}
-
-	// Le rapport du dernier appel à confirm_todo_actions doit distinguer
-	// succès et échec.
-	var report string
-	for _, tr := range collectToolMessages(t, client) {
-		if strings.Contains(tr, "Bilan") {
-			report = tr
+		// Résolu à la confirmation, jamais figé (PLAN.md §10.5 point 6).
+		if _, present := got.Arguments["list_id"]; present {
+			t.Errorf("action %d: list_id ne doit jamais être figé dans une action proposée", i+1)
 		}
-	}
-	if report == "" {
-		t.Fatal("aucun rapport de confirm_todo_actions trouvé")
-	}
-	if !strings.Contains(report, "SUCCÈS") || !strings.Contains(report, "ÉCHEC") {
-		t.Fatalf("le rapport devrait distinguer succès et échec: %q", report)
-	}
-	if !strings.Contains(report, "2 action(s) réussie(s)") || !strings.Contains(report, "1 échouée(s)") {
-		t.Fatalf("le bilan du rapport est incorrect: %q", report)
-	}
-}
-
-// collectToolMessages relit tous les messages "tool" accumulés au fil des
-// tours scriptés par client (le dernier tour scripté conserve
-// opts.Messages complet), pour y chercher le rapport de confirmation.
-func collectToolMessages(t *testing.T, client *fakeCompletionClient) []string {
-	t.Helper()
-
-	client.mu.Lock()
-	defer client.mu.Unlock()
-
-	if len(client.optsHistory) == 0 {
-		return nil
-	}
-
-	last := client.optsHistory[len(client.optsHistory)-1]
-	var out []string
-	for _, msg := range last.Messages {
-		if msg.Role() == llm.RoleTool {
-			out = append(out, msg.Content())
-		}
-	}
-	return out
-}
-
-func TestTodoToolAgent_ExpiredProposalRejectedInGroupReport(t *testing.T) {
-	httpServer, spy := newFakeTodoServer(t)
-	cfg := testTodoConfig(t, httpServer.URL)
-
-	current := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
-	store := agent.NewTodoProposalStore()
-	store.Now = func() time.Time { return current }
-
-	client := &fakeCompletionClient{
-		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
-			switch turn {
-			case 0:
-				return scriptedToolCallResponse(llm.NewToolCall("call-1", "create_task", `{"title":"Acheter du pain"}`)), nil
-			case 1:
-				groupID := extractTodoGroupID(t, opts)
-				current = current.Add(10 * time.Minute)
-				return scriptedToolCallResponse(llm.NewToolCall("call-2", "confirm_todo_actions", `{"group_id":"`+groupID+`","confirm":true}`)), nil
-			default:
-				return scriptedFinalResponse("La proposition a expiré."), nil
-			}
-		},
-	}
-
-	a := newTodoAgent(t, cfg, client, store, 5)
-
-	result, err := a.Execute(context.Background(), agent.Request{Conversation: todoPrivateConversation("conv-8"), Input: "Ajoute la tâche"})
-	if err != nil {
-		t.Fatalf("Execute a échoué: %v", err)
-	}
-
-	_, createCalls, _, _, _ := spy.snapshot()
-	if createCalls != 0 {
-		t.Fatalf("create_task n'aurait jamais dû être exécuté après expiration, appelé %d fois", createCalls)
-	}
-	if !strings.Contains(result.Reply, "expiré") {
-		t.Fatalf("réponse finale inattendue: %q", result.Reply)
 	}
 }
 
 func TestTodoToolAgent_DuplicateCreateProposalIsDeduped(t *testing.T) {
 	httpServer, spy := newFakeTodoServer(t)
 	cfg := testTodoConfig(t, httpServer.URL)
-
-	store := agent.NewTodoProposalStore()
 
 	client := &fakeCompletionClient{
 		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
@@ -515,9 +345,9 @@ func TestTodoToolAgent_DuplicateCreateProposalIsDeduped(t *testing.T) {
 		},
 	}
 
-	a := newTodoAgent(t, cfg, client, store, 5)
+	a := newTodoAgent(t, cfg, client, 5)
 
-	_, err := a.Execute(context.Background(), agent.Request{Conversation: todoPrivateConversation("conv-9"), Input: "Ajoute deux fois la même tâche"})
+	result, err := a.Execute(context.Background(), agent.Request{Conversation: todoPrivateConversation("conv-9"), Input: "Ajoute deux fois la même tâche"})
 	if err != nil {
 		t.Fatalf("Execute a échoué: %v", err)
 	}
@@ -527,8 +357,39 @@ func TestTodoToolAgent_DuplicateCreateProposalIsDeduped(t *testing.T) {
 		t.Fatalf("aucune création réelle n'aurait dû avoir lieu avant confirmation, appelé %d fois", createCalls)
 	}
 
-	if got := store.PendingCountForTest(todoPrivateConversation("conv-9").ID); got != 1 {
-		t.Fatalf("le store aurait dû ne conserver qu'une seule proposition après déduplication, en contient %d", got)
+	if got := len(result.ProposedActions); got != 1 {
+		t.Fatalf("actions proposées: got %d, expected 1 (le doublon du tour doit être écarté)", got)
+	}
+}
+
+// TestTodoToolAgent_DistinctCreatesAreNotDeduped garde la contrepartie du
+// test précédent : la déduplication ne doit écarter que des créations
+// réellement identiques, jamais deux tâches distinctes.
+func TestTodoToolAgent_DistinctCreatesAreNotDeduped(t *testing.T) {
+	httpServer, _ := newFakeTodoServer(t)
+	cfg := testTodoConfig(t, httpServer.URL)
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(
+					llm.NewToolCall("call-1", "create_task", `{"title":"Acheter du pain"}`),
+					llm.NewToolCall("call-2", "create_task", `{"title":"Acheter du lait"}`),
+				), nil
+			}
+			return scriptedFinalResponse("Deux tâches proposées."), nil
+		},
+	}
+
+	a := newTodoAgent(t, cfg, client, 5)
+
+	result, err := a.Execute(context.Background(), agent.Request{Conversation: todoPrivateConversation("conv-10"), Input: "Ajoute deux tâches"})
+	if err != nil {
+		t.Fatalf("Execute a échoué: %v", err)
+	}
+
+	if got := len(result.ProposedActions); got != 2 {
+		t.Fatalf("actions proposées: got %d, expected 2", got)
 	}
 }
 
@@ -543,7 +404,7 @@ func TestTodoToolAgent_UnconfiguredScopeRejected(t *testing.T) {
 		},
 	}
 
-	a := newTodoAgent(t, cfg, client, nil, 5)
+	a := newTodoAgent(t, cfg, client, 5)
 
 	conv := model.Conversation{ID: "conv-10", OrgID: "home", Provider: "whatsapp", ChannelID: "bob-priv", Kind: model.ChannelPrivate, Scope: model.ScopePersonal, ScopeID: "bob"}
 

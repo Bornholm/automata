@@ -20,6 +20,7 @@ import (
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/resource"
 )
 
 // Statuts du cycle de vie d'un plan d'actions (PLAN.md §10.2).
@@ -667,17 +668,23 @@ func (e *Engine) executeAction(ctx context.Context, identity model.ExecutionIden
 		return e.failAction(ctx, act, "permission_denied", err)
 	}
 
-	// 6. Résoudre à nouveau les ressources externes si l'action en dépend :
-	// hors périmètre de cette phase pour les actions réellement produites
-	// (memory.forget n'a pas de ressource externe à résoudre) ; le point
-	// d'extension existe (Executor.Execute reçoit plan/act et peut
-	// résoudre toute ressource nécessaire juste avant l'appel réel) pour
-	// une future migration d'agenda/todo.
 	var args map[string]any
 	if strings.TrimSpace(act.ArgumentsJSON) != "" {
 		if err := json.Unmarshal([]byte(act.ArgumentsJSON), &args); err != nil {
 			return e.failAction(ctx, act, "invalid_arguments", err)
 		}
+	}
+
+	// 6. Résoudre à nouveau les ressources externes. L'identifiant n'est
+	// jamais lu depuis l'action persistée : les spécialistes le retirent au
+	// moment de la proposition (voir internal/agent, wrapCalendarWriteTool /
+	// wrapTodoWriteTool) et il est réinjecté ici depuis la portée du plan.
+	// Une action confirmée écrit donc toujours dans la ressource courante de
+	// sa portée, et jamais dans celle qu'un modèle aurait pu suggérer ou
+	// qu'une configuration antérieure aurait désignée.
+	args, err = resource.InjectResolved(e.cfg, act.MCPServer, plan.Scope, plan.ScopeID, args)
+	if err != nil {
+		return e.failAction(ctx, act, "resource_not_configured", err)
 	}
 
 	executor, ok := e.executorFor(act.MCPServer)

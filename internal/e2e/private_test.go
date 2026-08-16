@@ -227,7 +227,7 @@ func TestPrivate_Agenda(t *testing.T) {
 		return scriptedFinalResponse("Rien de prévu ce mois-ci."), nil
 	}
 
-	sys := newTestSystem(t, cfg, newAgendaAgent(t, cfg, client))
+	sys := newTestSystem(t, cfg, mustAgendaAgent(t, cfg, client))
 
 	sys.sendPrivate("alice-ext", "alice-priv", "Qu'est-ce que j'ai de prévu ?")
 	sent := sys.waitSent(1)
@@ -300,5 +300,65 @@ func TestPrivate_Confirmation(t *testing.T) {
 	}
 	if found {
 		t.Fatal("la mémoire aurait dû être supprimée après confirmation")
+	}
+}
+
+// TestPrivate_AgendaWriteConfirmedExecutesWithResolvedResource couvre le
+// chemin complet d'une ÉCRITURE agenda : le spécialiste propose, rien n'est
+// exécuté, l'utilisateur répond "confirmer" en toutes lettres, et c'est
+// seulement alors que l'appel MCP réel a lieu.
+//
+// Le point vérifié en propre est la résolution tardive de la ressource
+// (PLAN.md §10.5 point 6) : l'identifiant de calendrier n'est jamais figé
+// dans l'action persistée, il est réinjecté depuis la portée du plan au
+// moment d'exécuter. C'est ce qui garantit qu'une action confirmée écrit
+// dans le calendrier courant de sa portée, et pas dans celui qu'un modèle
+// aurait pu suggérer.
+func TestPrivate_AgendaWriteConfirmedExecutesWithResolvedResource(t *testing.T) {
+	httpServer, spy := newFakeCalendarServer(t)
+	cfg := baseOrgConfig()
+	withCalendarResources(cfg, httpServer.URL)
+
+	client := &fakeCompletionClient{}
+	client.responseFunc = func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+		if turn == 0 {
+			// Le modèle tente au passage d'imposer son propre calendrier.
+			return scriptedToolCallResponse(llm.NewToolCall("call-1", "create_event",
+				`{"calendar_id":"forged-by-model","title":"Dentiste","start":"2026-09-12T14:00:00+02:00","end":"2026-09-12T15:00:00+02:00"}`)), nil
+		}
+		return scriptedFinalResponse("Je te propose ce rendez-vous."), nil
+	}
+
+	agendaAgent, mcpManager := newAgendaAgent(t, cfg, client)
+	sys := newTestSystem(t, cfg, agendaAgent, withMCPManager(mcpManager))
+
+	sys.sendPrivate("alice-ext", "alice-priv", "Ajoute un rendez-vous chez le dentiste vendredi.")
+	sent := sys.waitSent(1)
+
+	proposal := mainContent(t, sent[0])
+	if !strings.Contains(proposal, "confirmer") {
+		t.Fatalf("instructions de confirmation attendues, obtenu: %q", proposal)
+	}
+
+	if _, createCalls, _, _ := spy.snapshot(); createCalls != 0 {
+		t.Fatalf("aucune création réelle ne doit avoir lieu avant confirmation, appelée %d fois", createCalls)
+	}
+
+	sys.sendPrivate("alice-ext", "alice-priv", "confirmer")
+	sent = sys.waitSent(2)
+
+	if report := mainContent(t, sent[1]); !strings.Contains(report, "succès") {
+		t.Fatalf("rapport d'exécution attendu avec succès, obtenu: %q", report)
+	}
+
+	_, createCalls, _, lastCreateCalendarID := spy.snapshot()
+	if createCalls != 1 {
+		t.Fatalf("create_event aurait dû être exécuté exactement une fois après confirmation, appelé %d fois", createCalls)
+	}
+	if lastCreateCalendarID == "forged-by-model" {
+		t.Fatal("le calendar_id forgé par le modèle n'aurait jamais dû atteindre le serveur mcp")
+	}
+	if lastCreateCalendarID != "alice-personal-calendar" {
+		t.Fatalf("calendar_id reçu à l'exécution = %q, attendu %q", lastCreateCalendarID, "alice-personal-calendar")
 	}
 }

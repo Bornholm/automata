@@ -146,6 +146,13 @@ func baseOrgConfig() *config.Config {
 					"memory.personal.read", "memory.personal.write", "memory.personal.delete",
 					"memory.group.read", "memory.group.write", "memory.group.delete",
 					"memory.org.read", "memory.org.write", "memory.org.delete",
+					// Les écritures agenda sont revérifiées par le moteur
+					// d'actions au moment de la confirmation, pas seulement
+					// lors de la proposition : sans ces permissions, un plan
+					// agenda confirmé échoue (voir
+					// TestPrivate_AgendaWriteConfirmedExecutesWithResolvedResource).
+					"calendar.personal.read", "calendar.personal.write",
+					"calendar.group.read", "calendar.group.write",
 				}},
 				"org-reader": {Permissions: []string{"memory.org.read"}},
 			},
@@ -345,13 +352,27 @@ func newFakeCalendarServer(t *testing.T) (*httptest.Server, *calendarSpy) {
 
 // newAgendaAgent construit un agent.AgendaToolAgent adossé au serveur
 // calendrier factice, comme internal/agent/agenda_test.go.
-func newAgendaAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionClient) agent.Agent {
+//
+// Le gestionnaire MCP est retourné pour pouvoir être partagé avec le moteur
+// d'actions (withMCPManager) : c'est lui qui exécutera réellement une
+// écriture agenda, une fois le plan confirmé.
+func newAgendaAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionClient) (agent.Agent, *mcp.Manager) {
 	t.Helper()
 
 	m := mcp.NewManager(cfg, nil)
 	t.Cleanup(func() { _ = m.Close() })
 
-	return agent.NewAgendaToolAgent(client, "system", "agenda", cfg.Organization.DisplayName, m, []string{"google-calendar"}, mcp.Limits{}, 5, cfg, nil)
+	return agent.NewAgendaToolAgent(client, "system", "agenda", cfg.Organization.DisplayName, m, []string{"google-calendar"}, mcp.Limits{}, 5, cfg), m
+}
+
+// mustAgendaAgent est newAgendaAgent pour les scénarios de LECTURE seule, qui
+// n'ont pas besoin de partager le gestionnaire MCP avec le moteur d'actions.
+func mustAgendaAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionClient) agent.Agent {
+	t.Helper()
+
+	a, _ := newAgendaAgent(t, cfg, client)
+
+	return a
 }
 
 // withCalendarResources déclare le serveur MCP google-calendar et les
@@ -397,6 +418,7 @@ type sysConfig struct {
 	transcriber audio.Transcriber
 	memStore    *memory.AmoxtliStore
 	engineOpts  []action.Option
+	mcpManager  *mcp.Manager
 }
 
 type sysOption func(*sysConfig)
@@ -413,6 +435,13 @@ func withAudio(cfg audio.Config, transcriber audio.Transcriber) sysOption {
 // store, avant de connaître le testSystem qui l'englobera).
 func withMemoryStore(store *memory.AmoxtliStore) sysOption {
 	return func(sc *sysConfig) { sc.memStore = store }
+}
+
+// withMCPManager donne au moteur d'actions de quoi exécuter réellement une
+// action MCP confirmée (agenda, todo) : sans lui, seules les actions
+// internes comme memory.forget disposent d'un exécuteur.
+func withMCPManager(m *mcp.Manager) sysOption {
+	return func(sc *sysConfig) { sc.mcpManager = m }
 }
 
 // readyProvider signale, via un canal fermé, que Listen a bien été appelé,
@@ -510,7 +539,7 @@ func newTestSystem(t *testing.T, cfg *config.Config, mainAgent agent.Agent, opts
 		action.WithAuditEvents(persistence.NewAuditEventRepository()),
 	}, sc.engineOpts...)
 
-	actionEngine := action.NewEngine(db, authorizer, nil, cfg, engineOpts...)
+	actionEngine := action.NewEngine(db, authorizer, sc.mcpManager, cfg, engineOpts...)
 
 	handler := conversation.NewHandler(db, mainAgent, actionEngine, 0, sc.audioCfg, sc.transcriber, false, nil)
 

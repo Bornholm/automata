@@ -15,19 +15,21 @@ import (
 	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/observability"
+	"github.com/bornholm/automata/internal/resource"
 )
 
-// calendarMCPServerName est le nom conventionnel du serveur MCP Google
-// Calendar déclaré par agents.<nom>.mcp_servers (PLAN.md §9.1, Phase 13) :
-// c'est sa présence dans agentCfg.MCPServers qui identifie le spécialiste
-// agenda (voir NewRegistryWithMemory ci-dessous).
-const calendarMCPServerName = "google-calendar"
-
-// todoMCPServerName est le nom conventionnel du serveur MCP de gestion de
-// tâches déclaré par agents.<nom>.mcp_servers (PLAN.md §12 mcp_servers.todo,
-// Phase 14) : c'est sa présence dans agentCfg.MCPServers qui identifie le
-// spécialiste todo, même principe que calendarMCPServerName ci-dessus.
-const todoMCPServerName = "todo"
+// Noms conventionnels des serveurs MCP déclarés par
+// agents.<nom>.mcp_servers (PLAN.md §9.1, Phases 13 et 14) : c'est leur
+// présence dans agentCfg.MCPServers qui identifie le spécialiste agenda ou
+// todo (voir NewRegistryWithMemory ci-dessous).
+//
+// Ils sont repris de internal/resource, qui les partage avec
+// internal/action : le même nom sert à décider du type de spécialiste ici, et
+// à résoudre la ressource au moment d'exécuter une action confirmée.
+const (
+	calendarMCPServerName = resource.CalendarMCPServerName
+	todoMCPServerName     = resource.TodoMCPServerName
+)
 
 // Registry construit et détient un Agent isolé pour chaque agent déclaré
 // dans la configuration (PLAN.md §6.2, §7.2, Phase 7). Chaque Agent obtenu
@@ -144,7 +146,6 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 						limits,
 						agentCfg.Limits.MaxSequentialToolCalls,
 						cfg,
-						nil,
 					)
 				} else if slices.Contains(agentCfg.MCPServers, todoMCPServerName) {
 					specialist = NewTodoToolAgent(
@@ -157,7 +158,6 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, mcpManag
 						limits,
 						agentCfg.Limits.MaxSequentialToolCalls,
 						cfg,
-						nil,
 					)
 				} else {
 					specialist = NewMCPToolAgent(

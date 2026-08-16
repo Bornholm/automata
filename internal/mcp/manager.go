@@ -58,6 +58,24 @@ type Manager struct {
 
 	metrics *observability.Metrics
 
+	// baseCtx borne la durée de vie des connexions MCP mises en cache, et
+	// n'est annulé que par Close.
+	//
+	// Il ne faut SURTOUT pas démarrer un client avec le contexte de la
+	// requête qui l'a fait naître : ce contexte est annulé dès la fin du
+	// traitement du message (voir le timeout de internal/ingress), ce qui
+	// ferme la connexion sous-jacente alors qu'elle reste référencée ici.
+	// L'appel suivant réutiliserait un client déjà mort ("client is
+	// closing"). Le cas se produit dès qu'une session sert à plus d'un
+	// message — typiquement une action agenda ou todo proposée dans un
+	// message et exécutée après confirmation dans un autre.
+	//
+	// Chaque appel d'outil, lui, reste borné par le contexte de sa propre
+	// requête (voir wrapTool) : découpler la durée de vie de la connexion ne
+	// rend pas les appels insensibles à l'annulation.
+	baseCtx    context.Context
+	cancelBase context.CancelFunc
+
 	mu sync.Mutex
 	// sessions[sessionKey][serverName] : un client connecté au plus par
 	// couple (session, serveur). La création (y compris Start, qui effectue
@@ -77,10 +95,14 @@ func NewManager(cfg *config.Config, logger *slog.Logger) *Manager {
 		logger = slog.Default()
 	}
 
+	baseCtx, cancelBase := context.WithCancel(context.Background())
+
 	return &Manager{
-		cfg:      cfg,
-		logger:   logger,
-		sessions: make(map[SessionKey]map[string]genaimcp.Client),
+		cfg:        cfg,
+		logger:     logger,
+		baseCtx:    baseCtx,
+		cancelBase: cancelBase,
+		sessions:   make(map[SessionKey]map[string]genaimcp.Client),
 	}
 }
 
@@ -138,7 +160,8 @@ func (m *Manager) getOrCreateClient(ctx context.Context, sessionKey SessionKey, 
 		return nil, err
 	}
 
-	if err := client.Start(ctx); err != nil {
+	// baseCtx, jamais ctx : voir le commentaire du champ Manager.baseCtx.
+	if err := client.Start(m.baseCtx); err != nil {
 		return nil, fmt.Errorf("mcp: connexion au serveur %q (session %q): %w", serverName, sessionKey, err)
 	}
 
@@ -319,6 +342,11 @@ func (m *Manager) Close() error {
 	sessions := m.sessions
 	m.sessions = make(map[SessionKey]map[string]genaimcp.Client)
 	m.mu.Unlock()
+
+	// Annule le contexte qui borne la durée de vie des connexions : c'est ce
+	// qui libère effectivement les goroutines de transport, Stop ci-dessous
+	// ne suffisant pas à lui seul.
+	m.cancelBase()
 
 	var errs []error
 	for sessionKey, servers := range sessions {

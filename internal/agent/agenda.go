@@ -2,17 +2,15 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"maps"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/bornholm/genai/llm"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/resource"
@@ -26,15 +24,7 @@ import (
 // choisie pour le serveur fake construit pour les tests, faute de référence
 // externe. Quelle que soit la valeur fournie par le modèle sous ce nom,
 // l'application l'écrase systématiquement (PLAN.md §9.2).
-const calendarIDParam = "calendar_id"
-
-// calendarProposalTTL est la durée de validité d'une proposition d'action
-// d'écriture agenda avant expiration (PLAN.md §10, "Confirmation et
-// exécution des actions"). 5 minutes est une valeur raisonnable pour
-// laisser le temps à un humain de répondre "oui" dans une conversation
-// applicative, sans laisser une proposition confirmable indéfiniment
-// longtemps après le contexte qui l'a produite.
-const calendarProposalTTL = 5 * time.Minute
+const calendarIDParam = resource.CalendarIDParam
 
 // calendarReadPrefixes / calendarWritePrefixes classent les outils du
 // serveur MCP google-calendar par convention de nommage plutôt que par une
@@ -123,144 +113,6 @@ func validateCalendarDates(args map[string]any) error {
 	return nil
 }
 
-// Sentinelles retournées par CalendarProposalStore.consume. Le même message
-// "introuvable" est utilisé pour un identifiant inconnu et pour un
-// identifiant appartenant à une autre conversation : révéler la différence
-// permettrait à une conversation de sonder l'existence de propositions
-// d'une autre conversation.
-var (
-	errCalendarProposalNotFound  = errors.New("proposition introuvable ou déjà utilisée")
-	errCalendarProposalExpired   = errors.New("proposition expirée, recommence la demande")
-	errCalendarProposalWrongTool = errors.New("proposition introuvable pour cet outil")
-)
-
-// calendarProposal décrit une action d'écriture agenda proposée mais pas
-// encore confirmée : la mécanique de confirmation ad-hoc, scopée, du même
-// niveau de simplicité que forget_memory (internal/agent/memory_tools.go,
-// Phase 10) — PAS le système ActionPlan général de la Phase 15
-// (persistance SQLite, expiration formalisée, commandes conversationnelles
-// confirmer/annuler), hors périmètre de cette phase.
-type calendarProposal struct {
-	toolName       string
-	args           map[string]any
-	conversationID model.ConversationID
-	createdAt      time.Time
-}
-
-// CalendarProposalStore mémorise en RAM (aucune persistance SQLite à ce
-// stade, voir calendarProposal) les propositions d'action d'écriture
-// agenda en attente de confirmation, protégées par un mutex. Une valeur
-// zéro n'est pas utilisable : construire via NewCalendarProposalStore.
-type CalendarProposalStore struct {
-	mu        sync.Mutex
-	proposals map[string]*calendarProposal
-	counter   uint64
-	ttl       time.Duration
-	// Now, si non nil, remplace time.Now pour déterminer l'heure courante
-	// (horloge injectable pour les tests d'expiration, voir agenda_test.go).
-	Now func() time.Time
-}
-
-// NewCalendarProposalStore construit un CalendarProposalStore vide, avec
-// l'expiration par défaut (calendarProposalTTL).
-func NewCalendarProposalStore() *CalendarProposalStore {
-	return &CalendarProposalStore{
-		proposals: make(map[string]*calendarProposal),
-		ttl:       calendarProposalTTL,
-	}
-}
-
-func (s *CalendarProposalStore) now() time.Time {
-	if s.Now != nil {
-		return s.Now()
-	}
-	return time.Now()
-}
-
-// propose enregistre une nouvelle proposition et retourne son identifiant.
-func (s *CalendarProposalStore) propose(conversationID model.ConversationID, toolName string, args map[string]any) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.counter++
-	id := fmt.Sprintf("cal-proposal-%d", s.counter)
-
-	s.proposals[id] = &calendarProposal{
-		toolName:       toolName,
-		args:           args,
-		conversationID: conversationID,
-		createdAt:      s.now(),
-	}
-
-	return id
-}
-
-// consume vérifie et retire la proposition id, à condition qu'elle existe,
-// n'ait pas expiré, appartienne à conversationID et concerne toolName.
-// Retourne ses arguments résolus (calendar_id déjà réinjecté par propose)
-// en cas de succès.
-func (s *CalendarProposalStore) consume(id string, conversationID model.ConversationID, toolName string) (map[string]any, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	p, ok := s.proposals[id]
-	if !ok {
-		return nil, errCalendarProposalNotFound
-	}
-
-	// Pas de confirmation croisée entre conversations : voir le commentaire
-	// des sentinelles ci-dessus.
-	if p.conversationID != conversationID {
-		return nil, errCalendarProposalNotFound
-	}
-
-	if p.toolName != toolName {
-		return nil, errCalendarProposalWrongTool
-	}
-
-	if s.now().Sub(p.createdAt) > s.ttl {
-		delete(s.proposals, id)
-		return nil, errCalendarProposalExpired
-	}
-
-	delete(s.proposals, id)
-
-	return p.args, nil
-}
-
-// augmentSchemaForConfirmation retourne une copie du schéma JSON tool
-// (map[string]any au format produit par llm.NewJSONSchema/mcp) en y
-// ajoutant deux propriétés optionnelles, proposal_id et confirm : c'est par
-// ces deux champs, et non par un outil séparé, que le modèle confirme une
-// action déjà proposée (choix documenté PLAN.md Phase 13 : "le plus simple
-// à faire comprendre au modèle", même pattern que forget_memory/confirm en
-// Phase 10).
-func augmentSchemaForConfirmation(schema map[string]any) map[string]any {
-	if schema == nil {
-		schema = llm.NewJSONSchema()
-	}
-
-	augmented := make(map[string]any, len(schema))
-	maps.Copy(augmented, schema)
-
-	properties, _ := augmented["properties"].(map[string]any)
-	newProperties := make(map[string]any, len(properties)+2)
-	maps.Copy(newProperties, properties)
-
-	newProperties["proposal_id"] = map[string]any{
-		"type":        "string",
-		"description": "Identifiant de proposition à fournir avec confirm=true pour exécuter réellement une action déjà proposée par un appel précédent de cet outil.",
-	}
-	newProperties["confirm"] = map[string]any{
-		"type":        "boolean",
-		"description": "true uniquement pour confirmer une action déjà proposée (avec 'proposal_id'). Ne jamais mettre à true sans confirmation explicite de l'utilisateur humain.",
-	}
-
-	augmented["properties"] = newProperties
-
-	return augmented
-}
-
 // wrapCalendarReadTool enveloppe un outil de lecture (list_events,
 // get_event, ...) pour réécrire systématiquement calendar_id vers
 // calendarID, quelle que soit la valeur fournie par le modèle (PLAN.md
@@ -278,45 +130,28 @@ func wrapCalendarReadTool(tool llm.Tool, calendarID string) llm.Tool {
 }
 
 // wrapCalendarWriteTool enveloppe un outil d'écriture (create_event,
-// update_event, delete_event, ...) dans le cycle proposition/confirmation
-// décrit par PLAN.md §10 : le premier appel (confirm absent ou faux)
-// n'exécute JAMAIS l'outil MCP réel, il enregistre une proposition dans
-// store et retourne son identifiant au modèle ; un second appel avec
-// proposal_id et confirm=true exécute réellement l'outil, avec les
-// arguments résolus lors de la proposition (calendar_id compris), jamais
-// avec de nouveaux arguments fournis sur l'appel de confirmation — ce qui
-// empêche le modèle de faire glisser silencieusement les arguments entre la
-// proposition et la confirmation.
-func wrapCalendarWriteTool(tool llm.Tool, store *CalendarProposalStore, conversationID model.ConversationID, calendarID string) llm.Tool {
-	schema := augmentSchemaForConfirmation(tool.Parameters())
-
+// update_event, delete_event, ...) de sorte qu'il n'exécute JAMAIS l'appel
+// MCP réel : il enregistre une action à confirmer dans collector, qui
+// remonte à l'orchestrateur puis devient un plan persisté
+// (internal/action.Engine), confirmable par les commandes conversationnelles
+// "confirmer"/"annuler" (PLAN.md §10, Phase 15).
+//
+// calendar_id est retiré des arguments proposés plutôt qu'y être figé : la
+// ressource est résolue à nouveau au moment de la confirmation, à partir de
+// la portée du plan (PLAN.md §10.5 point 6). Une valeur fournie par le
+// modèle sous ce nom est donc systématiquement écartée (§9.2), et un plan
+// confirmé ne peut pas écrire dans un calendrier qui aurait cessé d'être
+// celui de sa portée entre-temps.
+func wrapCalendarWriteTool(tool llm.Tool, collector *proposalCollector, agentName string, scope model.Scope, scopeID model.ScopeID) llm.Tool {
 	execute := func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
-		confirm, _ := params["confirm"].(bool)
-		proposalID := stringParam(params, "proposal_id")
-
-		if confirm {
-			if proposalID == "" {
-				return llm.NewToolResult("erreur: le paramètre 'proposal_id' est requis pour confirmer une action."), nil
-			}
-
-			args, err := store.consume(proposalID, conversationID, tool.Name())
-			if err != nil {
-				return llm.NewToolResult(fmt.Sprintf("erreur: %v.", err)), nil
-			}
-
-			return tool.Execute(ctx, args)
-		}
-
 		args := make(map[string]any, len(params))
 		for k, v := range params {
-			if k == "confirm" || k == "proposal_id" {
+			// Jamais l'identifiant fourni par le modèle : voir ci-dessus.
+			if k == calendarIDParam {
 				continue
 			}
 			args[k] = v
 		}
-		// Réécriture systématique, quelle que soit la valeur fournie par le
-		// modèle sous ce nom (PLAN.md §9.2).
-		args[calendarIDParam] = calendarID
 
 		if err := validateCalendarDates(args); err != nil {
 			return llm.NewToolResult(fmt.Sprintf(
@@ -325,20 +160,56 @@ func wrapCalendarWriteTool(tool llm.Tool, store *CalendarProposalStore, conversa
 			)), nil
 		}
 
-		id := store.propose(conversationID, tool.Name(), args)
+		collector.add(delegation.ProposedAction{
+			Summary:            summarizeCalendarAction(tool.Name(), args),
+			AgentID:            agentName,
+			MCPServer:          calendarMCPServerName,
+			ToolName:           tool.Name(),
+			Arguments:          args,
+			RequiredPermission: fmt.Sprintf("calendar.%s.write", scope),
+			Scope:              scope,
+			ScopeID:            scopeID,
+		})
 
-		argsJSON, err := json.Marshal(args)
-		if err != nil {
-			argsJSON = []byte("{}")
-		}
-
-		return llm.NewToolResult(fmt.Sprintf(
-			"Action proposée, en attente de confirmation (expire dans %s) :\nOutil: %s\nArguments résolus: %s\nID de proposition: %s\nPour confirmer, rappelle cet outil avec proposal_id=%q et confirm=true. Si un outil de lecture des événements existants est disponible, consulte-le d'abord pour éviter tout chevauchement avant de confirmer une création.",
-			calendarProposalTTL, tool.Name(), string(argsJSON), id, id,
-		)), nil
+		return llm.NewToolResult(
+			"Action enregistrée, en attente de la confirmation de l'utilisateur : elle n'a PAS encore été exécutée. " +
+				"Ne la propose pas une seconde fois et n'essaie pas de la confirmer toi-même. " +
+				"Si un outil de lecture des événements existants est disponible, consulte-le pour signaler un éventuel chevauchement.",
+		), nil
 	}
 
-	return llm.NewFuncTool(tool.Name(), tool.Description()+" (nécessite confirmation avant exécution réelle : voir les paramètres proposal_id/confirm)", schema, execute)
+	return llm.NewFuncTool(
+		tool.Name(),
+		tool.Description()+" (l'action est soumise à la confirmation de l'utilisateur avant toute exécution réelle)",
+		tool.Parameters(),
+		execute,
+	)
+}
+
+// summarizeCalendarAction produit la description humaine affichée dans la
+// liste des actions à confirmer. Elle reprend les champs usuels d'un
+// événement lorsqu'ils sont présents, et se rabat sur le nom de l'outil
+// sinon : c'est ce texte que l'utilisateur lit avant de confirmer, il ne doit
+// jamais se réduire à un identifiant technique.
+func summarizeCalendarAction(toolName string, args map[string]any) string {
+	title := stringParam(args, "title")
+	if title == "" {
+		title = stringParam(args, "summary")
+	}
+
+	start := stringParam(args, "start")
+	if start == "" {
+		start = stringParam(args, "start_time")
+	}
+
+	switch {
+	case title != "" && start != "":
+		return fmt.Sprintf("%s : %s (%s)", toolName, title, start)
+	case title != "":
+		return fmt.Sprintf("%s : %s", toolName, title)
+	default:
+		return fmt.Sprintf("%s sur l'agenda de la portée courante", toolName)
+	}
 }
 
 // newCalendarToolsRewriter construit un ToolsRewriterFunc (voir
@@ -353,8 +224,14 @@ func wrapCalendarWriteTool(tool llm.Tool, store *CalendarProposalStore, conversa
 // au modèle — même principe que l'échec de connexion à un serveur MCP
 // (MCPToolAgent.Execute, Phase 12) : ne jamais deviner une ressource
 // absente de la configuration.
-func newCalendarToolsRewriter(cfg *config.Config, store *CalendarProposalStore) ToolsRewriterFunc {
-	return func(ctx context.Context, req Request, tools []llm.Tool) ([]llm.Tool, error) {
+//
+// La résolution a lieu même lorsque seuls des outils d'écriture seront
+// utilisés, bien que ceux-ci ne figent plus l'identifiant : c'est ce qui
+// garantit qu'une portée sans calendrier configuré est refusée d'emblée,
+// plutôt qu'au moment de la confirmation d'un plan déjà annoncé à
+// l'utilisateur.
+func newCalendarToolsRewriter(cfg *config.Config, agentName string) ToolsRewriterFunc {
+	return func(ctx context.Context, req Request, tools []llm.Tool, collector *proposalCollector) ([]llm.Tool, error) {
 		calendarID, err := resource.ResolveCalendarID(cfg, req.Conversation.Scope, req.Conversation.ScopeID)
 		if err != nil {
 			return nil, err
@@ -363,7 +240,7 @@ func newCalendarToolsRewriter(cfg *config.Config, store *CalendarProposalStore) 
 		wrapped := make([]llm.Tool, len(tools))
 		for i, tool := range tools {
 			if isCalendarWriteTool(tool.Name()) {
-				wrapped[i] = wrapCalendarWriteTool(tool, store, req.Conversation.ID, calendarID)
+				wrapped[i] = wrapCalendarWriteTool(tool, collector, agentName, req.Conversation.Scope, req.Conversation.ScopeID)
 			} else {
 				wrapped[i] = wrapCalendarReadTool(tool, calendarID)
 			}
@@ -374,16 +251,10 @@ func newCalendarToolsRewriter(cfg *config.Config, store *CalendarProposalStore) 
 }
 
 // NewAgendaToolAgent construit le spécialiste agenda : un MCPToolAgent
-// (mcp_tool_agent.go) enrichi du comportement de résolution de ressource et
-// de confirmation d'écriture décrit ci-dessus (PLAN.md §9.2, §10.1,
-// Phase 13), plutôt qu'un nouveau type dupliquant runToolLoop/la
-// récupération des outils mcp — voir ToolsRewriterFunc.
-//
-// store peut être nil : un CalendarProposalStore neuf est alors créé.
-// Fournir explicitement un store (typiquement partagé par tous les agents
-// "agenda" d'un même processus, comme pour mcpManager) permet aux tests
-// d'injecter une horloge (CalendarProposalStore.Now) pour simuler
-// l'expiration d'une proposition.
+// (mcp_tool_agent.go) enrichi de la résolution de ressource et de la
+// transformation des écritures en actions à confirmer décrites ci-dessus
+// (PLAN.md §9.2, §10.1, Phase 13), plutôt qu'un nouveau type dupliquant
+// runToolLoop/la récupération des outils mcp — voir ToolsRewriterFunc.
 func NewAgendaToolAgent(
 	client llm.ChatCompletionClient,
 	systemPrompt, agentName, orgDisplayName string,
@@ -392,13 +263,8 @@ func NewAgendaToolAgent(
 	mcpLimits mcp.Limits,
 	maxSequentialToolCalls int,
 	cfg *config.Config,
-	store *CalendarProposalStore,
 ) *MCPToolAgent {
-	if store == nil {
-		store = NewCalendarProposalStore()
-	}
-
 	base := NewMCPToolAgent(client, systemPrompt, agentName, orgDisplayName, mcpManager, mcpServerNames, mcpLimits, maxSequentialToolCalls)
 
-	return base.WithToolsRewriter(newCalendarToolsRewriter(cfg, store))
+	return base.WithToolsRewriter(newCalendarToolsRewriter(cfg, agentName))
 }
