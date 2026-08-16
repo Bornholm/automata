@@ -364,6 +364,21 @@ func validateIdentities(cfg *Config) []error {
 				errs = append(errs, fmt.Errorf("%s.roles: rôle inconnu %q", prefix, role))
 			}
 		}
+
+		// Une surcharge visant un serveur inexistant ne serait jamais
+		// appliquée : le principal se connecterait silencieusement avec le
+		// jeton commun, donc potentiellement aux ressources de quelqu'un
+		// d'autre. C'est une erreur de configuration, pas un détail.
+		for _, serverName := range sortedKeys(principal.MCP) {
+			if _, ok := cfg.MCPServers[serverName]; !ok {
+				errs = append(errs, fmt.Errorf("%s.mcp: serveur mcp inconnu %q", prefix, serverName))
+			}
+
+			override := principal.MCP[serverName]
+			if override.URL == "" && len(override.Headers) == 0 {
+				errs = append(errs, fmt.Errorf("%s.mcp.%s: surcharge vide (déclarer au moins une url ou un en-tête)", prefix, serverName))
+			}
+		}
 	}
 
 	return errs

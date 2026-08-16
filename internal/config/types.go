@@ -290,6 +290,25 @@ type Principal struct {
 	Kind        PrincipalKind `yaml:"kind"`
 	DisplayName string        `yaml:"display_name"`
 	Roles       []string      `yaml:"roles"`
+	// MCP surcharge, par nom de serveur, la façon dont ce principal s'y
+	// connecte : son propre jeton, éventuellement sa propre URL. C'est ce qui
+	// permet à chacun d'atteindre SON agenda ou SA liste de tâches sur un
+	// service qui authentifie l'utilisateur final.
+	//
+	// Une surcharge change la clé de session MCP (voir internal/mcp) : deux
+	// principaux ne partagent jamais une connexion authentifiée, même dans un
+	// canal de groupe.
+	MCP map[string]MCPOverride `yaml:"mcp"`
+}
+
+// MCPOverride décrit la connexion d'un principal à un serveur MCP donné.
+//
+// URL vide conserve celle du serveur. Les en-têtes déclarés ici s'ajoutent à
+// ceux du serveur et l'emportent en cas de même nom, ce qui permet de ne
+// surcharger que l'autorisation sans réécrire le reste.
+type MCPOverride struct {
+	URL     string            `yaml:"url"`
+	Headers map[string]string `yaml:"headers"`
 }
 
 // Origin associe une identité externe (fournisseur + identifiant externe) à

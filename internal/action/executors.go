@@ -56,7 +56,10 @@ type mcpExecutor struct {
 func (e *mcpExecutor) Execute(ctx context.Context, identity model.ExecutionIdentity, plan persistence.ActionPlan, act persistence.Action, args map[string]any) (string, error) {
 	sessionKey := mcp.SessionKey(plan.ConversationID)
 
-	tools, err := e.manager.GetTools(ctx, sessionKey, act.MCPServer, mcp.Limits{})
+	// Le principal retenu est celui qui CONFIRME, pas l'auteur de la
+	// proposition : c'est lui qui engage l'écriture, et c'est donc sa
+	// connexion (son jeton) qui doit être utilisée.
+	tools, err := e.manager.GetToolsFor(ctx, sessionKey, identity.PrincipalID, act.MCPServer, mcp.Limits{})
 	if err != nil {
 		return "", fmt.Errorf("récupération des outils du serveur %q: %w", act.MCPServer, err)
 	}

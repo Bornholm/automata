@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	goMCP "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/model"
 )
 
 // --- serveur MCP HTTP (SSE) factice pour les tests ---
@@ -312,6 +314,150 @@ func TestManagerSessionIsolation(t *testing.T) {
 
 	if clientA == clientB {
 		t.Errorf("expected distinct clients for distinct sessions")
+	}
+}
+
+// TestManagerPrincipalOverrideIsolatesConnections vérifie qu'un principal
+// disposant de sa propre connexion MCP n'en partage jamais une avec un autre,
+// même dans la MÊME session (canal de groupe).
+//
+// C'est la garantie qui rend l'authentification par utilisateur utilisable :
+// sans elle, le premier arrivé imposerait son jeton au suivant, qui lirait
+// alors les ressources de quelqu'un d'autre.
+func TestManagerPrincipalOverrideIsolatesConnections(t *testing.T) {
+	httpServer, connections := newFakeMCPServer(t, 0, 0)
+
+	cfg := newTestConfig("fake", httpServer.URL)
+	cfg.Identities.Principals = []config.Principal{
+		{
+			ID:   "alice",
+			Kind: config.PrincipalKindHuman,
+			MCP: map[string]config.MCPOverride{
+				"fake": {Headers: map[string]string{"Authorization": "Bearer alice-token"}},
+			},
+		},
+		{
+			ID:   "bob",
+			Kind: config.PrincipalKindHuman,
+			MCP: map[string]config.MCPOverride{
+				"fake": {Headers: map[string]string{"Authorization": "Bearer bob-token"}},
+			},
+		},
+		// Sans surcharge : partage la connexion commune de la session.
+		{ID: "leo", Kind: config.PrincipalKindHuman},
+	}
+
+	m := NewManager(cfg, nil)
+	t.Cleanup(func() { _ = m.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const session = SessionKey("whatsapp:group-chan")
+
+	if _, err := m.GetToolsFor(ctx, session, "alice", "fake", Limits{}); err != nil {
+		t.Fatalf("GetToolsFor(alice): %v", err)
+	}
+	if _, err := m.GetToolsFor(ctx, session, "alice", "fake", Limits{}); err != nil {
+		t.Fatalf("GetToolsFor(alice, réutilisation): %v", err)
+	}
+	if _, err := m.GetToolsFor(ctx, session, "bob", "fake", Limits{}); err != nil {
+		t.Fatalf("GetToolsFor(bob): %v", err)
+	}
+
+	// Alice et Bob ont chacun leur connexion, réutilisée d'un appel à
+	// l'autre : deux connexions, pas trois.
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("connexions établies = %d, attendu 2 (une par principal surchargé, réutilisées)", got)
+	}
+
+	m.mu.Lock()
+	_, aliceShares := m.sessions[session]["fake"]
+	m.mu.Unlock()
+
+	if aliceShares {
+		t.Error("un principal surchargé ne doit pas occuper la connexion commune de la session")
+	}
+}
+
+// TestManagerWithoutOverrideSharesSessionConnection documente la
+// contrepartie : sans surcharge, le comportement d'origine est conservé, une
+// seule connexion par session, quel que soit le nombre de participants.
+func TestManagerWithoutOverrideSharesSessionConnection(t *testing.T) {
+	httpServer, connections := newFakeMCPServer(t, 0, 0)
+	cfg := newTestConfig("fake", httpServer.URL)
+
+	m := NewManager(cfg, nil)
+	t.Cleanup(func() { _ = m.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const session = SessionKey("whatsapp:group-chan")
+
+	for _, principal := range []string{"alice", "bob", "leo"} {
+		if _, err := m.GetToolsFor(ctx, session, model.PrincipalID(principal), "fake", Limits{}); err != nil {
+			t.Fatalf("GetToolsFor(%s): %v", principal, err)
+		}
+	}
+
+	if got := connections.Load(); got != 1 {
+		t.Fatalf("connexions établies = %d, attendu 1 (aucune surcharge déclarée)", got)
+	}
+}
+
+// TestManagerPrincipalOverrideSendsItsOwnHeaders vérifie que le jeton du
+// principal atteint réellement le serveur, et remplace celui du serveur.
+func TestManagerPrincipalOverrideSendsItsOwnHeaders(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		observed []string
+	)
+
+	inner, _ := newFakeMCPServer(t, 0, 0)
+
+	// Interpose un relais qui capture l'en-tête d'autorisation reçu.
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		observed = append(observed, r.Header.Get("Authorization"))
+		mu.Unlock()
+
+		http.Redirect(w, r, inner.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(proxy.Close)
+
+	cfg := newTestConfig("fake", proxy.URL)
+	cfg.MCPServers["fake"] = config.MCPServer{
+		Transport: "http",
+		URL:       proxy.URL,
+		Headers:   map[string]string{"Authorization": "Bearer jeton-commun"},
+	}
+	cfg.Identities.Principals = []config.Principal{{
+		ID:   "alice",
+		Kind: config.PrincipalKindHuman,
+		MCP: map[string]config.MCPOverride{
+			"fake": {Headers: map[string]string{"Authorization": "Bearer jeton-alice"}},
+		},
+	}}
+
+	m := NewManager(cfg, nil)
+	t.Cleanup(func() { _ = m.Close() })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// La connexion peut échouer (le relais redirige), seul l'en-tête observé
+	// nous intéresse ici.
+	_, _ = m.GetToolsFor(ctx, "session-a", "alice", "fake", Limits{})
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(observed) == 0 {
+		t.Fatal("aucune requête reçue par le serveur")
+	}
+	if observed[0] != "Bearer jeton-alice" {
+		t.Errorf("en-tête d'autorisation reçu = %q, attendu le jeton du principal", observed[0])
 	}
 }
 

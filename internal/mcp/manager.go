@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"sync"
 	"time"
@@ -27,6 +28,7 @@ import (
 	genaihttp "github.com/bornholm/genai/mcp/http"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 )
 
@@ -120,8 +122,36 @@ func (m *Manager) WithMetrics(metrics *observability.Metrics) *Manager {
 // session sessionKey, en créant/réutilisant une connexion dédiée à cette
 // session. Les outils retournés sont enveloppés pour appliquer limits
 // (timeout par appel, troncature du résultat signalée au modèle).
+//
+// Équivaut à GetToolsFor sans principal : la connexion utilise la
+// configuration du serveur telle quelle.
 func (m *Manager) GetTools(ctx context.Context, sessionKey SessionKey, serverName string, limits Limits) ([]llm.Tool, error) {
-	client, err := m.getOrCreateClient(ctx, sessionKey, serverName)
+	return m.GetToolsFor(ctx, sessionKey, "", serverName, limits)
+}
+
+// GetToolsFor retourne les outils du serveur serverName pour la session
+// sessionKey, en appliquant la connexion propre à principalID lorsque la
+// configuration en déclare une (identities.principals[].mcp, PLAN.md Phase 11
+// point 5 : « injecter une identité filtrée »).
+//
+// Isolation : dès qu'un principal dispose de sa propre connexion, la clé de
+// cache inclut son identifiant. Deux personnes d'un même canal de groupe ne
+// partagent donc jamais une connexion authentifiée, ce qui interdit à l'une
+// d'atteindre les ressources de l'autre avec son jeton. En l'absence de
+// surcharge, la clé reste celle de la conversation : une seule connexion
+// partagée, comme avant.
+//
+// principalID vide, ou principal sans surcharge pour ce serveur, redonne le
+// comportement d'origine.
+func (m *Manager) GetToolsFor(ctx context.Context, sessionKey SessionKey, principalID model.PrincipalID, serverName string, limits Limits) ([]llm.Tool, error) {
+	override, hasOverride := m.overrideFor(principalID, serverName)
+
+	cacheKey := sessionKey
+	if hasOverride {
+		cacheKey = SessionKey(string(sessionKey) + "|" + string(principalID))
+	}
+
+	client, err := m.getOrCreateClient(ctx, cacheKey, serverName, override)
 	if err != nil {
 		return nil, err
 	}
@@ -139,9 +169,29 @@ func (m *Manager) GetTools(ctx context.Context, sessionKey SessionKey, serverNam
 	return wrapped, nil
 }
 
+// overrideFor retourne la surcharge de connexion déclarée par principalID
+// pour serverName, s'il en existe une.
+func (m *Manager) overrideFor(principalID model.PrincipalID, serverName string) (config.MCPOverride, bool) {
+	if principalID == "" || m.cfg == nil {
+		return config.MCPOverride{}, false
+	}
+
+	for _, principal := range m.cfg.Identities.Principals {
+		if principal.ID != string(principalID) {
+			continue
+		}
+
+		override, ok := principal.MCP[serverName]
+
+		return override, ok
+	}
+
+	return config.MCPOverride{}, false
+}
+
 // getOrCreateClient retourne le client MCP existant pour (sessionKey,
 // serverName), ou en crée et démarre un nouveau.
-func (m *Manager) getOrCreateClient(ctx context.Context, sessionKey SessionKey, serverName string) (genaimcp.Client, error) {
+func (m *Manager) getOrCreateClient(ctx context.Context, sessionKey SessionKey, serverName string, override config.MCPOverride) (genaimcp.Client, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -155,7 +205,7 @@ func (m *Manager) getOrCreateClient(ctx context.Context, sessionKey SessionKey, 
 		return client, nil
 	}
 
-	client, err := m.buildClient(serverName)
+	client, err := m.buildClient(serverName, override)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +231,9 @@ func (m *Manager) getOrCreateClient(ctx context.Context, sessionKey SessionKey, 
 // actuel (config.MCPServer{Transport, URL, Headers}) : aucun champ n'existe
 // pour une commande à exécuter, un support "stdio" serait donc spéculatif.
 // Toute autre valeur de Transport retourne une erreur claire.
-func (m *Manager) buildClient(serverName string) (genaimcp.Client, error) {
+// override, lorsqu'elle est renseignée, remplace l'URL et complète les
+// en-têtes du serveur avec ceux du principal courant.
+func (m *Manager) buildClient(serverName string, override config.MCPOverride) (genaimcp.Client, error) {
 	serverCfg, ok := m.cfg.MCPServers[serverName]
 	if !ok {
 		return nil, fmt.Errorf("mcp: serveur %q introuvable dans la configuration (mcp_servers)", serverName)
@@ -189,14 +241,25 @@ func (m *Manager) buildClient(serverName string) (genaimcp.Client, error) {
 
 	switch serverCfg.Transport {
 	case "http":
+		url := serverCfg.URL
+		if override.URL != "" {
+			url = override.URL
+		}
+
+		// Les en-têtes du principal l'emportent sur ceux du serveur, ce qui
+		// permet de ne surcharger que l'autorisation sans réécrire le reste.
+		headers := make(map[string]string, len(serverCfg.Headers)+len(override.Headers))
+		maps.Copy(headers, serverCfg.Headers)
+		maps.Copy(headers, override.Headers)
+
 		httpClient := &http.Client{
 			Transport: &headerRoundTripper{
-				headers:   serverCfg.Headers,
+				headers:   headers,
 				transport: http.DefaultTransport,
 			},
 		}
 
-		return genaihttp.NewClient(serverCfg.URL, genaihttp.WithHTTPClient(httpClient)), nil
+		return genaihttp.NewClient(url, genaihttp.WithHTTPClient(httpClient)), nil
 	default:
 		return nil, fmt.Errorf("mcp: transport %q non supporté pour le serveur %q (seul \"http\" est représentable par la configuration actuelle)", serverCfg.Transport, serverName)
 	}

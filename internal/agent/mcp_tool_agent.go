@@ -108,7 +108,10 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 
 	var tools []llm.Tool
 	for _, serverName := range a.mcpServerNames {
-		serverTools, err := a.mcpManager.GetTools(ctx, sessionKey, serverName, a.mcpLimits)
+		// L'identité vient de l'application, jamais du modèle : elle
+		// sélectionne la connexion propre au principal lorsque la
+		// configuration en déclare une (identities.principals[].mcp).
+		serverTools, err := a.mcpManager.GetToolsFor(ctx, sessionKey, req.Identity.PrincipalID, serverName, a.mcpLimits)
 		if err != nil {
 			return Result{}, fmt.Errorf("agent: récupération des outils du serveur mcp %q: %w", serverName, err)
 		}
