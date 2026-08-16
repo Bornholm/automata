@@ -9,6 +9,7 @@ import (
 	"github.com/bornholm/genai/llm"
 
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/media"
 )
 
 // proposalCollector accumule les delegation.ProposedAction produites par
@@ -55,6 +56,45 @@ func (c *proposalCollector) take() []delegation.ProposedAction {
 	return c.proposals
 }
 
+// mediaCollector accumule les médias produits par les spécialistes délégués
+// durant un tour, pour les joindre à la réponse envoyée à l'utilisateur.
+//
+// Il double proposalCollector plutôt que de l'étendre : une action proposée
+// et un média produit n'ont ni le même cycle de vie (l'une attend une
+// confirmation, l'autre part immédiatement) ni le même destinataire.
+// Thread-safe pour la même raison que proposalCollector.
+type mediaCollector struct {
+	mu     sync.Mutex
+	medias []media.Media
+}
+
+func newMediaCollector() *mediaCollector {
+	return &mediaCollector{}
+}
+
+// add ajoute medias aux médias accumulés. Sûr sur un récepteur nil.
+func (c *mediaCollector) add(medias ...media.Media) {
+	if c == nil || len(medias) == 0 {
+		return
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.medias = append(c.medias, medias...)
+}
+
+// take retourne les médias accumulés. Sûr sur un récepteur nil.
+func (c *mediaCollector) take() []media.Media {
+	if c == nil {
+		return nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.medias
+}
+
 // toolLoopResult est le résultat d'un appel à runToolLoop : le texte de la
 // réponse finale du modèle (sans tool-call), et le contenu textuel de
 // chaque résultat d'outil exécuté durant le tour, dans l'ordre d'exécution
@@ -63,6 +103,10 @@ func (c *proposalCollector) take() []delegation.ProposedAction {
 type toolLoopResult struct {
 	Text        string
 	ToolResults []string
+	// Attachments porte les médias produits par les outils durant le tour
+	// (un serveur MCP peut joindre une image ou un document à son résultat),
+	// dans l'ordre d'exécution, afin d'être renvoyés à l'utilisateur.
+	Attachments []media.Media
 }
 
 // runToolLoop factorise la mécanique "appeler le LLM avec des tools ->
@@ -95,6 +139,7 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 
 	var (
 		toolResults []string
+		attachments []media.Media
 		usedBytes   int64
 	)
 
@@ -115,7 +160,7 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 				return toolLoopResult{}, ErrEmptyReply
 			}
 
-			return toolLoopResult{Text: text, ToolResults: toolResults}, nil
+			return toolLoopResult{Text: text, ToolResults: toolResults, Attachments: attachments}, nil
 		}
 
 		messages = append(messages, llm.NewToolCallsMessage(toolCalls...))
@@ -141,6 +186,15 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 				toolMessage = llm.NewToolMessage(tc.ID(), llm.NewToolResult(content))
 			}
 			usedBytes = used
+
+			// Les médias joints au résultat d'un outil sont conservés pour
+			// être renvoyés à l'utilisateur, en plus d'être transmis au
+			// modèle par le message d'outil lui-même.
+			for _, attachment := range toolMessage.Attachments() {
+				if m, ok := media.FromLLM(attachment, ""); ok {
+					attachments = append(attachments, m)
+				}
+			}
 
 			messages = append(messages, toolMessage)
 			toolResults = append(toolResults, toolMessage.Content())

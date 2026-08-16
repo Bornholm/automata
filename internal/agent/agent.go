@@ -13,6 +13,7 @@ import (
 	"github.com/bornholm/genai/llm"
 
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
 )
 
@@ -21,6 +22,11 @@ import (
 type Message struct {
 	Role    string
 	Content string
+	// Attachments porte les pièces jointes de ce tour, rejouées depuis la
+	// persistance. Toujours vide pour un tour "assistant" : les fournisseurs
+	// refusent les pièces jointes sur un message assistant ou system, seuls
+	// les messages "user" et les résultats d'outils peuvent en porter.
+	Attachments []media.Media
 }
 
 // Request décrit une exécution demandée à un Agent.
@@ -32,6 +38,11 @@ type Request struct {
 	History []Message
 	// Input est le message courant de l'utilisateur.
 	Input string
+	// Attachments porte les pièces jointes du message courant (images,
+	// documents), déjà filtrées et bornées par internal/media selon la
+	// configuration. Les notes vocales n'y figurent jamais : elles sont
+	// transcrites vers Input.
+	Attachments []media.Media
 }
 
 // Result est le résultat d'une exécution d'Agent.
@@ -45,9 +56,12 @@ type Result struct {
 	// (PLAN.md §10, Phase 15), collectées par OrchestratorAgent depuis les
 	// outils qui en produisent (voir MemoryTools.newForgetMemoryTool).
 	// internal/conversation.Handler les transforme en persistence.ActionPlan
-	// via internal/action.Engine.CreatePlan. Vide pour GenAIAgent et
-	// MCPToolAgent, qui n'en produisent aucune.
+	// via internal/action.Engine.CreatePlan. Vide pour GenAIAgent.
 	ProposedActions []delegation.ProposedAction
+	// Attachments porte les médias produits durant le tour (résultats
+	// d'outils MCP : graphique, capture, document), à joindre à la réponse
+	// envoyée à l'utilisateur.
+	Attachments []media.Media
 }
 
 // Agent exécute une conversation applicative et produit une réponse.
@@ -170,6 +184,9 @@ func (a *GenAIAgent) buildMessages(req Request) []llm.Message {
 // system prompt statique suivi du bloc de contexte d'exécution en premier
 // message, puis l'historique dans l'ordre chronologique, puis le message
 // utilisateur courant (PLAN.md §7.2, §7.3).
+// Les pièces jointes sont portées par les seuls messages "user" : les
+// fournisseurs refusent la requête entière si un message system ou assistant
+// en contient (voir la validation par provider dans genai).
 func buildChatMessages(systemPrompt, agentName, orgDisplayName string, req Request) []llm.Message {
 	messages := make([]llm.Message, 0, len(req.History)+2)
 
@@ -177,10 +194,23 @@ func buildChatMessages(systemPrompt, agentName, orgDisplayName string, req Reque
 	messages = append(messages, llm.NewMessage(llm.RoleSystem, systemMessage))
 
 	for _, m := range req.History {
-		messages = append(messages, llm.NewMessage(genaiRole(m.Role), m.Content))
+		role := genaiRole(m.Role)
+
+		attachments, _ := media.ToLLMAll(m.Attachments)
+		if role != llm.RoleUser || len(attachments) == 0 {
+			messages = append(messages, llm.NewMessage(role, m.Content))
+			continue
+		}
+
+		messages = append(messages, llm.NewMessageWithAttachments(role, m.Content, attachments...))
 	}
 
-	messages = append(messages, llm.NewMessage(llm.RoleUser, req.Input))
+	attachments, _ := media.ToLLMAll(req.Attachments)
+	if len(attachments) == 0 {
+		messages = append(messages, llm.NewMessage(llm.RoleUser, req.Input))
+	} else {
+		messages = append(messages, llm.NewMessageWithAttachments(llm.RoleUser, req.Input, attachments...))
+	}
 
 	return messages
 }

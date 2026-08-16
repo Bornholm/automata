@@ -18,6 +18,7 @@ import (
 	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/audio"
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
@@ -42,15 +43,19 @@ const persistedVoiceNotePlaceholder = "[Message vocal transcrit pour traitement]
 // l'historique, exécution de l'agent et persistance du tour de
 // conversation.
 type Handler struct {
-	db            *persistence.DB
-	conversations *persistence.ConversationRepository
-	messages      *persistence.MessageRepository
-	agent         agent.Agent
-	actions       *action.Engine
-	historyLimit  int
-	now           func() time.Time
-	audioCfg      audio.Config
-	transcriber   audio.Transcriber
+	db                 *persistence.DB
+	conversations      *persistence.ConversationRepository
+	messages           *persistence.MessageRepository
+	messageAttachments *persistence.MessageAttachmentRepository
+	agent              agent.Agent
+	actions            *action.Engine
+	historyLimit       int
+	now                func() time.Time
+	audioCfg           audio.Config
+	transcriber        audio.Transcriber
+	// attachmentsCfg gouverne les pièces jointes non vocales. Sa valeur zéro
+	// (Enabled: false) écarte toute pièce jointe, en le signalant à l'agent.
+	attachmentsCfg media.Config
 	// persistTranscription reflète cfg.Audio.PersistTranscription : décision
 	// distincte du traitement audio lui-même (audio.Config), portant
 	// uniquement sur ce qui est écrit dans la table messages (PLAN.md §3.4).
@@ -79,6 +84,7 @@ func NewHandler(db *persistence.DB, a agent.Agent, actions *action.Engine, histo
 		db:                   db,
 		conversations:        persistence.NewConversationRepository(),
 		messages:             persistence.NewMessageRepository(),
+		messageAttachments:   persistence.NewMessageAttachmentRepository(),
 		agent:                a,
 		actions:              actions,
 		historyLimit:         historyLimit,
@@ -90,8 +96,18 @@ func NewHandler(db *persistence.DB, a agent.Agent, actions *action.Engine, histo
 	}
 }
 
+// WithAttachments active le traitement des pièces jointes non vocales
+// (images, documents) selon cfg : extraction du message entrant, transmission
+// au modèle, conservation pour le rejeu de l'historique, et renvoi des médias
+// produits. Sans cet appel (comportement par défaut), toute pièce jointe est
+// écartée et signalée à l'agent. Retourne h pour permettre le chaînage.
+func (h *Handler) WithAttachments(cfg media.Config) *Handler {
+	h.attachmentsCfg = cfg
+	return h
+}
+
 // Handle implémente ingress.Handler.
-func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, conv model.Conversation, msg courier.Message) (string, error) {
+func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, conv model.Conversation, msg courier.Message) (string, []media.Media, error) {
 	text, err := courier.GetMessageMainContent(ctx, msg)
 	if err != nil {
 		// Un message composé uniquement d'une pièce jointe (ex. une note
@@ -100,7 +116,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		// traité comme un texte vide pour permettre le repli audio ci-dessous,
 		// pas comme une erreur fatale.
 		if !errors.Is(err, courier.ErrNotFound) {
-			return "", fmt.Errorf("conversation: lecture du contenu du message: %w", err)
+			return "", nil, fmt.Errorf("conversation: lecture du contenu du message: %w", err)
 		}
 		text = ""
 	}
@@ -117,7 +133,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 			transcribed, err := audio.ExtractText(ctx, h.audioCfg, h.transcriber, voiceNote)
 			h.metrics.ObserveTranscriptionLatency(time.Since(transcriptionStart))
 			if err != nil {
-				return "", fmt.Errorf("conversation: transcription de la note vocale: %w", err)
+				return "", nil, fmt.Errorf("conversation: transcription de la note vocale: %w", err)
 			}
 
 			text = transcribed
@@ -129,7 +145,19 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		}
 	}
 
+	// Pièces jointes non vocales du message courant. Celles qui sont écartées
+	// (type refusé, trop volumineuses) ne disparaissent pas en silence : elles
+	// sont annoncées à l'agent, qui peut alors l'expliquer plutôt que de
+	// répondre à côté d'une image qu'il n'a jamais vue.
+	attachments, rejected := media.Extract(ctx, msg, h.attachmentsCfg)
+	if len(rejected) > 0 {
+		text = strings.TrimSpace(text + "\n\n[pièces jointes non transmises : " + strings.Join(rejected, " ; ") + "]")
+		persistedContent = text
+	}
+
 	var history []agent.Message
+
+	messageID := uuid.NewString()
 
 	err = h.db.WithTx(ctx, func(tx *sql.Tx) error {
 		if err := h.ensureConversation(ctx, tx, conv); err != nil {
@@ -140,10 +168,14 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		if err != nil {
 			return err
 		}
-		history = toAgentHistory(records)
 
-		return h.messages.Insert(ctx, tx, persistence.Message{
-			ID:                uuid.NewString(),
+		history, err = h.buildHistory(ctx, tx, records)
+		if err != nil {
+			return err
+		}
+
+		if err := h.messages.Insert(ctx, tx, persistence.Message{
+			ID:                messageID,
 			ConversationID:    conv.ID,
 			ExternalMessageID: string(msg.ID()),
 			PrincipalID:       identity.PrincipalID,
@@ -151,10 +183,14 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 			Content:           persistedContent,
 			ContentKind:       contentKindText,
 			CreatedAt:         h.now().UTC().Format(time.RFC3339),
-		})
+		}); err != nil {
+			return err
+		}
+
+		return h.persistAttachments(ctx, tx, messageID, attachments)
 	})
 	if err != nil {
-		return "", fmt.Errorf("conversation: enregistrement du message entrant: %w", err)
+		return "", nil, fmt.Errorf("conversation: enregistrement du message entrant: %w", err)
 	}
 
 	// PLAN.md §10.4 : "confirmer"/"annuler" sont des commandes
@@ -167,14 +203,14 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		if cmd, ok := action.ParseCommand(text); ok {
 			reply, err := h.actions.HandleCommand(ctx, identity, conv, cmd)
 			if err != nil {
-				return "", fmt.Errorf("conversation: traitement de la commande de confirmation: %w", err)
+				return "", nil, fmt.Errorf("conversation: traitement de la commande de confirmation: %w", err)
 			}
 
 			if err := h.persistAssistantReply(ctx, identity, conv, reply); err != nil {
-				return "", err
+				return "", nil, err
 			}
 
-			return reply, nil
+			return reply, nil, nil
 		}
 	}
 
@@ -184,10 +220,11 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		Conversation: conv,
 		History:      history,
 		Input:        text,
+		Attachments:  attachments,
 	})
 	h.metrics.ObserveAgentLatency(time.Since(agentStart))
 	if err != nil {
-		return "", fmt.Errorf("conversation: exécution de l'agent: %w", err)
+		return "", nil, fmt.Errorf("conversation: exécution de l'agent: %w", err)
 	}
 
 	reply := result.Reply
@@ -195,16 +232,103 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 	if h.actions != nil && len(result.ProposedActions) > 0 {
 		_, planText, err := h.actions.CreatePlan(ctx, identity, result.ProposedActions)
 		if err != nil {
-			return "", fmt.Errorf("conversation: création du plan d'actions: %w", err)
+			return "", nil, fmt.Errorf("conversation: création du plan d'actions: %w", err)
 		}
 		reply = strings.TrimSpace(reply + "\n\n" + planText)
 	}
 
 	if err := h.persistAssistantReply(ctx, identity, conv, reply); err != nil {
-		return "", err
+		return "", nil, err
 	}
 
-	return reply, nil
+	return reply, h.boundReplyAttachments(result.Attachments), nil
+}
+
+// boundReplyAttachments borne le nombre de médias joints à une réponse
+// (attachments.max_reply) : un outil prolixe ne doit pas inonder la
+// conversation de l'utilisateur. Une limite <= 0 laisse passer tout ce qui a
+// été produit.
+func (h *Handler) boundReplyAttachments(medias []media.Media) []media.Media {
+	if len(medias) == 0 || h.attachmentsCfg.MaxReply <= 0 || len(medias) <= h.attachmentsCfg.MaxReply {
+		return medias
+	}
+
+	return medias[:h.attachmentsCfg.MaxReply]
+}
+
+// persistAttachments enregistre les pièces jointes du message messageID, dans
+// leur ordre de réception, afin de pouvoir être rejouées dans l'historique.
+func (h *Handler) persistAttachments(ctx context.Context, tx *sql.Tx, messageID string, medias []media.Media) error {
+	now := h.now().UTC().Format(time.RFC3339)
+
+	for i, m := range medias {
+		if err := h.messageAttachments.Insert(ctx, tx, persistence.MessageAttachment{
+			ID:        uuid.NewString(),
+			MessageID: messageID,
+			Position:  i,
+			Kind:      string(m.Kind),
+			MimeType:  m.MimeType,
+			Filename:  m.Filename,
+			Caption:   m.Caption,
+			Data:      m.Data,
+			CreatedAt: now,
+		}); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// buildHistory convertit les messages persistés en historique d'agent, en y
+// rejoignant les pièces jointes conservées.
+//
+// Le nombre de pièces jointes rejouées est borné par
+// attachments.max_history, les plus récentes d'abord : sans cette borne, une
+// conversation riche en images ferait croître indéfiniment la taille — et le
+// coût — de chaque requête au modèle.
+func (h *Handler) buildHistory(ctx context.Context, tx *sql.Tx, records []persistence.Message) ([]agent.Message, error) {
+	history := toAgentHistory(records)
+
+	if h.attachmentsCfg.MaxHistory <= 0 || len(records) == 0 {
+		return history, nil
+	}
+
+	messageIDs := make([]string, 0, len(records))
+	for _, m := range records {
+		// Les messages de l'assistant ne portent jamais de pièce jointe
+		// persistée, inutile de les interroger.
+		if m.Role == "user" {
+			messageIDs = append(messageIDs, m.ID)
+		}
+	}
+
+	byMessage, err := h.messageAttachments.ListByMessageIDs(ctx, tx, messageIDs, h.attachmentsCfg.MaxHistory)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, record := range records {
+		stored := byMessage[record.ID]
+		if len(stored) == 0 {
+			continue
+		}
+
+		medias := make([]media.Media, 0, len(stored))
+		for _, a := range stored {
+			medias = append(medias, media.Media{
+				Kind:     media.Kind(a.Kind),
+				MimeType: a.MimeType,
+				Filename: a.Filename,
+				Caption:  a.Caption,
+				Data:     a.Data,
+			})
+		}
+
+		history[i].Attachments = medias
+	}
+
+	return history, nil
 }
 
 // persistAssistantReply enregistre reply comme message "assistant" de la

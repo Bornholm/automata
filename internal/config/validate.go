@@ -35,6 +35,7 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateAgents(cfg)...)
 	errs = append(errs, validateMCPServers(cfg)...)
 	errs = append(errs, validateAudio(cfg)...)
+	errs = append(errs, validateAttachments(cfg)...)
 	errs = append(errs, validateIdentities(cfg)...)
 	errs = append(errs, validateOrigins(cfg)...)
 	errs = append(errs, validateChannels(cfg)...)
@@ -262,6 +263,51 @@ func validateAudio(cfg *Config) []error {
 
 	if _, ok := cfg.LLMClients[cfg.Audio.TranscriptionClient]; !ok {
 		errs = append(errs, fmt.Errorf("audio.transcription_client: client llm inconnu %q", cfg.Audio.TranscriptionClient))
+	}
+
+	return errs
+}
+
+// validateAttachments vérifie que les limites de pièces jointes sont
+// exploitables. Aucune valeur par défaut n'est inventée : une section
+// activée mais incomplète est une erreur de configuration, pas une invitation
+// à deviner une taille ou une liste de types.
+func validateAttachments(cfg *Config) []error {
+	if !cfg.Attachments.Enabled {
+		return nil
+	}
+
+	var errs []error
+
+	if cfg.Attachments.MaxSize <= 0 {
+		errs = append(errs, fmt.Errorf("attachments.max_size: doit être strictement positif lorsque attachments.enabled est vrai (valeur actuelle: %d)", cfg.Attachments.MaxSize))
+	}
+
+	if cfg.Attachments.MaxCount <= 0 {
+		errs = append(errs, fmt.Errorf("attachments.max_count: doit être strictement positif lorsque attachments.enabled est vrai (valeur actuelle: %d)", cfg.Attachments.MaxCount))
+	}
+
+	if len(cfg.Attachments.AcceptedTypes) == 0 {
+		errs = append(errs, fmt.Errorf("attachments.accepted_types: au moins un type mime est requis lorsque attachments.enabled est vrai"))
+	}
+
+	for i, mimeType := range cfg.Attachments.AcceptedTypes {
+		if strings.TrimSpace(mimeType) == "" {
+			errs = append(errs, fmt.Errorf("attachments.accepted_types[%d]: type mime vide", i))
+			continue
+		}
+
+		if !strings.Contains(mimeType, "/") {
+			errs = append(errs, fmt.Errorf("attachments.accepted_types[%d]: %q n'est pas un type mime valide (forme attendue: type/sous-type)", i, mimeType))
+		}
+	}
+
+	if cfg.Attachments.MaxHistory < 0 {
+		errs = append(errs, fmt.Errorf("attachments.max_history: ne peut pas être négatif (valeur actuelle: %d)", cfg.Attachments.MaxHistory))
+	}
+
+	if cfg.Attachments.MaxReply < 0 {
+		errs = append(errs, fmt.Errorf("attachments.max_reply: ne peut pas être négatif (valeur actuelle: %d)", cfg.Attachments.MaxReply))
 	}
 
 	return errs

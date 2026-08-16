@@ -19,6 +19,7 @@ import (
 
 	"github.com/bornholm/automata/internal/apperr"
 	"github.com/bornholm/automata/internal/identity"
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
@@ -50,16 +51,19 @@ const handleTimeout = 5 * time.Minute
 const sendTimeout = 30 * time.Second
 
 // Handler traite un message déjà résolu et autorisé, et retourne le contenu
-// textuel de la réponse à envoyer. Une réponse vide n'entraîne aucun envoi.
+// de la réponse à envoyer : son texte, et les éventuels médias à y joindre
+// (image produite par un outil, document généré).
+//
+// Une réponse entièrement vide — ni texte, ni média — n'entraîne aucun envoi.
 type Handler interface {
-	Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, error)
+	Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error)
 }
 
 // HandlerFunc adapte une fonction en Handler.
-type HandlerFunc func(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, error)
+type HandlerFunc func(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error)
 
 // Handle implémente Handler.
-func (f HandlerFunc) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, error) {
+func (f HandlerFunc) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error) {
 	return f(ctx, identity, conversation, message)
 }
 
@@ -71,8 +75,8 @@ type FixedReplyHandler struct {
 }
 
 // Handle implémente Handler.
-func (h FixedReplyHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, error) {
-	return h.Reply, nil
+func (h FixedReplyHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error) {
+	return h.Reply, nil, nil
 }
 
 var _ Handler = FixedReplyHandler{}
@@ -211,7 +215,7 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 	}
 
 	handleCtx, cancelHandle := context.WithTimeout(ctx, handleTimeout)
-	reply, err := p.handler.Handle(handleCtx, execIdentity, conversation, msg)
+	reply, attachments, err := p.handler.Handle(handleCtx, execIdentity, conversation, msg)
 	cancelHandle()
 	if err != nil {
 		p.logger.ErrorContext(ctx, "ingress: échec du traitement du message", append(logCtx, "error", err)...)
@@ -219,12 +223,17 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 		return
 	}
 
-	if reply != "" {
+	if reply != "" || len(attachments) > 0 {
+		options := []courier.BaseMessageOptionFunc{courier.WithMessageMainPart(reply)}
+		for _, m := range attachments {
+			options = append(options, courier.WithMessagePart(media.ToCourier(m)))
+		}
+
 		outgoing := courier.NewMessage(
 			courier.RandomMessageID(),
 			msg.Channel(),
 			self,
-			courier.WithMessageMainPart(reply),
+			options...,
 		)
 
 		sendCtx, cancelSend := context.WithTimeout(ctx, sendTimeout)

@@ -33,17 +33,27 @@ func NewAgentSpecialist(agentID string, a Agent) *AgentSpecialist {
 // reste vide) : c'est la garantie d'isolation exigée par PLAN.md §6.3, "le
 // sous-agent ne doit pas recevoir automatiquement l'intégralité de
 // l'historique".
+// Les pièces jointes du tour courant font exception à cette limitation et
+// sont transmises telles quelles : un modèle ne peut pas recopier une image
+// dans req.RelevantInput, donc sans cela un spécialiste ne pourrait jamais en
+// voir une (voir delegation.Request.Attachments).
 func (s *AgentSpecialist) Execute(ctx context.Context, req delegation.Request) (delegation.Result, error) {
 	result, err := s.agent.Execute(ctx, Request{
-		Identity: req.Identity,
-		Input:    buildDelegationInput(req),
+		Identity:    req.Identity,
+		Input:       buildDelegationInput(req),
+		Attachments: req.Attachments,
 		// History volontairement omis : voir le commentaire de la méthode.
 	})
 	if err != nil {
 		return delegation.Result{}, fmt.Errorf("agent: délégation vers %q: %w", s.agentID, err)
 	}
 
-	return delegation.Result{Summary: result.Reply, References: result.References, ProposedActions: result.ProposedActions}, nil
+	return delegation.Result{
+		Summary:         result.Reply,
+		References:      result.References,
+		ProposedActions: result.ProposedActions,
+		Attachments:     result.Attachments,
+	}, nil
 }
 
 // buildDelegationInput compose le message utilisateur envoyé au spécialiste

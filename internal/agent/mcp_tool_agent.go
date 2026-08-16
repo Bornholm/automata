@@ -146,6 +146,7 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 		Reply:           loopResult.Text,
 		References:      extractReferences(loopResult.ToolResults),
 		ProposedActions: collector.take(),
+		Attachments:     loopResult.Attachments,
 	}, nil
 }
 

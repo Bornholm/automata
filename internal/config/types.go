@@ -66,6 +66,7 @@ type Config struct {
 	Storage       Storage              `yaml:"storage"`
 	Courier       Courier              `yaml:"courier"`
 	Audio         Audio                `yaml:"audio"`
+	Attachments   Attachments          `yaml:"attachments"`
 	LLMClients    map[string]LLMClient `yaml:"llm_clients"`
 	Agents        map[string]Agent     `yaml:"agents"`
 	MCPServers    map[string]MCPServer `yaml:"mcp_servers"`
@@ -148,6 +149,33 @@ type Audio struct {
 	Timeout              Duration `yaml:"timeout"`
 	PersistAudio         bool     `yaml:"persist_audio"`
 	PersistTranscription bool     `yaml:"persist_transcription"`
+}
+
+// Attachments décrit le traitement des pièces jointes non vocales (images,
+// documents) reçues et renvoyées : les notes vocales relèvent d'Audio.
+//
+// Désactivé par défaut : sans section explicite, une pièce jointe est écartée
+// et signalée à l'agent, jamais transmise au modèle à son insu.
+type Attachments struct {
+	Enabled bool `yaml:"enabled"`
+	// MaxSize borne la taille d'UNE pièce jointe reçue.
+	MaxSize ByteSize `yaml:"max_size"`
+	// MaxCount borne le nombre de pièces jointes retenues par message.
+	MaxCount int `yaml:"max_count"`
+	// AcceptedTypes énumère les types MIME transmis au modèle. Ce filtre
+	// protège le tour entier : un fournisseur refuse la requête complète
+	// lorsqu'une pièce jointe ne lui convient pas, laissant l'utilisateur
+	// sans réponse. Il doit donc rester aligné sur ce que le modèle visé
+	// accepte réellement.
+	AcceptedTypes []string `yaml:"accepted_types"`
+	// MaxHistory borne le nombre de pièces jointes rejouées depuis
+	// l'historique à chaque tour, les plus récentes d'abord. Sans cette
+	// borne, une conversation riche en images ferait croître indéfiniment la
+	// taille (et le coût) de chaque requête.
+	MaxHistory int `yaml:"max_history"`
+	// MaxReply borne le nombre de pièces jointes renvoyées à l'utilisateur
+	// en une réponse, pour qu'un outil prolixe ne l'inonde pas.
+	MaxReply int `yaml:"max_reply"`
 }
 
 // LLMClient décrit un client LLM configuré.

@@ -15,6 +15,7 @@ package delegation
 import (
 	"context"
 
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
 )
 
@@ -39,6 +40,20 @@ type Request struct {
 	// Identity est l'identité d'exécution résolue par l'application (portée,
 	// principal, canal) : jamais décidée par le modèle.
 	Identity model.ExecutionIdentity
+	// Attachments porte les pièces jointes du message courant.
+	//
+	// Elles accompagnent TOUTE délégation, contrairement au reste du
+	// contexte que l'orchestrateur choisit de transmettre (Goal,
+	// RelevantInput) : un modèle ne peut pas recopier une image dans une
+	// chaîne de caractères, donc s'il ne la transmettait pas lui-même, le
+	// spécialiste ne pourrait jamais la voir. Sans cela, « regarde cette
+	// affiche et ajoute l'événement à l'agenda » serait irréalisable.
+	//
+	// Cela ne contredit pas PLAN.md §6.3 (« le sous-agent ne reçoit pas
+	// automatiquement l'intégralité de l'historique ») : seules les pièces
+	// jointes du tour courant sont transmises, jamais celles des tours
+	// précédents.
+	Attachments []media.Media
 }
 
 // ProposedAction décrit une action que le spécialiste propose mais n'exécute
@@ -96,6 +111,11 @@ type Result struct {
 	// (titres) pour cette phase ; sera enrichi (Phase 10+) quand la mémoire
 	// et les MCP réels produiront des références structurées.
 	References []string
+	// Attachments porte les médias produits par le spécialiste durant la
+	// délégation (typiquement le résultat d'un outil MCP : graphique,
+	// capture, document). L'orchestrateur les agrège pour les joindre à la
+	// réponse envoyée à l'utilisateur.
+	Attachments []media.Media
 }
 
 // Specialist exécute une délégation. Une implémentation typique adapte un

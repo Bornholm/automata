@@ -1,6 +1,7 @@
 package ingress_test
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/ingress"
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
 )
@@ -74,12 +76,12 @@ type countingHandler struct {
 	calls int
 }
 
-func (h *countingHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, error) {
+func (h *countingHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error) {
 	h.mu.Lock()
 	h.calls++
 	h.mu.Unlock()
 
-	return h.reply, nil
+	return h.reply, nil, nil
 }
 
 func (h *countingHandler) Calls() int {
@@ -241,6 +243,93 @@ func TestPipeline_PrivateAuthorized(t *testing.T) {
 
 	if content != "Message bien reçu." {
 		t.Errorf("contenu de la réponse = %q, attendu %q", content, "Message bien reçu.")
+	}
+}
+
+// mediaReplyHandler répond avec un texte ET une pièce jointe, comme le fait
+// un agent ayant produit une image via un outil.
+type mediaReplyHandler struct {
+	reply       string
+	attachments []media.Media
+}
+
+func (h *mediaReplyHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error) {
+	return h.reply, h.attachments, nil
+}
+
+// TestPipeline_ReplyWithAttachment vérifie le dernier maillon de la chaîne
+// multimodale : le média produit par l'agent est réellement joint au message
+// envoyé sur le canal, et non perdu au passage du transport.
+func TestPipeline_ReplyWithAttachment(t *testing.T) {
+	data := []byte("octets du graphique")
+
+	handler := &mediaReplyHandler{
+		reply: "Voici le graphique.",
+		attachments: []media.Media{{
+			Kind:     media.KindImage,
+			MimeType: "image/png",
+			Filename: "graphique.png",
+			Data:     data,
+		}},
+	}
+
+	pipeline, provider := newTestPipeline(t, handler)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	ctx := context.Background()
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannelRef("private-chan"),
+		courier.NewUser("alice-ext", "Alice"),
+		courier.WithMessageMainPart("fais un graphique"),
+	)
+
+	if err := provider.Deliver(ctx, msg); err != nil {
+		t.Fatalf("provider.Deliver: %v", err)
+	}
+
+	if !waitUntil(t, 2*time.Second, func() bool { return len(provider.Sent()) == 1 }) {
+		t.Fatalf("aucune réponse envoyée, sent=%d", len(provider.Sent()))
+	}
+
+	sent := provider.Sent()[0]
+
+	content, err := courier.GetMessageMainContent(ctx, sent)
+	if err != nil {
+		t.Fatalf("GetMessageMainContent: %v", err)
+	}
+	if content != "Voici le graphique." {
+		t.Errorf("texte de la réponse = %q", content)
+	}
+
+	attachments := courier.Attachments(sent)
+	if len(attachments) != 1 {
+		t.Fatalf("pièces jointes envoyées: got %d, expected 1", len(attachments))
+	}
+
+	if got := attachments[0].Filename(); got != "graphique.png" {
+		t.Errorf("filename = %q, attendu graphique.png", got)
+	}
+	if got := attachments[0].ContentType(); got != "image/png" {
+		t.Errorf("content_type = %q, attendu image/png", got)
+	}
+
+	reader, err := attachments[0].Reader(ctx)
+	if err != nil {
+		t.Fatalf("Reader: %v", err)
+	}
+	defer func() { _ = reader.Close() }()
+
+	got, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("lecture de la pièce jointe: %v", err)
+	}
+	if !bytes.Equal(got, data) {
+		t.Errorf("données de la pièce jointe altérées: %q", got)
 	}
 }
 
@@ -424,12 +513,12 @@ type deadlineCapturingHandler struct {
 	deadline    time.Time
 }
 
-func (h *deadlineCapturingHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, error) {
+func (h *deadlineCapturingHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error) {
 	h.mu.Lock()
 	h.deadline, h.hadDeadline = ctx.Deadline()
 	h.mu.Unlock()
 
-	return h.reply, nil
+	return h.reply, nil, nil
 }
 
 func (h *deadlineCapturingHandler) result() (bool, time.Time) {

@@ -57,6 +57,24 @@ type Message struct {
 	CreatedAt         string
 }
 
+// MessageAttachment est le DTO de persistance de la table
+// message_attachments : une pièce jointe conservée pour être rejouée dans
+// l'historique remis au modèle.
+//
+// Ne porte jamais d'audio : les notes vocales sont transcrites sans être
+// conservées (PLAN.md §3.4).
+type MessageAttachment struct {
+	ID        string
+	MessageID string
+	Position  int
+	Kind      string
+	MimeType  string
+	Filename  string
+	Caption   string
+	Data      []byte
+	CreatedAt string
+}
+
 // ProcessedMessage est le DTO de persistance de la table processed_messages.
 type ProcessedMessage struct {
 	Provider          string

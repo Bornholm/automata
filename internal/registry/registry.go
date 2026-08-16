@@ -28,6 +28,7 @@ import (
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/ingress"
 	"github.com/bornholm/automata/internal/mcp"
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
@@ -252,5 +253,15 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *
 		transcriber = audio.NewGenAITranscriber(transcriptionClient)
 	}
 
-	return conversation.NewHandler(db, mainAgent, actionEngine, 0, audioCfg, transcriber, cfg.Audio.PersistTranscription, metrics), agents, nil
+	handler := conversation.NewHandler(db, mainAgent, actionEngine, 0, audioCfg, transcriber, cfg.Audio.PersistTranscription, metrics).
+		WithAttachments(media.Config{
+			Enabled:       cfg.Attachments.Enabled,
+			MaxSize:       int64(cfg.Attachments.MaxSize.Bytes()),
+			MaxCount:      cfg.Attachments.MaxCount,
+			AcceptedTypes: cfg.Attachments.AcceptedTypes,
+			MaxHistory:    cfg.Attachments.MaxHistory,
+			MaxReply:      cfg.Attachments.MaxReply,
+		})
+
+	return handler, agents, nil
 }

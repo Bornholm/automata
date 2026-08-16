@@ -108,7 +108,7 @@ func TestHandler_VoiceNote_NotPersistedByDefault(t *testing.T) {
 
 	msg := voiceNoteMessage("alice", []byte("faux octets audio"))
 
-	reply, err := h.Handle(context.Background(), identity, conv, msg)
+	reply, _, err := h.Handle(context.Background(), identity, conv, msg)
 	if err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestHandler_VoiceNote_PersistedWhenExplicitlyEnabled(t *testing.T) {
 
 	msg := voiceNoteMessage("alice", []byte("faux octets audio"))
 
-	if _, err := h.Handle(context.Background(), identity, conv, msg); err != nil {
+	if _, _, err := h.Handle(context.Background(), identity, conv, msg); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
 
@@ -175,7 +175,7 @@ func TestHandler_VoiceNote_UnsupportedFormat(t *testing.T) {
 
 	msg := voiceNoteMessage("alice", []byte("faux octets audio"))
 
-	_, err := h.Handle(context.Background(), identity, conv, msg)
+	_, _, err := h.Handle(context.Background(), identity, conv, msg)
 	if !errors.Is(err, audio.ErrUnsupportedFormat) {
 		t.Fatalf("erreur attendue ErrUnsupportedFormat, obtenu %v", err)
 	}
@@ -198,7 +198,7 @@ func TestHandler_VoiceNote_TooLarge(t *testing.T) {
 
 	msg := voiceNoteMessage("alice", []byte("beaucoup plus de 4 octets"))
 
-	_, err := h.Handle(context.Background(), identity, conv, msg)
+	_, _, err := h.Handle(context.Background(), identity, conv, msg)
 	if !errors.Is(err, audio.ErrTooLarge) {
 		t.Fatalf("erreur attendue ErrTooLarge, obtenu %v", err)
 	}
@@ -224,7 +224,7 @@ func TestHandler_VoiceNote_Timeout(t *testing.T) {
 
 	msg := voiceNoteMessageWithOpener("alice", blockingUntilCtxDone)
 
-	_, err := h.Handle(context.Background(), identity, conv, msg)
+	_, _, err := h.Handle(context.Background(), identity, conv, msg)
 	if err == nil {
 		t.Fatal("erreur attendue (timeout)")
 	}
@@ -250,7 +250,7 @@ func TestHandler_VoiceNote_EmptyTranscription(t *testing.T) {
 
 	msg := voiceNoteMessage("alice", []byte("faux octets audio"))
 
-	_, err := h.Handle(context.Background(), identity, conv, msg)
+	_, _, err := h.Handle(context.Background(), identity, conv, msg)
 	if !errors.Is(err, audio.ErrEmptyTranscription) {
 		t.Fatalf("erreur attendue ErrEmptyTranscription, obtenu %v", err)
 	}
@@ -276,7 +276,7 @@ func TestHandler_VoiceNote_Cancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	_, err := h.Handle(ctx, identity, conv, msg)
+	_, _, err := h.Handle(ctx, identity, conv, msg)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("erreur attendue context.Canceled, obtenu %v", err)
 	}

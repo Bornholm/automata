@@ -93,13 +93,13 @@ func TestHandler_HistoryIsolatedPerConversation(t *testing.T) {
 
 	ctx := context.Background()
 
-	if _, err := h.Handle(ctx, identity, convA, testMessage("alice", "premier message A")); err != nil {
+	if _, _, err := h.Handle(ctx, identity, convA, testMessage("alice", "premier message A")); err != nil {
 		t.Fatalf("Handle (A, 1): %v", err)
 	}
-	if _, err := h.Handle(ctx, identity, convB, testMessage("alice", "premier message B")); err != nil {
+	if _, _, err := h.Handle(ctx, identity, convB, testMessage("alice", "premier message B")); err != nil {
 		t.Fatalf("Handle (B, 1): %v", err)
 	}
-	if _, err := h.Handle(ctx, identity, convA, testMessage("alice", "second message A")); err != nil {
+	if _, _, err := h.Handle(ctx, identity, convA, testMessage("alice", "second message A")); err != nil {
 		t.Fatalf("Handle (A, 2): %v", err)
 	}
 
@@ -148,10 +148,10 @@ func TestHandler_GroupAuthorAttribution(t *testing.T) {
 	aliceIdentity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
 	bobIdentity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("bob")}
 
-	if _, err := h.Handle(ctx, aliceIdentity, conv, testMessage("alice-ext", "message d'alice")); err != nil {
+	if _, _, err := h.Handle(ctx, aliceIdentity, conv, testMessage("alice-ext", "message d'alice")); err != nil {
 		t.Fatalf("Handle (alice): %v", err)
 	}
-	if _, err := h.Handle(ctx, bobIdentity, conv, testMessage("bob-ext", "message de bob")); err != nil {
+	if _, _, err := h.Handle(ctx, bobIdentity, conv, testMessage("bob-ext", "message de bob")); err != nil {
 		t.Fatalf("Handle (bob): %v", err)
 	}
 

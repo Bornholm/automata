@@ -10,6 +10,7 @@ import (
 	"github.com/bornholm/genai/llm"
 
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 )
@@ -80,8 +81,9 @@ func NewOrchestratorAgent(client llm.ChatCompletionClient, systemPrompt, agentNa
 // avec MCPToolAgent (Phase 12) : voir son commentaire de package.
 func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, error) {
 	collector := newProposalCollector()
+	mediaCollector := newMediaCollector()
 
-	tools := a.buildDelegationTools(req.Identity, collector)
+	tools := a.buildDelegationTools(req.Identity, req.Attachments, collector, mediaCollector)
 	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity, collector)...)
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
@@ -112,10 +114,21 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 			len(proposals), a.maxActionsPerTurn, a.agentName,
 		)
 
-		return Result{Reply: loopResult.Text + notice}, nil
+		return Result{Reply: loopResult.Text + notice, Attachments: a.collectedMedia(loopResult, mediaCollector)}, nil
 	}
 
-	return Result{Reply: loopResult.Text, ProposedActions: proposals}, nil
+	return Result{
+		Reply:           loopResult.Text,
+		ProposedActions: proposals,
+		Attachments:     a.collectedMedia(loopResult, mediaCollector),
+	}, nil
+}
+
+// collectedMedia agrège les médias produits durant le tour : ceux des outils
+// appelés directement par l'orchestrateur (mémoire) et ceux remontés par les
+// spécialistes délégués.
+func (a *OrchestratorAgent) collectedMedia(loopResult toolLoopResult, mediaCollector *mediaCollector) []media.Media {
+	return append(append([]media.Media(nil), loopResult.Attachments...), mediaCollector.take()...)
 }
 
 // WithMaxActionsPerTurn plafonne le nombre d'actions que ce tour peut
@@ -140,11 +153,11 @@ func (a *OrchestratorAgent) WithMaxToolContextBytes(max int64) *OrchestratorAgen
 // l'identité d'exécution propre à la requête courante : l'identité n'est
 // jamais décidée par le modèle (InvariantRules, règle 1), seulement
 // transmise par l'application.
-func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentity, collector *proposalCollector) []llm.Tool {
+func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentity, attachments []media.Media, collector *proposalCollector, mediaCollector *mediaCollector) []llm.Tool {
 	tools := make([]llm.Tool, 0, len(a.specialists))
 
 	for agentID, specialist := range a.specialists {
-		tools = append(tools, newDelegationTool(agentID, specialist, identity, collector, a.metrics))
+		tools = append(tools, newDelegationTool(agentID, specialist, identity, attachments, collector, mediaCollector, a.metrics))
 	}
 
 	// Ordre déterministe : la map d'origine n'a pas d'ordre garanti, et un
@@ -161,7 +174,7 @@ func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentit
 // comme erreur Go (ce qui ferait échouer tout le tour) : il est transmis au
 // modèle comme contenu de résultat d'outil, en clair, pour qu'il puisse
 // s'adapter (PLAN.md Phase 8, test "spécialiste en erreur").
-func newDelegationTool(agentID string, specialist delegation.Specialist, identity model.ExecutionIdentity, collector *proposalCollector, metrics *observability.Metrics) llm.Tool {
+func newDelegationTool(agentID string, specialist delegation.Specialist, identity model.ExecutionIdentity, attachments []media.Media, collector *proposalCollector, mediaCollector *mediaCollector, metrics *observability.Metrics) llm.Tool {
 	schema := llm.NewJSONSchema().
 		RequiredProperty("goal", "Objectif précis à atteindre par le spécialiste.", "string").
 		Property("relevant_input", "Éléments de contexte explicitement nécessaires à la tâche, formulés en clair. Ne jamais transmettre l'historique complet de la conversation.", "string").
@@ -196,6 +209,10 @@ func newDelegationTool(agentID string, specialist delegation.Specialist, identit
 				RelevantInput: relevantInput,
 				Constraints:   constraints,
 				Identity:      identity,
+				// Les pièces jointes du tour accompagnent toujours la
+				// délégation : le modèle ne peut pas les recopier dans
+				// relevant_input (voir delegation.Request.Attachments).
+				Attachments: attachments,
 			})
 			if err != nil {
 				return llm.NewToolResult(fmt.Sprintf("le spécialiste %q a échoué: %v", agentID, err)), nil
@@ -204,6 +221,11 @@ func newDelegationTool(agentID string, specialist delegation.Specialist, identit
 			for _, pa := range result.ProposedActions {
 				collector.add(pa)
 			}
+
+			// Les médias produits par le spécialiste remontent jusqu'à la
+			// réponse envoyée à l'utilisateur, sans passer par le texte du
+			// résumé (que le modèle réécrit librement).
+			mediaCollector.add(result.Attachments...)
 
 			return llm.NewToolResult(result.Summary), nil
 		},
