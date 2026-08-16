@@ -501,10 +501,13 @@ func (e *Engine) confirmPlan(ctx context.Context, identity model.ExecutionIdenti
 // humain") : le principal enregistré est identity.PrincipalID, c'est-à-dire
 // le confirmateur ACTUEL, jamais plan.CreatedBy (l'auteur, potentiellement
 // technique, de la proposition). No-op silencieux si aucun
-// persistence.AuditEventRepository n'a été fourni via WithAuditEvents. Une
-// erreur d'écriture est journalisée... nulle part ici faute de logger sur
-// Engine : elle est simplement ignorée, l'audit étant best-effort et ne
-// devant jamais faire échouer une confirmation par ailleurs réussie.
+// persistence.AuditEventRepository n'a été fourni via WithAuditEvents.
+//
+// L'écriture est best-effort : elle ne doit jamais faire échouer une
+// confirmation par ailleurs réussie, les actions externes ayant déjà eu lieu
+// à ce stade. Un échec est en revanche journalisé, faute de quoi la
+// disparition d'une trace d'audit — précisément ce qu'on cherche à ne pas
+// perdre — serait totalement silencieuse.
 func (e *Engine) recordPlanConfirmedAudit(ctx context.Context, identity model.ExecutionIdentity, plan persistence.ActionPlan, finalStatus string, outcomes []actionOutcome) {
 	if e.auditEvents == nil {
 		return
@@ -525,6 +528,11 @@ func (e *Engine) recordPlanConfirmedAudit(ctx context.Context, identity model.Ex
 		"failed":    failed,
 	})
 	if err != nil {
+		e.logger.ErrorContext(ctx, "action: échec de la sérialisation des métadonnées d'audit action_plan.confirmed",
+			"action_plan_id", plan.ID,
+			"error", err,
+		)
+
 		return
 	}
 	metadataJSON := string(metadata)
@@ -546,9 +554,18 @@ func (e *Engine) recordPlanConfirmedAudit(ctx context.Context, identity model.Ex
 		CreatedAt:       e.now().UTC().Format(time.RFC3339),
 	}
 
-	_ = e.db.WithTx(ctx, func(tx *sql.Tx) error {
+	if err := e.db.WithTx(ctx, func(tx *sql.Tx) error {
 		return e.auditEvents.Insert(ctx, tx, event)
-	})
+	}); err != nil {
+		e.logger.ErrorContext(ctx, "action: échec de l'enregistrement de l'événement d'audit action_plan.confirmed",
+			"action_plan_id", plan.ID,
+			"org_id", plan.OrgID,
+			"principal_id", identity.PrincipalID,
+			"conversation_id", plan.ConversationID,
+			"outcome", finalStatus,
+			"error", err,
+		)
+	}
 }
 
 // cancelPlan marque ref comme annulé (PLAN.md §10.4). Comme confirmPlan,
@@ -685,10 +702,28 @@ func (e *Engine) executeAction(ctx context.Context, identity model.ExecutionIden
 
 // failAction enregistre l'échec d'une action et retourne l'outcome
 // correspondant.
+//
+// L'échec est aussi journalisé : c'est le seul endroit où une écriture
+// externe confirmée peut échouer silencieusement du point de vue de
+// l'exploitant, le rapport détaillé ne partant qu'à l'utilisateur de la
+// conversation. Seuls des identifiants et un code d'erreur court sont émis —
+// ni arguments d'outil, ni résumé d'action, qui portent des données privées
+// (PLAN.md §14.2).
 func (e *Engine) failAction(ctx context.Context, act persistence.Action, code string, cause error) actionOutcome {
 	completedAt := e.now().UTC().Format(time.RFC3339)
 	errCode := code
 	_ = e.setActionStatus(ctx, act.ID, StatusFailed, nil, &completedAt, &errCode)
+
+	e.logger.ErrorContext(ctx, "action: échec de l'exécution d'une action confirmée",
+		"action_plan_id", act.PlanID,
+		"action_id", act.ID,
+		"agent_id", act.AgentID,
+		"mcp_server", act.MCPServer,
+		"tool_name", act.ToolName,
+		"error_code", code,
+		"error", cause,
+	)
+
 	return actionOutcome{action: act, ok: false, message: cause.Error()}
 }
 

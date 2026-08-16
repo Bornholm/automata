@@ -178,7 +178,11 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 		return
 	}
 
+	// Champs de corrélation communs à tous les logs de ce message (PLAN.md
+	// §14.2). Uniquement des identifiants : jamais le contenu du message, ni
+	// une transcription, ni une pièce jointe.
 	logCtx := []any{
+		"trigger", model.TriggerMessage,
 		"org_id", execIdentity.OrgID,
 		"principal_id", execIdentity.PrincipalID,
 		"conversation_id", execIdentity.ConversationID,

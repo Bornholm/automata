@@ -365,7 +365,14 @@ func (s *Scheduler) anchorTime(ctx context.Context, sched config.Schedule, at ti
 // tickSchedule). Toute erreur est journalisée ; elle n'interrompt jamais le
 // traitement des autres schedules.
 func (s *Scheduler) triggerOccurrence(ctx context.Context, sched config.Schedule, occurrence time.Time) bool {
-	logCtx := []any{"schedule_id", sched.ID, "scheduled_for", occurrence.UTC().Format(time.RFC3339)}
+	logCtx := []any{
+		"trigger", model.TriggerCron,
+		"schedule_id", sched.ID,
+		"scheduled_for", occurrence.UTC().Format(time.RFC3339),
+		"org_id", sched.Execution.OrgID,
+		"principal_id", sched.Execution.PrincipalID,
+		"agent_id", sched.Execution.Agent,
+	}
 
 	if sched.Concurrency.Policy != config.ConcurrencyPolicyAllow {
 		// Défaut (y compris valeur vide) : forbid, voir PLAN.md §11.4.
@@ -529,7 +536,14 @@ func (s *Scheduler) recordOccurrence(ctx context.Context, sched config.Schedule,
 // son résultat, puis décide et effectue la livraison (étape séparée,
 // PLAN.md §11.6).
 func (s *Scheduler) executeAndDeliver(ctx context.Context, sched config.Schedule, runID persistence.ScheduledRunID) {
-	logCtx := []any{"schedule_id", sched.ID, "scheduled_run_id", runID}
+	logCtx := []any{
+		"trigger", model.TriggerCron,
+		"schedule_id", sched.ID,
+		"scheduled_run_id", runID,
+		"org_id", sched.Execution.OrgID,
+		"principal_id", sched.Execution.PrincipalID,
+		"agent_id", sched.Execution.Agent,
+	}
 
 	switch sched.Execution.Actions.Policy {
 	case config.ActionsPolicyReadOnly, config.ActionsPolicyRequireConfirmation:
@@ -546,7 +560,7 @@ func (s *Scheduler) executeAndDeliver(ctx context.Context, sched config.Schedule
 	a, err := s.agents.Get(sched.Execution.Agent)
 	if err != nil {
 		s.failRun(ctx, runID, errCodeAgentNotFound)
-		s.logger.ErrorContext(ctx, "scheduler: agent introuvable", append(logCtx, "agent", sched.Execution.Agent, "error", err)...)
+		s.logger.ErrorContext(ctx, "scheduler: agent introuvable", append(logCtx, "error", err)...)
 		s.deliverIfNeeded(ctx, sched, runID, "", true)
 		return
 	}
@@ -672,6 +686,9 @@ func (s *Scheduler) proposeActionPlan(ctx context.Context, sched config.Schedule
 		s.logger.ErrorContext(ctx, "scheduler: échec de la création du plan d'actions", append(logCtx, "error", err)...)
 		return "", false
 	}
+
+	s.logger.InfoContext(ctx, "scheduler: plan d'actions proposé, en attente de confirmation humaine",
+		append(logCtx, "action_plan_id", plan.ID, "action_count", len(result.ProposedActions))...)
 
 	s.recordPlanProposedAudit(ctx, identity, plan, len(result.ProposedActions), logCtx)
 
