@@ -168,3 +168,81 @@ func TestDispatcher_TickIsIdempotent(t *testing.T) {
 		t.Errorf("messages envoyés après deux ticks = %d, attendu 1 (un rappel sent ne repart jamais)", len(sent))
 	}
 }
+
+func TestDispatcher_RecurringReminderIsRearmed(t *testing.T) {
+	db := testDB(t)
+	provider := memory.NewProvider(memory.WithChannels(courier.NewChannel("chan-alice", courier.ChannelKindDirect, "Alice")))
+	t.Cleanup(func() { _ = provider.Close() })
+
+	// Échu, récurrent chaque mardi 20h Paris. dispatcherTestNow est le lundi
+	// 17 août 2026, 12:00 UTC : la prochaine occurrence est le mardi 18 à
+	// 20:00+02:00, soit 18:00Z.
+	rem := baseReminder("weekly", "memory", "2026-08-17T11:00:00Z")
+	rem.Recurrence = "0 20 * * 2"
+	rem.Timezone = "Europe/Paris"
+	insertReminder(t, db, rem)
+
+	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+		WithClock(func() time.Time { return dispatcherTestNow })
+
+	if err := d.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	if sent := provider.Sent(); len(sent) != 1 {
+		t.Fatalf("messages envoyés = %d, attendu 1", len(sent))
+	}
+
+	repo := persistence.NewReminderRepository()
+	var after persistence.Reminder
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		var found bool
+		var err error
+		after, found, err = repo.FindByID(context.Background(), tx, "weekly")
+		if err == nil && !found {
+			t.Fatal("rappel introuvable après livraison")
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+
+	if after.Status != persistence.ReminderStatusPending {
+		t.Errorf("statut = %q, attendu pending (le rappel récurrent reste actif)", after.Status)
+	}
+	if after.FireAt != "2026-08-18T18:00:00Z" {
+		t.Errorf("fire_at = %q, attendu 2026-08-18T18:00:00Z (occurrence suivante)", after.FireAt)
+	}
+
+	// L'échéance étant future, un second tick n'envoie rien de plus.
+	if err := d.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick (2e): %v", err)
+	}
+	if sent := provider.Sent(); len(sent) != 1 {
+		t.Errorf("messages envoyés après second tick = %d, attendu 1", len(sent))
+	}
+}
+
+func TestReminderRepository_RescheduleNextRespectsCancellation(t *testing.T) {
+	db := testDB(t)
+
+	rem := baseReminder("cancelled", "memory", "2026-08-17T11:00:00Z")
+	rem.Status = persistence.ReminderStatusCancelled
+	insertReminder(t, db, rem)
+
+	repo := persistence.NewReminderRepository()
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		ok, err := repo.RescheduleNext(context.Background(), tx, "cancelled", "2026-08-18T18:00:00Z")
+		if err != nil {
+			return err
+		}
+		if ok {
+			t.Error("RescheduleNext sur un rappel annulé: ok=true, attendu false (la série s'arrête)")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("RescheduleNext: %v", err)
+	}
+}

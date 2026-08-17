@@ -182,6 +182,14 @@ type Reminder struct {
 	Status         string
 	CreatedAt      string
 	SentAt         *string
+	// Recurrence est une expression cron standard (5 champs, dialecte de
+	// cron.ParseStandard, le même que schedules) ; vide pour un rappel à
+	// déclenchement unique. Un rappel récurrent reste pending après chaque
+	// envoi, FireAt avançant sur l'occurrence suivante.
+	Recurrence string
+	// Timezone est le fuseau IANA dans lequel Recurrence s'évalue ; vide
+	// pour un rappel à déclenchement unique.
+	Timezone string
 }
 
 // ConversationSummary est le DTO de persistance de la table

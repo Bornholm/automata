@@ -245,3 +245,60 @@ func TestListReminders_ShowsPendingWithIDs(t *testing.T) {
 		t.Errorf("liste = %q, attendu le message et un identifiant", result)
 	}
 }
+
+func TestCreateReminder_RecurringComputesFirstOccurrence(t *testing.T) {
+	tools, db := newReminderTools(t)
+	identity := privateIdentity("alice")
+
+	// reminderTestNow est le lundi 17 août 2026, 10:00 UTC : la prochaine
+	// occurrence de « chaque mardi 20h » à Paris (UTC+2 en été) est le mardi
+	// 18 août à 20:00+02:00, soit 18:00Z.
+	result := executeReminderTool(t, tools, identity, "create_reminder", map[string]any{
+		"recurrence": "0 20 * * 2",
+		"timezone":   "Europe/Paris",
+		"message":    "sortir les poubelles",
+	})
+
+	if !strings.Contains(result, "Rappel récurrent programmé") {
+		t.Fatalf("résultat = %q, attendu une confirmation de rappel récurrent", result)
+	}
+
+	rows := listReminderRows(t, db, string(identity.ConversationID))
+	if len(rows) != 1 {
+		t.Fatalf("rappels persistés = %d, attendu 1", len(rows))
+	}
+
+	rem := rows[0]
+	if rem.Recurrence != "0 20 * * 2" || rem.Timezone != "Europe/Paris" {
+		t.Errorf("récurrence = (%q, %q), attendu ('0 20 * * 2', 'Europe/Paris')", rem.Recurrence, rem.Timezone)
+	}
+	if rem.FireAt != "2026-08-18T18:00:00Z" {
+		t.Errorf("fire_at = %q, attendu 2026-08-18T18:00:00Z (mardi 20h Paris en UTC)", rem.FireAt)
+	}
+}
+
+func TestCreateReminder_RejectsInvalidRecurrence(t *testing.T) {
+	tools, db := newReminderTools(t)
+	identity := privateIdentity("alice")
+
+	badCron := executeReminderTool(t, tools, identity, "create_reminder", map[string]any{
+		"recurrence": "pas du cron",
+		"message":    "invalide",
+	})
+	if !strings.Contains(badCron, "'recurrence' invalide") {
+		t.Errorf("résultat = %q, attendu un refus d'expression cron invalide", badCron)
+	}
+
+	badTZ := executeReminderTool(t, tools, identity, "create_reminder", map[string]any{
+		"recurrence": "0 20 * * 2",
+		"timezone":   "Mars/Olympus",
+		"message":    "invalide",
+	})
+	if !strings.Contains(badTZ, "'timezone' inconnu") {
+		t.Errorf("résultat = %q, attendu un refus de fuseau inconnu", badTZ)
+	}
+
+	if rows := listReminderRows(t, db, string(identity.ConversationID)); len(rows) != 0 {
+		t.Errorf("rappels persistés = %d, attendu 0", len(rows))
+	}
+}

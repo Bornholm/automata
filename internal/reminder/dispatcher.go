@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/bornholm/go-courier"
+	cron "github.com/robfig/cron/v3"
 
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
@@ -160,10 +161,74 @@ func (d *Dispatcher) deliver(ctx context.Context, rem persistence.Reminder) {
 		return
 	}
 
-	sentAt := d.now().UTC().Format(time.RFC3339)
 	d.metrics.IncReminderSent()
+
+	// Un rappel récurrent ne se termine jamais par un envoi : son échéance
+	// avance sur l'occurrence suivante et il reste pending, jusqu'à son
+	// annulation. Le calcul part de l'instant courant, pas de l'échéance
+	// passée : après un long arrêt du processus, une seule livraison de
+	// rattrapage, jamais une rafale.
+	if rem.Recurrence != "" {
+		if next, ok := d.nextOccurrence(ctx, rem, logCtx); ok {
+			d.logger.InfoContext(ctx, "reminder: rappel récurrent délivré et réarmé", append(logCtx, "next_fire_at", next)...)
+			d.reschedule(ctx, rem, next, logCtx)
+			return
+		}
+		// Expression devenue inexploitable (donnée corrompue, fuseau
+		// disparu) : la série s'arrête proprement, déjà journalisé par
+		// nextOccurrence.
+	}
+
+	sentAt := d.now().UTC().Format(time.RFC3339)
 	d.logger.InfoContext(ctx, "reminder: rappel délivré", logCtx...)
 	d.markFinal(ctx, rem, persistence.ReminderStatusSent, &sentAt, logCtx)
+}
+
+// nextOccurrence calcule l'occurrence suivante d'un rappel récurrent, en
+// RFC 3339 UTC. ok vaut false si l'expression cron ou le fuseau stockés sont
+// inexploitables — cas anormal (validés à la création), journalisé en erreur.
+func (d *Dispatcher) nextOccurrence(ctx context.Context, rem persistence.Reminder, logCtx []any) (string, bool) {
+	schedule, err := cron.ParseStandard(rem.Recurrence)
+	if err != nil {
+		d.logger.ErrorContext(ctx, "reminder: expression de récurrence inexploitable, série terminée", append(logCtx, "error", err)...)
+		return "", false
+	}
+
+	loc := time.Local
+	if rem.Timezone != "" {
+		loc, err = time.LoadLocation(rem.Timezone)
+		if err != nil {
+			d.logger.ErrorContext(ctx, "reminder: fuseau de récurrence inexploitable, série terminée", append(logCtx, "error", err)...)
+			return "", false
+		}
+	}
+
+	next := schedule.Next(d.now().In(loc))
+	if next.IsZero() {
+		d.logger.ErrorContext(ctx, "reminder: aucune occurrence suivante, série terminée", logCtx...)
+		return "", false
+	}
+
+	return next.UTC().Format(time.RFC3339), true
+}
+
+// reschedule avance l'échéance d'un rappel récurrent. Si le rappel n'est
+// plus pending (annulé pendant la livraison), la série s'arrête là — rien
+// n'est écrasé.
+func (d *Dispatcher) reschedule(ctx context.Context, rem persistence.Reminder, nextFireAt string, logCtx []any) {
+	err := d.db.WithTx(ctx, func(tx *sql.Tx) error {
+		ok, err := d.repo.RescheduleNext(ctx, tx, rem.ID, nextFireAt)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			d.logger.WarnContext(ctx, "reminder: réarmement ignoré (rappel plus en pending)", logCtx...)
+		}
+		return nil
+	})
+	if err != nil {
+		d.logger.ErrorContext(ctx, "reminder: échec du réarmement du rappel récurrent", append(logCtx, "error", err)...)
+	}
 }
 
 // send tente l'envoi jusqu'à sendMaxAttempts fois avec backoff doublé,

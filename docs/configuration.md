@@ -238,11 +238,23 @@ Détaillé dans [agents.md](agents.md). Résumé des champs :
 
 `reminders: true` donne à l'agent trois outils : `create_reminder` (« 
 rappelle-moi demain à 9h de sortir les poubelles »), `list_reminders` et
-`cancel_reminder`. Un rappel est ponctuel : à l'échéance, son message est
-envoyé sur le canal où il a été demandé — jamais ailleurs, la destination
-n'est pas un choix du modèle. Il vit dans la base applicative (table
-`reminders`), survit aux redémarrages, et un rappel devenu échu pendant un
-arrêt part dès le démarrage suivant.
+`cancel_reminder`. À l'échéance, le message du rappel est envoyé sur le
+canal où il a été demandé — jamais ailleurs, la destination n'est pas un
+choix du modèle. Il vit dans la base applicative (table `reminders`),
+survit aux redémarrages, et un rappel devenu échu pendant un arrêt part dès
+le démarrage suivant.
+
+Un rappel peut être **récurrent** (« chaque mardi soir ») : il porte alors
+une expression cron standard et un fuseau IANA, le même dialecte que
+`schedules`. L'application calcule elle-même la première occurrence, puis
+réarme l'échéance après chaque envoi — le rappel reste actif jusqu'à son
+annulation par `cancel_reminder`. Le fuseau garantit que « chaque mardi
+20h » reste 20h à travers les changements d'heure. Après un long arrêt du
+worker, une seule livraison de rattrapage part, jamais une rafale : la
+prochaine occurrence est calculée depuis l'instant courant. La différence
+avec `schedules` : un schedule exécute un agent à heure fixe, un rappel
+récurrent renvoie un texte figé — et se crée en conversation, sans toucher
+à la configuration.
 
 Chaque appel d'outil est autorisé par principal via les permissions du
 domaine `reminder` (`reminder.personal.write`, `reminder.group.read`, etc.,

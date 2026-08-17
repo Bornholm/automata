@@ -9,6 +9,7 @@ import (
 
 	"github.com/bornholm/genai/llm"
 	"github.com/google/uuid"
+	cron "github.com/robfig/cron/v3"
 
 	"github.com/bornholm/automata/internal/authorization"
 	"github.com/bornholm/automata/internal/model"
@@ -101,12 +102,14 @@ func (t ReminderTools) authorize(ctx context.Context, identity model.ExecutionId
 
 func (t ReminderTools) newCreateReminderTool(identity model.ExecutionIdentity) llm.Tool {
 	schema := llm.NewJSONSchema().
-		RequiredProperty("fire_at", "Date et heure du rappel au format RFC 3339 avec décalage horaire (ex: 2026-08-18T09:00:00+02:00). Toujours calculée à partir de la date et l'heure courantes du contexte d'exécution.", "string").
-		RequiredProperty("message", "Texte du rappel, tel qu'il sera envoyé dans la conversation à l'échéance.", "string")
+		Property("fire_at", "Date et heure d'un rappel PONCTUEL au format RFC 3339 avec décalage horaire (ex: 2026-08-18T09:00:00+02:00), calculée à partir de la date et l'heure courantes du contexte d'exécution. Ignoré si 'recurrence' est fourni.", "string").
+		Property("recurrence", "Expression cron standard à 5 champs pour un rappel RÉCURRENT (ex: '0 20 * * 2' pour chaque mardi à 20h). L'application calcule elle-même la première occurrence.", "string").
+		Property("timezone", "Fuseau IANA dans lequel évaluer 'recurrence' (ex: 'Europe/Paris'). Par défaut, le fuseau du serveur, visible dans la date courante du contexte d'exécution.", "string").
+		RequiredProperty("message", "Texte du rappel, tel qu'il sera envoyé dans la conversation à chaque échéance.", "string")
 
 	return llm.NewFuncTool(
 		"create_reminder",
-		"Programme un rappel ponctuel : à la date donnée, le message est envoyé dans la conversation courante. Utiliser pour « rappelle-moi ... », « préviens-nous ... ». Pour une récurrence, dire que seuls les rappels ponctuels sont disponibles.",
+		"Programme un rappel dans la conversation courante : ponctuel avec 'fire_at', ou récurrent avec 'recurrence' (cron). Utiliser pour « rappelle-moi ... », « préviens-nous chaque ... ». Un rappel récurrent se répète jusqu'à son annulation (cancel_reminder).",
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			message := strings.TrimSpace(stringParam(params, "message"))
@@ -117,17 +120,45 @@ func (t ReminderTools) newCreateReminderTool(identity model.ExecutionIdentity) l
 				return llm.NewToolResult(fmt.Sprintf("erreur: message trop long (%d caractères, maximum %d).", len(message), reminderMaxMessageLen)), nil
 			}
 
-			fireAt, err := time.Parse(time.RFC3339, strings.TrimSpace(stringParam(params, "fire_at")))
-			if err != nil {
-				return llm.NewToolResult(fmt.Sprintf("erreur: 'fire_at' invalide (%v). Format attendu: RFC 3339 avec décalage horaire, ex: 2026-08-18T09:00:00+02:00.", err)), nil
-			}
-
 			now := t.now()
-			if !fireAt.After(now) {
-				return llm.NewToolResult(fmt.Sprintf("erreur: 'fire_at' (%s) est déjà passé (heure courante: %s).", fireAt.Format(time.RFC3339), now.Format(time.RFC3339))), nil
-			}
-			if fireAt.Sub(now) > reminderMaxHorizon {
-				return llm.NewToolResult("erreur: 'fire_at' est à plus d'un an ; vérifier la date avant de réessayer."), nil
+			recurrence := strings.TrimSpace(stringParam(params, "recurrence"))
+			timezone := strings.TrimSpace(stringParam(params, "timezone"))
+
+			var fireAt time.Time
+
+			if recurrence != "" {
+				schedule, err := cron.ParseStandard(recurrence)
+				if err != nil {
+					return llm.NewToolResult(fmt.Sprintf("erreur: 'recurrence' invalide (%v). Format attendu: expression cron standard à 5 champs, ex: '0 20 * * 2'.", err)), nil
+				}
+
+				loc := time.Local
+				if timezone != "" {
+					loc, err = time.LoadLocation(timezone)
+					if err != nil {
+						return llm.NewToolResult(fmt.Sprintf("erreur: 'timezone' inconnu (%v). Format attendu: nom IANA, ex: 'Europe/Paris'.", err)), nil
+					}
+				} else {
+					timezone = loc.String()
+				}
+
+				fireAt = schedule.Next(now.In(loc))
+				if fireAt.IsZero() {
+					return llm.NewToolResult("erreur: cette expression cron n'a aucune occurrence future."), nil
+				}
+			} else {
+				var err error
+				fireAt, err = time.Parse(time.RFC3339, strings.TrimSpace(stringParam(params, "fire_at")))
+				if err != nil {
+					return llm.NewToolResult(fmt.Sprintf("erreur: 'fire_at' invalide (%v). Format attendu: RFC 3339 avec décalage horaire, ex: 2026-08-18T09:00:00+02:00 — ou fournir 'recurrence' pour un rappel récurrent.", err)), nil
+				}
+
+				if !fireAt.After(now) {
+					return llm.NewToolResult(fmt.Sprintf("erreur: 'fire_at' (%s) est déjà passé (heure courante: %s).", fireAt.Format(time.RFC3339), now.Format(time.RFC3339))), nil
+				}
+				if fireAt.Sub(now) > reminderMaxHorizon {
+					return llm.NewToolResult("erreur: 'fire_at' est à plus d'un an ; vérifier la date avant de réessayer."), nil
+				}
 			}
 
 			if _, err := t.authorize(ctx, identity, "write"); err != nil {
@@ -145,9 +176,11 @@ func (t ReminderTools) newCreateReminderTool(identity model.ExecutionIdentity) l
 				FireAt:         fireAt.UTC().Format(time.RFC3339),
 				Status:         persistence.ReminderStatusPending,
 				CreatedAt:      now.UTC().Format(time.RFC3339),
+				Recurrence:     recurrence,
+				Timezone:       timezone,
 			}
 
-			err = t.DB.WithTx(ctx, func(tx *sql.Tx) error {
+			err := t.DB.WithTx(ctx, func(tx *sql.Tx) error {
 				return t.Repo.Insert(ctx, tx, rem)
 			})
 			if err != nil {
@@ -155,6 +188,10 @@ func (t ReminderTools) newCreateReminderTool(identity model.ExecutionIdentity) l
 			}
 
 			t.Metrics.IncReminderCreated()
+
+			if recurrence != "" {
+				return llm.NewToolResult(fmt.Sprintf("Rappel récurrent programmé (%s, fuseau %s), prochaine occurrence %s (id: %s).", recurrence, timezone, fireAt.Format(time.RFC3339), rem.ID)), nil
+			}
 
 			return llm.NewToolResult(fmt.Sprintf("Rappel programmé pour %s (id: %s).", fireAt.Format(time.RFC3339), rem.ID)), nil
 		},
@@ -188,6 +225,10 @@ func (t ReminderTools) newListRemindersTool(identity model.ExecutionIdentity) ll
 			var b strings.Builder
 			b.WriteString("Rappels en attente :\n")
 			for i, rem := range reminders {
+				if rem.Recurrence != "" {
+					fmt.Fprintf(&b, "%d. [id: %s] récurrent (%s, %s), prochaine occurrence %s — %s\n", i+1, rem.ID, rem.Recurrence, rem.Timezone, rem.FireAt, rem.Message)
+					continue
+				}
 				fmt.Fprintf(&b, "%d. [id: %s] %s — %s\n", i+1, rem.ID, rem.FireAt, rem.Message)
 			}
 
