@@ -3,10 +3,12 @@ package ingress_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -91,6 +93,27 @@ func (h *countingHandler) Calls() int {
 	return h.calls
 }
 
+// syncBuffer sérialise les écritures d'un handler slog lues depuis une autre
+// goroutine que celle du pipeline.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.String()
+}
+
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
@@ -149,6 +172,12 @@ func testConfig() *config.Config {
 func newTestPipeline(t *testing.T, handler ingress.Handler) (*ingress.Pipeline, *readyProvider) {
 	t.Helper()
 
+	return newTestPipelineWithLogger(t, handler, testLogger())
+}
+
+func newTestPipelineWithLogger(t *testing.T, handler ingress.Handler, logger *slog.Logger) (*ingress.Pipeline, *readyProvider) {
+	t.Helper()
+
 	resolver, err := identity.NewResolver(testConfig())
 	if err != nil {
 		t.Fatalf("identity.NewResolver: %v", err)
@@ -165,7 +194,7 @@ func newTestPipeline(t *testing.T, handler ingress.Handler) (*ingress.Pipeline, 
 
 	db := testDB(t)
 
-	pipeline := ingress.NewPipeline(testProviderName, provider, resolver, db, handler, testLogger(), nil)
+	pipeline := ingress.NewPipeline(testProviderName, provider, resolver, db, handler, logger, nil)
 
 	return pipeline, provider
 }
@@ -430,6 +459,52 @@ func TestPipeline_UnknownOriginIgnored(t *testing.T) {
 	}
 }
 
+// Les identifiants d'une origine inconnue sont journalisés : c'est ainsi
+// qu'on découvre ceux à déclarer dans identities et channels, un identifiant
+// de groupe ou de conversation privée n'étant pas connaissable à l'avance.
+func TestPipeline_UnknownOriginLogsIdentifiers(t *testing.T) {
+	// Le pipeline journalise depuis sa propre goroutine : le tampon est lu par
+	// le test pendant qu'il tourne encore.
+	logs := &syncBuffer{}
+
+	logger := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	pipeline, provider := newTestPipelineWithLogger(t, &countingHandler{}, logger)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannel("groupe-inconnu", courier.ChannelKindGroup, "Famille"),
+		courier.NewUser("unknown-ext", "Inconnu"),
+		courier.WithMessageMainPart("bonjour"),
+	)
+
+	if err := provider.Deliver(context.Background(), msg); err != nil {
+		t.Fatalf("provider.Deliver: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	for _, want := range []string{
+		"channel_id=groupe-inconnu",
+		"channel_kind=group",
+		"channel_name=Famille",
+		"user_id=unknown-ext",
+		"user_name=Inconnu",
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("journal sans %q:\n%s", want, logs.String())
+		}
+	}
+
+	// Le contenu du message n'a rien à faire dans le journal.
+	if strings.Contains(logs.String(), "bonjour") {
+		t.Errorf("le contenu du message a été journalisé:\n%s", logs.String())
+	}
+}
+
 func TestPipeline_DuplicateMessageProcessedOnce(t *testing.T) {
 	handler := &countingHandler{reply: "Message bien reçu."}
 	pipeline, provider := newTestPipeline(t, handler)
@@ -566,5 +641,122 @@ func TestPipeline_HandleContextIsBounded(t *testing.T) {
 
 	if remaining := time.Until(deadline); remaining <= 0 || remaining > 6*time.Minute {
 		t.Errorf("échéance du ctx hors bornes attendues (0, 6min]: reste %s", remaining)
+	}
+}
+
+// errorHandler échoue systématiquement, comme un tour dont les retries LLM
+// sont épuisés.
+type errorHandler struct{}
+
+func (errorHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error) {
+	return "", nil, errors.New("panne simulée du traitement")
+}
+
+func TestPipeline_HandlerErrorSendsFallback(t *testing.T) {
+	pipeline, provider := newTestPipeline(t, errorHandler{})
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	ctx := context.Background()
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannelRef("private-chan"),
+		courier.NewUser("alice-ext", "Alice"),
+		courier.WithMessageMainPart("bonjour"),
+	)
+
+	if err := provider.Deliver(ctx, msg); err != nil {
+		t.Fatalf("provider.Deliver: %v", err)
+	}
+
+	if !waitUntil(t, 2*time.Second, func() bool { return len(provider.Sent()) == 1 }) {
+		t.Fatalf("aucune réponse de repli envoyée après l'échec du handler (envoyés: %d)", len(provider.Sent()))
+	}
+
+	content, err := courier.GetMessageMainContent(ctx, provider.Sent()[0])
+	if err != nil {
+		t.Fatalf("GetMessageMainContent: %v", err)
+	}
+
+	if content != ingress.FallbackReply {
+		t.Errorf("contenu de la réponse de repli = %q, attendu %q", content, ingress.FallbackReply)
+	}
+}
+
+// flakySendProvider fait échouer les premiers Send pour simuler une panne
+// transitoire du fournisseur, puis délègue au provider mémoire.
+type flakySendProvider struct {
+	*readyProvider
+
+	mu       sync.Mutex
+	failures int
+	attempts int
+}
+
+func (p *flakySendProvider) Send(ctx context.Context, msg courier.Message) error {
+	p.mu.Lock()
+	p.attempts++
+	fail := p.failures > 0
+	if fail {
+		p.failures--
+	}
+	p.mu.Unlock()
+
+	if fail {
+		return errors.New("panne transitoire simulée")
+	}
+
+	return p.readyProvider.Send(ctx, msg)
+}
+
+func (p *flakySendProvider) Attempts() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.attempts
+}
+
+func TestPipeline_SendRetriesAfterTransientFailure(t *testing.T) {
+	resolver, err := identity.NewResolver(testConfig())
+	if err != nil {
+		t.Fatalf("identity.NewResolver: %v", err)
+	}
+
+	provider := &flakySendProvider{
+		readyProvider: newReadyProvider(
+			memory.WithSelf(selfUser),
+			memory.WithChannels(courier.NewChannel("private-chan", courier.ChannelKindDirect, "Alice")),
+		),
+		failures: 1,
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+
+	pipeline := ingress.NewPipeline(testProviderName, provider, resolver, testDB(t), &countingHandler{reply: "pong"}, testLogger(), nil)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannelRef("private-chan"),
+		courier.NewUser("alice-ext", "Alice"),
+		courier.WithMessageMainPart("ping"),
+	)
+
+	if err := provider.Deliver(context.Background(), msg); err != nil {
+		t.Fatalf("provider.Deliver: %v", err)
+	}
+
+	// Le premier Send échoue, le retry attend 1 s avant la seconde tentative.
+	if !waitUntil(t, 5*time.Second, func() bool { return len(provider.Sent()) == 1 }) {
+		t.Fatalf("réponse jamais envoyée malgré le retry (tentatives: %d)", provider.Attempts())
+	}
+
+	if got := provider.Attempts(); got != 2 {
+		t.Errorf("tentatives d'envoi = %d, attendu 2 (un échec puis un succès)", got)
 	}
 }

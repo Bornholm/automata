@@ -46,9 +46,29 @@ const (
 // enchaînant plusieurs appels d'outils.
 const handleTimeout = 5 * time.Minute
 
-// sendTimeout borne l'envoi de la réponse au fournisseur courier, un appel
-// réseau distinct du traitement métier.
+// sendTimeout borne chaque tentative d'envoi de la réponse au fournisseur
+// courier, un appel réseau distinct du traitement métier.
 const sendTimeout = 30 * time.Second
+
+// sendMaxAttempts et sendRetryBaseDelay gouvernent le retry de l'envoi :
+// une micro-coupure réseau au moment du Send perdrait sinon la réponse d'un
+// tour pourtant réussi (et facturé). Le backoff est doublé entre chaque
+// tentative (1 s puis 2 s), soit 3 s d'attente au pire, négligeable devant
+// handleTimeout. Le scheduler a son propre mécanisme, persisté celui-là
+// (delivery_attempts) : ici la réponse n'existe qu'en mémoire, un retry
+// immédiat borné suffit.
+const (
+	sendMaxAttempts    = 3
+	sendRetryBaseDelay = 1 * time.Second
+)
+
+// FallbackReply est envoyé à l'utilisateur quand le traitement de son
+// message échoue définitivement (erreur du Handler, retries LLM épuisés).
+// Sans elle, panne et silence délibéré seraient indistinguables pour la
+// personne qui a écrit. Le texte ne révèle volontairement rien de la cause :
+// les détails restent dans les journaux (jamais de contenu privé, mais pas
+// non plus d'erreur interne exposée côté canal).
+const FallbackReply = "Désolé, je n'ai pas réussi à traiter ce message. Réessaie dans quelques instants."
 
 // Handler traite un message déjà résolu et autorisé, et retourne le contenu
 // de la réponse à envoyer : son texte, et les éventuels médias à y joindre
@@ -167,9 +187,19 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 		if errors.Is(err, apperr.ErrUnknownOrigin) || errors.Is(err, apperr.ErrUnknownChannel) || errors.Is(err, apperr.ErrUnauthorized) {
 			p.metrics.IncUnknownOrigin()
 
+			// Ce log est la seule source des identifiants à déclarer dans
+			// identities et channels : un identifiant de groupe ou de
+			// conversation privée est attribué par le fournisseur et ne peut
+			// pas être connu avant qu'un premier message n'en provienne. On
+			// journalise donc de quoi remplir la configuration — identifiants
+			// et libellés d'affichage, jamais le contenu du message.
 			p.logger.InfoContext(ctx, "ingress: message ignoré (identité non résolue ou non autorisée)",
 				"provider", p.providerName,
 				"channel_id", channelID,
+				"channel_kind", string(msg.Channel().Kind()),
+				"channel_name", msg.Channel().Name(),
+				"user_id", externalUserID,
+				"user_name", msg.From().DisplayName(),
 			)
 			return
 		}
@@ -220,6 +250,19 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 	if err != nil {
 		p.logger.ErrorContext(ctx, "ingress: échec du traitement du message", append(logCtx, "error", err)...)
 		p.markFinal(ctx, messageID, statusFailed, logCtx)
+
+		// Réponse de repli, sauf à l'arrêt du processus : un échec dû à
+		// l'annulation du contexte parent n'est pas une panne à signaler, et
+		// l'envoi échouerait de toute façon. Best effort : son propre échec
+		// est déjà journalisé par send.
+		if ctx.Err() == nil {
+			p.send(ctx, courier.NewMessage(
+				courier.RandomMessageID(),
+				msg.Channel(),
+				self,
+				courier.WithMessageMainPart(FallbackReply),
+			), logCtx)
+		}
 		return
 	}
 
@@ -236,17 +279,50 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 			options...,
 		)
 
-		sendCtx, cancelSend := context.WithTimeout(ctx, sendTimeout)
-		err := p.provider.Send(sendCtx, outgoing)
-		cancelSend()
-		if err != nil {
-			p.logger.ErrorContext(ctx, "ingress: échec de l'envoi de la réponse", append(logCtx, "error", err)...)
+		if err := p.send(ctx, outgoing, logCtx); err != nil {
 			p.markFinal(ctx, messageID, statusFailed, logCtx)
 			return
 		}
 	}
 
 	p.markFinal(ctx, messageID, statusProcessed, logCtx)
+}
+
+// send transmet outgoing au fournisseur, en réessayant jusqu'à
+// sendMaxAttempts fois avec backoff doublé sur toute erreur — chaque
+// tentative bornée par sendTimeout. L'envoi d'un message est idempotent côté
+// application (aucune écriture locale) ; le pire cas d'un retry après un
+// envoi réellement parti est un doublon visible sur le canal, préférable à
+// une réponse perdue. L'échec final est journalisé ici ; l'appelant décide
+// du statut à persister.
+func (p *Pipeline) send(ctx context.Context, outgoing courier.Message, logCtx []any) error {
+	var err error
+	for attempt := 1; attempt <= sendMaxAttempts; attempt++ {
+		sendCtx, cancelSend := context.WithTimeout(ctx, sendTimeout)
+		err = p.provider.Send(sendCtx, outgoing)
+		cancelSend()
+		if err == nil {
+			return nil
+		}
+
+		if ctx.Err() != nil || attempt == sendMaxAttempts {
+			break
+		}
+
+		delay := sendRetryBaseDelay << (attempt - 1)
+		p.logger.WarnContext(ctx, "ingress: échec d'envoi, nouvelle tentative",
+			append(logCtx, "attempt", attempt, "max_attempts", sendMaxAttempts, "delay", delay.String(), "error", err)...)
+
+		select {
+		case <-ctx.Done():
+			p.logger.ErrorContext(ctx, "ingress: échec de l'envoi de la réponse", append(logCtx, "error", err)...)
+			return err
+		case <-time.After(delay):
+		}
+	}
+
+	p.logger.ErrorContext(ctx, "ingress: échec de l'envoi de la réponse", append(logCtx, "attempts", sendMaxAttempts, "error", err)...)
+	return err
 }
 
 // markProcessing enregistre (provider, messageID) comme en cours de

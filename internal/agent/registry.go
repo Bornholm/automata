@@ -3,12 +3,15 @@ package agent
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/bornholm/genai/llm"
+	"github.com/bornholm/genai/llm/circuitbreaker"
 	"github.com/bornholm/genai/llm/provider"
 	"github.com/bornholm/genai/llm/provider/mistral"
 	"github.com/bornholm/genai/llm/provider/openai"
 	"github.com/bornholm/genai/llm/provider/openrouter"
+	"github.com/bornholm/genai/llm/retry"
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/delegation"
@@ -186,12 +189,45 @@ func (r *Registry) Get(name string) (Agent, error) {
 	return a, nil
 }
 
+// Paramètres de résilience appliqués à chaque client LLM construit. Un 429
+// ou un 5xx ponctuel du fournisseur ne doit jamais faire échouer un tour :
+// llm.IsRetryable classifie déjà ces statuts, et retry.Client réessaie avec
+// backoff exponentiel (1 s, 2 s, 4 s), y compris à l'ouverture d'un stream.
+// Le circuit breaker, posé PAR-DESSUS le retry (comme dans
+// genai/examples/resilient), compte donc un échec après épuisement des
+// tentatives : au-delà de breakerMaxFailures échecs consécutifs, il coupe
+// court pendant breakerResetTimeout au lieu de faire attendre chaque message
+// suivant tout le cycle de retries contre un fournisseur manifestement en
+// panne. Le total retryBaseDelay×(2⁰+2¹+2²) = 7 s reste très en deçà du
+// handleTimeout de 5 min du pipeline d'ingress.
+const (
+	retryBaseDelay      = 1 * time.Second
+	retryMaxAttempts    = 3
+	breakerMaxFailures  = 5
+	breakerResetTimeout = 30 * time.Second
+)
+
+// wrapResilience enveloppe client dans les middlewares genai de retry puis de
+// circuit breaker. Chaque client construit reçoit son propre breaker : la
+// panne d'un fournisseur n'ouvre jamais le circuit d'un autre.
+//
+// Limite connue du retry.Client : une erreur retryable survenant EN MILIEU de
+// stream rouvre le stream en réémettant tout depuis le début, dupliquant les
+// chunks déjà transmis. En pratique les erreurs mi-stream sont des erreurs
+// d'entrée/sortie, non retryables selon llm.IsRetryable (429/5xx uniquement) ;
+// seul l'échec d'OUVERTURE est réessayé, sans réémission possible.
+func wrapResilience(client llm.Client) llm.Client {
+	retried := retry.NewClient(client, retryBaseDelay, retryMaxAttempts)
+	return circuitbreaker.NewClient(retried, breakerMaxFailures, breakerResetTimeout)
+}
+
 // BuildLLMClient construit un llm.Client GenAI à partir d'un
 // config.LLMClient applicatif. Seuls les providers effectivement
 // enregistrés côté GenAI pour la complétion de chat sont supportés
 // (openai, mistral, openrouter) ; voir docs/integration-inventory.md §2.
 // Factorisée depuis internal/registry (Phase 6) pour être réutilisée par
-// chaque agent construit par NewRegistry, pas seulement "main".
+// chaque agent construit par NewRegistry, pas seulement "main". Le client
+// retourné est systématiquement enveloppé par wrapResilience.
 func BuildLLMClient(ctx context.Context, cfg config.LLMClient) (llm.Client, error) {
 	common := provider.CommonOptions{
 		Model:   cfg.Model,
@@ -217,7 +253,7 @@ func BuildLLMClient(ctx context.Context, cfg config.LLMClient) (llm.Client, erro
 		return nil, fmt.Errorf("création du client llm (provider %q): %w", cfg.Provider, err)
 	}
 
-	return client, nil
+	return wrapResilience(client), nil
 }
 
 // BuildTranscriptionClient construit un llm.TranscriptionClient GenAI à
@@ -249,5 +285,8 @@ func BuildTranscriptionClient(ctx context.Context, cfg config.LLMClient) (llm.Tr
 		return nil, fmt.Errorf("création du client de transcription (provider %q): %w", cfg.Provider, err)
 	}
 
-	return client, nil
+	// Même résilience que la complétion de chat : retry.Client et
+	// circuitbreaker.Client implémentent llm.Client entier, Transcription
+	// comprise.
+	return wrapResilience(client), nil
 }

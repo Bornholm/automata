@@ -1,8 +1,11 @@
 package agent_test
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/bornholm/genai/llm/circuitbreaker"
 
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/config"
@@ -139,5 +142,24 @@ func TestNewRegistry_Isolation(t *testing.T) {
 	rebuiltMainPrompt := agent.BuildSystemPrompt("main", cfg.Agents["main"])
 	if strings.Contains(rebuiltMainPrompt, "assistant généraliste du foyer") {
 		t.Fatal("le test de mutation est mal construit : la config n'a pas changé")
+	}
+}
+
+func TestBuildLLMClient_WrapsResilienceMiddlewares(t *testing.T) {
+	client, err := agent.BuildLLMClient(context.Background(), config.LLMClient{
+		Provider: "openai",
+		Model:    "gpt-test",
+		APIKey:   "sk-test",
+		BaseURL:  "https://api.example.test",
+	})
+	if err != nil {
+		t.Fatalf("BuildLLMClient: %v", err)
+	}
+
+	// Le circuit breaker est le middleware le plus externe (il enveloppe le
+	// retry, voir wrapResilience) : sans lui, un 429 ou un 5xx transitoire du
+	// fournisseur ferait échouer le tour entier.
+	if _, ok := client.(*circuitbreaker.Client); !ok {
+		t.Errorf("client construit de type %T, attendu *circuitbreaker.Client (résilience non câblée)", client)
 	}
 }
