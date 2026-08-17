@@ -178,7 +178,7 @@ agents:
       - ruches
 ```
 
-L'orchestrateur expose alors un outil `delegate_to_meteo`. Un spécialiste
+L'orchestrateur expose alors un outil `delegate_to_ruches`. Un spécialiste
 absent de `delegates` n'est jamais atteignable.
 
 ### 5. Valider
