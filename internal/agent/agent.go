@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bornholm/genai/llm"
 
@@ -190,7 +191,7 @@ func (a *GenAIAgent) buildMessages(req Request) []llm.Message {
 func buildChatMessages(systemPrompt, agentName, orgDisplayName string, req Request) []llm.Message {
 	messages := make([]llm.Message, 0, len(req.History)+2)
 
-	systemMessage := systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, orgDisplayName, agentName)
+	systemMessage := systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, orgDisplayName, agentName, time.Now())
 	messages = append(messages, llm.NewMessage(llm.RoleSystem, systemMessage))
 
 	for _, m := range req.History {

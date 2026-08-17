@@ -141,6 +141,10 @@ agents:
       search: true
       remember: true
       forget: true
+    # Outils de rappels ponctuels (« rappelle-moi demain à 9h... ») :
+    # create_reminder, list_reminders, cancel_reminder. Chaque appel reste
+    # soumis aux permissions reminder.<scope>.<action> du principal.
+    reminders: true
     limits:
       # Nombre de tours d'appels d'outils enchaînés dans un même échange.
       max_sequential_tool_calls: 8
@@ -285,6 +289,12 @@ identities:
         - memory.org.read
         - memory.org.write
         - memory.org.delete
+        - reminder.personal.read
+        - reminder.personal.write
+        - reminder.personal.delete
+        - reminder.group.read
+        - reminder.group.write
+        - reminder.group.delete
         - calendar.personal.read
         - calendar.personal.write
         - calendar.group.read

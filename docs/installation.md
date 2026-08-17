@@ -234,6 +234,30 @@ Les journaux sont en JSON sur la sortie d'erreur :
 {"level":"INFO","msg":"mcp: connexion établie","server":"google-calendar","session":"whatsapp:33612345678@s.whatsapp.net"}
 ```
 
+### Découvrir les identifiants de canaux et de comptes
+
+Un identifiant de groupe ou de conversation privée est attribué par le
+fournisseur : impossible de le connaître avant qu'un premier message n'en
+provienne. Tout message venu d'une origine non déclarée est ignoré, mais ses
+identifiants sont journalisés — c'est là qu'on lit les valeurs à reporter dans
+`identities` et `channels` :
+
+```json
+{"level":"INFO","msg":"ingress: message ignoré (identité non résolue ou non autorisée)",
+ "provider":"whatsapp","channel_id":"120363000000000000@g.us","channel_kind":"group",
+ "channel_name":"Famille","user_id":"33612345678@s.whatsapp.net","user_name":"Alice"}
+```
+
+Écrivez donc au bot en privé, puis dans le groupe visé (en le mentionnant ou
+non, peu importe : la règle de mention ne s'applique qu'aux canaux déjà
+déclarés), et relevez les `channel_id` et `user_id` obtenus.
+
+La configuration doit rester valide pour que le worker démarre et journalise :
+si `channels` est encore vide de valeurs réelles, déclarez temporairement un
+seul canal privé avec un identifiant fictif, le temps de cette découverte.
+Deux canaux au même `channel_id` — deux variables d'environnement vides, par
+exemple — sont refusés au chargement.
+
 ## 7. Vérifier
 
 Envoyez un message privé depuis un compte déclaré dans `origins`. Vous devez

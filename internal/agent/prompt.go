@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/model"
@@ -138,7 +139,15 @@ func buildCapabilitiesSection(agentCfg config.Agent) string {
 // N'y sont jamais inclus : secrets, jetons MCP, identifiants internes ou
 // arguments bruts de sécurité — identity ne les porte de toute façon pas
 // (voir model.ExecutionIdentity).
-func BuildContextBlock(identity model.ExecutionIdentity, orgDisplayName string, agentName string) string {
+//
+// now est la date et l'heure courantes, avec le décalage horaire local :
+// une extension à la liste initiale de PLAN.md §7.3, nécessaire pour que
+// l'agent puisse résoudre les expressions temporelles relatives (« demain à
+// 9h ») en horodatage absolu (outil create_reminder, agenda, etc.). Ce n'est
+// ni un secret ni un identifiant interne — rien de la liste « ne jamais
+// exposer ». Une valeur zéro omet la ligne (utilisée par les tests qui ne
+// s'intéressent pas au temps).
+func BuildContextBlock(identity model.ExecutionIdentity, orgDisplayName string, agentName string, now time.Time) string {
 	var b strings.Builder
 
 	b.WriteString("## Contexte d'exécution\n\n")
@@ -146,6 +155,9 @@ func BuildContextBlock(identity model.ExecutionIdentity, orgDisplayName string, 
 	fmt.Fprintf(&b, "- Organisation: %s\n", orgDisplayName)
 	fmt.Fprintf(&b, "- Portée d'exécution: %s\n", identity.Scope)
 	fmt.Fprintf(&b, "- Type de canal: %s\n", identity.ChannelKind)
+	if !now.IsZero() {
+		fmt.Fprintf(&b, "- Date et heure courantes: %s (%s)\n", now.Format(time.RFC3339), now.Weekday())
+	}
 
 	return strings.TrimSpace(b.String())
 }

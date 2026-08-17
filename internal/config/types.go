@@ -225,9 +225,14 @@ type Agent struct {
 	SystemPrompt SystemPrompt `yaml:"system_prompt"`
 	Delegates    []string     `yaml:"delegates"`
 	Memory       AgentMemory  `yaml:"memory"`
-	MCPServers   []string     `yaml:"mcp_servers"`
-	Capabilities []string     `yaml:"capabilities"`
-	Limits       AgentLimits  `yaml:"limits"`
+	// Reminders expose à cet agent les outils de rappels ponctuels
+	// (create_reminder, list_reminders, cancel_reminder). L'autorisation
+	// effective de chaque appel reste vérifiée par principal via les
+	// permissions reminder.<scope>.<action> (identities.roles).
+	Reminders    bool        `yaml:"reminders"`
+	MCPServers   []string    `yaml:"mcp_servers"`
+	Capabilities []string    `yaml:"capabilities"`
+	Limits       AgentLimits `yaml:"limits"`
 }
 
 // SystemPrompt décrit la source du system prompt d'un agent : soit un

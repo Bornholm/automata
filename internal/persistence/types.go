@@ -162,3 +162,24 @@ type AuditEvent struct {
 	MetadataJSON    *string
 	CreatedAt       string
 }
+
+// ReminderID identifie un rappel ponctuel.
+type ReminderID string
+
+// Reminder est le DTO de persistance de la table reminders : un rappel
+// ponctuel créé conversationnellement, délivré une seule fois sur le canal
+// où il a été demandé. Message est du contenu privé : ne jamais le
+// journaliser.
+type Reminder struct {
+	ID             ReminderID
+	OrgID          model.OrgID
+	PrincipalID    model.PrincipalID
+	ConversationID model.ConversationID
+	Provider       string
+	ChannelID      string
+	Message        string
+	FireAt         string
+	Status         string
+	CreatedAt      string
+	SentAt         *string
+}

@@ -229,9 +229,27 @@ Détaillé dans [agents.md](agents.md). Résumé des champs :
 | `system_prompt.file` ou `.inline` | Personnalité et mission. Exactement une des deux |
 | `delegates` | Noms des spécialistes joignables. Orchestrateur seulement |
 | `memory` | Drapeaux `search`, `remember`, `forget` |
+| `reminders` | Expose les outils de rappels ponctuels. Orchestrateur seulement |
 | `mcp_servers` | Serveurs MCP autorisés. Spécialiste seulement |
 | `capabilities` | Permissions applicatives de l'agent |
 | `limits` | Plafonds d'exécution, tous obligatoires |
+
+### reminders
+
+`reminders: true` donne à l'agent trois outils : `create_reminder` (« 
+rappelle-moi demain à 9h de sortir les poubelles »), `list_reminders` et
+`cancel_reminder`. Un rappel est ponctuel : à l'échéance, son message est
+envoyé sur le canal où il a été demandé — jamais ailleurs, la destination
+n'est pas un choix du modèle. Il vit dans la base applicative (table
+`reminders`), survit aux redémarrages, et un rappel devenu échu pendant un
+arrêt part dès le démarrage suivant.
+
+Chaque appel d'outil est autorisé par principal via les permissions du
+domaine `reminder` (`reminder.personal.write`, `reminder.group.read`, etc.,
+voir `identities.roles`) : activer le drapeau sans accorder ces permissions
+donne des outils qui refusent poliment. Un rappel n'est visible et annulable
+que depuis sa conversation d'origine. Les récurrences restent du ressort des
+`schedules` déclarés dans la configuration.
 
 Les limites, sans exception :
 

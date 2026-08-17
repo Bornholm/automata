@@ -32,6 +32,7 @@ import (
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/reminder"
 	"github.com/bornholm/automata/internal/scheduler"
 )
 
@@ -113,7 +114,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		logger.ErrorContext(ctx, "registry: échec de la récupération des plans d'actions interrompus", "error", err)
 	}
 
-	handler, agents, err := buildConversationHandler(cfg, db, memRes.store, mcpManager, actionEngine, metrics)
+	handler, agents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, metrics)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
@@ -142,6 +143,20 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 		if err := sched.Run(ctx); err != nil && ctx.Err() == nil {
 			logger.ErrorContext(ctx, "registry: scheduler arrêté en erreur", "error", err)
+		}
+	}()
+
+	// Livraison des rappels ponctuels créés conversationnellement
+	// (internal/reminder) : indépendante du scheduler, qui ne connaît que
+	// les schedules récurrents de la configuration.
+	reminderDispatcher := reminder.NewDispatcher(db, providers, logger, metrics)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		if err := reminderDispatcher.Run(ctx); err != nil && ctx.Err() == nil {
+			logger.ErrorContext(ctx, "registry: dispatcher de rappels arrêté en erreur", "error", err)
 		}
 	}()
 
@@ -219,10 +234,20 @@ func buildCourierProviders(cfg *config.Config) (map[string]courier.Provider, err
 // réutilisé tel quel par internal/scheduler pour exécuter les tâches
 // planifiées (PLAN.md §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, metrics *observability.Metrics) (ingress.Handler, *agent.Registry, error) {
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, metrics *observability.Metrics) (ingress.Handler, *agent.Registry, error) {
 	memoryTools := buildMemoryTools(cfg, memStore, metrics)
 
-	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, mcpManager, metrics)
+	// Les outils de rappels partagent la base applicative et l'Authorizer de
+	// l'instance ; agent.NewRegistryWithMemory ne les attache qu'aux agents
+	// déclarant reminders: true.
+	reminderTools := agent.ReminderTools{
+		DB:         db,
+		Repo:       persistence.NewReminderRepository(),
+		Authorizer: authorizer,
+		Metrics:    metrics,
+	}
+
+	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, mcpManager, metrics)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
 	}

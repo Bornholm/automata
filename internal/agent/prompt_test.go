@@ -3,6 +3,7 @@ package agent_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/config"
@@ -116,7 +117,7 @@ func TestBuildContextBlock_ContainsAllowedVariablesOnly(t *testing.T) {
 		ChannelKind: model.ChannelGroup,
 	}
 
-	block := agent.BuildContextBlock(identity, "Maison", "agenda")
+	block := agent.BuildContextBlock(identity, "Maison", "agenda", time.Now())
 
 	if !strings.Contains(block, "agenda") {
 		t.Error("le bloc de contexte doit mentionner le nom de l'agent")

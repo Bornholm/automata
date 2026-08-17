@@ -52,6 +52,7 @@ type OrchestratorAgent struct {
 	maxActionsPerTurn      int
 	maxToolContextBytes    int64
 	memoryTools            MemoryTools
+	reminderTools          ReminderTools
 	metrics                *observability.Metrics
 }
 
@@ -85,6 +86,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 
 	tools := a.buildDelegationTools(req.Identity, req.Attachments, collector, mediaCollector)
 	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity, collector)...)
+	tools = append(tools, a.reminderTools.buildReminderTools(req.Identity)...)
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
 	messages := buildChatMessages(a.systemPrompt, a.agentName, a.orgDisplayName, req)
@@ -241,6 +243,17 @@ func newDelegationTool(agentID string, specialist delegation.Specialist, identit
 // le comportement par défaut d'un OrchestratorAgent tout juste construit.
 func (a *OrchestratorAgent) WithMemoryTools(tools MemoryTools) *OrchestratorAgent {
 	a.memoryTools = tools
+	return a
+}
+
+// WithReminderTools attache tools à a : les outils create_reminder/
+// list_reminders/cancel_reminder sont exposés au modèle en plus des
+// délégations, dès le prochain Execute. Un appel avec la valeur zéro de
+// ReminderTools désactive tous les outils de rappels (comportement par
+// défaut d'un OrchestratorAgent tout juste construit). Retourne a pour
+// permettre le chaînage à la construction, comme WithMemoryTools.
+func (a *OrchestratorAgent) WithReminderTools(tools ReminderTools) *OrchestratorAgent {
+	a.reminderTools = tools
 	return a
 }
 

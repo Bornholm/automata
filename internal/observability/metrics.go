@@ -40,6 +40,8 @@ type Metrics struct {
 	actionsProposed          atomic.Int64
 	actionsConfirmed         atomic.Int64
 	memorySearches           atomic.Int64
+	remindersCreated         atomic.Int64
+	remindersSent            atomic.Int64
 	deliveryErrors           atomic.Int64
 	toolResultsTruncated     atomic.Int64
 
@@ -262,6 +264,24 @@ func (m *Metrics) IncMemorySearch() {
 	m.memorySearches.Add(1)
 }
 
+// IncReminderCreated incrémente le compteur de rappels ponctuels créés via
+// l'outil create_reminder.
+func (m *Metrics) IncReminderCreated() {
+	if m == nil {
+		return
+	}
+	m.remindersCreated.Add(1)
+}
+
+// IncReminderSent incrémente le compteur de rappels ponctuels effectivement
+// délivrés par le dispatcher (internal/reminder).
+func (m *Metrics) IncReminderSent() {
+	if m == nil {
+		return
+	}
+	m.remindersSent.Add(1)
+}
+
 // IncCronOccurrence incrémente le compteur d'occurrences planifiées
 // déclenchées pour le schedule scheduleID.
 func (m *Metrics) IncCronOccurrence(scheduleID string) {
@@ -333,6 +353,8 @@ func (m *Metrics) Snapshot() map[string]any {
 		"actions_proposed":            m.actionsProposed.Load(),
 		"actions_confirmed":           m.actionsConfirmed.Load(),
 		"memory_searches":             m.memorySearches.Load(),
+		"reminders_created":           m.remindersCreated.Load(),
+		"reminders_sent":              m.remindersSent.Load(),
 		"delivery_errors":             m.deliveryErrors.Load(),
 		"tool_results_truncated":      m.toolResultsTruncated.Load(),
 		"transcription_latency":       m.transcriptionLatency.snapshot(),
