@@ -762,6 +762,100 @@ func TestPipeline_SendRetriesAfterTransientFailure(t *testing.T) {
 	}
 }
 
+// statusProvider enregistre les changements de statut de saisie demandés
+// par le pipeline.
+type statusProvider struct {
+	*readyProvider
+
+	mu       sync.Mutex
+	statuses []courier.Status
+}
+
+func (p *statusProvider) SetStatus(ctx context.Context, status courier.Status, channelID courier.ChannelID) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.statuses = append(p.statuses, status)
+	return nil
+}
+
+func (p *statusProvider) Statuses() []courier.Status {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return append([]courier.Status(nil), p.statuses...)
+}
+
+var _ courier.StatusProvider = (*statusProvider)(nil)
+
+// blockingHandler bloque jusqu'à la fermeture de release, pour observer
+// l'état du pipeline pendant un traitement long.
+type blockingHandler struct {
+	release chan struct{}
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (h *blockingHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error) {
+	h.once.Do(func() { close(h.entered) })
+
+	select {
+	case <-h.release:
+	case <-ctx.Done():
+	}
+
+	return "fini", nil, nil
+}
+
+func TestPipeline_TypingIndicatorDuringHandling(t *testing.T) {
+	resolver, err := identity.NewResolver(testConfig())
+	if err != nil {
+		t.Fatalf("identity.NewResolver: %v", err)
+	}
+
+	provider := &statusProvider{
+		readyProvider: newReadyProvider(
+			memory.WithSelf(selfUser),
+			memory.WithChannels(courier.NewChannel("private-chan", courier.ChannelKindDirect, "Alice")),
+		),
+	}
+	t.Cleanup(func() { _ = provider.Close() })
+
+	handler := &blockingHandler{release: make(chan struct{}), entered: make(chan struct{})}
+
+	pipeline := ingress.NewPipeline(testProviderName, provider, resolver, testDB(t), handler, testLogger(), nil)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	deliverText(t, provider.readyProvider, "private-chan", "question longue")
+
+	select {
+	case <-handler.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("le handler n'a jamais été appelé")
+	}
+
+	// L'indicateur doit être actif pendant le traitement.
+	if !waitUntil(t, 2*time.Second, func() bool {
+		statuses := provider.Statuses()
+		return len(statuses) > 0 && statuses[0] == courier.StatusTyping
+	}) {
+		t.Fatalf("aucun StatusTyping émis pendant le traitement (statuts: %v)", provider.Statuses())
+	}
+
+	close(handler.release)
+
+	// Après le tour, l'indicateur est explicitement effacé.
+	if !waitUntil(t, 2*time.Second, func() bool {
+		statuses := provider.Statuses()
+		return len(statuses) >= 2 && statuses[len(statuses)-1] == courier.StatusIdle
+	}) {
+		t.Fatalf("aucun StatusIdle émis après le traitement (statuts: %v)", provider.Statuses())
+	}
+}
+
 // recordingHandler capture le contenu principal de chaque message traité,
 // dans l'ordre.
 type recordingHandler struct {

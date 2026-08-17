@@ -63,6 +63,12 @@ const (
 	sendRetryBaseDelay = 1 * time.Second
 )
 
+// typingRefreshInterval est la période de rafraîchissement de l'indicateur
+// « en train d'écrire » pendant le traitement d'un message : WhatsApp efface
+// cet état après une dizaine de secondes sans signal, or un tour peut durer
+// plusieurs minutes (handleTimeout).
+const typingRefreshInterval = 8 * time.Second
+
 // maxBurstMessages borne la taille d'une rafale coalescée. Sans cette
 // limite, un flux continu de messages réinitialiserait indéfiniment la
 // fenêtre de silence (collectBurst) : le pipeline ne traiterait plus rien et
@@ -462,9 +468,16 @@ func (p *Pipeline) processBatch(ctx context.Context, self courier.User, msgs []c
 // enregistre le statut final de chaque identifiant de messageIDs (plusieurs
 // pour un message fusionné depuis une rafale).
 func (p *Pipeline) handleResolved(ctx context.Context, self courier.User, execIdentity model.ExecutionIdentity, conversation model.Conversation, msg courier.Message, messageIDs []string, logCtx []any) {
+	stopTyping := p.startTyping(ctx, msg.Channel().ChannelID(), logCtx)
+
 	handleCtx, cancelHandle := context.WithTimeout(ctx, handleTimeout)
 	reply, attachments, err := p.handler.Handle(handleCtx, execIdentity, conversation, msg)
 	cancelHandle()
+
+	// Arrêt AVANT l'envoi de la réponse : l'indicateur couvre la réflexion,
+	// pas la livraison, et un envoi efface de toute façon l'état côté
+	// fournisseur.
+	stopTyping()
 	if err != nil {
 		p.logger.ErrorContext(ctx, "ingress: échec du traitement du message", append(logCtx, "error", err)...)
 		p.markFinalAll(ctx, messageIDs, statusFailed, logCtx)
@@ -504,6 +517,61 @@ func (p *Pipeline) handleResolved(ctx context.Context, self courier.User, execId
 	}
 
 	p.markFinalAll(ctx, messageIDs, statusProcessed, logCtx)
+}
+
+// startTyping affiche l'indicateur « en train d'écrire » sur le canal et le
+// rafraîchit périodiquement jusqu'à l'appel de stop, si le fournisseur le
+// supporte (courier.StatusProvider) — sinon stop est un no-op. Purement
+// cosmétique : aucun échec ici n'affecte le traitement du message, les
+// erreurs sont journalisées en debug seulement.
+func (p *Pipeline) startTyping(ctx context.Context, channelID courier.ChannelID, logCtx []any) (stop func()) {
+	statusProvider, ok := p.provider.(courier.StatusProvider)
+	if !ok {
+		return func() {}
+	}
+
+	typingCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		ticker := time.NewTicker(typingRefreshInterval)
+		defer ticker.Stop()
+
+		for {
+			if err := statusProvider.SetStatus(typingCtx, courier.StatusTyping, channelID); err != nil {
+				if typingCtx.Err() == nil {
+					p.logger.DebugContext(ctx, "ingress: échec de l'indicateur de saisie", append(logCtx, "error", err)...)
+				}
+				return
+			}
+
+			select {
+			case <-typingCtx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+
+	return func() {
+		cancel()
+		<-done
+
+		// Effacement explicite, sauf à l'arrêt du processus : l'état
+		// disparaîtrait de lui-même côté fournisseur, inutile de retarder
+		// l'extinction pour ça.
+		if ctx.Err() != nil {
+			return
+		}
+
+		idleCtx, cancelIdle := context.WithTimeout(ctx, 5*time.Second)
+		defer cancelIdle()
+		if err := statusProvider.SetStatus(idleCtx, courier.StatusIdle, channelID); err != nil {
+			p.logger.DebugContext(ctx, "ingress: échec de l'effacement de l'indicateur de saisie", append(logCtx, "error", err)...)
+		}
+	}
 }
 
 // markFinalAll enregistre le statut final de chaque message d'une rafale.
