@@ -109,7 +109,12 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 	}
 
 	for name, agentCfg := range cfg.Agents {
-		if len(agentCfg.Delegates) == 0 {
+		// Le branchement se fait sur le TYPE déclaré, jamais sur la présence
+		// de délégués : un orchestrateur sans aucun délégué (configuration
+		// minimale, spécialistes commentés) doit tout de même recevoir ses
+		// outils propres — mémoire, rappels — sinon les drapeaux memory/
+		// reminders de sa configuration seraient silencieusement ignorés.
+		if agentCfg.Type != config.AgentTypeOrchestrator {
 			if len(agentCfg.MCPServers) > 0 {
 				limits := mcp.Limits{
 					ToolTimeout:        agentCfg.Limits.ToolTimeout.Duration(),

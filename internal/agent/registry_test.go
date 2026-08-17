@@ -163,3 +163,28 @@ func TestBuildLLMClient_WrapsResilienceMiddlewares(t *testing.T) {
 		t.Errorf("client construit de type %T, attendu *circuitbreaker.Client (résilience non câblée)", client)
 	}
 }
+
+func TestNewRegistry_OrchestratorWithoutDelegatesKeepsOwnTools(t *testing.T) {
+	cfg := testRegistryConfig()
+	main := cfg.Agents["main"]
+	main.Delegates = nil
+	main.Reminders = true
+	cfg.Agents["main"] = main
+
+	registry, err := agent.NewRegistry(cfg, nil)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+
+	a, err := registry.Get("main")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	// Régression : un orchestrateur sans aucun délégué (spécialistes
+	// commentés en configuration) était construit comme simple GenAIAgent,
+	// perdant silencieusement mémoire et rappels malgré ses drapeaux.
+	if _, ok := a.(*agent.OrchestratorAgent); !ok {
+		t.Fatalf("agent main de type %T, attendu *agent.OrchestratorAgent (un orchestrateur sans délégué garde ses outils propres)", a)
+	}
+}
