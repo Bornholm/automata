@@ -132,3 +132,17 @@ func TestBuildContextBlock_ContainsAllowedVariablesOnly(t *testing.T) {
 		t.Error("le bloc de contexte doit mentionner le type de canal")
 	}
 }
+
+func TestBuildSystemPrompt_ContainsHonestyRules(t *testing.T) {
+	cfgs := testAgentConfigs()
+
+	for name, cfg := range cfgs {
+		prompt := agent.BuildSystemPrompt(name, cfg)
+		if !strings.Contains(prompt, "## Limites et honnêteté") {
+			t.Errorf("le prompt de %q doit contenir la section codée en dur sur les limites et l'honnêteté", name)
+		}
+		if !strings.Contains(prompt, "N'annonce donc jamais une action à venir") {
+			t.Errorf("le prompt de %q doit interdire d'annoncer une action future", name)
+		}
+	}
+}

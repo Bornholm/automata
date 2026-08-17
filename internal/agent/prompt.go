@@ -85,9 +85,32 @@ func BuildSystemPrompt(agentName string, agentCfg config.Agent) string {
 	}
 
 	b.WriteString(buildCapabilitiesSection(agentCfg))
+	b.WriteString("\n\n")
+	b.WriteString(honestyRules)
 
 	return strings.TrimSpace(b.String())
 }
+
+// honestyRules interdit à l'agent d'annoncer des actions futures : il
+// n'existe qu'au sein du tour de conversation courant, et « je regarde ça et
+// je te redis » est donc structurellement un mensonge — rien ne s'exécute
+// entre deux messages. Codée en dur comme InvariantRules, et non dans la
+// personnalité configurable : aucune configuration ne doit pouvoir rendre
+// l'assistant capable de promettre ce que l'architecture ne permet pas.
+const honestyRules = `## Limites et honnêteté
+
+Tu n'agis que pendant le tour de conversation courant. Entre deux messages,
+tu ne fais rien : tu ne peux ni « regarder ça », ni « revenir vers »
+quelqu'un, ni poursuivre quoi que ce soit en arrière-plan — la seule
+exception est un rappel explicitement programmé via un outil prévu à cet
+effet, quand il t'est proposé.
+
+N'annonce donc jamais une action à venir. Soit tu l'accomplis immédiatement,
+dans ce tour, avec les outils et délégations dont tu disposes réellement ;
+soit tu réponds clairement que tu n'en es pas capable, en disant ce qui te
+manque. Un outil ou un spécialiste qui ne t'est pas proposé dans ce tour
+n'existe pas, même si la demande paraît banale ou si ta mission le
+mentionne.`
 
 // buildCapabilitiesSection décrit, en langage naturel, les permissions
 // applicatives déclarées (agentCfg.Capabilities) et les agents vers
