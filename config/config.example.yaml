@@ -261,6 +261,18 @@ mcp_servers:
       # Écarte deux créations identiques proposées dans le même tour.
       dedupe_writes: true
 
+# Historique conversationnel rejoué au modèle. La compaction condense les
+# messages débordant de la fenêtre en un résumé roulant persisté :
+# l'assistant garde le fil des échanges anciens sans faire grossir le
+# contexte.
+conversation:
+  history_limit: 20
+  compaction:
+    enabled: true
+    # Un modèle économique suffit pour résumer.
+    client: main
+    max_summary_chars: 2000
+
 memory:
   store:
     driver: sqlite

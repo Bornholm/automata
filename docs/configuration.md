@@ -379,6 +379,39 @@ dans la mémoire commune. Le plan l'interdit et la valeur par défaut le reflèt
 
 `org_readable_by_children` laisse un rôle restreint lire la mémoire commune.
 
+## conversation
+
+```yaml
+conversation:
+  history_limit: 20
+  compaction:
+    enabled: true
+    client: main
+    max_summary_chars: 2000
+```
+
+`history_limit` borne le nombre de messages passés rejoués au modèle à
+chaque tour (20 par défaut). Au-delà, sans compaction, les messages sortent
+simplement du contexte.
+
+La compaction leur donne une seconde vie : quand une conversation dépasse le
+double de la fenêtre, les messages excédentaires sont condensés en un résumé
+roulant persisté (table `conversation_summaries`), réinjecté en tête de
+contexte à chaque tour. L'assistant garde ainsi le fil — préférences émises,
+décisions prises, demandes en cours — bien après que les messages exacts ont
+quitté la fenêtre. Les messages couverts par le résumé ne sont plus rejoués
+verbatim.
+
+`client` référence l'entrée de `llm_clients` qui produit les résumés — un
+modèle économique suffit, requis quand `enabled` est vrai. La compaction
+s'exécute en tête de tour, environ une fois tous les `history_limit`
+messages ; son échec n'est jamais bloquant, le tour continue avec le résumé
+précédent. Le compteur `conversations_compacted` de `/metrics` la mesure.
+
+Le résumé condense des messages : c'est du contenu privé, envoyé au
+fournisseur du `client` déclaré et stocké dans la base applicative, jamais
+journalisé.
+
 ## identities
 
 ```yaml

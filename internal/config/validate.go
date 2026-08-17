@@ -43,8 +43,36 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateSchedules(cfg)...)
 	errs = append(errs, validateObservability(cfg)...)
 	errs = append(errs, validateCourier(cfg)...)
+	errs = append(errs, validateConversation(cfg)...)
 
 	return joinErrors(errs)
+}
+
+// validateConversation vérifie la section conversation (historique et
+// compaction).
+func validateConversation(cfg *Config) []error {
+	var errs []error
+
+	if cfg.Conversation.HistoryLimit < 0 {
+		errs = append(errs, fmt.Errorf("conversation.history_limit: ne peut pas être négatif (valeur actuelle: %d)", cfg.Conversation.HistoryLimit))
+	}
+
+	compaction := cfg.Conversation.Compaction
+	if compaction.MaxSummaryChars < 0 {
+		errs = append(errs, fmt.Errorf("conversation.compaction.max_summary_chars: ne peut pas être négatif (valeur actuelle: %d)", compaction.MaxSummaryChars))
+	}
+
+	if !compaction.Enabled {
+		return errs
+	}
+
+	if compaction.Client == "" {
+		errs = append(errs, fmt.Errorf("conversation.compaction.client: requis lorsque conversation.compaction.enabled est vrai"))
+	} else if _, ok := cfg.LLMClients[compaction.Client]; !ok {
+		errs = append(errs, fmt.Errorf("conversation.compaction.client: client llm %q introuvable dans llm_clients", compaction.Client))
+	}
+
+	return errs
 }
 
 // validateCourier vérifie la fenêtre de coalescence des rafales. Une valeur

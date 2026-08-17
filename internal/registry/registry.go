@@ -114,7 +114,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		logger.ErrorContext(ctx, "registry: échec de la récupération des plans d'actions interrompus", "error", err)
 	}
 
-	handler, agents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, metrics)
+	handler, agents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, metrics, logger)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
@@ -234,7 +234,7 @@ func buildCourierProviders(cfg *config.Config) (map[string]courier.Provider, err
 // réutilisé tel quel par internal/scheduler pour exécuter les tâches
 // planifiées (PLAN.md §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, metrics *observability.Metrics) (ingress.Handler, *agent.Registry, error) {
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, error) {
 	memoryTools := buildMemoryTools(cfg, memStore, metrics)
 
 	// Les outils de rappels partagent la base applicative et l'Authorizer de
@@ -279,7 +279,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		transcriber = audio.NewGenAITranscriber(transcriptionClient)
 	}
 
-	handler := conversation.NewHandler(db, mainAgent, actionEngine, 0, audioCfg, transcriber, cfg.Audio.PersistTranscription, metrics).
+	handler := conversation.NewHandler(db, mainAgent, actionEngine, cfg.Conversation.HistoryLimit, audioCfg, transcriber, cfg.Audio.PersistTranscription, metrics).
 		WithAttachments(media.Config{
 			Enabled:       cfg.Attachments.Enabled,
 			MaxSize:       int64(cfg.Attachments.MaxSize.Bytes()),
@@ -288,6 +288,18 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 			MaxHistory:    cfg.Attachments.MaxHistory,
 			MaxReply:      cfg.Attachments.MaxReply,
 		})
+
+	if cfg.Conversation.Compaction.Enabled {
+		// Le client référencé est validé par config.Validate ; BuildLLMClient
+		// l'enveloppe des mêmes middlewares de résilience que les agents.
+		compactionClient, err := agent.BuildLLMClient(context.Background(), cfg.LLMClients[cfg.Conversation.Compaction.Client])
+		if err != nil {
+			return nil, nil, fmt.Errorf("conversation: construction du client de compaction %q: %w", cfg.Conversation.Compaction.Client, err)
+		}
+
+		compactor := conversation.NewCompactor(db, compactionClient, cfg.Conversation.HistoryLimit, cfg.Conversation.Compaction.MaxSummaryChars, logger, metrics)
+		handler = handler.WithCompactor(compactor)
+	}
 
 	return handler, agents, nil
 }

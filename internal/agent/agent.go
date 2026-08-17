@@ -37,6 +37,12 @@ type Request struct {
 	// History contient les tours précédents, dans l'ordre chronologique.
 	// Il ne doit pas inclure Input.
 	History []Message
+	// Summary est le résumé roulant des messages plus anciens que History
+	// (compaction, internal/conversation.Compactor). Vide si la compaction
+	// est désactivée ou n'a encore rien condensé. Injecté dans le message
+	// system, jamais dans l'historique : ce n'est pas un tour de
+	// conversation.
+	Summary string
 	// Input est le message courant de l'utilisateur.
 	Input string
 	// Attachments porte les pièces jointes du message courant (images,
@@ -192,6 +198,14 @@ func buildChatMessages(systemPrompt, agentName, orgDisplayName string, req Reque
 	messages := make([]llm.Message, 0, len(req.History)+2)
 
 	systemMessage := systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, orgDisplayName, agentName, time.Now())
+
+	if req.Summary != "" {
+		systemMessage += "\n\n---\n\n## Résumé de la conversation antérieure\n\n" +
+			"Les messages ci-dessous ne remontent pas au début de la conversation : " +
+			"ce résumé, généré automatiquement, condense les échanges plus anciens.\n\n" +
+			req.Summary
+	}
+
 	messages = append(messages, llm.NewMessage(llm.RoleSystem, systemMessage))
 
 	for _, m := range req.History {

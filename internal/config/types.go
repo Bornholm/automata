@@ -71,6 +71,7 @@ type Config struct {
 	Agents        map[string]Agent     `yaml:"agents"`
 	MCPServers    map[string]MCPServer `yaml:"mcp_servers"`
 	Memory        Memory               `yaml:"memory"`
+	Conversation  Conversation         `yaml:"conversation"`
 	Identities    Identities           `yaml:"identities"`
 	Origins       []Origin             `yaml:"origins"`
 	Channels      []Channel            `yaml:"channels"`
@@ -163,6 +164,31 @@ func (p *CourierProvider) UnmarshalYAML(unmarshal func(interface{}) error) error
 	p.Extra = raw
 
 	return nil
+}
+
+// Conversation décrit la gestion de l'historique conversationnel rejoué au
+// modèle à chaque tour.
+type Conversation struct {
+	// HistoryLimit borne le nombre de messages passés rejoués comme
+	// contexte. 0 applique le défaut (20, voir internal/conversation).
+	HistoryLimit int `yaml:"history_limit"`
+	// Compaction condense les messages plus anciens que HistoryLimit en un
+	// résumé roulant persisté, réinjecté en tête de contexte.
+	Compaction Compaction `yaml:"compaction"`
+}
+
+// Compaction décrit la compaction de l'historique conversationnel.
+// Désactivée par défaut : sans section explicite, les messages au-delà de la
+// fenêtre d'historique sortent simplement du contexte, comme avant.
+type Compaction struct {
+	Enabled bool `yaml:"enabled"`
+	// Client référence l'entrée de llm_clients utilisée pour produire les
+	// résumés. Requis lorsque Enabled est vrai. Un modèle économique suffit
+	// largement.
+	Client string `yaml:"client"`
+	// MaxSummaryChars borne la taille du résumé persisté. 0 applique le
+	// défaut (2000 caractères).
+	MaxSummaryChars int `yaml:"max_summary_chars"`
 }
 
 // Audio décrit la configuration de traitement des messages vocaux.

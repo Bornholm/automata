@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -63,6 +64,16 @@ type Handler struct {
 	// metrics peut être nil (PLAN.md Phase 20, registre de métriques
 	// désactivé) : toutes ses méthodes sont alors no-op.
 	metrics *observability.Metrics
+	// summaries et compactor gouvernent la compaction de l'historique
+	// (conversation.compaction dans la configuration). compactor nil =
+	// désactivée : les messages au-delà de la fenêtre sortent simplement du
+	// contexte.
+	summaries *persistence.ConversationSummaryRepository
+	compactor *Compactor
+	// logger n'est renseigné qu'avec le compactor (WithCompactor) : le
+	// Handler n'a rien d'autre à journaliser, ses erreurs remontent à
+	// l'ingress.
+	logger *slog.Logger
 }
 
 // NewHandler construit un Handler. historyLimit borne le nombre de messages
@@ -93,7 +104,19 @@ func NewHandler(db *persistence.DB, a agent.Agent, actions *action.Engine, histo
 		transcriber:          transcriber,
 		persistTranscription: persistTranscription,
 		metrics:              metrics,
+		summaries:            persistence.NewConversationSummaryRepository(),
 	}
+}
+
+// WithCompactor active la compaction de l'historique : avant chaque tour,
+// compactor condense si nécessaire les messages débordant de la fenêtre
+// d'historique, et le résumé courant est transmis à l'agent (Request.
+// Summary) tandis que les messages couverts cessent d'être rejoués
+// verbatim. Retourne h pour permettre le chaînage.
+func (h *Handler) WithCompactor(compactor *Compactor) *Handler {
+	h.compactor = compactor
+	h.logger = compactor.logger
+	return h
 }
 
 // WithAttachments active le traitement des pièces jointes non vocales
@@ -158,7 +181,21 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		persistedContent = text
 	}
 
-	var history []agent.Message
+	// Compaction éventuelle AVANT le chargement de l'historique, pour que le
+	// résumé mis à jour serve immédiatement. Jamais bloquant : un échec (LLM
+	// de résumé indisponible, etc.) est journalisé et le tour continue avec
+	// le résumé précédent — au pire, l'historique déborde comme avant.
+	if h.compactor != nil {
+		if err := h.compactor.CompactIfNeeded(ctx, conv.ID); err != nil {
+			h.logger.WarnContext(ctx, "conversation: compaction de l'historique en échec, tour poursuivi sans",
+				"conversation_id", conv.ID, "error", err)
+		}
+	}
+
+	var (
+		history []agent.Message
+		summary string
+	)
 
 	messageID := uuid.NewString()
 
@@ -167,7 +204,17 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 			return err
 		}
 
-		records, err := h.messages.ListRecentByConversation(ctx, tx, conv.ID, h.historyLimit)
+		// Les messages couverts par le résumé de compaction ne sont jamais
+		// rejoués verbatim : le résumé les représente. Sans résumé,
+		// LastMessageRowID vaut 0 et la requête équivaut à l'historique
+		// complet borné.
+		summaryRecord, _, err := h.summaries.Get(ctx, tx, conv.ID)
+		if err != nil {
+			return err
+		}
+		summary = summaryRecord.Summary
+
+		records, err := h.messages.ListRecentByConversationAfterRowID(ctx, tx, conv.ID, summaryRecord.LastMessageRowID, h.historyLimit)
 		if err != nil {
 			return err
 		}
@@ -222,6 +269,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		Identity:     identity,
 		Conversation: conv,
 		History:      history,
+		Summary:      summary,
 		Input:        text,
 		Attachments:  attachments,
 	})

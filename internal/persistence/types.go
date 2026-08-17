@@ -183,3 +183,18 @@ type Reminder struct {
 	CreatedAt      string
 	SentAt         *string
 }
+
+// ConversationSummary est le DTO de persistance de la table
+// conversation_summaries : le résumé roulant des messages d'une conversation
+// plus anciens que la fenêtre d'historique (compaction,
+// internal/conversation.Compactor). Summary est du contenu privé : ne jamais
+// le journaliser.
+type ConversationSummary struct {
+	ConversationID model.ConversationID
+	Summary        string
+	// LastMessageRowID est le rowid du dernier message couvert : les
+	// messages de rowid supérieur restent rejoués verbatim.
+	LastMessageRowID int64
+	MessagesCovered  int64
+	UpdatedAt        string
+}
