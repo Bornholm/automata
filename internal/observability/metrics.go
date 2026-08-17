@@ -34,6 +34,7 @@ import (
 type Metrics struct {
 	messagesReceived         atomic.Int64
 	messagesIgnoredNoMention atomic.Int64
+	messagesCoalesced        atomic.Int64
 	unknownOrigin            atomic.Int64
 	duplicateMessages        atomic.Int64
 	actionsProposed          atomic.Int64
@@ -148,6 +149,17 @@ func (m *Metrics) IncMessagesIgnoredNoMention() {
 		return
 	}
 	m.messagesIgnoredNoMention.Add(1)
+}
+
+// IncMessagesCoalesced ajoute n au compteur de messages absorbés par la
+// coalescence des rafales ingress : pour une rafale de k messages fusionnés
+// en un tour, n vaut k-1 (le tour lui-même reste compté une fois dans
+// messages_received par message d'origine).
+func (m *Metrics) IncMessagesCoalesced(n int) {
+	if m == nil {
+		return
+	}
+	m.messagesCoalesced.Add(int64(n))
 }
 
 // IncUnknownOrigin incrémente le compteur d'origines refusées (émetteur
@@ -315,6 +327,7 @@ func (m *Metrics) Snapshot() map[string]any {
 	return map[string]any{
 		"messages_received":           m.messagesReceived.Load(),
 		"messages_ignored_no_mention": m.messagesIgnoredNoMention.Load(),
+		"messages_coalesced":          m.messagesCoalesced.Load(),
 		"unknown_origin":              m.unknownOrigin.Load(),
 		"duplicate_messages":          m.duplicateMessages.Load(),
 		"actions_proposed":            m.actionsProposed.Load(),

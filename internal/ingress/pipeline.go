@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/bornholm/go-courier"
@@ -61,6 +62,13 @@ const (
 	sendMaxAttempts    = 3
 	sendRetryBaseDelay = 1 * time.Second
 )
+
+// maxBurstMessages borne la taille d'une rafale coalescée. Sans cette
+// limite, un flux continu de messages réinitialiserait indéfiniment la
+// fenêtre de silence (collectBurst) : le pipeline ne traiterait plus rien et
+// le message fusionné grossirait sans borne. Atteindre la limite déclenche
+// le traitement immédiat de la rafale en cours.
+const maxBurstMessages = 10
 
 // FallbackReply est envoyé à l'utilisateur quand le traitement de son
 // message échoue définitivement (erreur du Handler, retries LLM épuisés).
@@ -113,6 +121,7 @@ type Pipeline struct {
 	handler           Handler
 	logger            *slog.Logger
 	metrics           *observability.Metrics
+	coalesceWindow    time.Duration
 }
 
 // NewPipeline construit un Pipeline. handler ne doit jamais être nil ; en
@@ -167,20 +176,172 @@ func (p *Pipeline) Run(ctx context.Context) error {
 				return nil
 			}
 
-			p.processMessage(ctx, self, msg)
+			burst := p.collectBurst(ctx, messages, msg)
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+
+			for _, group := range groupBurst(burst) {
+				p.processBatch(ctx, self, group)
+			}
 		}
 	}
 }
 
+// WithCoalesceWindow active la coalescence des rafales : après un premier
+// message, le pipeline attend que window s'écoule sans nouvelle arrivée
+// avant de traiter, et fusionne les messages texte consécutifs d'un même
+// expéditeur sur un même canal en un seul tour de conversation. Sur
+// WhatsApp, trois messages courts envoyés coup sur coup forment presque
+// toujours une seule pensée : sans coalescence, chacun déclencherait un
+// tour LLM complet, trois réponses entremêlées et trois fois le coût.
+// window <= 0 désactive la coalescence (comportement historique).
+func (p *Pipeline) WithCoalesceWindow(window time.Duration) *Pipeline {
+	p.coalesceWindow = window
+	return p
+}
+
+// collectBurst rassemble first et tous les messages arrivant ensuite tant
+// que la fenêtre de silence coalesceWindow n'est pas écoulée — chaque
+// arrivée la réinitialise —, dans la limite de maxBurstMessages. Le prix de
+// la coalescence est un délai fixe de coalesceWindow ajouté à chaque tour :
+// c'est pour cela que la fenêtre se compte en secondes, pas en minutes.
+func (p *Pipeline) collectBurst(ctx context.Context, messages chan courier.Message, first courier.Message) []courier.Message {
+	batch := []courier.Message{first}
+	if p.coalesceWindow <= 0 {
+		return batch
+	}
+
+	timer := time.NewTimer(p.coalesceWindow)
+	defer timer.Stop()
+
+	for len(batch) < maxBurstMessages {
+		select {
+		case <-ctx.Done():
+			return batch
+		case msg, ok := <-messages:
+			if !ok {
+				return batch
+			}
+
+			batch = append(batch, msg)
+
+			if !timer.Stop() {
+				<-timer.C
+			}
+			timer.Reset(p.coalesceWindow)
+		case <-timer.C:
+			return batch
+		}
+	}
+
+	return batch
+}
+
+// groupBurst découpe une rafale en groupes de messages fusionnables : les
+// messages CONSÉCUTIFS d'un même expéditeur sur un même canal, purement
+// textuels, forment un groupe ; tout autre message (pièce jointe, audio,
+// réponse à un message précis, autre origine) constitue son propre groupe.
+// Ne regrouper que les runs consécutifs préserve strictement l'ordre
+// d'arrivée : un texte, une image, puis un texte donnent trois tours, jamais
+// une fusion des deux textes qui enjamberait l'image.
+func groupBurst(msgs []courier.Message) [][]courier.Message {
+	var groups [][]courier.Message
+
+	for _, msg := range msgs {
+		if len(groups) > 0 {
+			current := groups[len(groups)-1]
+			prev := current[len(current)-1]
+			if coalescable(prev) && coalescable(msg) && sameOrigin(prev, msg) {
+				groups[len(groups)-1] = append(current, msg)
+				continue
+			}
+		}
+
+		groups = append(groups, []courier.Message{msg})
+	}
+
+	return groups
+}
+
+// coalescable indique si un message peut être fusionné avec ses voisins de
+// rafale : uniquement du texte (toutes les parts sont la part principale) et
+// pas une réponse à un message précis — fusionner une réponse lui ferait
+// perdre son fil.
+func coalescable(msg courier.Message) bool {
+	if _, ok := courier.InReplyTo(msg); ok {
+		return false
+	}
+
+	for _, part := range msg.Parts() {
+		if part.Name() != courier.PartMain {
+			return false
+		}
+	}
+
+	return true
+}
+
+// sameOrigin indique si deux messages viennent du même expéditeur sur le
+// même canal.
+func sameOrigin(a, b courier.Message) bool {
+	return a.Channel().ChannelID() == b.Channel().ChannelID() && a.From().ID() == b.From().ID()
+}
+
+// mergeBurst fusionne les messages texte d'un groupe en un unique message
+// portant leurs contenus joints (dans l'ordre d'arrivée) et l'union de leurs
+// mentions. L'identité du message fusionné (ID, canal, expéditeur, date)
+// est celle du dernier message du groupe ; la déduplication, elle, porte sur
+// chaque identifiant d'origine (voir processBatch).
+func mergeBurst(ctx context.Context, msgs []courier.Message) (courier.Message, error) {
+	texts := make([]string, 0, len(msgs))
+	var mentions []courier.Mention
+
+	for _, msg := range msgs {
+		content, err := courier.GetMessageMainContent(ctx, msg)
+		if err != nil {
+			if errors.Is(err, courier.ErrNotFound) {
+				// Message sans part principale : rien à joindre.
+				continue
+			}
+			return nil, fmt.Errorf("lecture du contenu du message %q: %w", msg.ID(), err)
+		}
+
+		if content != "" {
+			texts = append(texts, content)
+		}
+
+		mentions = append(mentions, courier.Mentions(msg)...)
+	}
+
+	last := msgs[len(msgs)-1]
+	options := []courier.BaseMessageOptionFunc{
+		courier.WithMessageMainPart(strings.Join(texts, "\n")),
+		courier.WithMessageSentAt(last.SentAt()),
+	}
+	if len(mentions) > 0 {
+		options = append(options, courier.WithMessageMentions(mentions...))
+	}
+
+	return courier.NewMessage(last.ID(), last.Channel(), last.From(), options...), nil
+}
+
 // processMessage traite un unique message entrant. Toute erreur est
 // journalisée et n'interrompt jamais la boucle appelante (voir AGENTS.md :
-// le pipeline continue avec le message suivant).
-func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg courier.Message) {
-	p.metrics.IncMessagesReceived()
+// le pipeline continue avec le message suivant). msgs contient soit un
+// message isolé, soit un groupe fusionnable produit par groupBurst : des
+// messages texte consécutifs d'un même expéditeur sur un même canal, à
+// traiter comme un seul tour de conversation.
+func (p *Pipeline) processBatch(ctx context.Context, self courier.User, msgs []courier.Message) {
+	for range msgs {
+		p.metrics.IncMessagesReceived()
+	}
 
-	externalUserID := string(msg.From().ID())
-	channelID := string(msg.Channel().ChannelID())
-	messageID := string(msg.ID())
+	// Tous les messages d'un groupe partagent expéditeur et canal
+	// (sameOrigin) : la résolution d'identité du premier vaut pour tous.
+	first := msgs[0]
+	externalUserID := string(first.From().ID())
+	channelID := string(first.Channel().ChannelID())
 
 	execIdentity, conversation, err := p.resolver.ResolveMessage(ctx, p.providerName, externalUserID, channelID)
 	if err != nil {
@@ -196,10 +357,10 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 			p.logger.InfoContext(ctx, "ingress: message ignoré (identité non résolue ou non autorisée)",
 				"provider", p.providerName,
 				"channel_id", channelID,
-				"channel_kind", string(msg.Channel().Kind()),
-				"channel_name", msg.Channel().Name(),
+				"channel_kind", string(first.Channel().Kind()),
+				"channel_name", first.Channel().Name(),
 				"user_id", externalUserID,
-				"user_name", msg.From().DisplayName(),
+				"user_name", first.From().DisplayName(),
 			)
 			return
 		}
@@ -225,31 +386,88 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 	}
 
 	if conversation.Kind == model.ChannelGroup {
-		if !courier.IsMentioned(msg, self.ID()) {
-			p.metrics.IncMessagesIgnoredNoMention()
+		// Dans une rafale fusionnée, une seule mention suffit : les messages
+		// voisins du même expéditeur sont le contexte de celle-ci. Sans
+		// aucune mention, tout le groupe est ignoré, comme chaque message
+		// l'aurait été isolément.
+		mentioned := false
+		for _, msg := range msgs {
+			if courier.IsMentioned(msg, self.ID()) {
+				mentioned = true
+				break
+			}
+		}
+
+		if !mentioned {
+			for range msgs {
+				p.metrics.IncMessagesIgnoredNoMention()
+			}
 			p.logger.InfoContext(ctx, "ingress: message de groupe ignoré (assistant non mentionné)", logCtx...)
 			return
 		}
 	}
 
-	duplicate, err := p.markProcessing(ctx, messageID)
-	if err != nil {
-		p.logger.ErrorContext(ctx, "ingress: échec de la déduplication du message", append(logCtx, "error", err)...)
+	// Déduplication de chaque message d'origine, jamais du message fusionné :
+	// la redélivrance d'un seul message d'une rafale déjà traitée doit être
+	// reconnue individuellement.
+	fresh := make([]courier.Message, 0, len(msgs))
+	for _, msg := range msgs {
+		duplicate, err := p.markProcessing(ctx, string(msg.ID()))
+		if err != nil {
+			p.logger.ErrorContext(ctx, "ingress: échec de la déduplication du message", append(logCtx, "error", err)...)
+			continue
+		}
+
+		if duplicate {
+			p.metrics.IncDuplicateMessage()
+			p.logger.InfoContext(ctx, "ingress: message déjà traité, ignoré", logCtx...)
+			continue
+		}
+
+		fresh = append(fresh, msg)
+	}
+
+	if len(fresh) == 0 {
 		return
 	}
 
-	if duplicate {
-		p.metrics.IncDuplicateMessage()
-		p.logger.InfoContext(ctx, "ingress: message déjà traité, ignoré", logCtx...)
-		return
+	msg := fresh[0]
+	if len(fresh) > 1 {
+		merged, err := mergeBurst(ctx, fresh)
+		if err != nil {
+			// Fusion impossible (lecture d'une part échouée) : traiter
+			// chaque message séquentiellement plutôt que d'en perdre un.
+			p.logger.WarnContext(ctx, "ingress: fusion de rafale impossible, traitement individuel", append(logCtx, "error", err)...)
+			for _, m := range fresh {
+				p.handleResolved(ctx, self, execIdentity, conversation, m, []string{string(m.ID())}, logCtx)
+			}
+			return
+		}
+
+		p.metrics.IncMessagesCoalesced(len(fresh) - 1)
+		p.logger.InfoContext(ctx, "ingress: rafale fusionnée en un tour", append(logCtx, "messages", len(fresh))...)
+		msg = merged
 	}
 
+	messageIDs := make([]string, len(fresh))
+	for i, m := range fresh {
+		messageIDs[i] = string(m.ID())
+	}
+
+	p.handleResolved(ctx, self, execIdentity, conversation, msg, messageIDs, logCtx)
+}
+
+// handleResolved exécute le traitement métier d'un message déjà résolu,
+// autorisé et marqué en cours de traitement, puis envoie la réponse et
+// enregistre le statut final de chaque identifiant de messageIDs (plusieurs
+// pour un message fusionné depuis une rafale).
+func (p *Pipeline) handleResolved(ctx context.Context, self courier.User, execIdentity model.ExecutionIdentity, conversation model.Conversation, msg courier.Message, messageIDs []string, logCtx []any) {
 	handleCtx, cancelHandle := context.WithTimeout(ctx, handleTimeout)
 	reply, attachments, err := p.handler.Handle(handleCtx, execIdentity, conversation, msg)
 	cancelHandle()
 	if err != nil {
 		p.logger.ErrorContext(ctx, "ingress: échec du traitement du message", append(logCtx, "error", err)...)
-		p.markFinal(ctx, messageID, statusFailed, logCtx)
+		p.markFinalAll(ctx, messageIDs, statusFailed, logCtx)
 
 		// Réponse de repli, sauf à l'arrêt du processus : un échec dû à
 		// l'annulation du contexte parent n'est pas une panne à signaler, et
@@ -280,12 +498,19 @@ func (p *Pipeline) processMessage(ctx context.Context, self courier.User, msg co
 		)
 
 		if err := p.send(ctx, outgoing, logCtx); err != nil {
-			p.markFinal(ctx, messageID, statusFailed, logCtx)
+			p.markFinalAll(ctx, messageIDs, statusFailed, logCtx)
 			return
 		}
 	}
 
-	p.markFinal(ctx, messageID, statusProcessed, logCtx)
+	p.markFinalAll(ctx, messageIDs, statusProcessed, logCtx)
+}
+
+// markFinalAll enregistre le statut final de chaque message d'une rafale.
+func (p *Pipeline) markFinalAll(ctx context.Context, messageIDs []string, status string, logCtx []any) {
+	for _, id := range messageIDs {
+		p.markFinal(ctx, id, status, logCtx)
+	}
 }
 
 // send transmet outgoing au fournisseur, en réessayant jusqu'à

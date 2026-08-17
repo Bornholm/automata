@@ -42,8 +42,29 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateMemory(cfg)...)
 	errs = append(errs, validateSchedules(cfg)...)
 	errs = append(errs, validateObservability(cfg)...)
+	errs = append(errs, validateCourier(cfg)...)
 
 	return joinErrors(errs)
+}
+
+// validateCourier vérifie la fenêtre de coalescence des rafales. Une valeur
+// négative n'a pas de sens, et une fenêtre de plus de 30 secondes ferait
+// passer l'assistant pour muet : chaque tour attend au moins la fenêtre
+// entière avant de traiter.
+func validateCourier(cfg *Config) []error {
+	if cfg.Courier.CoalesceWindow == nil {
+		return nil
+	}
+
+	window := cfg.Courier.CoalesceWindow.Duration()
+	if window < 0 {
+		return []error{fmt.Errorf("courier.coalesce_window: durée négative (%s)", window)}
+	}
+	if window > 30*time.Second {
+		return []error{fmt.Errorf("courier.coalesce_window: %s dépasse le maximum de 30s (chaque réponse attendrait au moins ce délai)", window)}
+	}
+
+	return nil
 }
 
 func validateObservability(cfg *Config) []error {

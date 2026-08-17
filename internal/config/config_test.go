@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bornholm/automata/internal/config"
 )
@@ -644,5 +645,52 @@ func TestLoad_InvalidAgentLimitNegative(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "max_sequential_tool_calls") {
 		t.Errorf("erreur = %v, attendu mention de max_sequential_tool_calls", err)
+	}
+}
+
+func TestLoad_CoalesceWindowTooLarge(t *testing.T) {
+	setBaseEnv(t)
+
+	content := strings.Replace(baseYAML, "courier:\n  providers:", "courier:\n  coalesce_window: 2m\n  providers:", 1)
+	path := writeYAML(t, content)
+
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("Load: erreur attendue pour une fenêtre de coalescence de 2m")
+	}
+
+	if !strings.Contains(err.Error(), "coalesce_window") {
+		t.Errorf("erreur = %v, attendu mention de coalesce_window", err)
+	}
+}
+
+func TestLoad_CoalesceWindowExplicitZeroDisables(t *testing.T) {
+	setBaseEnv(t)
+
+	content := strings.Replace(baseYAML, "courier:\n  providers:", "courier:\n  coalesce_window: 0s\n  providers:", 1)
+	path := writeYAML(t, content)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got := cfg.Courier.EffectiveCoalesceWindow(); got != 0 {
+		t.Errorf("EffectiveCoalesceWindow = %s, attendu 0 (désactivée explicitement)", got)
+	}
+}
+
+func TestLoad_CoalesceWindowDefaultWhenAbsent(t *testing.T) {
+	setBaseEnv(t)
+
+	path := writeYAML(t, baseYAML)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if got := cfg.Courier.EffectiveCoalesceWindow(); got != 2*time.Second {
+		t.Errorf("EffectiveCoalesceWindow = %s, attendu 2s (défaut)", got)
 	}
 }

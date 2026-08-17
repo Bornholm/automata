@@ -123,7 +123,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	var wg sync.WaitGroup
 
 	for name, provider := range providers {
-		pipeline := ingress.NewPipeline(name, provider, resolver, db, handler, logger, metrics)
+		pipeline := ingress.NewPipeline(name, provider, resolver, db, handler, logger, metrics).
+			WithCoalesceWindow(cfg.Courier.EffectiveCoalesceWindow())
 
 		wg.Add(1)
 		go func(name string, pipeline *ingress.Pipeline) {

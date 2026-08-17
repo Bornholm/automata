@@ -79,6 +79,32 @@ faudra scanner un nouveau QR code. Sauvegardez-le.
 
 Seul le type `whatsapp` est livré.
 
+### coalesce_window
+
+```yaml
+courier:
+  coalesce_window: 2s
+```
+
+Fenêtre de coalescence des rafales, commune à tous les fournisseurs. Après
+un message entrant, le pipeline attend que cette durée s'écoule sans
+nouvelle arrivée, puis fusionne les messages texte consécutifs d'un même
+expéditeur sur un même canal en un seul tour de conversation : trois bulles
+envoyées coup sur coup donnent une seule réponse au lieu de trois réponses
+entremêlées, et un seul appel au modèle au lieu de trois.
+
+Seuls les messages purement textuels fusionnent. Une pièce jointe, un
+vocal ou une réponse à un message précis interrompt la fusion et forme son
+propre tour, dans l'ordre d'arrivée. Dans un groupe, une seule mention de
+l'assistant dans la rafale suffit : les messages voisins du même expéditeur
+deviennent le contexte du tour. Une rafale est bornée à 10 messages ; un
+flux continu ne repousse donc pas le traitement indéfiniment.
+
+Absente, la fenêtre vaut `2s`. `0s` désactive la coalescence. La valeur est
+plafonnée à `30s` par la validation : chaque réponse attend au moins la
+fenêtre entière, une valeur élevée ferait passer l'assistant pour muet. Le
+compteur `messages_coalesced` de `/metrics` mesure les messages absorbés.
+
 ## observability
 
 ```yaml

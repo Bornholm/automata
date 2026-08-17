@@ -113,9 +113,33 @@ type Pragmas struct {
 	BusyTimeout Duration `yaml:"busy_timeout"`
 }
 
+// defaultCoalesceWindow est la fenêtre de coalescence des rafales appliquée
+// quand courier.coalesce_window est absent de la configuration. Deux
+// secondes absorbent la quasi-totalité des « pensées en plusieurs bulles »
+// sans retarder sensiblement la réponse.
+const defaultCoalesceWindow = 2 * time.Second
+
 // Courier décrit la configuration des fournisseurs de messagerie.
 type Courier struct {
 	Providers map[string]CourierProvider `yaml:"providers"`
+
+	// CoalesceWindow est la fenêtre de silence attendue avant de traiter un
+	// message entrant : les messages texte consécutifs d'un même expéditeur
+	// arrivés pendant cette fenêtre sont fusionnés en un seul tour de
+	// conversation (voir internal/ingress). Pointeur pour distinguer trois
+	// cas : absent (défaut de defaultCoalesceWindow), « 0s » explicite
+	// (coalescence désactivée), ou une durée choisie.
+	CoalesceWindow *Duration `yaml:"coalesce_window"`
+}
+
+// EffectiveCoalesceWindow retourne la fenêtre de coalescence à appliquer,
+// défaut compris.
+func (c Courier) EffectiveCoalesceWindow() time.Duration {
+	if c.CoalesceWindow == nil {
+		return defaultCoalesceWindow
+	}
+
+	return c.CoalesceWindow.Duration()
 }
 
 // CourierProvider décrit un fournisseur Go Courier. Le champ Type est requis,

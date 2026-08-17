@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -758,5 +759,145 @@ func TestPipeline_SendRetriesAfterTransientFailure(t *testing.T) {
 
 	if got := provider.Attempts(); got != 2 {
 		t.Errorf("tentatives d'envoi = %d, attendu 2 (un échec puis un succès)", got)
+	}
+}
+
+// recordingHandler capture le contenu principal de chaque message traité,
+// dans l'ordre.
+type recordingHandler struct {
+	mu       sync.Mutex
+	contents []string
+}
+
+func (h *recordingHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error) {
+	content, err := courier.GetMessageMainContent(ctx, message)
+	if err != nil {
+		content = "<erreur: " + err.Error() + ">"
+	}
+
+	h.mu.Lock()
+	h.contents = append(h.contents, content)
+	h.mu.Unlock()
+
+	return "", nil, nil
+}
+
+func (h *recordingHandler) Contents() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return append([]string(nil), h.contents...)
+}
+
+// newCoalescingTestPipeline construit un pipeline avec une fenêtre de
+// coalescence courte, adaptée aux tests.
+func newCoalescingTestPipeline(t *testing.T, handler ingress.Handler, window time.Duration) (*ingress.Pipeline, *readyProvider) {
+	t.Helper()
+
+	pipeline, provider := newTestPipeline(t, handler)
+	return pipeline.WithCoalesceWindow(window), provider
+}
+
+func deliverText(t *testing.T, provider *readyProvider, channelID, text string, funcs ...courier.BaseMessageOptionFunc) {
+	t.Helper()
+
+	options := append([]courier.BaseMessageOptionFunc{courier.WithMessageMainPart(text)}, funcs...)
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannelRef(courier.ChannelID(channelID)),
+		courier.NewUser("alice-ext", "Alice"),
+		options...,
+	)
+
+	if err := provider.Deliver(context.Background(), msg); err != nil {
+		t.Fatalf("provider.Deliver: %v", err)
+	}
+}
+
+func TestPipeline_CoalescesBurstIntoSingleTurn(t *testing.T) {
+	handler := &recordingHandler{}
+	pipeline, provider := newCoalescingTestPipeline(t, handler, 150*time.Millisecond)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	deliverText(t, provider, "private-chan", "un")
+	deliverText(t, provider, "private-chan", "deux")
+	deliverText(t, provider, "private-chan", "trois")
+
+	if !waitUntil(t, 2*time.Second, func() bool { return len(handler.Contents()) == 1 }) {
+		t.Fatalf("tours traités = %d, attendu 1 (rafale fusionnée) ; contenus: %q", len(handler.Contents()), handler.Contents())
+	}
+
+	if got, want := handler.Contents()[0], "un\ndeux\ntrois"; got != want {
+		t.Errorf("contenu fusionné = %q, attendu %q", got, want)
+	}
+
+	// Aucun tour supplémentaire ne doit suivre.
+	time.Sleep(200 * time.Millisecond)
+	if got := len(handler.Contents()); got != 1 {
+		t.Errorf("tours traités après attente = %d, attendu 1", got)
+	}
+}
+
+func TestPipeline_BurstBrokenByNonTextMessage(t *testing.T) {
+	handler := &recordingHandler{}
+	pipeline, provider := newCoalescingTestPipeline(t, handler, 150*time.Millisecond)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	deliverText(t, provider, "private-chan", "un")
+	deliverText(t, provider, "private-chan", "photo",
+		courier.WithMessagePart(courier.NewMessagePart("piece.png", "image/png", courier.OpenerFromString("octets"))))
+	deliverText(t, provider, "private-chan", "deux")
+
+	if !waitUntil(t, 2*time.Second, func() bool { return len(handler.Contents()) == 3 }) {
+		t.Fatalf("tours traités = %d, attendu 3 (le message non textuel casse la fusion) ; contenus: %q", len(handler.Contents()), handler.Contents())
+	}
+
+	if got, want := handler.Contents(), []string{"un", "photo", "deux"}; !slices.Equal(got, want) {
+		t.Errorf("contenus = %q, attendu %q (ordre d'arrivée préservé)", got, want)
+	}
+}
+
+func TestPipeline_GroupBurstSingleMentionSuffices(t *testing.T) {
+	handler := &recordingHandler{}
+	pipeline, provider := newCoalescingTestPipeline(t, handler, 150*time.Millisecond)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	deliverText(t, provider, "group-chan", "au fait")
+	deliverText(t, provider, "group-chan", "@assistant tu peux regarder ?",
+		courier.WithMessageMentions(courier.Mention{UserID: selfUser.ID(), DisplayName: selfUser.DisplayName()}))
+
+	if !waitUntil(t, 2*time.Second, func() bool { return len(handler.Contents()) == 1 }) {
+		t.Fatalf("tours traités = %d, attendu 1 (une mention dans la rafale suffit)", len(handler.Contents()))
+	}
+
+	if got, want := handler.Contents()[0], "au fait\n@assistant tu peux regarder ?"; got != want {
+		t.Errorf("contenu fusionné = %q, attendu %q", got, want)
+	}
+}
+
+func TestPipeline_GroupBurstWithoutMentionIgnored(t *testing.T) {
+	handler := &recordingHandler{}
+	pipeline, provider := newCoalescingTestPipeline(t, handler, 150*time.Millisecond)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	deliverText(t, provider, "group-chan", "on se retrouve où ?")
+	deliverText(t, provider, "group-chan", "vers 18h ?")
+
+	time.Sleep(400 * time.Millisecond)
+
+	if got := len(handler.Contents()); got != 0 {
+		t.Errorf("tours traités = %d, attendu 0 (rafale de groupe sans mention)", got)
 	}
 }

@@ -45,6 +45,10 @@ storage:
       busy_timeout: 5s
 
 courier:
+  # Fenêtre de silence avant traitement d'un message : les messages texte
+  # consécutifs d'un même expéditeur arrivés pendant cette fenêtre sont
+  # fusionnés en un seul tour de conversation. 0s désactive, 2s par défaut.
+  coalesce_window: 2s
   providers:
     whatsapp:
       type: whatsapp
