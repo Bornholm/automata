@@ -14,3 +14,6 @@
 # dokku-deploy`, qui les ajoute au seul commit poussé vers Dokku (git add -f).
 # Elles n'ont rien à faire dans l'historique.
 /vendor/
+
+# Outils de développement installés localement (modd).
+/tools/
