@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -54,6 +55,7 @@ type OrchestratorAgent struct {
 	memoryTools            MemoryTools
 	reminderTools          ReminderTools
 	metrics                *observability.Metrics
+	logger                 *slog.Logger
 }
 
 // NewOrchestratorAgent construit un OrchestratorAgent. specialists associe
@@ -96,7 +98,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 		maxIterations = 1
 	}
 
-	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxDelegationsReached)
+	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxDelegationsReached, a.logger, a.agentName)
 	if err != nil {
 		return Result{}, err
 	}
@@ -254,6 +256,15 @@ func (a *OrchestratorAgent) WithMemoryTools(tools MemoryTools) *OrchestratorAgen
 // permettre le chaînage à la construction, comme WithMemoryTools.
 func (a *OrchestratorAgent) WithReminderTools(tools ReminderTools) *OrchestratorAgent {
 	a.reminderTools = tools
+	return a
+}
+
+// WithLogger attache logger à a : chaque tour journalise alors son
+// introspection (outils exposés, appels d'outils avec durée, fin de tour) —
+// jamais les arguments ni les résultats, qui portent du contenu privé. nil
+// (défaut) désactive cette journalisation.
+func (a *OrchestratorAgent) WithLogger(logger *slog.Logger) *OrchestratorAgent {
+	a.logger = logger
 	return a
 }
 

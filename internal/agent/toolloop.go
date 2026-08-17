@@ -3,7 +3,9 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"github.com/bornholm/genai/llm"
@@ -132,18 +134,33 @@ type toolLoopResult struct {
 // (mcp.Limits.MaxToolResultBytes) : sans lui, maxIterations appels tenant
 // chacun sous le plafond unitaire dépassent tout de même largement le
 // contexte annoncé.
-func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages []llm.Message, tools []llm.Tool, maxIterations int, maxContextBytes int64, maxReachedErr error) (toolLoopResult, error) {
+// logger, s'il n'est pas nil, journalise l'introspection du tour : outils
+// exposés au modèle, chaque appel d'outil (nom, itération, durée, erreur),
+// fin de tour. JAMAIS les arguments ni les résultats d'outils : ils portent
+// du contenu privé (texte d'un rappel, contenu mémorisé, requête de
+// recherche — AGENTS.md, "ne pas journaliser les contenus privés"). nil
+// désactive toute journalisation (tests, agents construits hors registre).
+func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages []llm.Message, tools []llm.Tool, maxIterations int, maxContextBytes int64, maxReachedErr error, logger *slog.Logger, agentName string) (toolLoopResult, error) {
 	if maxIterations <= 0 {
 		maxIterations = 1
+	}
+
+	if logger != nil {
+		toolNames := make([]string, len(tools))
+		for i, tool := range tools {
+			toolNames[i] = tool.Name()
+		}
+		logger.InfoContext(ctx, "agent: tour démarré", "agent", agentName, "tools", toolNames, "max_iterations", maxIterations)
 	}
 
 	var (
 		toolResults []string
 		attachments []media.Media
 		usedBytes   int64
+		totalCalls  int
 	)
 
-	for range maxIterations {
+	for iteration := range maxIterations {
 		resp, err := client.ChatCompletion(ctx, llm.WithMessages(messages...), llm.WithTools(tools...))
 		if err != nil {
 			return toolLoopResult{}, fmt.Errorf("agent: appel du client llm: %w", err)
@@ -160,13 +177,26 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 				return toolLoopResult{}, ErrEmptyReply
 			}
 
+			if logger != nil {
+				logger.InfoContext(ctx, "agent: tour terminé", "agent", agentName, "iterations", iteration+1, "tool_calls", totalCalls, "reply_bytes", len(text))
+			}
+
 			return toolLoopResult{Text: text, ToolResults: toolResults, Attachments: attachments}, nil
 		}
 
 		messages = append(messages, llm.NewToolCallsMessage(toolCalls...))
 
 		for _, tc := range toolCalls {
+			totalCalls++
+			callStart := time.Now()
 			toolMessage, err := llm.ExecuteToolCall(ctx, tc, tools...)
+			if logger != nil {
+				logCtx := []any{"agent", agentName, "tool", tc.Name(), "iteration", iteration + 1, "duration", time.Since(callStart).String()}
+				if err != nil {
+					logCtx = append(logCtx, "error", err)
+				}
+				logger.InfoContext(ctx, "agent: appel d'outil", logCtx...)
+			}
 			if err != nil {
 				// Un échec dur (paramètres illisibles, panique interne au
 				// tool) ne doit pas faire échouer tout le tour : on le

@@ -247,7 +247,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		Metrics:    metrics,
 	}
 
-	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, mcpManager, metrics)
+	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, mcpManager, metrics, logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
 	}

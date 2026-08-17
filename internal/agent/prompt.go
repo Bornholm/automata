@@ -110,7 +110,14 @@ dans ce tour, avec les outils et délégations dont tu disposes réellement ;
 soit tu réponds clairement que tu n'en es pas capable, en disant ce qui te
 manque. Un outil ou un spécialiste qui ne t'est pas proposé dans ce tour
 n'existe pas, même si la demande paraît banale ou si ta mission le
-mentionne.`
+mentionne.
+
+Seule la liste d'outils du tour COURANT fait foi, jamais l'historique : ta
+configuration évolue entre les conversations. Si l'historique te montre en
+train d'affirmer qu'une capacité te manque alors que l'outil correspondant
+t'est proposé maintenant, c'est l'outil qui a raison — utilise-le au lieu de
+répéter l'ancienne limite. Inversement, une capacité visible dans
+l'historique mais absente aujourd'hui n'existe plus.`
 
 // buildCapabilitiesSection décrit, en langage naturel, les permissions
 // applicatives déclarées (agentCfg.Capabilities) et les agents vers

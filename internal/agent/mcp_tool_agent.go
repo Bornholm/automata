@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -55,6 +56,7 @@ type MCPToolAgent struct {
 	mcpLimits              mcp.Limits
 	maxSequentialToolCalls int
 	maxToolContextBytes    int64
+	logger                 *slog.Logger
 }
 
 // NewMCPToolAgent construit un MCPToolAgent. mcpServerNames est la liste des
@@ -141,7 +143,7 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 		maxIterations = 1
 	}
 
-	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached)
+	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, a.agentName)
 	if err != nil {
 		return Result{}, err
 	}
@@ -157,6 +159,14 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 // WithMaxToolContextBytes borne le cumul des résultats d'outils réinjectés
 // dans la conversation durant un tour (PLAN.md §9.4). Une valeur <= 0
 // (défaut) laisse ce budget illimité. Retourne a pour permettre le chaînage.
+// WithLogger attache logger à a : même introspection de tour que pour
+// OrchestratorAgent.WithLogger (outils, durées, jamais les contenus). nil
+// (défaut) désactive.
+func (a *MCPToolAgent) WithLogger(logger *slog.Logger) *MCPToolAgent {
+	a.logger = logger
+	return a
+}
+
 func (a *MCPToolAgent) WithMaxToolContextBytes(max int64) *MCPToolAgent {
 	a.maxToolContextBytes = max
 	return a

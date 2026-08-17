@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/bornholm/genai/llm"
@@ -50,7 +51,7 @@ type Registry struct {
 // deux passes sont nécessaires : un OrchestratorAgent a besoin que ses
 // délégués existent déjà dans le registre pour les envelopper.
 func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error) {
-	return NewRegistryWithMemory(cfg, MemoryTools{}, ReminderTools{}, mcpManager, nil)
+	return NewRegistryWithMemory(cfg, MemoryTools{}, ReminderTools{}, mcpManager, nil, nil)
 }
 
 // NewRegistryWithMemory se comporte comme NewRegistry, mais attache
@@ -80,7 +81,10 @@ func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error)
 // même schéma que memoryTools : partagé par tous les orchestrateurs, mais
 // attaché seulement aux agents déclarant reminders: true. Sa valeur zéro
 // (DB nil) n'expose aucun outil.
-func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminderTools ReminderTools, mcpManager *mcp.Manager, metrics *observability.Metrics) (*Registry, error) {
+// logger, s'il n'est pas nil, active l'introspection des tours sur chaque
+// agent construit (voir OrchestratorAgent.WithLogger) : outils exposés,
+// appels d'outils et délégations, durées — jamais les contenus.
+func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminderTools ReminderTools, mcpManager *mcp.Manager, metrics *observability.Metrics, logger *slog.Logger) (*Registry, error) {
 	agents := make(map[string]Agent, len(cfg.Agents))
 	clients := make(map[string]llm.Client, len(cfg.Agents))
 	prompts := make(map[string]string, len(cfg.Agents))
@@ -138,7 +142,9 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 					agentCfg.Limits.MaxSequentialToolCalls,
 				)
 
-				agents[name] = specialist.WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes()))
+				agents[name] = specialist.
+					WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes())).
+					WithLogger(logger)
 			}
 
 			continue
@@ -178,7 +184,8 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			WithReminderTools(agentReminderTools).
 			WithMaxActionsPerTurn(agentCfg.Limits.MaxActionsPerTurn).
 			WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes())).
-			WithMetrics(metrics)
+			WithMetrics(metrics).
+			WithLogger(logger)
 	}
 
 	return &Registry{agents: agents}, nil
