@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"path/filepath"
@@ -17,6 +18,8 @@ import (
 	"github.com/bornholm/go-courier"
 	"github.com/bornholm/go-courier/provider/memory"
 
+	"github.com/bornholm/automata/internal/apperr"
+	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/ingress"
@@ -684,6 +687,55 @@ func TestPipeline_HandlerErrorSendsFallback(t *testing.T) {
 
 	if content != ingress.FallbackReply {
 		t.Errorf("contenu de la réponse de repli = %q, attendu %q", content, ingress.FallbackReply)
+	}
+}
+
+// explainedErrorHandler échoue avec une erreur porteuse d'un message destiné
+// à l'utilisateur, comme le fait le traitement d'une note vocale inaudible.
+type explainedErrorHandler struct{}
+
+func (explainedErrorHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error) {
+	return "", nil, fmt.Errorf("conversation: transcription de la note vocale: %w",
+		apperr.Explain(audio.ErrEmptyTranscription, "Je n'ai rien entendu dans ce message vocal."))
+}
+
+// Un échec dû à ce que la personne a envoyé lui vaut une explication utile,
+// pas le repli générique : « réessaie dans quelques instants » est un mauvais
+// conseil quand réessayer à l'identique redonnera le même résultat.
+func TestPipeline_ExplainedErrorReplacesFallback(t *testing.T) {
+	pipeline, provider := newTestPipeline(t, explainedErrorHandler{})
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	ctx := context.Background()
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannelRef("private-chan"),
+		courier.NewUser("alice-ext", "Alice"),
+		courier.WithMessageMainPart("bonjour"),
+	)
+
+	if err := provider.Deliver(ctx, msg); err != nil {
+		t.Fatalf("provider.Deliver: %v", err)
+	}
+
+	if !waitUntil(t, 2*time.Second, func() bool { return len(provider.Sent()) == 1 }) {
+		t.Fatalf("aucune réponse envoyée (envoyés: %d)", len(provider.Sent()))
+	}
+
+	content, err := courier.GetMessageMainContent(ctx, provider.Sent()[0])
+	if err != nil {
+		t.Fatalf("GetMessageMainContent: %v", err)
+	}
+
+	if content != "Je n'ai rien entendu dans ce message vocal." {
+		t.Errorf("réponse = %q, attendu l'explication portée par l'erreur", content)
+	}
+	if content == ingress.FallbackReply {
+		t.Error("le repli générique a été envoyé au lieu de l'explication")
 	}
 }
 

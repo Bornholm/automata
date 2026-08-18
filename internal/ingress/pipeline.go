@@ -479,10 +479,22 @@ func (p *Pipeline) handleResolved(ctx context.Context, self courier.User, execId
 	// fournisseur.
 	stopTyping()
 	if err != nil {
-		p.logger.ErrorContext(ctx, "ingress: échec du traitement du message", append(logCtx, "error", err)...)
+		// Un échec qui vient de ce que la personne a envoyé (note vocale
+		// inaudible, format inconnu) n'est pas une panne : elle reçoit une
+		// explication utile plutôt que « réessaie dans quelques instants »,
+		// et le journal l'enregistre en avertissement, pas en erreur — sans
+		// quoi l'alerting se déclencherait sur un micro mal placé.
+		reply, explained := apperr.UserReply(err)
+		if explained {
+			p.logger.WarnContext(ctx, "ingress: message non exploitable, explication envoyée", append(logCtx, "error", err)...)
+		} else {
+			reply = FallbackReply
+			p.logger.ErrorContext(ctx, "ingress: échec du traitement du message", append(logCtx, "error", err)...)
+		}
+
 		p.markFinalAll(ctx, messageIDs, statusFailed, logCtx)
 
-		// Réponse de repli, sauf à l'arrêt du processus : un échec dû à
+		// Réponse envoyée sauf à l'arrêt du processus : un échec dû à
 		// l'annulation du contexte parent n'est pas une panne à signaler, et
 		// l'envoi échouerait de toute façon. Best effort : son propre échec
 		// est déjà journalisé par send.
@@ -491,7 +503,7 @@ func (p *Pipeline) handleResolved(ctx context.Context, self courier.User, execId
 				courier.RandomMessageID(),
 				msg.Channel(),
 				self,
-				courier.WithMessageMainPart(FallbackReply),
+				courier.WithMessageMainPart(reply),
 			), logCtx)
 		}
 		return

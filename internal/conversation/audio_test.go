@@ -6,11 +6,13 @@ import (
 	"database/sql"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/bornholm/go-courier"
 
+	"github.com/bornholm/automata/internal/apperr"
 	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/conversation"
 	"github.com/bornholm/automata/internal/model"
@@ -282,5 +284,72 @@ func TestHandler_VoiceNote_Cancellation(t *testing.T) {
 	}
 	if len(a.requests) != 0 {
 		t.Fatal("l'agent n'aurait jamais dû être exécuté")
+	}
+}
+
+// Les trois échecs qui viennent de l'audio envoyé portent une explication
+// destinée à l'utilisateur ; une panne du fournisseur de transcription, non.
+// C'est cette distinction qui décide, plus haut, entre un conseil utile et
+// « réessaie dans quelques instants ».
+func TestHandler_VoiceNote_UserFacingExplanations(t *testing.T) {
+	cases := []struct {
+		name        string
+		transcriber *spyTranscriber
+		maxSize     int64
+		explained   bool
+		fragment    string
+	}{
+		{
+			name:        "transcription vide",
+			transcriber: &spyTranscriber{err: audio.ErrEmptyTranscription},
+			maxSize:     1 << 20,
+			explained:   true,
+			fragment:    "rien entendu",
+		},
+		{
+			name:        "format inconnu",
+			transcriber: &spyTranscriber{err: audio.ErrUnsupportedFormat},
+			maxSize:     1 << 20,
+			explained:   true,
+			fragment:    "format audio",
+		},
+		{
+			name:        "audio trop volumineux",
+			transcriber: &spyTranscriber{reply: "jamais atteint"},
+			maxSize:     4,
+			explained:   true,
+			fragment:    "trop long",
+		},
+		{
+			name:        "panne du fournisseur",
+			transcriber: &spyTranscriber{err: errors.New("503 service unavailable")},
+			maxSize:     1 << 20,
+			explained:   false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := openTestDB(t)
+
+			audioCfg := audio.Config{Enabled: true, MaxSize: tc.maxSize, Timeout: time.Second}
+			h := conversation.NewHandler(db, &recordingAgent{}, nil, 0, audioCfg, tc.transcriber, false, nil)
+
+			identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
+			conv := testConversation(model.ConversationID("conv-"+tc.name), "chan-"+tc.name)
+
+			_, _, err := h.Handle(context.Background(), identity, conv, voiceNoteMessage("alice", []byte("beaucoup plus de 4 octets")))
+			if err == nil {
+				t.Fatal("erreur attendue")
+			}
+
+			reply, explained := apperr.UserReply(err)
+			if explained != tc.explained {
+				t.Fatalf("explication utilisateur = %v (%q), attendu %v", explained, reply, tc.explained)
+			}
+			if tc.explained && !strings.Contains(reply, tc.fragment) {
+				t.Errorf("explication = %q, attendu qu'elle mentionne %q", reply, tc.fragment)
+			}
+		})
 	}
 }

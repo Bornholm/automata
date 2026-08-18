@@ -154,6 +154,22 @@ Ne passez ces deux drapeaux à `true` que si vous savez pourquoi. Le texte
 transcrit est souvent plus sensible que le message écrit équivalent, parce
 qu'on parle plus librement qu'on n'écrit.
 
+Trois échecs viennent de l'audio lui-même et reçoivent une réponse qui dit
+quoi faire, plutôt que le repli générique « réessaie dans quelques
+instants » — qui serait un mauvais conseil, réessayer à l'identique donnant
+le même résultat :
+
+| Cause | Réponse envoyée |
+|---|---|
+| Transcription vide (inaudible, silence) | proposition de réenregistrer plus près du micro, ou d'écrire |
+| Dépassement de `max_size` | proposition de refaire plus court, ou d'écrire |
+| Format non reconnu | proposition de réenregistrer depuis l'application, ou d'écrire |
+
+Ces trois cas sont journalisés en `WARN`, pas en `ERROR` : un micro mal placé
+n'est pas une panne, et ne doit pas déclencher d'alerte. Tout le reste —
+fournisseur injoignable, dépassement de `timeout`, configuration fautive —
+reste une erreur, avec le message de repli générique.
+
 ## attachments
 
 ```yaml

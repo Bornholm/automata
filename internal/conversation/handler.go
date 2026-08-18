@@ -18,6 +18,7 @@ import (
 
 	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
+	"github.com/bornholm/automata/internal/apperr"
 	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
@@ -156,7 +157,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 			transcribed, err := audio.ExtractText(ctx, h.audioCfg, h.transcriber, voiceNote)
 			h.metrics.ObserveTranscriptionLatency(time.Since(transcriptionStart))
 			if err != nil {
-				return "", nil, fmt.Errorf("conversation: transcription de la note vocale: %w", err)
+				return "", nil, fmt.Errorf("conversation: transcription de la note vocale: %w", explainAudioFailure(err))
 			}
 
 			text = transcribed
@@ -440,4 +441,27 @@ func toAgentHistory(records []persistence.Message) []agent.Message {
 		})
 	}
 	return history
+}
+
+// explainAudioFailure attache un message destiné à l'utilisateur aux échecs
+// audio qui viennent de ce qu'il a envoyé, et à eux seuls : une note vocale
+// inaudible, trop longue ou dans un format inconnu n'est pas une panne, et
+// « réessaie dans quelques instants » y serait un mauvais conseil — réessayer
+// à l'identique redonnerait le même résultat.
+//
+// Toute autre erreur (fournisseur de transcription injoignable, timeout,
+// configuration fautive) ressort telle quelle : c'est bien une panne, elle
+// mérite le message de repli générique et une ligne d'erreur dans les
+// journaux.
+func explainAudioFailure(err error) error {
+	switch {
+	case errors.Is(err, audio.ErrEmptyTranscription):
+		return apperr.Explain(err, "Je n'ai rien entendu dans ce message vocal. Tu peux le réenregistrer en parlant un peu plus près du micro, ou m'écrire.")
+	case errors.Is(err, audio.ErrTooLarge):
+		return apperr.Explain(err, "Ce message vocal est trop long pour que je puisse le traiter. Tu peux le refaire plus court, ou m'écrire.")
+	case errors.Is(err, audio.ErrUnsupportedFormat):
+		return apperr.Explain(err, "Je ne sais pas lire ce format audio. Tu peux me renvoyer un message vocal enregistré depuis WhatsApp, ou m'écrire.")
+	default:
+		return err
+	}
 }
