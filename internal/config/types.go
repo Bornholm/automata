@@ -61,22 +61,25 @@ func (b ByteSize) Bytes() uint64 {
 
 // Config est la racine de la configuration YAML d'Automata.
 type Config struct {
-	Version       int                  `yaml:"version"`
-	Organization  Organization         `yaml:"organization"`
-	Storage       Storage              `yaml:"storage"`
-	Courier       Courier              `yaml:"courier"`
-	Audio         Audio                `yaml:"audio"`
-	Attachments   Attachments          `yaml:"attachments"`
-	LLMClients    map[string]LLMClient `yaml:"llm_clients"`
-	Agents        map[string]Agent     `yaml:"agents"`
-	MCPServers    map[string]MCPServer `yaml:"mcp_servers"`
-	Memory        Memory               `yaml:"memory"`
-	Conversation  Conversation         `yaml:"conversation"`
-	Identities    Identities           `yaml:"identities"`
-	Origins       []Origin             `yaml:"origins"`
-	Channels      []Channel            `yaml:"channels"`
-	Schedules     []Schedule           `yaml:"schedules"`
-	Observability Observability        `yaml:"observability"`
+	Version      int                  `yaml:"version"`
+	Organization Organization         `yaml:"organization"`
+	Storage      Storage              `yaml:"storage"`
+	Courier      Courier              `yaml:"courier"`
+	Audio        Audio                `yaml:"audio"`
+	Attachments  Attachments          `yaml:"attachments"`
+	LLMClients   map[string]LLMClient `yaml:"llm_clients"`
+	// ImageClients déclare les clients de génération d'images, référencés
+	// par agents.<nom>.image_generation.client.
+	ImageClients  map[string]ImageClient `yaml:"image_clients"`
+	Agents        map[string]Agent       `yaml:"agents"`
+	MCPServers    map[string]MCPServer   `yaml:"mcp_servers"`
+	Memory        Memory                 `yaml:"memory"`
+	Conversation  Conversation           `yaml:"conversation"`
+	Identities    Identities             `yaml:"identities"`
+	Origins       []Origin               `yaml:"origins"`
+	Channels      []Channel              `yaml:"channels"`
+	Schedules     []Schedule             `yaml:"schedules"`
+	Observability Observability          `yaml:"observability"`
 }
 
 // Observability décrit le serveur HTTP local optionnel de santé et de
@@ -288,6 +291,11 @@ type Agent struct {
 	// effective de chaque appel reste vérifiée par principal via les
 	// permissions reminder.<scope>.<action> (identities.roles).
 	Reminders bool `yaml:"reminders"`
+	// ImageGeneration donne à ce spécialiste l'outil generate_image, adossé
+	// au client de génération d'images désigné. L'image produite est jointe
+	// à la réponse et remonte jusqu'au canal. Spécialiste seulement, comme
+	// les serveurs MCP.
+	ImageGeneration ImageGeneration `yaml:"image_generation"`
 	// ScheduledTasks expose à cet agent les outils de tâches planifiées
 	// (schedule_task, list_scheduled_tasks, cancel_scheduled_task). Une
 	// tâche fait TRAVAILLER l'agent à l'échéance, là où un rappel ne fait
@@ -301,6 +309,24 @@ type Agent struct {
 	MCPServers     []string    `yaml:"mcp_servers"`
 	Capabilities   []string    `yaml:"capabilities"`
 	Limits         AgentLimits `yaml:"limits"`
+}
+
+// ImageGeneration relie un agent à un client de génération d'images.
+type ImageGeneration struct {
+	// Client désigne une entrée de image_clients. Vide = pas d'outil.
+	Client string `yaml:"client"`
+}
+
+// ImageClient décrit un client de génération d'images. Contrairement aux
+// llm_clients, base_url est facultative : chaque provider embarque l'URL de
+// son service, et openrouter/minimax ne sont pas des services « compatibles
+// OpenAI » interchangeables où l'omission enverrait la clé ailleurs.
+type ImageClient struct {
+	// Provider vaut "openai", "openrouter" ou "minimax".
+	Provider string `yaml:"provider"`
+	Model    string `yaml:"model"`
+	APIKey   string `yaml:"api_key"`
+	BaseURL  string `yaml:"base_url"`
 }
 
 // SystemPrompt décrit la source du system prompt d'un agent : soit un

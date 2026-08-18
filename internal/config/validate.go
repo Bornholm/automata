@@ -34,6 +34,7 @@ func Validate(cfg *Config, baseDir string) error {
 
 	errs = append(errs, validateVersion(cfg)...)
 	errs = append(errs, validateLLMClients(cfg)...)
+	errs = append(errs, validateImageClients(cfg)...)
 	errs = append(errs, validateAgents(cfg)...)
 	errs = append(errs, validateMCPServers(cfg)...)
 	errs = append(errs, validateAudio(cfg)...)
@@ -86,6 +87,33 @@ func validateLLMClients(cfg *Config) []error {
 
 		if client.Reasoning != nil && client.Reasoning.Effort != "" && !slices.Contains(validReasoningEfforts, client.Reasoning.Effort) {
 			errs = append(errs, fmt.Errorf("llm_clients.%s.reasoning.effort: %q inconnu (valeurs: %s)", name, client.Reasoning.Effort, strings.Join(validReasoningEfforts, ", ")))
+		}
+	}
+
+	return errs
+}
+
+// validateImageClients vérifie les clients de génération d'images. base_url
+// reste facultative, contrairement aux llm_clients : chaque provider
+// embarque l'URL de son propre service.
+func validateImageClients(cfg *Config) []error {
+	var errs []error
+
+	for _, name := range sortedKeys(cfg.ImageClients) {
+		client := cfg.ImageClients[name]
+
+		switch client.Provider {
+		case "openai", "openrouter", "minimax":
+		case "":
+			errs = append(errs, fmt.Errorf("image_clients.%s.provider: requis", name))
+		default:
+			errs = append(errs, fmt.Errorf("image_clients.%s.provider: %q non supporté (providers: \"openai\", \"openrouter\", \"minimax\")", name, client.Provider))
+		}
+		if client.Model == "" {
+			errs = append(errs, fmt.Errorf("image_clients.%s.model: requis", name))
+		}
+		if client.APIKey == "" {
+			errs = append(errs, fmt.Errorf("image_clients.%s.api_key: requis", name))
 		}
 	}
 
@@ -204,6 +232,15 @@ func validateAgents(cfg *Config) []error {
 
 			if target.Type != AgentTypeSpecialist {
 				errs = append(errs, fmt.Errorf("%s.delegates: %q n'est pas un agent de type specialist", prefix, delegate))
+			}
+		}
+
+		if client := agent.ImageGeneration.Client; client != "" {
+			if agent.Type != AgentTypeSpecialist {
+				errs = append(errs, fmt.Errorf("%s.image_generation: réservé aux agents specialist (l'orchestrateur délègue, il ne génère pas)", prefix))
+			}
+			if _, ok := cfg.ImageClients[client]; !ok {
+				errs = append(errs, fmt.Errorf("%s.image_generation.client: client d'images inconnu %q (déclarer dans image_clients)", prefix, client))
 			}
 		}
 

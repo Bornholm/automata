@@ -17,3 +17,7 @@
 
 # Outils de développement installés localement (modd).
 /tools/
+/local/
+*.log# Espace de travail local pour itérer sur les dépôts frères (jamais versionné).
+/go.work
+/go.work.sum

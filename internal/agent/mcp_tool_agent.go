@@ -56,7 +56,11 @@ type MCPToolAgent struct {
 	mcpLimits              mcp.Limits
 	maxSequentialToolCalls int
 	maxToolContextBytes    int64
-	logger                 *slog.Logger
+	// extraTools sont des outils applicatifs natifs ajoutés aux outils MCP
+	// (generate_image). Fixes à la construction : contrairement aux outils
+	// MCP, ils ne dépendent ni de la session ni du principal.
+	extraTools []llm.Tool
+	logger     *slog.Logger
 }
 
 // NewMCPToolAgent construit un MCPToolAgent. mcpServerNames est la liste des
@@ -134,6 +138,8 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 		tools = append(tools, serverTools...)
 	}
 
+	tools = append(tools, a.extraTools...)
+
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
 	messages := buildChatMessages(a.systemPrompt, a.agentName, a.orgDisplayName, req)
@@ -159,6 +165,13 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 // WithMaxToolContextBytes borne le cumul des résultats d'outils réinjectés
 // dans la conversation durant un tour (PLAN.md §9.4). Une valeur <= 0
 // (défaut) laisse ce budget illimité. Retourne a pour permettre le chaînage.
+// WithExtraTools ajoute des outils applicatifs natifs aux outils MCP de cet
+// agent. Retourne a pour permettre le chaînage.
+func (a *MCPToolAgent) WithExtraTools(tools ...llm.Tool) *MCPToolAgent {
+	a.extraTools = append(a.extraTools, tools...)
+	return a
+}
+
 // WithLogger attache logger à a : même introspection de tour que pour
 // OrchestratorAgent.WithLogger (outils, durées, jamais les contenus). nil
 // (défaut) désactive.

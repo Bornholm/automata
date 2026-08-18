@@ -126,10 +126,20 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			continue
 		}
 
-		if len(agentCfg.MCPServers) > 0 {
+		if len(agentCfg.MCPServers) > 0 || agentCfg.ImageGeneration.Client != "" {
 			limits := mcp.Limits{
 				ToolTimeout:        agentCfg.Limits.ToolTimeout.Duration(),
 				MaxToolResultBytes: int64(agentCfg.Limits.MaxToolResultBytes.Bytes()),
+			}
+
+			// Outils applicatifs natifs du spécialiste, hors MCP.
+			var extraTools []llm.Tool
+			if clientName := agentCfg.ImageGeneration.Client; clientName != "" {
+				generator, err := BuildImageGenerationClient(context.Background(), cfg.ImageClients[clientName])
+				if err != nil {
+					return nil, fmt.Errorf("agent: construction du client d'images %q pour l'agent %q: %w", clientName, name, err)
+				}
+				extraTools = append(extraTools, newGenerateImageTool(generator))
 			}
 
 			// Un seul type de spécialiste MCP, quel que soit le domaine.
@@ -150,6 +160,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			)
 
 			agents[name] = specialist.
+				WithExtraTools(extraTools...).
 				WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes())).
 				WithLogger(logger)
 		}

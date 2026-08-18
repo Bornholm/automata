@@ -134,6 +134,15 @@ llm_clients:
     api_key: ${TRANSCRIPTION_API_KEY}
     base_url: ${TRANSCRIPTION_BASE_URL}
 
+# Clients de génération d'images (facultatif), référencés par
+# agents.<nom>.image_generation.client. base_url est facultative ici :
+# chaque provider embarque l'URL de son service.
+# image_clients:
+#   image:
+#     provider: openrouter
+#     model: google/gemini-3.1-flash-lite-image
+#     api_key: ${OPENROUTER_API_KEY}
+
 agents:
   # L'orchestrateur ne reçoit jamais les outils des serveurs MCP : il ne
   # dispose que d'outils conceptuels (déléguer, chercher/écrire/oublier en

@@ -279,6 +279,27 @@ Rien n'oblige tous les agents à partager un client. Donner un modèle rapide et
 bon marché à un spécialiste qui ne fait que reformuler, et un modèle plus
 capable à l'orchestrateur, est un réglage courant.
 
+## image_clients
+
+```yaml
+image_clients:
+  image:
+    provider: openrouter          # openai | openrouter | minimax
+    model: google/gemini-3.1-flash-lite-image
+    api_key: ${OPENROUTER_API_KEY}
+```
+
+Clients de génération d'images, référencés par
+`agents.<nom>.image_generation.client`. Contrairement aux `llm_clients`,
+`base_url` est facultative : chaque provider embarque l'URL de son service —
+`openai`, `openrouter` et `minimax` ne parlent pas le même dialecte et ne
+sont pas interchangeables derrière une URL.
+
+L'interface commune (genai `llm.ImageGenerationClient`) normalise ce que les
+trois renvoient : des octets et un type de média, jamais une URL éphémère ni
+du base64 à décoder côté appelant. Les modèles disponibles sur OpenRouter se
+listent via `GET /api/v1/images/models`.
+
 ## agents
 
 Détaillé dans [agents.md](agents.md). Résumé des champs :
@@ -294,6 +315,7 @@ Détaillé dans [agents.md](agents.md). Résumé des champs :
 | `reminders` | Expose les outils de rappels ponctuels. Orchestrateur seulement |
 | `scheduled_tasks` | Expose les outils de tâches planifiées (l'agent travaille à l'échéance). Orchestrateur seulement |
 | `mcp_servers` | Serveurs MCP autorisés. Spécialiste seulement |
+| `image_generation.client` | Donne l'outil `generate_image` (entrée d'`image_clients`). Spécialiste seulement |
 | `capabilities` | Permissions applicatives de l'agent |
 | `limits` | Plafonds d'exécution, tous obligatoires |
 
@@ -315,6 +337,28 @@ Internet en temps réel ») plutôt qu'appeler un outil dont il ignore la
 portée — le spécialiste est là, opérationnel, et n'est jamais sollicité.
 Formulez-la à la troisième personne, en complétant « le spécialiste `x`, qui
 … ». Sans effet sur un orchestrateur, qui n'est le délégué de personne.
+
+### image_generation
+
+```yaml
+  imagine:
+    type: specialist
+    description: generates images from text descriptions
+    client: main
+    system_prompt:
+      file: ../prompts/imagine.md
+    image_generation:
+      client: image
+    limits:
+      tool_timeout: 60s   # générer une image dépasse largement une complétion
+      # ...
+```
+
+Le spécialiste reçoit l'outil `generate_image` (prompt + ratio d'aspect).
+L'image produite est jointe au résultat d'outil et remonte automatiquement
+jusqu'au canal, à travers la délégation : l'utilisateur reçoit l'image
+elle-même, pas une description. Un échec de génération est expliqué au
+modèle plutôt que de faire échouer le tour.
 
 ### reminders
 

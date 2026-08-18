@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"github.com/bornholm/genai/llm"
+
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
 )
@@ -11,4 +13,10 @@ import (
 // travers un tour d'agent.
 func ExportedBuildTaskIdentity(r *TaskRunner, task persistence.Reminder) (model.ExecutionIdentity, model.Conversation) {
 	return r.buildIdentity(task)
+}
+
+// NewGenerateImageToolForTest expose newGenerateImageTool aux tests du
+// paquet agent_test, générateur factice à l'appui.
+func NewGenerateImageToolForTest(generator llm.ImageGenerationClient) llm.Tool {
+	return newGenerateImageTool(generator)
 }
