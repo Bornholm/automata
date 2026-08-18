@@ -21,6 +21,7 @@ func setBaseEnv(t *testing.T) {
 		"MAIN_API_KEY":              "sk-main",
 		"MAIN_BASE_URL":             "https://api.example.test",
 		"TRANSCRIPTION_MODEL":       "whisper-test",
+		"TRANSCRIPTION_BASE_URL":    "https://api.example.test/v1",
 		"TRANSCRIPTION_API_KEY":     "sk-transcription",
 		"GOOGLE_CALENDAR_MCP_URL":   "https://mcp.example.test/calendar",
 		"GOOGLE_CALENDAR_MCP_TOKEN": "mcp-token",
@@ -79,6 +80,7 @@ llm_clients:
     provider: openai
     model: ${TRANSCRIPTION_MODEL}
     api_key: ${TRANSCRIPTION_API_KEY}
+    base_url: ${TRANSCRIPTION_BASE_URL}
 
 agents:
   main:

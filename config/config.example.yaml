@@ -119,10 +119,14 @@ llm_clients:
     api_key: ${MAIN_API_KEY}
     base_url: ${MAIN_BASE_URL}
 
+  # base_url est obligatoire ici aussi, et se règle indépendamment de celui
+  # du client principal : tous les fournisseurs de complétion ne
+  # transcrivent pas l'audio, et l'inverse est vrai aussi.
   transcription:
     provider: openai
     model: ${TRANSCRIPTION_MODEL}
     api_key: ${TRANSCRIPTION_API_KEY}
+    base_url: ${TRANSCRIPTION_BASE_URL}
 
 agents:
   # L'orchestrateur ne reçoit jamais les outils des serveurs MCP : il ne

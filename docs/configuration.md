@@ -209,10 +209,22 @@ llm_clients:
     provider: openai
     model: ${TRANSCRIPTION_MODEL}
     api_key: ${TRANSCRIPTION_API_KEY}
+    base_url: ${TRANSCRIPTION_BASE_URL}
 ```
 
-`provider` accepte `openai`, `mistral` et `openrouter`. `base_url` est
-facultative et permet de viser un service compatible OpenAI.
+`provider` accepte `openai`, `mistral` et `openrouter`.
+
+Les quatre champs sont **obligatoires**, `base_url` comprise, et la
+configuration est refusée au chargement s'il en manque un. Aucun défaut
+implicite n'est appliqué : une `base_url` déduite enverrait vos requêtes
+chez un fournisseur qui n'est pas celui de votre clé, et l'erreur
+n'apparaîtrait qu'au premier appel réel — pour la transcription, au premier
+message vocal reçu, soit potentiellement des semaines après le déploiement.
+
+Le client de transcription se règle indépendamment du client principal : tous
+les fournisseurs de complétion ne transcrivent pas l'audio, et l'inverse est
+vrai aussi. Un même `base_url` pour les deux convient quand le fournisseur
+expose `/audio/transcriptions` (c'est le cas d'OpenRouter et d'OpenAI).
 
 Rien n'oblige tous les agents à partager un client. Donner un modèle rapide et
 bon marché à un spécialiste qui ne fait que reformuler, et un modèle plus

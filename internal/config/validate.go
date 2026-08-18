@@ -32,6 +32,7 @@ func Validate(cfg *Config, baseDir string) error {
 	var errs []error
 
 	errs = append(errs, validateVersion(cfg)...)
+	errs = append(errs, validateLLMClients(cfg)...)
 	errs = append(errs, validateAgents(cfg)...)
 	errs = append(errs, validateMCPServers(cfg)...)
 	errs = append(errs, validateAudio(cfg)...)
@@ -46,6 +47,38 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateConversation(cfg)...)
 
 	return joinErrors(errs)
+}
+
+// validateLLMClients vérifie que chaque client déclaré a de quoi appeler un
+// fournisseur.
+//
+// base_url est exigé, et non déduit d'un défaut : une valeur manquante
+// enverrait les requêtes chez un autre fournisseur que celui de la clé, ou
+// — quand le défaut du provider est écrasé par une chaîne vide — vers une
+// URL relative qui n'échoue qu'au premier appel réel. C'est exactement le
+// genre de panne qui se découvre des semaines après le déploiement, au
+// premier message vocal reçu : mieux vaut refuser de démarrer.
+func validateLLMClients(cfg *Config) []error {
+	var errs []error
+
+	for _, name := range sortedKeys(cfg.LLMClients) {
+		client := cfg.LLMClients[name]
+
+		if client.Provider == "" {
+			errs = append(errs, fmt.Errorf("llm_clients.%s.provider: requis", name))
+		}
+		if client.Model == "" {
+			errs = append(errs, fmt.Errorf("llm_clients.%s.model: requis", name))
+		}
+		if client.APIKey == "" {
+			errs = append(errs, fmt.Errorf("llm_clients.%s.api_key: requis", name))
+		}
+		if client.BaseURL == "" {
+			errs = append(errs, fmt.Errorf("llm_clients.%s.base_url: requis (point d'entrée du fournisseur, ex: https://api.openai.com/v1)", name))
+		}
+	}
+
+	return errs
 }
 
 // validateConversation vérifie la section conversation (historique et

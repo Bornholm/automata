@@ -89,6 +89,9 @@ llm_clients:
     provider: {{ .LLMProvider }}
     model: ${{"{"}}{{ .AudioModelVar }}{{"}"}}
     api_key: ${{"{"}}{{ .AudioKeyVar }}{{"}"}}
+    # Même point d'entrée que le client principal par défaut. À changer si
+    # votre fournisseur de complétion ne transcrit pas l'audio.
+    base_url: ${{"{"}}{{ .LLMBaseVar }}{{"}"}}
 {{ end }}
 agents:
   main:

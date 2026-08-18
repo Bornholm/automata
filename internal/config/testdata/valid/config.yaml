@@ -38,6 +38,7 @@ llm_clients:
     provider: openai
     model: ${TRANSCRIPTION_MODEL}
     api_key: ${TRANSCRIPTION_API_KEY}
+    base_url: ${TRANSCRIPTION_BASE_URL}
 
 agents:
   main:
