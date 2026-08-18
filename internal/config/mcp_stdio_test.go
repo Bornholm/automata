@@ -133,9 +133,54 @@ func TestValidateIdentities_StdioOverrides(t *testing.T) {
 	assertHasError(t, errs, "url: sans effet")
 	assertHasError(t, errs, "headers: sans effet")
 
-	// values sans effet sur un serveur http.
+	// Une valeur sans patron correspondant est une surcharge inopérante.
 	cfg = stdioTestConfig()
 	cfg.MCPServers["imap"] = MCPServer{Transport: "http", URL: "http://example.com"}
 	cfg.Identities.Principals[0].MCP["imap"] = MCPOverride{Values: map[string]string{"a": "b"}}
-	assertHasError(t, validateIdentities(cfg), "values: sans effet")
+	assertHasError(t, validateIdentities(cfg), "aucun patron {{a}}")
+}
+
+func TestValidateIdentities_HTTPTemplates(t *testing.T) {
+	httpConfig := func() *Config {
+		return &Config{
+			MCPServers: map[string]MCPServer{
+				"meteo": {
+					Transport: "http",
+					URL:       "https://mcp.example.com/tenants/{{tenant}}/mcp",
+					Headers:   map[string]string{"X-Api-Key": "{{api_key}}"},
+				},
+			},
+			Identities: Identities{
+				Principals: []Principal{
+					{
+						ID:   "alice",
+						Kind: PrincipalKindHuman,
+						MCP: map[string]MCPOverride{
+							"meteo": {Values: map[string]string{"tenant": "alice", "api_key": "k"}},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	if errs := validateIdentities(httpConfig()); len(errs) != 0 {
+		t.Fatalf("surcharge http templetée valide refusée: %v", errs)
+	}
+
+	// Patron sans valeur : signalé par nom.
+	cfg := httpConfig()
+	cfg.Identities.Principals[0].MCP["meteo"] = MCPOverride{Values: map[string]string{"tenant": "alice"}}
+	assertHasError(t, validateIdentities(cfg), "{{api_key}}")
+
+	// L'URL du principal remplace celle du serveur : ses patrons à elle font
+	// foi, ceux de l'URL du serveur ne comptent plus.
+	cfg = httpConfig()
+	cfg.Identities.Principals[0].MCP["meteo"] = MCPOverride{
+		URL:    "https://autre.example.com/mcp?key={{cle}}",
+		Values: map[string]string{"cle": "x", "api_key": "k"},
+	}
+	if errs := validateIdentities(cfg); len(errs) != 0 {
+		t.Fatalf("URL de principal templetée refusée: %v", errs)
+	}
 }

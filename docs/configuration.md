@@ -330,14 +330,29 @@ les secrets passent TOUJOURS par `env`, jamais par `command` : les arguments
 d'un processus sont lisibles par tout processus local (`/proc/<pid>/cmdline`),
 son environnement non.
 
-Les patrons `{{nom}}` de `command` et `env` sont résolus **par principal**
-via `identities.principals[].mcp.<serveur>.values` (voir
-[agents.md](agents.md)) : chacun obtient son propre processus, lancé avec
-SES identifiants (hôte, compte, mot de passe). Un principal sans `values`
-pour un serveur à patrons n'y a simplement pas accès — jamais de repli sur
-les valeurs d'un autre. Un serveur stdio sans patron est partagé par session,
-comme un serveur http. La validation au chargement vérifie que chaque
-surcharge couvre tous les patrons du serveur, en ne citant que leurs noms.
+Les patrons `{{nom}}` sont résolus **par principal** via
+`identities.principals[].mcp.<serveur>.values` (voir [agents.md](agents.md)),
+et fonctionnent sur les deux transports : `command` et `env` en stdio, `url`
+et valeurs de `headers` en http —
+
+```yaml
+meteo:
+  transport: http
+  url: https://mcp.example.com/tenants/{{tenant}}/mcp?api_key={{api_key}}
+  headers:
+    Authorization: Bearer {{token}}
+```
+
+— chacun obtient ainsi sa propre connexion, établie avec SES identifiants
+(processus dédié en stdio, connexion HTTP dédiée en http). Un principal sans
+`values` pour un serveur à patrons n'y a simplement pas accès — jamais de
+repli sur les valeurs d'un autre, jamais de patron littéral envoyé. Un
+serveur sans patron reste partagé par session, comme avant. La validation au
+chargement vérifie que chaque surcharge couvre tous les patrons du serveur
+et qu'aucune valeur ne reste sans patron correspondant, en ne citant que les
+noms. Préférez un en-tête à une clé en variable d'URL quand le serveur le
+permet : une URL fuit plus facilement (journaux de proxys et de serveurs
+intermédiaires) qu'un en-tête.
 
 Aucun nom de serveur n'a de signification pour l'application. Tout ce qui
 distingue un agenda d'une recherche web se déclare dans les champs ci-dessous,

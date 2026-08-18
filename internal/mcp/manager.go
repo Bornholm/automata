@@ -257,16 +257,10 @@ func (m *Manager) buildClient(serverName string, override config.MCPOverride) (g
 
 	switch serverCfg.Transport {
 	case "http":
-		url := serverCfg.URL
-		if override.URL != "" {
-			url = override.URL
+		url, headers, err := renderHTTPConfig(serverCfg, override)
+		if err != nil {
+			return nil, fmt.Errorf("mcp: serveur %q: %w", serverName, err)
 		}
-
-		// Les en-têtes du principal l'emportent sur ceux du serveur, ce qui
-		// permet de ne surcharger que l'autorisation sans réécrire le reste.
-		headers := make(map[string]string, len(serverCfg.Headers)+len(override.Headers))
-		maps.Copy(headers, serverCfg.Headers)
-		maps.Copy(headers, override.Headers)
 
 		httpClient := &http.Client{
 			Transport: &headerRoundTripper{
@@ -324,13 +318,52 @@ func renderStdioCommand(serverCfg config.MCPServer, override config.MCPOverride)
 		env = append(env, key+"="+rendered)
 	}
 
-	if len(missing) > 0 {
-		slices.Sort(missing)
-		missing = slices.Compact(missing)
-		return nil, nil, fmt.Errorf("patrons sans valeur pour le principal courant ({{%s}}) : serveur indisponible sans surcharge identities.principals[].mcp", strings.Join(missing, "}}, {{"))
+	if err := errMissingPlaceholders(missing); err != nil {
+		return nil, nil, err
 	}
 
 	return command, env, nil
+}
+
+// renderHTTPConfig résout les patrons {{nom}} de la configuration http
+// effective (URL du principal si elle remplace celle du serveur, en-têtes
+// fusionnés — voir config.MCPServer.EffectiveHTTPConfig) avec les values du
+// principal courant. Même contrat qu'en stdio : un patron sans valeur est
+// une erreur citant les noms manquants, jamais les valeurs.
+func renderHTTPConfig(serverCfg config.MCPServer, override config.MCPOverride) (string, map[string]string, error) {
+	var missing []string
+
+	url, headers := serverCfg.EffectiveHTTPConfig(override)
+
+	url, miss := config.RenderMCPTemplate(url, override.Values)
+	missing = append(missing, miss...)
+
+	for _, key := range slices.Sorted(maps.Keys(headers)) {
+		rendered, miss := config.RenderMCPTemplate(headers[key], override.Values)
+		missing = append(missing, miss...)
+		headers[key] = rendered
+	}
+
+	if err := errMissingPlaceholders(missing); err != nil {
+		return "", nil, err
+	}
+
+	return url, headers, nil
+}
+
+// errMissingPlaceholders transforme une liste de noms de patrons non
+// résolus en erreur unique, dédupliquée et triée. nil si la liste est vide.
+// Seuls les NOMS apparaissent : les valeurs sont des secrets potentiels et
+// ne sont jamais journalisées (AGENTS.md).
+func errMissingPlaceholders(missing []string) error {
+	if len(missing) == 0 {
+		return nil
+	}
+
+	slices.Sort(missing)
+	missing = slices.Compact(missing)
+
+	return fmt.Errorf("patrons sans valeur pour le principal courant ({{%s}}) : serveur indisponible sans surcharge identities.principals[].mcp", strings.Join(missing, "}}, {{"))
 }
 
 // headerRoundTripper injecte des en-têtes HTTP fixes (déjà résolus par

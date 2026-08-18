@@ -488,6 +488,7 @@ func validateIdentities(cfg *Config) []error {
 			// Chaque champ de surcharge n'a de sens que pour un transport :
 			// une surcharge silencieusement inopérante ferait croire à une
 			// connexion personnelle qui n'existe pas.
+			var placeholders []string
 			switch server.Transport {
 			case "stdio":
 				if override.URL != "" {
@@ -496,18 +497,31 @@ func validateIdentities(cfg *Config) []error {
 				if len(override.Headers) > 0 {
 					errs = append(errs, fmt.Errorf("%s.mcp.%s.headers: sans effet pour un serveur stdio", prefix, serverName))
 				}
-
-				// Une surcharge incomplète ne démarrerait jamais : autant le
-				// dire au chargement, avec les noms manquants (jamais les
-				// valeurs, potentiellement secrètes).
-				for _, placeholder := range server.TemplatePlaceholders() {
-					if _, ok := override.Values[placeholder]; !ok {
-						errs = append(errs, fmt.Errorf("%s.mcp.%s.values: patron {{%s}} du serveur sans valeur", prefix, serverName, placeholder))
-					}
-				}
+				placeholders = server.TemplatePlaceholders()
 			case "http":
-				if len(override.Values) > 0 {
-					errs = append(errs, fmt.Errorf("%s.mcp.%s.values: sans effet pour un serveur http", prefix, serverName))
+				// Configuration EFFECTIVE : URL du principal si elle
+				// remplace celle du serveur, en-têtes fusionnés.
+				placeholders = server.HTTPTemplatePlaceholders(override)
+			default:
+				continue
+			}
+
+			// Une surcharge incomplète ne démarrerait jamais : autant le
+			// dire au chargement, avec les noms manquants (jamais les
+			// valeurs, potentiellement secrètes). Et une valeur sans patron
+			// correspondant est une surcharge inopérante — au mieux du bruit,
+			// au pire la conviction erronée qu'une connexion personnelle
+			// existe.
+			declared := map[string]bool{}
+			for _, placeholder := range placeholders {
+				declared[placeholder] = true
+				if _, ok := override.Values[placeholder]; !ok {
+					errs = append(errs, fmt.Errorf("%s.mcp.%s.values: patron {{%s}} du serveur sans valeur", prefix, serverName, placeholder))
+				}
+			}
+			for _, key := range sortedKeys(override.Values) {
+				if !declared[key] {
+					errs = append(errs, fmt.Errorf("%s.mcp.%s.values.%s: aucun patron {{%s}} dans la configuration du serveur", prefix, serverName, key, key))
 				}
 			}
 		}

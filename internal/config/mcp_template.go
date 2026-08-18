@@ -1,13 +1,15 @@
 package config
 
 import (
+	"maps"
 	"regexp"
 
 	"slices"
 )
 
-// mcpTemplatePattern reconnaît les patrons {{nom}} utilisés dans Command et
-// Env d'un serveur MCP stdio (espaces intérieurs tolérés : {{ nom }}). Le
+// mcpTemplatePattern reconnaît les patrons {{nom}} utilisés dans la
+// configuration d'un serveur MCP — Command et Env en stdio, URL et valeurs
+// de Headers en http (espaces intérieurs tolérés : {{ nom }}). Le
 // nom est volontairement restreint à [A-Za-z0-9_] : les valeurs viennent de
 // la configuration statique, jamais du modèle ni de la conversation, et une
 // syntaxe minimale écarte toute tentation d'en faire un langage.
@@ -36,25 +38,64 @@ func RenderMCPTemplate(s string, values map[string]string) (string, []string) {
 }
 
 // TemplatePlaceholders retourne les noms de patrons {{nom}} utilisés par la
-// commande et l'environnement du serveur, dédupliqués et triés.
+// commande et l'environnement du serveur (transport stdio), dédupliqués et
+// triés.
 func (s MCPServer) TemplatePlaceholders() []string {
+	texts := slices.Clone(s.Command)
+	for _, key := range sortedKeys(s.Env) {
+		texts = append(texts, s.Env[key])
+	}
+
+	return templatePlaceholdersIn(texts...)
+}
+
+// EffectiveHTTPConfig retourne l'URL et les en-têtes effectifs d'un serveur
+// http pour une surcharge donnée, AVANT résolution des patrons : l'URL du
+// principal remplace celle du serveur si elle est renseignée, ses en-têtes
+// s'ajoutent à ceux du serveur et l'emportent en cas de même nom. C'est sur
+// cette configuration effective — et elle seule — que les patrons {{nom}}
+// sont ensuite résolus et vérifiés : un patron de l'URL du serveur ne
+// compte plus si le principal la remplace entièrement.
+func (s MCPServer) EffectiveHTTPConfig(o MCPOverride) (string, map[string]string) {
+	url := s.URL
+	if o.URL != "" {
+		url = o.URL
+	}
+
+	headers := make(map[string]string, len(s.Headers)+len(o.Headers))
+	maps.Copy(headers, s.Headers)
+	maps.Copy(headers, o.Headers)
+
+	return url, headers
+}
+
+// HTTPTemplatePlaceholders retourne les noms de patrons {{nom}} de la
+// configuration http effective (voir EffectiveHTTPConfig), dédupliqués et
+// triés.
+func (s MCPServer) HTTPTemplatePlaceholders(o MCPOverride) []string {
+	url, headers := s.EffectiveHTTPConfig(o)
+
+	texts := []string{url}
+	for _, key := range sortedKeys(headers) {
+		texts = append(texts, headers[key])
+	}
+
+	return templatePlaceholdersIn(texts...)
+}
+
+// templatePlaceholdersIn retourne les noms de patrons {{nom}} présents dans
+// texts, dédupliqués et triés.
+func templatePlaceholdersIn(texts ...string) []string {
 	seen := map[string]bool{}
 	var names []string
 
-	collect := func(text string) {
+	for _, text := range texts {
 		for _, match := range mcpTemplatePattern.FindAllStringSubmatch(text, -1) {
 			if !seen[match[1]] {
 				seen[match[1]] = true
 				names = append(names, match[1])
 			}
 		}
-	}
-
-	for _, arg := range s.Command {
-		collect(arg)
-	}
-	for _, key := range sortedKeys(s.Env) {
-		collect(s.Env[key])
 	}
 
 	slices.Sort(names)
