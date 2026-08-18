@@ -172,12 +172,25 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 
 		toolCalls := resp.ToolCalls()
 		if len(toolCalls) == 0 {
-			text := ""
+			raw := ""
 			if msg := resp.Message(); msg != nil {
-				text = cleanReply(msg.Content())
+				raw = msg.Content()
 			}
 
+			text := cleanReply(raw)
+
 			if text == "" {
+				// Les deux causes d'une réponse vide demandent des correctifs
+				// opposés : ou le modèle n'a rien produit (réglage du client,
+				// budget de réflexion), ou sa réponse n'était qu'un bloc de
+				// réflexion que cleanReply a retiré. Seules les tailles sont
+				// journalisées : le contenu reste privé (AGENTS.md).
+				if logger != nil {
+					logger.WarnContext(ctx, "agent: réponse vide du modèle", "agent", agentName,
+						"iterations", iteration+1, "tool_calls", totalCalls,
+						"raw_bytes", len(raw), "cleaned_bytes", len(text))
+				}
+
 				return toolLoopResult{}, ErrEmptyReply
 			}
 
