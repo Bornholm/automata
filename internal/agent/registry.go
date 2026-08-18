@@ -112,6 +112,49 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 		prompts[name] = systemPrompt
 	}
 
+	// Les spécialistes sont construits AVANT les orchestrateurs, en deux
+	// passes distinctes, parce qu'un orchestrateur capture ses délégués tels
+	// qu'ils sont dans agents au moment où il est construit. Les traiter
+	// dans une seule boucle sur cfg.Agents rendrait le résultat dépendant de
+	// l'ordre d'itération de la map, qui est aléatoire en Go : selon les
+	// démarrages, l'orchestrateur déléguerait tantôt au spécialiste équipé
+	// de ses outils MCP, tantôt à l'agent nu de la première passe — qui
+	// répond de mémoire au lieu de chercher, sans qu'aucune erreur ne le
+	// signale.
+	for name, agentCfg := range cfg.Agents {
+		if agentCfg.Type == config.AgentTypeOrchestrator {
+			continue
+		}
+
+		if len(agentCfg.MCPServers) > 0 {
+			limits := mcp.Limits{
+				ToolTimeout:        agentCfg.Limits.ToolTimeout.Duration(),
+				MaxToolResultBytes: int64(agentCfg.Limits.MaxToolResultBytes.Bytes()),
+			}
+
+			// Un seul type de spécialiste MCP, quel que soit le domaine.
+			// Ce qui distingue un agenda d'une recherche web est déclaré
+			// sous mcp_servers.<nom> : ressource à injecter, outils
+			// exigeant confirmation, domaine de permission. Le registre
+			// n'a donc aucun nom de service à connaître.
+			specialist := NewMCPToolAgent(
+				clients[name],
+				prompts[name],
+				name,
+				cfg.Organization.DisplayName,
+				cfg,
+				mcpManager,
+				agentCfg.MCPServers,
+				limits,
+				agentCfg.Limits.MaxSequentialToolCalls,
+			)
+
+			agents[name] = specialist.
+				WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes())).
+				WithLogger(logger)
+		}
+	}
+
 	for name, agentCfg := range cfg.Agents {
 		// Le branchement se fait sur le TYPE déclaré, jamais sur la présence
 		// de délégués : un orchestrateur sans aucun délégué (configuration
@@ -119,38 +162,11 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 		// outils propres — mémoire, rappels — sinon les drapeaux memory/
 		// reminders de sa configuration seraient silencieusement ignorés.
 		if agentCfg.Type != config.AgentTypeOrchestrator {
-			if len(agentCfg.MCPServers) > 0 {
-				limits := mcp.Limits{
-					ToolTimeout:        agentCfg.Limits.ToolTimeout.Duration(),
-					MaxToolResultBytes: int64(agentCfg.Limits.MaxToolResultBytes.Bytes()),
-				}
-
-				// Un seul type de spécialiste MCP, quel que soit le domaine.
-				// Ce qui distingue un agenda d'une recherche web est déclaré
-				// sous mcp_servers.<nom> : ressource à injecter, outils
-				// exigeant confirmation, domaine de permission. Le registre
-				// n'a donc aucun nom de service à connaître.
-				specialist := NewMCPToolAgent(
-					clients[name],
-					prompts[name],
-					name,
-					cfg.Organization.DisplayName,
-					cfg,
-					mcpManager,
-					agentCfg.MCPServers,
-					limits,
-					agentCfg.Limits.MaxSequentialToolCalls,
-				)
-
-				agents[name] = specialist.
-					WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes())).
-					WithLogger(logger)
-			}
-
 			continue
 		}
 
 		specialists := make(map[string]delegation.Specialist, len(agentCfg.Delegates))
+		specialistDescriptions := make(map[string]string, len(agentCfg.Delegates))
 		for _, delegateName := range agentCfg.Delegates {
 			delegateAgent, ok := agents[delegateName]
 			if !ok {
@@ -165,9 +181,15 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			}
 
 			specialists[delegateName] = NewAgentSpecialist(delegateName, delegateAgent)
+			// Ce que sait faire le délégué, tel qu'il le déclare : c'est
+			// cette phrase que lira le modèle sur l'outil de délégation.
+			if delegateCfg, ok := cfg.Agents[delegateName]; ok && delegateCfg.Description != "" {
+				specialistDescriptions[delegateName] = delegateCfg.Description
+			}
 		}
 
-		orchestrator := NewOrchestratorAgent(clients[name], prompts[name], name, cfg.Organization.DisplayName, specialists, agentCfg.Limits.MaxSequentialToolCalls)
+		orchestrator := NewOrchestratorAgent(clients[name], prompts[name], name, cfg.Organization.DisplayName, specialists, agentCfg.Limits.MaxSequentialToolCalls).
+			WithSpecialistDescriptions(specialistDescriptions)
 
 		agentMemoryTools := memoryTools
 		agentMemoryTools.Search = memoryTools.Search && agentCfg.Memory.Search

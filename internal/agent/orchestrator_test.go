@@ -616,3 +616,55 @@ func TestOrchestratorAgent_MainHistoryNotForwardedToSpecialist(t *testing.T) {
 		t.Fatalf("le spécialiste agenda aurait dû être appelé une fois, appelé %d fois", agenda.callCount())
 	}
 }
+
+// La description du spécialiste (agents.<nom>.description) doit atteindre le
+// modèle : c'est sur elle qu'il décide de déléguer. Sans elle, un petit
+// modèle répond « je ne sais pas faire » devant un outil dont il ne connaît
+// que le nom.
+func TestOrchestrator_SpecialistDescriptionReachesTool(t *testing.T) {
+	var seen []llm.Tool
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			seen = opts.Tools
+			return scriptedFinalResponse("ok"), nil
+		},
+	}
+
+	specialists := map[string]delegation.Specialist{
+		"research": &fakeSpecialist{},
+		"todo":     &fakeSpecialist{},
+	}
+
+	orchestrator := agent.NewOrchestratorAgent(client, "system", "main", "Org", specialists, 3).
+		WithSpecialistDescriptions(map[string]string{
+			"research": "cherche des informations à jour sur Internet",
+		})
+
+	if _, err := orchestrator.Execute(context.Background(), agent.Request{Input: "bonjour"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	descriptions := map[string]string{}
+	for _, tool := range seen {
+		descriptions[tool.Name()] = tool.Description()
+	}
+
+	research, ok := descriptions["delegate_to_research"]
+	if !ok {
+		t.Fatalf("outils exposés = %v, attendu delegate_to_research", descriptions)
+	}
+	if !strings.Contains(research, "cherche des informations à jour sur Internet") {
+		t.Errorf("description de delegate_to_research = %q, la description du spécialiste manque", research)
+	}
+
+	// Un spécialiste sans description garde la formulation générique plutôt
+	// que d'hériter de celle d'un autre.
+	todo, ok := descriptions["delegate_to_todo"]
+	if !ok {
+		t.Fatalf("outils exposés = %v, attendu delegate_to_todo", descriptions)
+	}
+	if strings.Contains(todo, "Internet") {
+		t.Errorf("description de delegate_to_todo = %q, contaminée par celle d'un autre spécialiste", todo)
+	}
+}

@@ -254,7 +254,15 @@ const (
 
 // Agent décrit un agent LLM (orchestrateur ou spécialiste).
 type Agent struct {
-	Type         AgentType    `yaml:"type"`
+	Type AgentType `yaml:"type"`
+	// Description dit, en une phrase, ce que ce spécialiste sait faire.
+	// Elle est reprise dans la description de l'outil delegate_to_<nom>
+	// exposé à l'orchestrateur : sans elle, le modèle ne connaît du délégué
+	// que son nom, et un petit modèle conclut souvent qu'il ne sait pas
+	// faire (« je n'ai pas accès à Internet ») au lieu de déléguer.
+	//
+	// Sans effet sur un orchestrateur, qui n'est le délégué de personne.
+	Description  string       `yaml:"description"`
 	Client       string       `yaml:"client"`
 	SystemPrompt SystemPrompt `yaml:"system_prompt"`
 	Delegates    []string     `yaml:"delegates"`

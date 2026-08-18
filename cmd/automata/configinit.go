@@ -235,9 +235,13 @@ type initServer struct {
 }
 
 type initAgent struct {
-	Name       string
-	PromptFile string
-	Server     string
+	Name string
+	// Ce que sait faire ce spécialiste : repris dans l'outil
+	// delegate_to_<nom> exposé au généraliste, qui décide de déléguer
+	// là-dessus.
+	Description string
+	PromptFile  string
+	Server      string
 }
 
 type initSchedule struct {
@@ -417,6 +421,7 @@ func askSpecialists(w *wizard, a *initAnswers) {
 		server           string
 		agent            string
 		label            string
+		description      string
 		asks             bool
 		transport        string
 		resourceKey      string
@@ -425,12 +430,12 @@ func askSpecialists(w *wizard, a *initAnswers) {
 		requireRFC3339   bool
 		dedupeWrites     bool
 	}{
-		{"google-calendar", "agenda", "Agenda (lecture et création d'événements)", true, "http", "calendar", "calendar_id", "calendar", true, false},
+		{"google-calendar", "agenda", "Agenda (lecture et création d'événements)", "consulte et modifie l'agenda du foyer", true, "http", "calendar", "calendar_id", "calendar", true, false},
 		// streamable-http : c'est ce que parle le conteneur de
 		// misc/web-search (SearXNG + serveur MCP), le branchement le plus
 		// direct pour cette capacité.
-		{"internet-search", "research", "Recherche Internet", false, "streamable-http", "", "", "", false, false},
-		{"todo", "todo", "Listes de tâches", true, "http", "todo", "list_id", "todo", false, true},
+		{"internet-search", "research", "Recherche Internet", "cherche des informations à jour sur Internet et lit des pages web", false, "streamable-http", "", "", "", false, false},
+		{"todo", "todo", "Listes de tâches", "consulte et modifie les listes de tâches du foyer", true, "http", "todo", "list_id", "todo", false, true},
 	}
 
 	for _, entry := range catalogue {
@@ -468,9 +473,10 @@ func askSpecialists(w *wizard, a *initAnswers) {
 
 		a.Servers = append(a.Servers, server)
 		a.Agents = append(a.Agents, initAgent{
-			Name:       entry.agent,
-			PromptFile: a.PromptsDir + "/" + entry.agent + ".md",
-			Server:     entry.server,
+			Name:        entry.agent,
+			Description: entry.description,
+			PromptFile:  a.PromptsDir + "/" + entry.agent + ".md",
+			Server:      entry.server,
 		})
 	}
 

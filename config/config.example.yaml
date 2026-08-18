@@ -159,6 +159,11 @@ agents:
 
   agenda:
     type: specialist
+    # Ce que sait faire ce spécialiste, en une phrase. Reprise dans l'outil
+    # delegate_to_agenda exposé au généraliste : c'est là-dessus qu'il décide
+    # de déléguer. Sans elle, il ne connaît du délégué que son nom, et un
+    # petit modèle répond souvent qu'il ne sait pas faire.
+    description: consulte et modifie l'agenda du foyer
     client: main
     system_prompt:
       file: ../prompts/agenda.md
@@ -180,6 +185,7 @@ agents:
 
   research:
     type: specialist
+    description: cherche des informations à jour sur Internet et lit des pages web
     client: main
     system_prompt:
       file: ../prompts/research.md
@@ -194,6 +200,7 @@ agents:
 
   todo:
     type: specialist
+    description: consulte et modifie les listes de tâches du foyer
     client: main
     system_prompt:
       file: ../prompts/todo.md

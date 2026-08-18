@@ -115,6 +115,11 @@ agents:
 {{ range .Agents }}
   {{ .Name }}:
     type: specialist
+{{- if .Description }}
+    # Repris dans l'outil delegate_to_{{ .Name }} exposé au généraliste :
+    # c'est là-dessus qu'il décide de déléguer.
+    description: {{ .Description }}
+{{- end }}
     client: main
     system_prompt:
       file: {{ .PromptFile }}

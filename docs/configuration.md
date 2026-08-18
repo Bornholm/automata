@@ -225,6 +225,7 @@ Détaillé dans [agents.md](agents.md). Résumé des champs :
 | Champ | Rôle |
 |---|---|
 | `type` | `orchestrator` (peut déléguer) ou `specialist` (peut porter des MCP) |
+| `description` | Ce que sait faire ce spécialiste, en une phrase. Voir ci-dessous |
 | `client` | Entrée de `llm_clients` |
 | `system_prompt.file` ou `.inline` | Personnalité et mission. Exactement une des deux |
 | `delegates` | Noms des spécialistes joignables. Orchestrateur seulement |
@@ -233,6 +234,25 @@ Détaillé dans [agents.md](agents.md). Résumé des champs :
 | `mcp_servers` | Serveurs MCP autorisés. Spécialiste seulement |
 | `capabilities` | Permissions applicatives de l'agent |
 | `limits` | Plafonds d'exécution, tous obligatoires |
+
+### description
+
+`description` est reprise dans la description de l'outil `delegate_to_<nom>`
+exposé à l'orchestrateur — c'est ce que le modèle lit pour décider de
+déléguer :
+
+```yaml
+  research:
+    type: specialist
+    description: cherche des informations à jour sur Internet et lit des pages web
+```
+
+Sans elle, le modèle ne connaît du délégué que son nom, et un petit modèle
+préfère alors répondre qu'il ne sait pas faire (« je n'ai pas accès à
+Internet en temps réel ») plutôt qu'appeler un outil dont il ignore la
+portée — le spécialiste est là, opérationnel, et n'est jamais sollicité.
+Formulez-la à la troisième personne, en complétant « le spécialiste `x`, qui
+… ». Sans effet sur un orchestrateur, qui n'est le délégué de personne.
 
 ### reminders
 

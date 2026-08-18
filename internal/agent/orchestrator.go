@@ -49,6 +49,7 @@ type OrchestratorAgent struct {
 	agentName              string
 	orgDisplayName         string
 	specialists            map[string]delegation.Specialist
+	specialistDescriptions map[string]string
 	maxSequentialToolCalls int
 	maxActionsPerTurn      int
 	maxToolContextBytes    int64
@@ -161,7 +162,7 @@ func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentit
 	tools := make([]llm.Tool, 0, len(a.specialists))
 
 	for agentID, specialist := range a.specialists {
-		tools = append(tools, newDelegationTool(agentID, specialist, identity, attachments, collector, mediaCollector, a.metrics))
+		tools = append(tools, newDelegationTool(agentID, a.specialistDescriptions[agentID], specialist, identity, attachments, collector, mediaCollector, a.metrics))
 	}
 
 	// Ordre déterministe : la map d'origine n'a pas d'ordre garanti, et un
@@ -178,15 +179,24 @@ func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentit
 // comme erreur Go (ce qui ferait échouer tout le tour) : il est transmis au
 // modèle comme contenu de résultat d'outil, en clair, pour qu'il puisse
 // s'adapter (PLAN.md Phase 8, test "spécialiste en erreur").
-func newDelegationTool(agentID string, specialist delegation.Specialist, identity model.ExecutionIdentity, attachments []media.Media, collector *proposalCollector, mediaCollector *mediaCollector, metrics *observability.Metrics) llm.Tool {
+func newDelegationTool(agentID, description string, specialist delegation.Specialist, identity model.ExecutionIdentity, attachments []media.Media, collector *proposalCollector, mediaCollector *mediaCollector, metrics *observability.Metrics) llm.Tool {
 	schema := llm.NewJSONSchema().
 		RequiredProperty("goal", "Objectif précis à atteindre par le spécialiste.", "string").
 		Property("relevant_input", "Éléments de contexte explicitement nécessaires à la tâche, formulés en clair. Ne jamais transmettre l'historique complet de la conversation.", "string").
 		Property("constraints", "Contraintes additionnelles à respecter par le spécialiste.", "array", map[string]any{"type": "string"}, "items")
 
+	// La description du spécialiste (agents.<nom>.description) est ce sur
+	// quoi le modèle décide de déléguer ou non : sans elle il ne connaît que
+	// le nom du délégué, et un petit modèle préfère répondre qu'il ne sait
+	// pas faire plutôt que d'appeler un outil dont il ignore la portée.
+	toolDescription := fmt.Sprintf("Délègue une tâche au spécialiste %q et retourne un résumé de son résultat.", agentID)
+	if strings.TrimSpace(description) != "" {
+		toolDescription = fmt.Sprintf("Délègue une tâche au spécialiste %q, qui %s. Retourne un résumé de son résultat.", agentID, strings.TrimSpace(description))
+	}
+
 	return llm.NewFuncTool(
 		"delegate_to_"+agentID,
-		fmt.Sprintf("Délègue une tâche au spécialiste %q et retourne un résumé de son résultat.", agentID),
+		toolDescription,
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			goal, _ := params["goal"].(string)
@@ -256,6 +266,15 @@ func (a *OrchestratorAgent) WithMemoryTools(tools MemoryTools) *OrchestratorAgen
 // permettre le chaînage à la construction, comme WithMemoryTools.
 func (a *OrchestratorAgent) WithReminderTools(tools ReminderTools) *OrchestratorAgent {
 	a.reminderTools = tools
+	return a
+}
+
+// WithSpecialistDescriptions renseigne, par nom de délégué, la phrase
+// décrivant ce qu'il sait faire (agents.<nom>.description). Elle est reprise
+// dans la description de l'outil delegate_to_<nom>. Un nom absent de la map
+// garde la description générique.
+func (a *OrchestratorAgent) WithSpecialistDescriptions(descriptions map[string]string) *OrchestratorAgent {
+	a.specialistDescriptions = descriptions
 	return a
 }
 
