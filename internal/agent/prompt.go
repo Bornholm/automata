@@ -169,12 +169,21 @@ func buildCapabilitiesSection(agentCfg config.Agent) string {
 // ni un secret ni un identifiant interne — rien de la liste « ne jamais
 // exposer ». Une valeur zéro omet la ligne (utilisée par les tests qui ne
 // s'intéressent pas au temps).
-func BuildContextBlock(identity model.ExecutionIdentity, orgDisplayName string, agentName string, now time.Time) string {
+// Le nom de l'organisation est lu dans identity, et non fourni par
+// l'appelant : une instance sert plusieurs organisations, l'agent qui
+// répond est le même pour toutes, et seule l'identité résolue sait de
+// laquelle vient la requête.
+func BuildContextBlock(identity model.ExecutionIdentity, agentName string, now time.Time) string {
 	var b strings.Builder
+
+	orgName := identity.OrgDisplayName
+	if orgName == "" {
+		orgName = string(identity.OrgID)
+	}
 
 	b.WriteString("## Execution context\n\n")
 	fmt.Fprintf(&b, "- Agent: %s\n", agentName)
-	fmt.Fprintf(&b, "- Organisation: %s\n", orgDisplayName)
+	fmt.Fprintf(&b, "- Organisation: %s\n", orgName)
 	fmt.Fprintf(&b, "- Execution scope: %s\n", identity.Scope)
 	fmt.Fprintf(&b, "- Channel kind: %s\n", identity.ChannelKind)
 	if !now.IsZero() {

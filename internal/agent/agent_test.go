@@ -55,7 +55,7 @@ func TestGenAIAgent_Execute_SimpleReply(t *testing.T) {
 		},
 	}
 
-	a := agent.NewGenAIAgent(client, "Tu es un assistant.", "main", "Test Org")
+	a := agent.NewGenAIAgent(client, "Tu es un assistant.", "main")
 
 	result, err := a.Execute(context.Background(), agent.Request{
 		Input: "Salut",
@@ -91,7 +91,7 @@ func TestGenAIAgent_Execute_StreamingMultiChunk(t *testing.T) {
 		},
 	}
 
-	a := agent.NewGenAIAgent(client, "system", "main", "Test Org")
+	a := agent.NewGenAIAgent(client, "system", "main")
 
 	result, err := a.Execute(context.Background(), agent.Request{
 		History: []agent.Message{
@@ -127,7 +127,7 @@ func TestGenAIAgent_Execute_ContextCancelled(t *testing.T) {
 		},
 	}
 
-	a := agent.NewGenAIAgent(client, "system", "main", "Test Org")
+	a := agent.NewGenAIAgent(client, "system", "main")
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -158,7 +158,7 @@ func TestGenAIAgent_Execute_EmptyReply(t *testing.T) {
 		},
 	}
 
-	a := agent.NewGenAIAgent(client, "system", "main", "Test Org")
+	a := agent.NewGenAIAgent(client, "system", "main")
 
 	_, err := a.Execute(context.Background(), agent.Request{Input: "Salut"})
 	if !errors.Is(err, agent.ErrEmptyReply) {
@@ -175,7 +175,7 @@ func TestGenAIAgent_Execute_ClientError(t *testing.T) {
 		},
 	}
 
-	a := agent.NewGenAIAgent(client, "system", "main", "Test Org")
+	a := agent.NewGenAIAgent(client, "system", "main")
 
 	_, err := a.Execute(context.Background(), agent.Request{Input: "Salut"})
 	if !errors.Is(err, wantErr) {
@@ -195,7 +195,7 @@ func TestGenAIAgent_Execute_StreamError(t *testing.T) {
 		},
 	}
 
-	a := agent.NewGenAIAgent(client, "system", "main", "Test Org")
+	a := agent.NewGenAIAgent(client, "system", "main")
 
 	_, err := a.Execute(context.Background(), agent.Request{Input: "Salut"})
 	if !errors.Is(err, wantErr) {

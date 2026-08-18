@@ -24,7 +24,20 @@ version: 1
 Seule la valeur `1` est acceptée. Ce champ existe pour qu'une future
 incompatibilité soit détectée au démarrage plutôt qu'à l'exécution.
 
-## organization
+## organizations
+
+Une instance peut servir plusieurs organisations — une maison et une équipe
+de travail, par exemple — sur les mêmes agents et le même processus.
+
+```yaml
+organizations:
+  - id: home
+    display_name: Maison
+  - id: work
+    display_name: Bureau
+```
+
+La forme abrégée reste acceptée quand il n'y en a qu'une :
 
 ```yaml
 organization:
@@ -32,9 +45,15 @@ organization:
   display_name: Maison
 ```
 
-`id` sert d'`org_id` par défaut et apparaît dans l'audit. `display_name` est
-donné aux agents dans leur bloc de contexte, pour qu'ils sachent au nom de qui
-ils parlent.
+`id` est repris par `channels[].org_id` et apparaît dans l'audit.
+`display_name` est donné aux agents dans leur bloc de contexte, résolu à
+chaque requête depuis l'organisation du canal d'où vient le message.
+
+**Rien ne traverse la frontière d'une organisation** : mémoire, rappels et
+tâches d'une organisation sont inaccessibles depuis une autre, y compris pour
+un principal membre des deux (`internal/authorization`). C'est la séparation
+sur laquelle repose la cohabitation du personnel et du professionnel dans une
+même instance.
 
 ## storage
 
@@ -759,6 +778,7 @@ identities:
       kind: human
       display_name: Alice
       roles: [adult]
+      orgs: [home, work]
 ```
 
 Une permission s'écrit `<domaine>.<portée>.<action>`. La portée vaut
@@ -767,6 +787,17 @@ domaine est libre : `memory`, `calendar`, `todo`, ou le vôtre.
 
 `kind` vaut `human` ou `service`. Réservez `service` aux principaux utilisés
 par les tâches planifiées, avec le strict minimum de permissions.
+
+`orgs` liste les organisations auxquelles le principal appartient. Le champ
+est facultatif tant qu'une seule organisation est déclarée — le principal
+appartient alors à celle-ci — et **obligatoire au-delà** : hériter
+silencieusement de toutes les organisations donnerait à un collègue l'accès à
+la mémoire de la famille. Les rôles, eux, restent globaux au principal.
+
+Le chargement refuse un canal dont l'`org_id` est inconnu, ainsi qu'un membre
+ou un `principal_id` qui n'appartient pas à l'organisation du canal : sans
+cette vérification, la faute ne se manifesterait qu'au premier message reçu,
+sous la forme d'un refus d'autorisation sans rapport visible avec sa cause.
 
 Un principal peut aussi porter ses propres connexions MCP, décrites dans
 [agents.md](agents.md).

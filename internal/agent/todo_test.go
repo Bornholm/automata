@@ -150,7 +150,7 @@ func newTodoAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionCli
 	m := mcp.NewManager(cfg, nil)
 	t.Cleanup(func() { _ = m.Close() })
 
-	return agent.NewMCPToolAgent(client, "system", "todo", "Maison", cfg, m, []string{"todo"}, mcp.Limits{}, maxSequentialToolCalls)
+	return agent.NewMCPToolAgent(client, "system", "todo", cfg, m, []string{"todo"}, mcp.Limits{}, maxSequentialToolCalls)
 }
 
 func todoPrivateConversation(id model.ConversationID) model.Conversation {

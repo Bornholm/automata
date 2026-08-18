@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/dustin/go-humanize"
@@ -61,7 +62,14 @@ func (b ByteSize) Bytes() uint64 {
 
 // Config est la racine de la configuration YAML d'Automata.
 type Config struct {
-	Version      int                  `yaml:"version"`
+	Version int `yaml:"version"`
+	// Organizations déclare les organisations servies par cette instance.
+	// Chaque canal désigne la sienne par channels[].org_id, et aucune donnée
+	// ne traverse cette frontière (voir internal/authorization).
+	Organizations []Organization `yaml:"organizations"`
+	// Organization est la forme abrégée acceptée quand l'instance ne sert
+	// qu'une organisation. Elle est équivalente à une liste d'un élément :
+	// toute lecture passe par AllOrganizations, jamais par ce champ.
 	Organization Organization         `yaml:"organization"`
 	Storage      Storage              `yaml:"storage"`
 	Courier      Courier              `yaml:"courier"`
@@ -92,10 +100,94 @@ type Observability struct {
 	Addr    string `yaml:"addr"`
 }
 
-// Organization décrit l'organisation propriétaire de l'instance.
+// Organization décrit une organisation servie par l'instance.
 type Organization struct {
 	ID          string `yaml:"id"`
 	DisplayName string `yaml:"display_name"`
+}
+
+// AllOrganizations retourne les organisations déclarées, la forme abrégée
+// `organization:` comprise et placée en tête. Le résultat est vide si
+// aucune organisation n'est déclarée — un cas que la validation refuse.
+//
+// C'est le seul point de lecture des organisations : les deux formes de
+// déclaration sont réconciliées ici, et non par une normalisation au
+// chargement, pour qu'une configuration construite en mémoire (tests,
+// outillage) se comporte exactement comme une configuration chargée.
+func (c *Config) AllOrganizations() []Organization {
+	orgs := make([]Organization, 0, len(c.Organizations)+1)
+
+	if c.Organization.ID != "" {
+		orgs = append(orgs, c.Organization)
+	}
+
+	for _, org := range c.Organizations {
+		// La déduplication ne vaut que pour un identifiant réellement
+		// déclaré : comparer à une forme abrégée vide ferait disparaître de
+		// la liste une organisation sans id, que la validation doit au
+		// contraire signaler.
+		if c.Organization.ID != "" && org.ID == c.Organization.ID {
+			continue
+		}
+
+		orgs = append(orgs, org)
+	}
+
+	return orgs
+}
+
+// LookupOrganization retourne l'organisation déclarée sous cet identifiant.
+func (c *Config) LookupOrganization(id string) (Organization, bool) {
+	for _, org := range c.AllOrganizations() {
+		if org.ID == id {
+			return org, true
+		}
+	}
+
+	return Organization{}, false
+}
+
+// OrganizationDisplayName retourne le nom affiché de l'organisation, ou son
+// identifiant à défaut : ce nom part vers le modèle dans le bloc de
+// contexte, mieux vaut un identifiant technique qu'un champ vide.
+func (c *Config) OrganizationDisplayName(id string) string {
+	org, ok := c.LookupOrganization(id)
+	if !ok || org.DisplayName == "" {
+		return id
+	}
+
+	return org.DisplayName
+}
+
+// PrincipalOrganizations retourne les organisations auxquelles appartient ce
+// principal. Un principal sans `orgs` explicite appartient à l'organisation
+// unique de l'instance ; dès qu'il y en a plusieurs, la liste est exigée par
+// la validation, de sorte qu'un oubli ne donne jamais accès aux deux.
+func (c *Config) PrincipalOrganizations(p Principal) []string {
+	if len(p.Orgs) > 0 {
+		return p.Orgs
+	}
+
+	if orgs := c.AllOrganizations(); len(orgs) == 1 {
+		return []string{orgs[0].ID}
+	}
+
+	return nil
+}
+
+// PrincipalInOrganization indique si le principal identifié par principalID
+// appartient à l'organisation orgID. Un principal inconnu n'appartient à
+// aucune organisation.
+func (c *Config) PrincipalInOrganization(principalID, orgID string) bool {
+	for _, p := range c.Identities.Principals {
+		if p.ID != principalID {
+			continue
+		}
+
+		return slices.Contains(c.PrincipalOrganizations(p), orgID)
+	}
+
+	return false
 }
 
 // Storage décrit le stockage applicatif.
@@ -517,6 +609,11 @@ type Principal struct {
 	Kind        PrincipalKind `yaml:"kind"`
 	DisplayName string        `yaml:"display_name"`
 	Roles       []string      `yaml:"roles"`
+	// Orgs liste les organisations auxquelles ce principal appartient.
+	// Facultatif tant que l'instance n'en sert qu'une, obligatoire au-delà :
+	// c'est cette liste qui empêche un collègue d'atteindre la mémoire de la
+	// famille, et un oubli ne doit pas se traduire par un accès aux deux.
+	Orgs []string `yaml:"orgs"`
 	// MCP surcharge, par nom de serveur, la façon dont ce principal s'y
 	// connecte : son propre jeton, éventuellement sa propre URL. C'est ce qui
 	// permet à chacun d'atteindre SON agenda ou SA liste de tâches sur un

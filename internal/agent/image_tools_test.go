@@ -64,7 +64,7 @@ func TestGenerateImage_AttachmentReachesResult(t *testing.T) {
 
 	// Construction directe du spécialiste, générateur factice injecté : le
 	// registre réel passerait par BuildImageGenerationClient et le réseau.
-	specialist := agent.NewMCPToolAgent(client, "system", "imagine", "Maison", cfg, nil, nil, mcp.Limits{}, 3).
+	specialist := agent.NewMCPToolAgent(client, "system", "imagine", cfg, nil, nil, mcp.Limits{}, 3).
 		WithExtraTools(agent.NewGenerateImageToolForTest(generator))
 
 	res, err := specialist.Execute(context.Background(), agent.Request{
@@ -113,7 +113,7 @@ func TestGenerateImage_FailureIsExplainedNotFatal(t *testing.T) {
 	}
 
 	cfg := &config.Config{Organization: config.Organization{ID: "home", DisplayName: "Maison"}}
-	specialist := agent.NewMCPToolAgent(client, "system", "imagine", "Maison", cfg, nil, nil, mcp.Limits{}, 3).
+	specialist := agent.NewMCPToolAgent(client, "system", "imagine", cfg, nil, nil, mcp.Limits{}, 3).
 		WithExtraTools(agent.NewGenerateImageToolForTest(generator))
 
 	res, err := specialist.Execute(context.Background(), agent.Request{})

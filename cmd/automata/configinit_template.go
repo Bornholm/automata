@@ -24,6 +24,8 @@ const configTemplate = `# Configuration Automata générée par « automata conf
 
 version: 1
 
+# Forme abrégée, suffisante pour une organisation unique. Pour en servir
+# plusieurs sur la même instance, voir docs/configuration.md#organizations.
 organization:
   id: {{ .OrgID }}
   display_name: {{ .OrgDisplayName }}

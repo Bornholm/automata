@@ -38,7 +38,7 @@ func TestOrchestratorAgent_AttachmentsReachTheModel(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{}, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{
 		Input:       "C'est quoi ?",
@@ -84,7 +84,7 @@ func TestBuildChatMessages_HistoryAttachmentsOnlyOnUserMessages(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{}, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{
 		Input: "Et maintenant ?",
@@ -142,7 +142,7 @@ func TestOrchestratorAgent_AttachmentsForwardedToSpecialist(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"agenda": agenda}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"agenda": agenda}, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{
 		Input:       "Ajoute l'événement de cette affiche",
@@ -181,7 +181,7 @@ func TestOrchestratorAgent_SpecialistMediaReturnedToUser(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"research": research}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"research": research}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Input: "Fais un graphique"})
 	if err != nil {

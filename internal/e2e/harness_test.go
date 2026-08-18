@@ -363,7 +363,7 @@ func newAgendaAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionC
 	m := mcp.NewManager(cfg, nil)
 	t.Cleanup(func() { _ = m.Close() })
 
-	return agent.NewMCPToolAgent(client, "system", "agenda", cfg.Organization.DisplayName, cfg, m, []string{"google-calendar"}, mcp.Limits{}, 5), m
+	return agent.NewMCPToolAgent(client, "system", "agenda", cfg, m, []string{"google-calendar"}, mcp.Limits{}, 5), m
 }
 
 // mustAgendaAgent est newAgendaAgent pour les scénarios de LECTURE seule, qui
@@ -413,13 +413,13 @@ func withCalendarResources(cfg *config.Config, calendarServerURL string) {
 // pipeline applicatif).
 func newMemoryOrchestrator(client llm.ChatCompletionClient, store memory.Store, authorizer *authorization.Authorizer) agent.Agent {
 	tools := agent.MemoryTools{Store: store, Authorizer: authorizer, Search: true, Remember: true, Forget: true}
-	return agent.NewOrchestratorAgent(client, "system", "main", "Maison", map[string]delegation.Specialist{}, 5).WithMemoryTools(tools)
+	return agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{}, 5).WithMemoryTools(tools)
 }
 
 // simpleAgent construit un agent.OrchestratorAgent sans aucun outil (ni
 // mémoire, ni délégation), pour les scénarios de texte/audio purs.
 func simpleAgent(client llm.ChatCompletionClient) agent.Agent {
-	return agent.NewOrchestratorAgent(client, "system", "main", "Maison", map[string]delegation.Specialist{}, 5)
+	return agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{}, 5)
 }
 
 // --- système de bout en bout piloté par messages (ingress) ----------------

@@ -49,7 +49,6 @@ type MCPToolAgent struct {
 	client                 llm.ChatCompletionClient
 	systemPrompt           string
 	agentName              string
-	orgDisplayName         string
 	cfg                    *config.Config
 	mcpManager             *mcp.Manager
 	mcpServerNames         []string
@@ -74,12 +73,11 @@ type MCPToolAgent struct {
 // classification lecture/écriture, domaine de permission. Un seul type
 // d'agent MCP suffit donc à couvrir agenda, tâches, météo ou n'importe quel
 // autre domaine, sans code dédié (voir applyServerPolicy).
-func NewMCPToolAgent(client llm.ChatCompletionClient, systemPrompt, agentName, orgDisplayName string, cfg *config.Config, mcpManager *mcp.Manager, mcpServerNames []string, mcpLimits mcp.Limits, maxSequentialToolCalls int) *MCPToolAgent {
+func NewMCPToolAgent(client llm.ChatCompletionClient, systemPrompt, agentName string, cfg *config.Config, mcpManager *mcp.Manager, mcpServerNames []string, mcpLimits mcp.Limits, maxSequentialToolCalls int) *MCPToolAgent {
 	return &MCPToolAgent{
 		client:                 client,
 		systemPrompt:           systemPrompt,
 		agentName:              agentName,
-		orgDisplayName:         orgDisplayName,
 		cfg:                    cfg,
 		mcpManager:             mcpManager,
 		mcpServerNames:         mcpServerNames,
@@ -142,7 +140,7 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
-	messages := buildChatMessages(a.systemPrompt, a.agentName, a.orgDisplayName, req)
+	messages := buildChatMessages(a.systemPrompt, a.agentName, req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {

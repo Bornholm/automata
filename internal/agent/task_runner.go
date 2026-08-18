@@ -123,6 +123,7 @@ func (r *TaskRunner) buildIdentity(task persistence.Reminder) (model.ExecutionId
 	identity := model.ExecutionIdentity{
 		PrincipalID:    task.PrincipalID,
 		OrgID:          task.OrgID,
+		OrgDisplayName: r.cfg.OrganizationDisplayName(string(task.OrgID)),
 		ConversationID: task.ConversationID,
 		Provider:       task.Provider,
 		ChannelID:      task.ChannelID,

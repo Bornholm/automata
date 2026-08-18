@@ -235,7 +235,7 @@ func executeMemoryToolWithProposals(t *testing.T, tools agent.MemoryTools, ident
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{}, 5).WithMemoryTools(tools)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{}, 5).WithMemoryTools(tools)
 
 	result, err := a.Execute(context.Background(), agent.Request{Identity: identity, Input: "test"})
 	if err != nil {
@@ -512,7 +512,7 @@ func TestMemoryTools_DisabledWhenFlagFalse(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{}, 5).WithMemoryTools(tools)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{}, 5).WithMemoryTools(tools)
 
 	if _, err := a.Execute(context.Background(), agent.Request{Identity: privateIdentity("alice"), Input: "test"}); err != nil {
 		t.Fatalf("Execute: %v", err)

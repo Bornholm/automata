@@ -92,9 +92,14 @@ const (
 // exclusivement par l'application à partir de la configuration, jamais à
 // partir d'un contenu fourni par le LLM ou l'utilisateur.
 type ExecutionIdentity struct {
-	Trigger        Trigger
-	PrincipalID    PrincipalID
-	OrgID          OrgID
+	Trigger     Trigger
+	PrincipalID PrincipalID
+	OrgID       OrgID
+	// OrgDisplayName est le nom affiché de l'organisation, résolu depuis la
+	// configuration en même temps que le reste de l'identité. Il voyage
+	// avec elle parce qu'une instance sert plusieurs organisations : le nom
+	// dépend du canal d'où vient le message, pas de l'agent qui répond.
+	OrgDisplayName string
 	ConversationID ConversationID
 	Provider       string
 	ChannelID      string

@@ -209,7 +209,12 @@ func newConfigValidateCommand() *cobra.Command {
 				return errSilent
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "configuration valide: %s (organisation %q, %d agent(s))\n", *configPath, cfg.Organization.ID, len(cfg.Agents))
+			orgIDs := make([]string, 0, len(cfg.AllOrganizations()))
+			for _, org := range cfg.AllOrganizations() {
+				orgIDs = append(orgIDs, org.ID)
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "configuration valide: %s (organisation(s) %s, %d agent(s))\n", *configPath, strings.Join(orgIDs, ", "), len(cfg.Agents))
 
 			return nil
 		},

@@ -645,6 +645,7 @@ func (s *Scheduler) buildIdentity(sched config.Schedule, runID persistence.Sched
 		Trigger:        model.TriggerCron,
 		PrincipalID:    model.PrincipalID(sched.Execution.PrincipalID),
 		OrgID:          model.OrgID(sched.Execution.OrgID),
+		OrgDisplayName: s.cfg.OrganizationDisplayName(sched.Execution.OrgID),
 		ConversationID: conversationID,
 		Provider:       sched.Delivery.Provider,
 		ChannelID:      sched.Delivery.ChannelID,

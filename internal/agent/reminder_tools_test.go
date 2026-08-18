@@ -99,7 +99,7 @@ func executeReminderTool(t *testing.T, tools agent.ReminderTools, identity model
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{}, 5).WithReminderTools(tools)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{}, 5).WithReminderTools(tools)
 
 	if _, err := a.Execute(context.Background(), agent.Request{Identity: identity, Input: "test"}); err != nil {
 		t.Fatalf("Execute: %v", err)

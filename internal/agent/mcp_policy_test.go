@@ -134,7 +134,7 @@ func newHiveAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionCli
 	m := mcp.NewManager(cfg, nil)
 	t.Cleanup(func() { _ = m.Close() })
 
-	return agent.NewMCPToolAgent(client, "system", "apiculture", "Maison", cfg, m, []string{"hives"}, mcp.Limits{}, 5)
+	return agent.NewMCPToolAgent(client, "system", "apiculture", cfg, m, []string{"hives"}, mcp.Limits{}, 5)
 }
 
 func hiveConversation() model.Conversation {

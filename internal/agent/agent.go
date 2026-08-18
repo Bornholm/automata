@@ -98,25 +98,23 @@ var ErrEmptyReply = errors.New("agent: réponse du modèle vide")
 // spéculative pour cette phase. Il sera introduit aux phases où le
 // tool-calling (délégation, mémoire, MCP) devient nécessaire.
 type GenAIAgent struct {
-	client         llm.ChatCompletionStreamingClient
-	systemPrompt   string
-	agentName      string
-	orgDisplayName string
+	client       llm.ChatCompletionStreamingClient
+	systemPrompt string
+	agentName    string
 }
 
 // NewGenAIAgent construit un GenAIAgent utilisant client pour les
 // complétions en streaming. systemPrompt est le prompt statique déjà
 // composé de l'agent (typiquement via BuildSystemPrompt) : il ne contient
-// ni le contexte d'exécution ni la demande. agentName et orgDisplayName
-// sont les valeurs statiques (connues à la construction, pas par requête)
-// utilisées pour peupler le bloc de contexte injecté à chaque exécution
-// (voir BuildContextBlock, PLAN.md §7.3).
-func NewGenAIAgent(client llm.ChatCompletionStreamingClient, systemPrompt string, agentName string, orgDisplayName string) *GenAIAgent {
+// ni le contexte d'exécution ni la demande. agentName est la seule valeur
+// statique du bloc de contexte injecté à chaque exécution : le nom de
+// l'organisation, lui, dépend de la requête et voyage dans l'identité
+// résolue (voir BuildContextBlock, PLAN.md §7.3).
+func NewGenAIAgent(client llm.ChatCompletionStreamingClient, systemPrompt string, agentName string) *GenAIAgent {
 	return &GenAIAgent{
-		client:         client,
-		systemPrompt:   systemPrompt,
-		agentName:      agentName,
-		orgDisplayName: orgDisplayName,
+		client:       client,
+		systemPrompt: systemPrompt,
+		agentName:    agentName,
 	}
 }
 
@@ -183,7 +181,7 @@ func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 // requête (PLAN.md §7.2, §7.3) : le contexte n'est jamais mélangé au prompt
 // statique construit une fois pour toutes à l'enregistrement de l'agent.
 func (a *GenAIAgent) buildMessages(req Request) []llm.Message {
-	return buildChatMessages(a.systemPrompt, a.agentName, a.orgDisplayName, req)
+	return buildChatMessages(a.systemPrompt, a.agentName, req)
 }
 
 // buildChatMessages transforme req en messages GenAI, partagé par toutes les
@@ -194,10 +192,10 @@ func (a *GenAIAgent) buildMessages(req Request) []llm.Message {
 // Les pièces jointes sont portées par les seuls messages "user" : les
 // fournisseurs refusent la requête entière si un message system ou assistant
 // en contient (voir la validation par provider dans genai).
-func buildChatMessages(systemPrompt, agentName, orgDisplayName string, req Request) []llm.Message {
+func buildChatMessages(systemPrompt, agentName string, req Request) []llm.Message {
 	messages := make([]llm.Message, 0, len(req.History)+2)
 
-	systemMessage := systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, orgDisplayName, agentName, time.Now())
+	systemMessage := systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, agentName, time.Now())
 
 	if req.Summary != "" {
 		systemMessage += "\n\n---\n\n## Résumé de la conversation antérieure\n\n" +

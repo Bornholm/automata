@@ -113,11 +113,12 @@ func TestBuildSystemPrompt_InvariantRulesPresentInAllAgents(t *testing.T) {
 
 func TestBuildContextBlock_ContainsAllowedVariablesOnly(t *testing.T) {
 	identity := model.ExecutionIdentity{
-		Scope:       model.ScopeGroup,
-		ChannelKind: model.ChannelGroup,
+		Scope:          model.ScopeGroup,
+		ChannelKind:    model.ChannelGroup,
+		OrgDisplayName: "Maison",
 	}
 
-	block := agent.BuildContextBlock(identity, "Maison", "agenda", time.Now())
+	block := agent.BuildContextBlock(identity, "agenda", time.Now())
 
 	if !strings.Contains(block, "agenda") {
 		t.Error("le bloc de contexte doit mentionner le nom de l'agent")

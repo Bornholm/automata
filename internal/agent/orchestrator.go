@@ -47,7 +47,6 @@ type OrchestratorAgent struct {
 	client                 llm.ChatCompletionClient
 	systemPrompt           string
 	agentName              string
-	orgDisplayName         string
 	specialists            map[string]delegation.Specialist
 	specialistDescriptions map[string]string
 	maxSequentialToolCalls int
@@ -66,12 +65,11 @@ type OrchestratorAgent struct {
 // nombre d'itérations de la boucle d'appel d'outils (§6.4) ; une valeur <= 0
 // retombe sur 1 (au moins un appel de complétion, jamais de boucle
 // illimitée).
-func NewOrchestratorAgent(client llm.ChatCompletionClient, systemPrompt, agentName, orgDisplayName string, specialists map[string]delegation.Specialist, maxSequentialToolCalls int) *OrchestratorAgent {
+func NewOrchestratorAgent(client llm.ChatCompletionClient, systemPrompt, agentName string, specialists map[string]delegation.Specialist, maxSequentialToolCalls int) *OrchestratorAgent {
 	return &OrchestratorAgent{
 		client:                 client,
 		systemPrompt:           systemPrompt,
 		agentName:              agentName,
-		orgDisplayName:         orgDisplayName,
 		specialists:            specialists,
 		maxSequentialToolCalls: maxSequentialToolCalls,
 	}
@@ -92,7 +90,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	tools = append(tools, a.reminderTools.buildReminderTools(req.Identity)...)
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
-	messages := buildChatMessages(a.systemPrompt, a.agentName, a.orgDisplayName, req)
+	messages := buildChatMessages(a.systemPrompt, a.agentName, req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {

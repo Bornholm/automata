@@ -102,7 +102,7 @@ func TestOrchestratorAgent_DelegatesToAgenda(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"agenda": agenda}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"agenda": agenda}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Input: "Qu'ai-je demain ?"})
 	if err != nil {
@@ -137,7 +137,7 @@ func TestOrchestratorAgent_DelegatesToResearch(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"research": research}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"research": research}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Input: "Quelle est la capitale du Portugal ?"})
 	if err != nil {
@@ -172,7 +172,7 @@ func TestOrchestratorAgent_DelegatesToTodo(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"todo": todo}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"todo": todo}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Input: "Ajoute acheter du pain à ma liste"})
 	if err != nil {
@@ -202,7 +202,7 @@ func TestOrchestratorAgent_NoDelegationWhenUnnecessary(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"agenda": agenda}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"agenda": agenda}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Input: "Salut"})
 	if err != nil {
@@ -274,7 +274,7 @@ func TestOrchestratorAgent_MultipleDelegationsSameTurn(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"agenda": agenda, "todo": todo}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"agenda": agenda, "todo": todo}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Input: "Fais le point"})
 	if err != nil {
@@ -337,7 +337,7 @@ func TestOrchestratorAgent_MaxActionsPerTurnRespected(t *testing.T) {
 	todo := proposingSpecialist(3)
 	client := scriptDelegateThenReply("J'ai préparé 3 tâches.")
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"todo": todo}, 5).
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"todo": todo}, 5).
 		WithMaxActionsPerTurn(5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Input: "Crée mes tâches"})
@@ -362,7 +362,7 @@ func TestOrchestratorAgent_MaxActionsPerTurnRejectsWholeBatch(t *testing.T) {
 	todo := proposingSpecialist(4)
 	client := scriptDelegateThenReply("J'ai préparé 4 tâches.")
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"todo": todo}, 5).
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"todo": todo}, 5).
 		WithMaxActionsPerTurn(2)
 
 	result, err := a.Execute(context.Background(), agent.Request{Input: "Crée mes tâches"})
@@ -390,7 +390,7 @@ func TestOrchestratorAgent_MaxActionsPerTurnUnsetIsUnbounded(t *testing.T) {
 	todo := proposingSpecialist(12)
 	client := scriptDelegateThenReply("J'ai préparé 12 tâches.")
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"todo": todo}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"todo": todo}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Input: "Crée mes tâches"})
 	if err != nil {
@@ -450,7 +450,7 @@ func TestOrchestratorAgent_MaxToolContextBytesBoundsCumulativeResults(t *testing
 	research := verboseSpecialist(200)
 	client := scriptTwoDelegationsThenReply(&toolContents)
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"research": research}, 5).
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"research": research}, 5).
 		WithMaxToolContextBytes(budget)
 
 	if _, err := a.Execute(context.Background(), agent.Request{Input: "Cherche"}); err != nil {
@@ -493,7 +493,7 @@ func TestOrchestratorAgent_MaxToolContextBytesUnsetIsUnbounded(t *testing.T) {
 	research := verboseSpecialist(200)
 	client := scriptTwoDelegationsThenReply(&toolContents)
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"research": research}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"research": research}, 5)
 
 	if _, err := a.Execute(context.Background(), agent.Request{Input: "Cherche"}); err != nil {
 		t.Fatalf("Execute a échoué: %v", err)
@@ -537,7 +537,7 @@ func TestOrchestratorAgent_SpecialistError(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"agenda": agenda}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"agenda": agenda}, 5)
 
 	result, err := a.Execute(context.Background(), agent.Request{Input: "Qu'ai-je aujourd'hui ?"})
 	if err != nil {
@@ -566,7 +566,7 @@ func TestOrchestratorAgent_MaxDelegationsReached(t *testing.T) {
 
 	const maxSequentialToolCalls = 3
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"agenda": agenda}, maxSequentialToolCalls)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"agenda": agenda}, maxSequentialToolCalls)
 
 	_, err := a.Execute(context.Background(), agent.Request{Input: "Boucle"})
 	if !errors.Is(err, agent.ErrMaxDelegationsReached) {
@@ -599,7 +599,7 @@ func TestOrchestratorAgent_MainHistoryNotForwardedToSpecialist(t *testing.T) {
 		},
 	}
 
-	a := agent.NewOrchestratorAgent(client, "system", "main", "Test Org", map[string]delegation.Specialist{"agenda": agenda}, 5)
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"agenda": agenda}, 5)
 
 	_, err := a.Execute(context.Background(), agent.Request{
 		History: []agent.Message{
@@ -636,7 +636,7 @@ func TestOrchestrator_SpecialistDescriptionReachesTool(t *testing.T) {
 		"todo":     &fakeSpecialist{},
 	}
 
-	orchestrator := agent.NewOrchestratorAgent(client, "system", "main", "Org", specialists, 3).
+	orchestrator := agent.NewOrchestratorAgent(client, "system", "main", specialists, 3).
 		WithSpecialistDescriptions(map[string]string{
 			"research": "cherche des informations à jour sur Internet",
 		})

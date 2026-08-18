@@ -216,3 +216,35 @@ func TestEffectivePermissionsUnknownOrg(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnauthorized", err)
 	}
 }
+
+// Une instance sert plusieurs organisations : un principal connu de l'une
+// n'a aucune permission dans l'autre. Sans cette barrière, un collègue
+// membre du groupe professionnel lirait la mémoire de la famille.
+func TestEffectivePermissions_RejectsPrincipalOutsideOrganization(t *testing.T) {
+	cfg := testConfig()
+	cfg.Organization = config.Organization{}
+	cfg.Organizations = []config.Organization{
+		{ID: "home", DisplayName: "Maison"},
+		{ID: "work", DisplayName: "Bureau"},
+	}
+
+	for i := range cfg.Identities.Principals {
+		cfg.Identities.Principals[i].Orgs = []string{"home"}
+	}
+
+	principalID := model.PrincipalID(cfg.Identities.Principals[0].ID)
+
+	if _, err := identity.EffectivePermissions(cfg, "home", principalID); err != nil {
+		t.Fatalf("EffectivePermissions dans son organisation: erreur inattendue: %v", err)
+	}
+
+	_, err := identity.EffectivePermissions(cfg, "work", principalID)
+	if !errors.Is(err, apperr.ErrUnauthorized) {
+		t.Fatalf("EffectivePermissions hors organisation: err = %v, attendu ErrUnauthorized", err)
+	}
+
+	_, err = identity.EffectivePermissions(cfg, "inconnue", principalID)
+	if !errors.Is(err, apperr.ErrUnauthorized) {
+		t.Fatalf("EffectivePermissions sur organisation inconnue: err = %v, attendu ErrUnauthorized", err)
+	}
+}

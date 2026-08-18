@@ -107,7 +107,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 		// chaque GenAIAgent obtient bien sa propre chaîne systemPrompt et
 		// son propre client : aucune contamination croisée possible entre
 		// agents.
-		agents[name] = NewGenAIAgent(client, systemPrompt, name, cfg.Organization.DisplayName)
+		agents[name] = NewGenAIAgent(client, systemPrompt, name)
 		clients[name] = client
 		prompts[name] = systemPrompt
 	}
@@ -151,7 +151,6 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 				clients[name],
 				prompts[name],
 				name,
-				cfg.Organization.DisplayName,
 				cfg,
 				mcpManager,
 				agentCfg.MCPServers,
@@ -199,7 +198,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			}
 		}
 
-		orchestrator := NewOrchestratorAgent(clients[name], prompts[name], name, cfg.Organization.DisplayName, specialists, agentCfg.Limits.MaxSequentialToolCalls).
+		orchestrator := NewOrchestratorAgent(clients[name], prompts[name], name, specialists, agentCfg.Limits.MaxSequentialToolCalls).
 			WithSpecialistDescriptions(specialistDescriptions)
 
 		agentMemoryTools := memoryTools

@@ -382,7 +382,7 @@ type mediaProducingAgent struct {
 }
 
 func (a *mediaProducingAgent) Execute(ctx context.Context, req agent.Request) (agent.Result, error) {
-	inner := agent.NewOrchestratorAgent(a.client, "system", "main", "Maison", map[string]delegation.Specialist{}, 5)
+	inner := agent.NewOrchestratorAgent(a.client, "system", "main", map[string]delegation.Specialist{}, 5)
 
 	result, err := inner.Execute(ctx, req)
 	if err != nil {

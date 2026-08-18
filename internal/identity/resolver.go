@@ -115,6 +115,7 @@ func (r *Resolver) ResolveMessage(ctx context.Context, provider, externalUserID,
 		Trigger:        model.TriggerMessage,
 		PrincipalID:    model.PrincipalID(principalID),
 		OrgID:          model.OrgID(ch.OrgID),
+		OrgDisplayName: r.cfg.OrganizationDisplayName(ch.OrgID),
 		ConversationID: conversationID,
 		Provider:       provider,
 		ChannelID:      channelID,
@@ -138,15 +139,17 @@ func (r *Resolver) ResolveMessage(ctx context.Context, provider, externalUserID,
 }
 
 // EffectivePermissions résout l'ensemble des permissions effectives d'un
-// principal, à partir des rôles configurés. orgID doit correspondre à
-// l'organisation de l'instance : la configuration V1 ne supporte qu'une
-// seule organisation (cfg.Organization).
+// principal dans une organisation donnée, à partir des rôles configurés.
+//
+// orgID doit désigner une organisation déclarée, et le principal doit lui
+// appartenir : une instance peut en servir plusieurs, et un principal connu
+// d'une organisation n'a aucun droit dans une autre.
 func EffectivePermissions(cfg *config.Config, orgID model.OrgID, principalID model.PrincipalID) (map[string]struct{}, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("identity: configuration requise")
 	}
 
-	if string(orgID) != cfg.Organization.ID {
+	if _, ok := cfg.LookupOrganization(string(orgID)); !ok {
 		return nil, fmt.Errorf("identity: organisation %q inconnue: %w", orgID, apperr.ErrUnauthorized)
 	}
 
@@ -161,6 +164,10 @@ func EffectivePermissions(cfg *config.Config, orgID model.OrgID, principalID mod
 
 	if principal == nil {
 		return nil, fmt.Errorf("identity: principal %q inconnu: %w", principalID, apperr.ErrUnauthorized)
+	}
+
+	if !cfg.PrincipalInOrganization(string(principalID), string(orgID)) {
+		return nil, fmt.Errorf("identity: principal %q hors de l'organisation %q: %w", principalID, orgID, apperr.ErrUnauthorized)
 	}
 
 	permissions := make(map[string]struct{})

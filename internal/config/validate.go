@@ -33,6 +33,7 @@ func Validate(cfg *Config, baseDir string) error {
 	var errs []error
 
 	errs = append(errs, validateVersion(cfg)...)
+	errs = append(errs, validateOrganizations(cfg)...)
 	errs = append(errs, validateLLMClients(cfg)...)
 	errs = append(errs, validateImageClients(cfg)...)
 	errs = append(errs, validateAgents(cfg)...)
@@ -511,6 +512,42 @@ func validatePermission(perm string) bool {
 	return validPermissionScopes[scope] && validPermissionActions[action]
 }
 
+// validateOrganizations vérifie les organisations déclarées. Au moins une
+// est exigée : sans elle, aucun canal ne peut désigner une organisation
+// valide et toute résolution d'identité échouerait au premier message.
+func validateOrganizations(cfg *Config) []error {
+	var errs []error
+
+	orgs := cfg.AllOrganizations()
+
+	if len(orgs) == 0 {
+		return []error{fmt.Errorf("organizations: au moins une organisation est requise")}
+	}
+
+	seen := map[string]bool{}
+
+	for i, org := range orgs {
+		if org.ID == "" {
+			errs = append(errs, fmt.Errorf("organizations[%d].id: requis", i))
+			continue
+		}
+
+		if seen[org.ID] {
+			errs = append(errs, fmt.Errorf("organizations: identifiant dupliqué %q", org.ID))
+		}
+
+		seen[org.ID] = true
+	}
+
+	return errs
+}
+
+// organizationExists indique si orgID désigne une organisation déclarée.
+func organizationExists(cfg *Config, orgID string) bool {
+	_, ok := cfg.LookupOrganization(orgID)
+	return ok
+}
+
 func validateIdentities(cfg *Config) []error {
 	var errs []error
 
@@ -540,6 +577,19 @@ func validateIdentities(cfg *Config) []error {
 		case PrincipalKindHuman, PrincipalKindService:
 		default:
 			errs = append(errs, fmt.Errorf("%s.kind: valeur invalide %q (attendu human|service)", prefix, principal.Kind))
+		}
+
+		// Une instance multi-organisation exige un rattachement explicite :
+		// hériter silencieusement de toutes les organisations donnerait à un
+		// collègue l'accès à la mémoire de la famille.
+		if len(principal.Orgs) == 0 && len(cfg.AllOrganizations()) > 1 {
+			errs = append(errs, fmt.Errorf("%s.orgs: requis dès que plusieurs organisations sont déclarées", prefix))
+		}
+
+		for _, orgID := range principal.Orgs {
+			if !organizationExists(cfg, orgID) {
+				errs = append(errs, fmt.Errorf("%s.orgs: organisation inconnue %q", prefix, orgID))
+			}
 		}
 
 		for _, role := range principal.Roles {
@@ -638,6 +688,13 @@ func validateOrigins(cfg *Config) []error {
 			seen[key] = true
 		}
 
+		// Un identifiant externe vide construirait une entrée d'index que
+		// rien ne peut plus atteindre légitimement : autant refuser au
+		// chargement plutôt que laisser croire que l'origine est déclarée.
+		if origin.ExternalUserID == "" {
+			errs = append(errs, fmt.Errorf("%s.external_user_id: requis", prefix))
+		}
+
 		if origin.PrincipalID == "" {
 			errs = append(errs, fmt.Errorf("%s.principal_id: requis", prefix))
 		} else if !principalExists(cfg, origin.PrincipalID) {
@@ -669,12 +726,26 @@ func validateChannels(cfg *Config) []error {
 			errs = append(errs, fmt.Errorf("%s.scope: valeur invalide %q (attendu personal|group|org)", prefix, ch.Scope))
 		}
 
+		// Un org_id absent ou mal orthographié ne se manifesterait qu'au
+		// premier message reçu, sous la forme d'un refus d'autorisation
+		// difficile à relier à sa cause.
+		orgKnown := organizationExists(cfg, ch.OrgID)
+
+		switch {
+		case ch.OrgID == "":
+			errs = append(errs, fmt.Errorf("%s.org_id: requis", prefix))
+		case !orgKnown:
+			errs = append(errs, fmt.Errorf("%s.org_id: organisation inconnue %q", prefix, ch.OrgID))
+		}
+
 		switch ch.Kind {
 		case ChannelKindPrivate:
 			if ch.PrincipalID == "" {
 				errs = append(errs, fmt.Errorf("%s.principal_id: requis pour un canal privé", prefix))
 			} else if !principalExists(cfg, ch.PrincipalID) {
 				errs = append(errs, fmt.Errorf("%s.principal_id: principal inconnu %q", prefix, ch.PrincipalID))
+			} else if orgKnown && !cfg.PrincipalInOrganization(ch.PrincipalID, ch.OrgID) {
+				errs = append(errs, fmt.Errorf("%s.principal_id: le principal %q n'appartient pas à l'organisation %q", prefix, ch.PrincipalID, ch.OrgID))
 			}
 
 			if len(ch.Members) > 0 {
@@ -695,6 +766,11 @@ func validateChannels(cfg *Config) []error {
 		for _, member := range ch.Members {
 			if !principalExists(cfg, member) {
 				errs = append(errs, fmt.Errorf("%s.members: principal inconnu %q", prefix, member))
+				continue
+			}
+
+			if orgKnown && !cfg.PrincipalInOrganization(member, ch.OrgID) {
+				errs = append(errs, fmt.Errorf("%s.members: le principal %q n'appartient pas à l'organisation %q", prefix, member, ch.OrgID))
 			}
 		}
 	}
@@ -775,10 +851,21 @@ func validateSchedules(cfg *Config) []error {
 			errs = append(errs, fmt.Errorf("%s.schedule.timezone: fuseau horaire invalide %q: %w", prefix, sched.Schedule.Timezone, err))
 		}
 
+		orgKnown := organizationExists(cfg, sched.Execution.OrgID)
+
+		switch {
+		case sched.Execution.OrgID == "":
+			errs = append(errs, fmt.Errorf("%s.execution.org_id: requis", prefix))
+		case !orgKnown:
+			errs = append(errs, fmt.Errorf("%s.execution.org_id: organisation inconnue %q", prefix, sched.Execution.OrgID))
+		}
+
 		if sched.Execution.PrincipalID == "" {
 			errs = append(errs, fmt.Errorf("%s.execution.principal_id: requis", prefix))
 		} else if !principalExists(cfg, sched.Execution.PrincipalID) {
 			errs = append(errs, fmt.Errorf("%s.execution.principal_id: principal inconnu %q", prefix, sched.Execution.PrincipalID))
+		} else if orgKnown && !cfg.PrincipalInOrganization(sched.Execution.PrincipalID, sched.Execution.OrgID) {
+			errs = append(errs, fmt.Errorf("%s.execution.principal_id: le principal %q n'appartient pas à l'organisation %q", prefix, sched.Execution.PrincipalID, sched.Execution.OrgID))
 		}
 
 		if sched.Execution.Agent == "" {

@@ -151,7 +151,7 @@ func newAgendaAgent(t *testing.T, cfg *config.Config, client llm.ChatCompletionC
 	m := mcp.NewManager(cfg, nil)
 	t.Cleanup(func() { _ = m.Close() })
 
-	return agent.NewMCPToolAgent(client, "system", "agenda", "Maison", cfg, m, []string{"google-calendar"}, mcp.Limits{}, maxSequentialToolCalls)
+	return agent.NewMCPToolAgent(client, "system", "agenda", cfg, m, []string{"google-calendar"}, mcp.Limits{}, maxSequentialToolCalls)
 }
 
 func privateConversation(id model.ConversationID) model.Conversation {
