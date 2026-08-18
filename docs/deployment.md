@@ -12,69 +12,28 @@ Pour un déploiement sur une instance Dokku, voir
 contourne le problème décrit juste en dessous en vendorisant les dépendances
 dans le commit poussé, plutôt qu'en fournissant des contextes de build.
 
-## 1. Problème bloquant : dépendances locales non publiées
+## 1. Dépendances
 
-`go.mod` redirige trois dépendances vers des dépôts locaux via des
-directives `replace` :
+`go-courier`, `genai` et `amoxtli` sont publiés sur le module proxy standard
+et résolus comme n'importe quelle dépendance. `go.mod` ne porte plus aucune
+directive `replace`, et le dépôt se construit seul :
 
+```bash
+go build ./...        # sans aucun dépôt frère sur le disque
+docker build .        # sans contexte de build supplémentaire
 ```
-replace github.com/bornholm/go-courier => ../go-courier
-replace github.com/bornholm/genai       => ../genai
-replace github.com/bornholm/amoxtli     => ../amoxtli
-```
 
-Aucune des trois bibliothèques (`go-courier`, `genai`, `amoxtli`) n'a de
-version taguée publiée sur un module proxy correspondant à l'API réellement
-utilisée par Automata — constaté dès la Phase 5 et documenté dans
-`docs/integration-inventory.md`. Conséquence directe pour le packaging :
-**un `docker build` classique, avec pour seul contexte ce dépôt, échoue** à
-`go mod download`/`go build`, puisque les trois modules n'existent nulle
-part ailleurs que sur le disque de développement.
+Ce n'était pas le cas jusqu'en août 2026 : les trois bibliothèques n'avaient
+pas de version publiée correspondant à l'API utilisée ici, `go.mod` les
+redirigeait vers des chemins relatifs (`../go-courier`…), et l'image devait
+recevoir les trois dépôts comme contextes de build Buildx. Tout cela a
+disparu.
 
-Vérification : dans un répertoire ne contenant que ce dépôt (sans les trois
-dépôts frères sur le disque), `go build ./...` échoue avec
-`go: github.com/bornholm/go-courier@...: reading ../go-courier/go.mod: open ../go-courier/go.mod: no such file or directory`
-(ou l'équivalent pour `genai`/`amoxtli`) — les `replace` étant des chemins
-relatifs, ils ne se résolvent que si les trois dépôts sont bien présents en
-frères du répertoire de travail.
-
-### Solution retenue (temporaire)
-
-Les trois `replace` de `go.mod` pointent vers des **chemins relatifs**
-(`../go-courier`, `../genai`, `../amoxtli`), pas vers des chemins absolus
-propres à une machine (`/home/wpetit/workspace/...`). Cela fonctionne :
-
-- **en local** : tant que les trois dépôts sont clonés en frères
-  d'`automata` (`~/workspace/automata`, `~/workspace/go-courier`,
-  `~/workspace/genai`, `~/workspace/amoxtli` dans cet environnement) ;
-- **dans l'image Docker** : en injectant les trois dépôts comme **contextes
-  de build supplémentaires** (Docker Buildx, `--build-context`) et en les
-  copiant, dans l'étape de build du `Dockerfile`, à des chemins qui
-  reproduisent la même disposition en frères (`/src/go-courier`,
-  `/src/genai`, `/src/amoxtli`, à côté de `/src/automata`).
-
-Alternative écartée : copier les trois dépôts *dans* le contexte de build
-d'`automata` (ex. `docker/vendor/go-courier/`) et adapter les `replace` en
-conséquence. Rejetée parce qu'elle aurait obligé à dupliquer physiquement
-les sources sur le disque avant chaque build (ou à les committer dans
-`automata`, ce qu'aucune des deux bibliothèques n'autorise ici), alors que
-`--build-context` les référence directement à leur emplacement réel sans
-copie manuelle ni duplication de code source. Les chemins relatifs
-`--build-context` + `replace` relatifs sont la combinaison la plus simple :
-un seul mécanisme (position relative des dépôts) sert à la fois le
-`go build` local et le `docker build`.
-
-**Ceci est une solution temporaire.** Une fois `go-courier`, `genai` et
-`amoxtli` publiés avec une version taguée accessible sur un module proxy
-standard (proxy.golang.org ou équivalent interne) :
-
-1. retirer les trois directives `replace` de `go.mod` et remplacer les
-   `require` correspondants par les versions taguées ;
-2. supprimer, dans le `Dockerfile`, les trois lignes `COPY --from=gocourier
-   .`/`--from=genai .`/`--from=amoxtli .` ainsi que ce paragraphe et la
-   nécessité des contextes de build additionnels ;
-3. la commande de build redevient un simple `docker build .`, sans
-   `--build-context`.
+Une conséquence pratique pour le développement : une modification de l'une
+des trois bibliothèques doit maintenant être **publiée** pour être prise en
+compte ici (nouveau tag puis `go get`). Pour itérer localement sur une
+bibliothèque et Automata en même temps, rétablir temporairement un `replace`
+dans un `go.work` local (non versionné) plutôt que dans `go.mod`.
 
 ## 2. Volumes et configuration
 
@@ -196,34 +155,13 @@ fait échouer le chargement si la variable n'existe pas.
 
 ## 3. Construire l'image
 
-Le démon Docker et `docker buildx` (≥ 0.10, fonctionnalité
-`--build-context`) doivent être disponibles :
-
 ```bash
-docker buildx version   # confirme la disponibilité de --build-context
+docker build -t automata:local .
 ```
 
-Commande de build exacte, à exécuter depuis la racine de ce dépôt, avec les
-trois dépôts frères clonés localement (adapter les chemins si les dépôts ne
-sont pas sous `~/workspace`) :
-
-```bash
-docker buildx build \
-  --build-context gocourier=$HOME/workspace/go-courier \
-  --build-context genai=$HOME/workspace/genai \
-  --build-context amoxtli=$HOME/workspace/amoxtli \
-  -t automata:local \
-  --load \
-  .
-```
-
-`--load` importe l'image construite dans le démon Docker local (nécessaire
-pour l'utiliser ensuite avec `docker compose`/`docker run`) ; à omettre si
-la sortie est poussée directement vers un registre (`--push`).
-
-Build réellement exécuté et vérifié lors de cette phase, avec les trois
-dépôts frères présents sous `~/workspace` : succès (`docker images` liste
-bien `automata:local`, image finale ~125 Mo).
+Rien d'autre : ni Buildx, ni `--build-context`, ni dépôt frère. Le build a
+été réexécuté après la suppression des `replace` — succès, image finale
+d'environ 125 Mo.
 
 ## 4. Deux défauts corrigés par cette phase, détectés par le premier
    déploiement réel

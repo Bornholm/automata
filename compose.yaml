@@ -1,10 +1,8 @@
 # compose.yaml — deploiement local Automata (PLAN.md Phase 22).
 #
-# Prerequis : construire l'image avec `docker buildx build` et les
-# contextes de build additionnels documentes dans docs/deployment.md,
-# puis referencer l'image obtenue ci-dessous (ou remplacer `image:` par un
-# `build:` local si buildx n'est pas invoque separement — voir
-# docs/deployment.md §3).
+# Prerequis : construire l'image avec `docker build -t automata:local .`
+# (aucun contexte supplementaire n'est necessaire), ou remplacer `image:`
+# par un `build: .` local — voir docs/deployment.md §3.
 #
 # IMPORTANT — mono-instance uniquement : NE PAS augmenter `replicas`/le
 # nombre de repliques de ce service. La persistance (SQLite applicatif,

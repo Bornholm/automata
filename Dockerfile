@@ -2,39 +2,15 @@
 #
 # Image multi-stage pour Automata (PLAN.md Phase 22).
 #
-# PROBLEME BLOQUANT — dependances locales non publiees
-# ------------------------------------------------------
-# go.mod redirige (directives "replace") github.com/bornholm/go-courier,
-# github.com/bornholm/genai et github.com/bornholm/amoxtli vers des chemins
-# relatifs freres du module ("../go-courier", "../genai", "../amoxtli") :
-# aucune des trois bibliotheques n'a de version taguee publiee sur un module
-# proxy correspondant a l'API reellement utilisee ici (voir go.mod, Phase 5,
-# docs/integration-inventory.md). Un `docker build` classique, avec pour
-# seul contexte ce depot, echouera donc a `go mod download`/`go build`.
-#
-# Solution retenue (temporaire, voir docs/deployment.md §1) : fournir les
-# sources des trois depots comme CONTEXTES DE BUILD SUPPLEMENTAIRES via
-# Docker Buildx (--build-context), et les copier ici a des chemins relatifs
-# identiques a ceux attendus par les "replace" de go.mod, en freres de
-# /src/automata. Voir docs/deployment.md pour la commande de build exacte.
-#
-# Le jour ou go-courier/genai/amoxtli publient une version taguee : retirer
-# les "replace" de go.mod, supprimer les trois lignes "COPY --from=" ci
-# dessous ainsi que les contextes de build additionnels, et ce Dockerfile
-# redevient un Dockerfile Go multi-stage ordinaire.
+# Les trois bibliotheques maison
+# (go-courier, genai, amoxtli) sont desormais publiees sur le module proxy et
+# resolues comme n'importe quelle dependance. Le build ne demande plus ni
+# contexte supplementaire ni disposition particuliere des depots sur le
+# disque : `docker build .` suffit.
 
 FROM golang:1.26-bookworm AS build
 
 WORKDIR /src/automata
-
-# Depots locaux non publies, injectes comme contextes de build nommes
-# (voir docs/deployment.md §3 pour la commande `docker buildx build
-# --build-context gocourier=... --build-context genai=... --build-context
-# amoxtli=...`). Places en freres de /src/automata pour correspondre aux
-# "replace" relatifs de go.mod (../go-courier, ../genai, ../amoxtli).
-COPY --from=gocourier . /src/go-courier
-COPY --from=genai . /src/genai
-COPY --from=amoxtli . /src/amoxtli
 
 COPY . .
 
