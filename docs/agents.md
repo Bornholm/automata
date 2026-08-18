@@ -214,6 +214,29 @@ même connexion.
 Les connexions se ferment à l'arrêt du processus, ou explicitement pour une
 session donnée.
 
+## Modèles à réflexion
+
+Un modèle à réflexion (« reasoning ») produit son raisonnement avant sa
+réponse. Selon le fournisseur, deux choses arrivent au texte livré :
+
+- le raisonnement est exposé dans un champ séparé, et il ne reste que les
+  sauts de ligne qui l'entouraient — le message part alors avec une ou deux
+  lignes vides avant le premier mot ;
+- il n'est pas séparé, et le bloc `<think>…</think>` se retrouve dans le
+  message.
+
+Les deux sont nettoyés avant persistance et envoi, sur tous les chemins de
+réponse. Un bloc de raisonnement n'est retiré que s'il est **en tête et
+refermé** : au milieu d'une phrase ces balises sont du contenu légitime, et
+une balise jamais refermée signale un flux tronqué — mieux vaut livrer la
+réponse telle quelle que la vider.
+
+Reste la latence, qu'aucun nettoyage ne rattrape : ces modèles réfléchissent
+avant de répondre, et un simple « coucou » peut demander plusieurs dizaines
+de secondes. Le pipeline attend jusqu'à 5 minutes par message, mais
+l'indicateur « en train d'écrire » tourne pendant tout ce temps côté
+utilisateur.
+
 ## Donner à chaque utilisateur ses propres identifiants
 
 Les en-têtes déclarés sous `mcp_servers` valent pour tout le monde. Cela

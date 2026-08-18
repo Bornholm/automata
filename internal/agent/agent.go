@@ -168,7 +168,7 @@ func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 		return Result{}, fmt.Errorf("agent: erreur du flux du client LLM: %w", streamErr)
 	}
 
-	text := reply.String()
+	text := cleanReply(reply.String())
 	if text == "" {
 		return Result{}, ErrEmptyReply
 	}

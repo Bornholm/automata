@@ -174,7 +174,7 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 		if len(toolCalls) == 0 {
 			text := ""
 			if msg := resp.Message(); msg != nil {
-				text = msg.Content()
+				text = cleanReply(msg.Content())
 			}
 
 			if text == "" {
