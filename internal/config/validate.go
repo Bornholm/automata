@@ -46,6 +46,7 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateSchedules(cfg)...)
 	errs = append(errs, validateObservability(cfg)...)
 	errs = append(errs, validateCourier(cfg)...)
+	errs = append(errs, validateCourierProviders(cfg)...)
 	errs = append(errs, validateConversation(cfg)...)
 
 	return joinErrors(errs)

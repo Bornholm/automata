@@ -72,12 +72,63 @@ courier:
 
 Chaque entrée est un fournisseur de messagerie. Le nom de la clé,
 `whatsapp` ici, est celui que vous réutilisez dans `origins`, `channels` et
-`schedules[].delivery.provider`.
+`schedules[].delivery.provider` — plusieurs fournisseurs coexistent, chacun
+avec ses canaux et ses origines, et un même principal peut écrire depuis
+plusieurs plateformes.
 
-`session_path` conserve la liaison d'appareil. Supprimez ce répertoire et il
-faudra scanner un nouveau QR code. Sauvegardez-le.
+Cinq types sont livrés. Chacun a ses champs propres, vérifiés au chargement
+comme le reste de la configuration :
 
-Seul le type `whatsapp` est livré.
+```yaml
+courier:
+  providers:
+    whatsapp:
+      type: whatsapp
+      # Conserve la liaison d'appareil : supprimer ce répertoire oblige à
+      # rescanner un QR code. À sauvegarder.
+      session_path: /data/courier/whatsapp
+
+    # Adossé au daemon signal-cli et à son interface JSON-RPC :
+    #   signal-cli -a +33612345678 daemon --tcp 127.0.0.1:7583
+    # C'est le daemon qui porte le compte et son enregistrement.
+    signal:
+      type: signal
+      account: "+33612345678"
+      # tcp://hôte:port ou unix:///chemin/socket. Défaut : tcp://127.0.0.1:7583.
+      address: tcp://127.0.0.1:7583
+
+    discord:
+      type: discord
+      token: ${DISCORD_BOT_TOKEN}
+
+    rocket:
+      type: rocket
+      server_url: https://chat.example.test
+      username: ${ROCKET_USERNAME}
+      password: ${ROCKET_PASSWORD}
+
+    # L'assistant par courriel : relève IMAP, réponses SMTP. Un fil de
+    # discussion devient une conversation.
+    mail:
+      type: mail
+      imap:
+        address: imap.example.test:993
+        username: ${MAIL_USERNAME}
+        password: ${MAIL_PASSWORD}
+        check_interval: 1m      # facultatif
+        folders: [INBOX]        # facultatif
+      smtp:
+        address: smtp.example.test:587
+        issuer: assistant@example.test
+        username: ${MAIL_USERNAME}
+        password: ${MAIL_PASSWORD}
+```
+
+Identifiants de canaux (`channels[].channel_id`), par plateforme : WhatsApp
+utilise les JID (`33612345678@s.whatsapp.net`, groupes `…@g.us`) ; Signal le
+numéro E.164 du pair en direct et `group.<id base64>` pour un groupe ;
+Discord et Rocket.Chat leurs identifiants de salon ; le courriel identifie
+une conversation par le Message-ID racine du fil.
 
 ### coalesce_window
 

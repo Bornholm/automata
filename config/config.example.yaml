@@ -57,6 +57,32 @@ courier:
       # docs/deployment.md §5.
       session_path: /data/courier/whatsapp
 
+    # Autres plateformes disponibles — chaque fournisseur actif a ses
+    # origins et ses channels propres (voir docs/configuration.md).
+    # signal:
+    #   type: signal
+    #   account: "+33612345678"
+    #   address: tcp://127.0.0.1:7583   # daemon signal-cli en mode JSON-RPC
+    # discord:
+    #   type: discord
+    #   token: ${DISCORD_BOT_TOKEN}
+    # rocket:
+    #   type: rocket
+    #   server_url: https://chat.example.test
+    #   username: ${ROCKET_USERNAME}
+    #   password: ${ROCKET_PASSWORD}
+    # mail:
+    #   type: mail
+    #   imap:
+    #     address: imap.example.test:993
+    #     username: ${MAIL_USERNAME}
+    #     password: ${MAIL_PASSWORD}
+    #   smtp:
+    #     address: smtp.example.test:587
+    #     issuer: assistant@example.test
+    #     username: ${MAIL_USERNAME}
+    #     password: ${MAIL_PASSWORD}
+
 # Serveur HTTP local de santé et de métriques. Doit rester activé pour que la
 # sonde de l'image (`automata healthcheck`) fonctionne — voir
 # docs/deployment.md §7.

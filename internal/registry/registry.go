@@ -16,9 +16,6 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/bornholm/go-courier"
-	"github.com/bornholm/go-courier/provider/whatsapp"
-
 	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/audio"
@@ -223,29 +220,6 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	wg.Wait()
 
 	return nil
-}
-
-// buildCourierProviders construit un courier.Provider réel pour chaque
-// fournisseur déclaré dans cfg.Courier.Providers. Seul le type "whatsapp"
-// est supporté à ce stade (voir PLAN.md, Phase 5).
-func buildCourierProviders(cfg *config.Config) (map[string]courier.Provider, error) {
-	providers := make(map[string]courier.Provider, len(cfg.Courier.Providers))
-
-	for name, cp := range cfg.Courier.Providers {
-		switch cp.Type {
-		case "whatsapp":
-			sessionPath, ok := cp.Extra["session_path"].(string)
-			if !ok || sessionPath == "" {
-				return nil, fmt.Errorf("fournisseur courier %q: champ session_path requis et non vide", name)
-			}
-
-			providers[name] = whatsapp.NewProvider(whatsapp.WithDBPath(sessionPath))
-		default:
-			return nil, fmt.Errorf("fournisseur courier %q: type %q non supporté", name, cp.Type)
-		}
-	}
-
-	return providers, nil
 }
 
 // buildConversationHandler construit le ingress.Handler de l'agent
