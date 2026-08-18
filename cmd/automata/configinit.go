@@ -216,9 +216,14 @@ type initChannel struct {
 }
 
 type initServer struct {
-	Name     string
-	URLVar   string
-	TokenVar string
+	Name string
+	// Transport MCP : "http" (HTTP+SSE) ou "streamable-http" (révision
+	// 2025-03-26 du protocole). Les deux se configurent de la même façon
+	// mais ne s'entendent pas, d'où un choix par service plutôt qu'un
+	// défaut unique.
+	Transport string
+	URLVar    string
+	TokenVar  string
 
 	// Politique applicative du serveur. Vide pour un service en lecture
 	// seule, dont tous les outils s'exécutent directement.
@@ -413,15 +418,19 @@ func askSpecialists(w *wizard, a *initAnswers) {
 		agent            string
 		label            string
 		asks             bool
+		transport        string
 		resourceKey      string
 		resourceParam    string
 		permissionDomain string
 		requireRFC3339   bool
 		dedupeWrites     bool
 	}{
-		{"google-calendar", "agenda", "Agenda (lecture et création d'événements)", true, "calendar", "calendar_id", "calendar", true, false},
-		{"internet-search", "research", "Recherche Internet", false, "", "", "", false, false},
-		{"todo", "todo", "Listes de tâches", true, "todo", "list_id", "todo", false, true},
+		{"google-calendar", "agenda", "Agenda (lecture et création d'événements)", true, "http", "calendar", "calendar_id", "calendar", true, false},
+		// streamable-http : c'est ce que parle le conteneur de
+		// misc/web-search (SearXNG + serveur MCP), le branchement le plus
+		// direct pour cette capacité.
+		{"internet-search", "research", "Recherche Internet", false, "streamable-http", "", "", "", false, false},
+		{"todo", "todo", "Listes de tâches", true, "http", "todo", "list_id", "todo", false, true},
 	}
 
 	for _, entry := range catalogue {
@@ -431,6 +440,7 @@ func askSpecialists(w *wizard, a *initAnswers) {
 
 		server := initServer{
 			Name:             entry.server,
+			Transport:        entry.transport,
 			URLVar:           envVarName(entry.server, "mcp", "url"),
 			ResourceKey:      entry.resourceKey,
 			ResourceParam:    entry.resourceParam,

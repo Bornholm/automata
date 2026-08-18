@@ -134,7 +134,7 @@ agents:
 mcp_servers:
 {{- range .Servers }}
   {{ .Name }}:
-    transport: http
+    transport: {{ .Transport }}
     url: ${{"{"}}{{ .URLVar }}{{"}"}}
 {{- if .TokenVar }}
     headers:

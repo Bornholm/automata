@@ -30,6 +30,7 @@ import (
 	genaimcp "github.com/bornholm/genai/mcp"
 	genaihttp "github.com/bornholm/genai/mcp/http"
 	genaistdio "github.com/bornholm/genai/mcp/stdio"
+	genaistreamable "github.com/bornholm/genai/mcp/streamable"
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/model"
@@ -244,11 +245,15 @@ func (m *Manager) getOrCreateClient(ctx context.Context, sessionKey SessionKey, 
 // buildClient construit (sans le démarrer) le client MCP réel pour
 // serverName, à partir de cfg.MCPServers[serverName].
 //
-// Transports supportés : "http" (URL + en-têtes, éventuellement surchargés
-// par principal) et "stdio" (commande locale, dont les arguments et
-// l'environnement peuvent porter des patrons {{nom}} résolus par les values
-// du principal courant — voir config.MCPOverride). Toute autre valeur de
-// Transport retourne une erreur claire.
+// Transports supportés : "http" (HTTP+SSE, révision 2024-11-05 du protocole),
+// "streamable-http" (révision 2025-03-26 et suivantes) et "stdio" (commande
+// locale). Les deux transports HTTP se configurent de la même façon — URL et
+// en-têtes, éventuellement surchargés par principal — et ne diffèrent que par
+// le protocole parlé sur le fil ; un serveur ne parle en général que l'un des
+// deux. Sur "stdio", ce sont les arguments et l'environnement qui portent les
+// patrons {{nom}} résolus par les values du principal courant (voir
+// config.MCPOverride). Toute autre valeur de Transport retourne une erreur
+// claire.
 func (m *Manager) buildClient(serverName string, override config.MCPOverride) (genaimcp.Client, error) {
 	serverCfg, ok := m.cfg.MCPServers[serverName]
 	if !ok {
@@ -270,6 +275,20 @@ func (m *Manager) buildClient(serverName string, override config.MCPOverride) (g
 		}
 
 		return genaihttp.NewClient(url, genaihttp.WithHTTPClient(httpClient)), nil
+	case "streamable-http":
+		url, headers, err := renderHTTPConfig(serverCfg, override)
+		if err != nil {
+			return nil, fmt.Errorf("mcp: serveur %q: %w", serverName, err)
+		}
+
+		httpClient := &http.Client{
+			Transport: &headerRoundTripper{
+				headers:   headers,
+				transport: http.DefaultTransport,
+			},
+		}
+
+		return genaistreamable.NewClient(url, genaistreamable.WithHTTPClient(httpClient)), nil
 	case "stdio":
 		command, env, err := renderStdioCommand(serverCfg, override)
 		if err != nil {
@@ -278,7 +297,7 @@ func (m *Manager) buildClient(serverName string, override config.MCPOverride) (g
 
 		return genaistdio.NewClient(command, genaistdio.WithEnv(env...)), nil
 	default:
-		return nil, fmt.Errorf("mcp: transport %q non supporté pour le serveur %q (transports: \"http\", \"stdio\")", serverCfg.Transport, serverName)
+		return nil, fmt.Errorf("mcp: transport %q non supporté pour le serveur %q (transports: %s)", serverCfg.Transport, serverName, config.SupportedMCPTransports)
 	}
 }
 

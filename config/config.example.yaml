@@ -242,9 +242,18 @@ mcp_servers:
       # personne ne connaît l'heure.
       require_rfc3339: [start, end, start_time, end_time]
 
+  # Recherche web. misc/web-search construit un conteneur SearXNG + serveur
+  # MCP prêt à brancher ici (make web-search-up).
+  #
+  # streamable-http, pas http : c'est la révision 2025-03-26 du protocole,
+  # celle des serveurs récents. Les deux transports se configurent de la même
+  # façon mais ne s'entendent pas — brancher le mauvais fait échouer la
+  # connexion au démarrage.
   internet-search:
-    transport: http
+    transport: streamable-http
     url: ${SEARCH_MCP_URL}
+    headers:
+      Authorization: Bearer ${SEARCH_MCP_TOKEN}
     # Aucune ressource, aucune confirmation : tous les outils s'exécutent
     # directement. C'est le réglage d'un service en lecture seule.
 
@@ -254,7 +263,7 @@ mcp_servers:
   # en variable d'URL quand le serveur le permet (une URL fuit dans les
   # journaux intermédiaires).
   # meteo:
-  #   transport: http
+  #   transport: streamable-http
   #   url: https://mcp.example.com/tenants/{{tenant}}/mcp
   #   headers:
   #     X-Api-Key: "{{api_key}}"

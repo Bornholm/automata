@@ -307,8 +307,21 @@ mcp_servers:
       dedupe_writes: false
 ```
 
-Deux transports existent : `http` (ci-dessus) et `stdio`, où Automata lance
-lui-même le serveur en sous-processus local :
+Trois transports existent. Deux parlent HTTP et se configurent exactement de
+la même façon — `url`, `headers` — mais pas le même protocole :
+
+| Transport | Révision du protocole MCP | Quand l'utiliser |
+| --- | --- | --- |
+| `http` | 2024-11-05 (HTTP+SSE) | serveurs anciens |
+| `streamable-http` | 2025-03-26 et suivantes | serveurs récents, dont [misc/web-search](../misc/web-search/README.md) |
+
+Le choix n'est pas cosmétique et aucune négociation ne le rattrape : un
+serveur streamable rejette le GET permanent qu'ouvre le client SSE, et la
+connexion échoue au démarrage avec une erreur du serveur. En cas de doute,
+`streamable-http` est le bon premier essai pour un serveur publié depuis 2025.
+
+Le troisième, `stdio`, fait lancer le serveur par Automata en sous-processus
+local :
 
 ```yaml
 mcp_servers:
@@ -332,8 +345,8 @@ son environnement non.
 
 Les patrons `{{nom}}` sont résolus **par principal** via
 `identities.principals[].mcp.<serveur>.values` (voir [agents.md](agents.md)),
-et fonctionnent sur les deux transports : `command` et `env` en stdio, `url`
-et valeurs de `headers` en http —
+et fonctionnent sur tous les transports : `command` et `env` en stdio, `url`
+et valeurs de `headers` sur les deux transports HTTP —
 
 ```yaml
 meteo:

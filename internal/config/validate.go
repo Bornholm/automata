@@ -293,15 +293,15 @@ func validateMCPServers(cfg *Config) []error {
 		switch server.Transport {
 		case "":
 			errs = append(errs, fmt.Errorf("mcp_servers.%s.transport: requis", name))
-		case "http":
+		case "http", "streamable-http":
 			if server.URL == "" {
-				errs = append(errs, fmt.Errorf("mcp_servers.%s.url: requis pour un transport http", name))
+				errs = append(errs, fmt.Errorf("mcp_servers.%s.url: requis pour un transport %s", name, server.Transport))
 			}
 			if len(server.Command) > 0 {
-				errs = append(errs, fmt.Errorf("mcp_servers.%s.command: sans effet pour un transport http", name))
+				errs = append(errs, fmt.Errorf("mcp_servers.%s.command: sans effet pour un transport %s", name, server.Transport))
 			}
 			if len(server.Env) > 0 {
-				errs = append(errs, fmt.Errorf("mcp_servers.%s.env: sans effet pour un transport http", name))
+				errs = append(errs, fmt.Errorf("mcp_servers.%s.env: sans effet pour un transport %s", name, server.Transport))
 			}
 		case "stdio":
 			if len(server.Command) == 0 {
@@ -314,7 +314,7 @@ func validateMCPServers(cfg *Config) []error {
 				errs = append(errs, fmt.Errorf("mcp_servers.%s.headers: sans effet pour un transport stdio (utiliser env)", name))
 			}
 		default:
-			errs = append(errs, fmt.Errorf("mcp_servers.%s.transport: %q non supporté (transports: \"http\", \"stdio\")", name, server.Transport))
+			errs = append(errs, fmt.Errorf("mcp_servers.%s.transport: %q non supporté (transports: %s)", name, server.Transport, SupportedMCPTransports))
 		}
 
 		if server.Resource != nil {
@@ -498,9 +498,10 @@ func validateIdentities(cfg *Config) []error {
 					errs = append(errs, fmt.Errorf("%s.mcp.%s.headers: sans effet pour un serveur stdio", prefix, serverName))
 				}
 				placeholders = server.TemplatePlaceholders()
-			case "http":
+			case "http", "streamable-http":
 				// Configuration EFFECTIVE : URL du principal si elle
-				// remplace celle du serveur, en-têtes fusionnés.
+				// remplace celle du serveur, en-têtes fusionnés. Les deux
+				// transports HTTP se configurent de la même façon.
 				placeholders = server.HTTPTemplatePlaceholders(override)
 			default:
 				continue

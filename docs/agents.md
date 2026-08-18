@@ -115,14 +115,20 @@ Un service en lecture seule se déclare sans rien de tout cela :
 ```yaml
 mcp_servers:
   internet-search:
-    transport: http
+    transport: streamable-http
     url: ${SEARCH_MCP_URL}
+    headers:
+      Authorization: Bearer ${SEARCH_MCP_TOKEN}
 ```
 
 Tous ses outils s'exécutent directement, aucune ressource n'est injectée.
 
-Seul le transport `http` existe. Un serveur lancé en sous-processus (`stdio`)
-n'est pas représentable.
+`streamable-http` est la révision 2025-03-26 du protocole, celle des serveurs
+récents ; `http` parle l'ancien HTTP+SSE. Les deux se configurent
+identiquement mais ne s'entendent pas entre eux : brancher le mauvais fait
+échouer la connexion au démarrage. Pour la recherche web,
+[misc/web-search](../misc/web-search/README.md) fournit un conteneur prêt à
+brancher (SearXNG et son serveur MCP).
 
 ### 2. Écrire son prompt
 
@@ -270,7 +276,7 @@ commune à la conversation, avec les en-têtes du serveur.
 ceux du serveur et l'emportent en cas de même nom, ce qui permet de ne
 surcharger que l'autorisation.
 
-### Patrons dans l'URL et les en-têtes http
+### Patrons dans l'URL et les en-têtes HTTP
 
 Quand plusieurs principaux ne diffèrent que par une valeur (tenant, clé
 d'API, jeton), déclarez le motif une fois côté serveur et seulement les
@@ -279,7 +285,7 @@ valeurs côté principal :
 ```yaml
 mcp_servers:
   meteo:
-    transport: http
+    transport: streamable-http
     url: https://mcp.example.com/tenants/{{tenant}}/mcp?api_key={{api_key}}
 
 identities:

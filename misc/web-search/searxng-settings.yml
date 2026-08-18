@@ -1,0 +1,39 @@
+# Superposition des réglages par défaut de SearXNG (use_default_settings).
+# Seuls les écarts nécessaires à l'usage MCP figurent ici.
+use_default_settings: true
+
+general:
+  # Instance privée, jointe uniquement par le serveur MCP du même conteneur.
+  instance_name: "automata web search"
+  # Aucune page de statistiques : personne ne consulte cette instance à la main.
+  enable_metrics: false
+
+search:
+  # Le format json est la voie qu'emprunte le serveur MCP. Sans lui, chaque
+  # recherche échoue en 403.
+  formats:
+    - html
+    - json
+  safe_search: 1
+  autocomplete: ""
+  default_lang: "fr"
+
+server:
+  # La clé arrive par SEARXNG_SECRET (voir entrypoint.sh) : elle n'a rien à
+  # faire dans un fichier versionné.
+  #
+  # Limiteur désactivé : il protège une instance exposée au public contre
+  # l'abus, et exige un Valkey. Ici le seul client est le serveur MCP local,
+  # dans le même conteneur.
+  limiter: false
+  public_instance: false
+  image_proxy: false
+
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 12.0
+  pool_connections: 20
+  pool_maxsize: 10
+
+ui:
+  static_use_hash: true

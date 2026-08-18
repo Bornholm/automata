@@ -102,3 +102,12 @@ func templatePlaceholdersIn(texts ...string) []string {
 
 	return names
 }
+
+// SupportedMCPTransports énumère, pour les messages d'erreur, les valeurs
+// acceptées de mcp_servers.<nom>.transport.
+//
+// "http" parle HTTP+SSE (révision 2024-11-05 du protocole MCP),
+// "streamable-http" la révision 2025-03-26 et suivantes. Un serveur ne parle
+// en général que l'un des deux : le premier ouvre un GET permanent que le
+// second rejette.
+const SupportedMCPTransports = `"http", "streamable-http", "stdio"`

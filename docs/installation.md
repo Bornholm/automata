@@ -90,6 +90,12 @@ propre connexion, isolée des autres. C'est ce qu'il faut pour un agenda
 personnel. Répondre non met un jeton unique au niveau du serveur, ce qui
 convient à une recherche web. Le détail est dans [agents.md](agents.md).
 
+Le spécialiste de recherche a besoin d'un serveur MCP en face. Si vous n'en
+avez pas, [misc/web-search](../misc/web-search/README.md) en construit un :
+une instance SearXNG privée et son serveur MCP dans un conteneur, démarrés
+par `make web-search-up`, à brancher sur `SEARCH_MCP_URL` et
+`SEARCH_MCP_TOKEN`.
+
 Le wizard couvre l'ossature. Les réglages fins, une seconde organisation, un
 spécialiste maison, plusieurs groupes, se font ensuite dans le fichier, avec
 [configuration.md](configuration.md) sous la main.
@@ -166,7 +172,8 @@ export TRANSCRIPTION_API_KEY=sk-...
 
 export GOOGLE_CALENDAR_MCP_URL=https://...
 export GOOGLE_CALENDAR_MCP_TOKEN=...
-export SEARCH_MCP_URL=https://...
+export SEARCH_MCP_URL=http://127.0.0.1:3000/mcp   # voir misc/web-search
+export SEARCH_MCP_TOKEN=...
 export TODO_MCP_URL=https://...
 
 export ALICE_WHATSAPP_ID='33612345678@s.whatsapp.net'
