@@ -24,6 +24,7 @@ import (
 	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/authorization"
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/consolidation"
 	"github.com/bornholm/automata/internal/conversation"
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/ingress"
@@ -159,6 +160,34 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			logger.ErrorContext(ctx, "registry: dispatcher de rappels arrêté en erreur", "error", err)
 		}
 	}()
+
+	// Réorganisation périodique de la mémoire (memory.consolidation) :
+	// indépendante du scheduler et du dispatcher de rappels — une tâche de
+	// maintenance interne, sans agent ni livraison sur un canal.
+	if cfg.Memory.Consolidation.Enabled {
+		if memRes.store == nil {
+			logger.Warn("registry: memory.consolidation activée sans système de mémoire configuré, consolidation désactivée")
+		} else {
+			consolidationClient, err := agent.BuildLLMClient(ctx, cfg.LLMClients[cfg.Memory.Consolidation.Client])
+			if err != nil {
+				return fmt.Errorf("registry: construction du client de consolidation %q: %w", cfg.Memory.Consolidation.Client, err)
+			}
+
+			consolidator, err := consolidation.New(db, memRes.store, consolidationClient, cfg.Memory.Consolidation, logger, metrics)
+			if err != nil {
+				return fmt.Errorf("registry: construction du consolidateur mémoire: %w", err)
+			}
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				if err := consolidator.Run(ctx); err != nil && ctx.Err() == nil {
+					logger.ErrorContext(ctx, "registry: consolidateur mémoire arrêté en erreur", "error", err)
+				}
+			}()
+		}
+	}
 
 	// La persistance est ouverte et les pipelines ingress/scheduler viennent
 	// d'être démarrés (goroutines lancées ci-dessus) : le service peut
@@ -298,6 +327,18 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		}
 
 		compactor := conversation.NewCompactor(db, compactionClient, cfg.Conversation.HistoryLimit, cfg.Conversation.Compaction.MaxSummaryChars, logger, metrics)
+
+		if cfg.Conversation.Compaction.ExtractFacts {
+			if memStore != nil {
+				compactor = compactor.WithMemoryStore(memStore, cfg.Conversation.Compaction.MaxFacts)
+			} else {
+				// Pas une erreur fatale : la compaction garde toute sa valeur
+				// sans extraction, mais l'écart avec la configuration doit se
+				// voir dans les journaux.
+				logger.Warn("conversation: extract_facts activé sans système de mémoire configuré, extraction désactivée")
+			}
+		}
+
 		handler = handler.WithCompactor(compactor)
 	}
 

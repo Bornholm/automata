@@ -13,6 +13,7 @@ import (
 
 	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/conversation"
+	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
 )
@@ -125,7 +126,7 @@ func TestCompactor_CompactsBeyondThreshold(t *testing.T) {
 	compactor := conversation.NewCompactor(db, client, 2, 0, nil, nil).
 		WithClock(func() time.Time { return time.Date(2026, 8, 18, 10, 0, 0, 0, time.UTC) })
 
-	if err := compactor.CompactIfNeeded(context.Background(), conv.ID); err != nil {
+	if err := compactor.CompactIfNeeded(context.Background(), model.ExecutionIdentity{}, conv); err != nil {
 		t.Fatalf("CompactIfNeeded: %v", err)
 	}
 
@@ -149,7 +150,7 @@ func TestCompactor_CompactsBeyondThreshold(t *testing.T) {
 	}
 
 	// Second appel sans nouveaux messages : sous le seuil, aucun appel LLM.
-	if err := compactor.CompactIfNeeded(context.Background(), conv.ID); err != nil {
+	if err := compactor.CompactIfNeeded(context.Background(), model.ExecutionIdentity{}, conv); err != nil {
 		t.Fatalf("CompactIfNeeded (2e): %v", err)
 	}
 	if client.Calls() != 1 {
@@ -165,7 +166,7 @@ func TestCompactor_MergesWithPreviousSummary(t *testing.T) {
 	client := &fakeSummarizerClient{summary: "premier résumé"}
 	compactor := conversation.NewCompactor(db, client, 2, 0, nil, nil)
 
-	if err := compactor.CompactIfNeeded(context.Background(), conv.ID); err != nil {
+	if err := compactor.CompactIfNeeded(context.Background(), model.ExecutionIdentity{}, conv); err != nil {
 		t.Fatalf("CompactIfNeeded: %v", err)
 	}
 
@@ -193,7 +194,7 @@ func TestCompactor_MergesWithPreviousSummary(t *testing.T) {
 	}
 
 	client.summary = "résumé fusionné"
-	if err := compactor.CompactIfNeeded(context.Background(), conv.ID); err != nil {
+	if err := compactor.CompactIfNeeded(context.Background(), model.ExecutionIdentity{}, conv); err != nil {
 		t.Fatalf("CompactIfNeeded (2e): %v", err)
 	}
 
@@ -218,7 +219,7 @@ func TestCompactor_TruncatesSummaryToMaxChars(t *testing.T) {
 	client := &fakeSummarizerClient{summary: strings.Repeat("é", 100)}
 	compactor := conversation.NewCompactor(db, client, 2, 10, nil, nil)
 
-	if err := compactor.CompactIfNeeded(context.Background(), conv.ID); err != nil {
+	if err := compactor.CompactIfNeeded(context.Background(), model.ExecutionIdentity{}, conv); err != nil {
 		t.Fatalf("CompactIfNeeded: %v", err)
 	}
 
@@ -287,5 +288,133 @@ func TestHandler_SummaryInjectedAndCoveredHistoryExcluded(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(contents, "\n"), "message numéro 3") {
 		t.Errorf("l'historique doit contenir les messages non couverts: %q", contents)
+	}
+}
+
+// scriptedClient retourne des réponses pré-écrites dans l'ordre des appels :
+// nécessaire dès que la compaction enchaîne résumé PUIS extraction de faits,
+// deux appels aux réponses de formes différentes.
+type scriptedClient struct {
+	mu        sync.Mutex
+	responses []string
+	calls     int
+}
+
+func (c *scriptedClient) ChatCompletion(ctx context.Context, funcs ...llm.ChatCompletionOptionFunc) (llm.ChatCompletionResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.calls >= len(c.responses) {
+		return llm.ChatCompletionResponse(nil), fmt.Errorf("scriptedClient: appel %d inattendu", c.calls+1)
+	}
+	response := c.responses[c.calls]
+	c.calls++
+
+	return llm.NewChatCompletionResponse(llm.NewMessage(llm.RoleAssistant, response), llm.NewChatCompletionUsage(1, 1, 2)), nil
+}
+
+// recordingMemoryStore implémente memory.Store en ne retenant que les
+// appels à Remember : suffisant pour vérifier ce que l'extraction écrit.
+type recordingMemoryStore struct {
+	mu         sync.Mutex
+	remembered []memory.NewMemory
+}
+
+func (s *recordingMemoryStore) Remember(ctx context.Context, mem memory.NewMemory) (memory.Memory, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.remembered = append(s.remembered, mem)
+	return memory.Memory{ID: fmt.Sprintf("mem-%d", len(s.remembered)), Content: mem.Content}, nil
+}
+
+func (s *recordingMemoryStore) Search(ctx context.Context, q memory.Query) ([]memory.Memory, error) {
+	return nil, nil
+}
+
+func (s *recordingMemoryStore) GetByID(ctx context.Context, orgID model.OrgID, scope model.Scope, scopeID model.ScopeID, id string) (memory.Memory, bool, error) {
+	return memory.Memory{}, false, nil
+}
+
+func (s *recordingMemoryStore) Forget(ctx context.Context, id string) error { return nil }
+func (s *recordingMemoryStore) Reindex(ctx context.Context) error           { return nil }
+func (s *recordingMemoryStore) List(ctx context.Context) ([]memory.Memory, error) {
+	return nil, nil
+}
+
+var _ memory.Store = &recordingMemoryStore{}
+
+func TestCompactor_ExtractsDurableFacts(t *testing.T) {
+	db := openTestDB(t)
+	conv := testConversation("conv-1", "chan-1")
+	seedConversation(t, db, conv, 5)
+
+	client := &scriptedClient{responses: []string{
+		"résumé des débuts",
+		"```json\n[\"Alice préfère les rappels le soir\", \"  \", \"Alice part en vacances le 3 septembre\"]\n```",
+	}}
+	store := &recordingMemoryStore{}
+
+	compactor := conversation.NewCompactor(db, client, 2, 0, nil, nil).
+		WithClock(func() time.Time { return time.Date(2026, 8, 18, 10, 0, 0, 0, time.UTC) }).
+		WithMemoryStore(store, 0)
+
+	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
+
+	if err := compactor.CompactIfNeeded(context.Background(), identity, conv); err != nil {
+		t.Fatalf("CompactIfNeeded: %v", err)
+	}
+
+	if _, found := getSummary(t, db, conv.ID); !found {
+		t.Fatal("aucun résumé persisté")
+	}
+
+	store.mu.Lock()
+	remembered := store.remembered
+	store.mu.Unlock()
+
+	if len(remembered) != 2 {
+		t.Fatalf("faits mémorisés = %d, attendu 2 (la chaîne vide doit être écartée)", len(remembered))
+	}
+
+	first := remembered[0]
+	if first.Content != "Alice préfère les rappels le soir" {
+		t.Errorf("contenu = %q, attendu le premier fait", first.Content)
+	}
+	if first.Scope != conv.Scope || first.ScopeID != conv.ScopeID || first.OrgID != conv.OrgID {
+		t.Errorf("portée = %s/%s/%s, attendu celle de la conversation", first.OrgID, first.Scope, first.ScopeID)
+	}
+	if first.OwnerPrincipalID != identity.PrincipalID || first.CreatedBy != identity.PrincipalID {
+		t.Errorf("auteur = %s/%s, attendu le principal du tour", first.OwnerPrincipalID, first.CreatedBy)
+	}
+	if first.Origin != "compaction" {
+		t.Errorf("origin = %q, attendu \"compaction\"", first.Origin)
+	}
+	if first.SourceConversationID != conv.ID {
+		t.Errorf("source = %q, attendu %q", first.SourceConversationID, conv.ID)
+	}
+}
+
+func TestCompactor_ExtractionFailureDoesNotFailCompaction(t *testing.T) {
+	db := openTestDB(t)
+	conv := testConversation("conv-1", "chan-1")
+	seedConversation(t, db, conv, 5)
+
+	// Seconde réponse illisible : l'extraction échoue, la compaction non.
+	client := &scriptedClient{responses: []string{"résumé", "pas du JSON"}}
+	store := &recordingMemoryStore{}
+
+	compactor := conversation.NewCompactor(db, client, 2, 0, nil, nil).
+		WithClock(func() time.Time { return time.Date(2026, 8, 18, 10, 0, 0, 0, time.UTC) }).
+		WithMemoryStore(store, 0)
+
+	if err := compactor.CompactIfNeeded(context.Background(), model.ExecutionIdentity{}, conv); err != nil {
+		t.Fatalf("CompactIfNeeded doit réussir malgré l'échec d'extraction: %v", err)
+	}
+
+	if _, found := getSummary(t, db, conv.ID); !found {
+		t.Fatal("aucun résumé persisté")
+	}
+	if len(store.remembered) != 0 {
+		t.Errorf("faits mémorisés = %d, attendu 0", len(store.remembered))
 	}
 }

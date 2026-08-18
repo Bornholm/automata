@@ -3,6 +3,7 @@ package conversation
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/bornholm/genai/llm"
 
+	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
@@ -19,6 +21,18 @@ import (
 // précise rien : assez pour retenir l'essentiel de semaines d'échanges, trop
 // peu pour redevenir lui-même un problème de contexte.
 const defaultMaxSummaryChars = 2000
+
+// defaultMaxFacts borne le nombre de faits durables mémorisés par
+// compaction quand la configuration ne précise rien : la compaction se
+// déclenche tous les historyLimit messages environ, quelques faits par
+// vague suffisent — c'est la consolidation périodique
+// (internal/consolidation) qui gère la qualité du fonds au long cours.
+const defaultMaxFacts = 5
+
+// maxFactChars borne la taille d'un fait individuel : au-delà, ce n'est
+// plus un fait mais un résumé, et il n'a rien à faire dans la mémoire à
+// long terme.
+const maxFactChars = 500
 
 // compactionPrompt encadre l'appel de résumé. Aucune donnée de sécurité ne
 // transite ici : le modèle ne reçoit que des messages qu'il a déjà vus en
@@ -49,6 +63,14 @@ type Compactor struct {
 	logger          *slog.Logger
 	metrics         *observability.Metrics
 	now             func() time.Time
+
+	// memories, s'il est renseigné (WithMemoryStore), active l'extraction
+	// de faits durables : à chaque compaction, les messages condensés sont
+	// aussi passés au LLM pour en extraire les faits qui méritent la
+	// mémoire à long terme, stockés dans la portée de la conversation. nil
+	// désactive l'extraction (comportement historique).
+	memories memory.Store
+	maxFacts int
 }
 
 // NewCompactor construit un Compactor. historyLimit doit être la même
@@ -85,13 +107,33 @@ func (c *Compactor) WithClock(now func() time.Time) *Compactor {
 	return c
 }
 
+// WithMemoryStore active l'extraction de faits durables vers store à
+// chaque compaction (conversation.compaction.extract_facts). maxFacts à 0
+// applique defaultMaxFacts.
+func (c *Compactor) WithMemoryStore(store memory.Store, maxFacts int) *Compactor {
+	if maxFacts <= 0 {
+		maxFacts = defaultMaxFacts
+	}
+	c.memories = store
+	c.maxFacts = maxFacts
+	return c
+}
+
 // CompactIfNeeded condense, si nécessaire, les messages débordant de la
 // fenêtre d'historique de la conversation. Le seuil de déclenchement est le
 // DOUBLE de la fenêtre : en dessous, rien à faire ; au-delà, tous les
 // messages non couverts sauf les historyLimit plus récents sont résumés.
 // Déclencher au double plutôt qu'à chaque débordement amortit le coût : un
 // appel LLM tous les historyLimit messages environ, pas un par tour.
-func (c *Compactor) CompactIfNeeded(ctx context.Context, conversationID model.ConversationID) error {
+//
+// identity et conv servent exclusivement à l'extraction de faits durables
+// (WithMemoryStore) : la portée mémoire est TOUJOURS celle de la
+// conversation (conv.Scope/ScopeID/OrgID), jamais décidée par le LLM, et le
+// principal du tour courant est enregistré comme auteur — le même contrat
+// que l'outil conversationnel remember (internal/agent, writeScope).
+func (c *Compactor) CompactIfNeeded(ctx context.Context, identity model.ExecutionIdentity, conv model.Conversation) error {
+	conversationID := conv.ID
+
 	var (
 		summary persistence.ConversationSummary
 		found   bool
@@ -159,7 +201,121 @@ func (c *Compactor) CompactIfNeeded(ctx context.Context, conversationID model.Co
 		"messages_covered_total", next.MessagesCovered,
 	)
 
+	// L'extraction de faits durables n'est jamais bloquante : le résumé est
+	// déjà persisté, un échec ici (LLM indisponible, JSON illisible) coûte
+	// au pire quelques faits non mémorisés — ils restent présents dans le
+	// résumé roulant.
+	if c.memories != nil {
+		if err := c.extractFacts(ctx, identity, conv, batch); err != nil {
+			c.logger.WarnContext(ctx, "conversation: extraction de faits durables en échec",
+				"conversation_id", conversationID, "error", err)
+		}
+	}
+
 	return nil
+}
+
+// factExtractionPrompt encadre l'extraction de faits durables depuis les
+// messages sur le point d'être condensés. Comme compactionPrompt, seuls des
+// messages déjà vus en conversation transitent ici.
+const factExtractionPrompt = `Tu extrais les faits durables d'un fragment de conversation entre un assistant personnel et ses utilisateurs, juste avant que ces messages soient condensés en résumé.
+
+Un fait durable est une information qui restera vraie et utile dans plusieurs semaines : préférence stable d'une personne, décision prise, engagement, date ou échéance importante, information factuelle sur une personne ou un projet. Ne retiens JAMAIS les demandes ponctuelles, les salutations, les états passagers ni le simple fil des échanges.
+
+Réponds UNIQUEMENT par un tableau JSON de chaînes de caractères : un fait par chaîne, formulé en français, à la troisième personne, autonome et compréhensible sans aucun contexte. Réponds [] si aucun fait durable n'est présent. Aucun commentaire, aucun balisage.`
+
+// extractFacts demande au LLM les faits durables du batch condensé et les
+// mémorise dans la portée de la conversation. Jamais en portée org : la
+// mémoire organisationnelle n'est alimentée que par des écritures
+// explicitement autorisées, pas par un mécanisme automatique.
+func (c *Compactor) extractFacts(ctx context.Context, identity model.ExecutionIdentity, conv model.Conversation, batch []persistence.Message) error {
+	if conv.Scope != model.ScopePersonal && conv.Scope != model.ScopeGroup {
+		return nil
+	}
+
+	var b strings.Builder
+	for _, m := range batch {
+		fmt.Fprintf(&b, "%s (%s): %s\n", m.Role, m.PrincipalID, m.Content)
+	}
+
+	response, err := c.client.ChatCompletion(ctx,
+		llm.WithMessages(
+			llm.NewMessage(llm.RoleSystem, factExtractionPrompt),
+			llm.NewMessage(llm.RoleUser, b.String()),
+		),
+	)
+	if err != nil {
+		return fmt.Errorf("appel du client llm: %w", err)
+	}
+
+	facts, err := parseFacts(response.Message().Content())
+	if err != nil {
+		return err
+	}
+
+	if len(facts) > c.maxFacts {
+		facts = facts[:c.maxFacts]
+	}
+
+	stored := 0
+	for _, fact := range facts {
+		if runes := []rune(fact); len(runes) > maxFactChars {
+			fact = string(runes[:maxFactChars])
+		}
+
+		_, err := c.memories.Remember(ctx, memory.NewMemory{
+			Content:              fact,
+			Scope:                conv.Scope,
+			ScopeID:              conv.ScopeID,
+			OrgID:                conv.OrgID,
+			OwnerPrincipalID:     identity.PrincipalID,
+			CreatedBy:            identity.PrincipalID,
+			SourceConversationID: conv.ID,
+			Origin:               "compaction",
+		})
+		if err != nil {
+			// On continue avec les faits suivants : un échec d'indexation
+			// isolé ne doit pas perdre toute la vague.
+			c.logger.WarnContext(ctx, "conversation: mémorisation d'un fait en échec",
+				"conversation_id", conv.ID, "error", err)
+			continue
+		}
+		stored++
+	}
+
+	if stored > 0 {
+		c.metrics.AddMemoriesExtracted(stored)
+		// Uniquement un compte : jamais le contenu des faits.
+		c.logger.InfoContext(ctx, "conversation: faits durables mémorisés",
+			"conversation_id", conv.ID, "facts", stored)
+	}
+
+	return nil
+}
+
+// parseFacts décode la réponse du LLM en liste de faits, en tolérant un
+// éventuel bloc de code Markdown autour du JSON (certains modèles en
+// ajoutent malgré la consigne) et en écartant les chaînes vides.
+func parseFacts(raw string) ([]string, error) {
+	raw = strings.TrimSpace(raw)
+	raw = strings.TrimPrefix(raw, "```json")
+	raw = strings.TrimPrefix(raw, "```")
+	raw = strings.TrimSuffix(raw, "```")
+	raw = strings.TrimSpace(raw)
+
+	var facts []string
+	if err := json.Unmarshal([]byte(raw), &facts); err != nil {
+		return nil, fmt.Errorf("réponse d'extraction illisible: %w", err)
+	}
+
+	out := facts[:0]
+	for _, fact := range facts {
+		if fact = strings.TrimSpace(fact); fact != "" {
+			out = append(out, fact)
+		}
+	}
+
+	return out, nil
 }
 
 // summarize produit le résumé fusionnant previous et batch, borné à

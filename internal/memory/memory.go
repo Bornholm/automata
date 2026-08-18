@@ -47,6 +47,13 @@ type NewMemory struct {
 	OwnerPrincipalID     model.PrincipalID
 	CreatedBy            model.PrincipalID
 	SourceConversationID model.ConversationID
+	// Origin identifie le mécanisme applicatif ayant produit la mémoire :
+	// vide pour l'outil conversationnel remember, "compaction" pour
+	// l'extraction de faits durables (internal/conversation.Compactor),
+	// "consolidation" pour une fusion produite par la réorganisation
+	// périodique (internal/consolidation). Toujours décidée par
+	// l'application, jamais par le LLM.
+	Origin string
 }
 
 // Store est l'interface applicative de la mémoire persistante. AmoxtliStore
@@ -71,6 +78,12 @@ type Store interface {
 	GetByID(ctx context.Context, orgID model.OrgID, scope model.Scope, scopeID model.ScopeID, id string) (Memory, bool, error)
 	// Forget supprime définitivement la mémoire identifiée par id.
 	Forget(ctx context.Context, id string) error
+	// List retourne TOUTES les mémoires de l'instance, toutes portées
+	// confondues. Réservé aux mécanismes de maintenance internes
+	// (internal/consolidation) : cette méthode ignore volontairement le
+	// cloisonnement par portée et ne doit JAMAIS être exposée, directement
+	// ou indirectement, à un agent LLM ou à un utilisateur.
+	List(ctx context.Context) ([]Memory, error)
 	// Reindex reconstruit l'index de recherche à partir du store (commande
 	// CLI "automata memory reindex", PLAN.md §8.6).
 	Reindex(ctx context.Context) error

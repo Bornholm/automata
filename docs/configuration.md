@@ -379,6 +379,11 @@ memory:
   policies:
     private_can_write_org: false
     org_readable_by_children: true
+  consolidation:
+    enabled: true
+    client: main
+    cron: "40 4 * * *"
+    min_memories: 10
 ```
 
 Mémoire persistante, portée par Amoxtli. Le store garde le contenu, l'index
@@ -391,6 +396,24 @@ dans la mémoire commune. Le plan l'interdit et la valeur par défaut le reflèt
 
 `org_readable_by_children` laisse un rôle restreint lire la mémoire commune.
 
+`consolidation` réorganise périodiquement les souvenirs pour qu'ils ne
+s'accumulent pas sans limite : à la cadence `cron` (5 champs, heure locale du
+serveur, `"40 4 * * *"` par défaut), chaque portée comptant au moins
+`min_memories` souvenirs (10 par défaut) est soumise au `client` déclaré, qui
+propose un plan de réorganisation — fusionner les souvenirs redondants en un
+seul texte à jour, oublier les faits périmés ou sans valeur durable. Le plan
+est appliqué avec des garde-fous : jamais de fusion entre portées
+différentes, identifiants vérifiés, et au plus un tiers de la portée en
+oublis secs par passe — un plan qui propose de vider la mémoire est refusé.
+Désactivée par défaut.
+
+La dernière exécution est persistée (table `maintenance_runs`) : un
+redémarrage ne relance pas la consolidation et n'en repousse pas l'échéance.
+Le contenu des souvenirs transite vers le fournisseur du `client` déclaré
+(comme pour toute recherche mémoire) mais n'est jamais journalisé. Le
+compteur `memories_consolidated` de `/metrics` mesure les souvenirs
+supprimés (fusionnés ou oubliés).
+
 ## conversation
 
 ```yaml
@@ -400,6 +423,8 @@ conversation:
     enabled: true
     client: main
     max_summary_chars: 2000
+    extract_facts: true
+    max_facts: 5
 ```
 
 `history_limit` borne le nombre de messages passés rejoués au modèle à
@@ -423,6 +448,18 @@ précédent. Le compteur `conversations_compacted` de `/metrics` la mesure.
 Le résumé condense des messages : c'est du contenu privé, envoyé au
 fournisseur du `client` déclaré et stocké dans la base applicative, jamais
 journalisé.
+
+`extract_facts` complète le résumé par la mémoire à long terme : à chaque
+compaction, les messages condensés sont aussi passés au même `client` pour en
+extraire les faits durables (préférences stables, décisions, engagements,
+dates importantes), stockés dans la mémoire Amoxtli avec la portée de la
+conversation — personnelle en privé, de groupe en groupe, jamais `org`. Au
+plus `max_facts` faits par compaction (5 par défaut). Requiert un système de
+mémoire configuré (section `memory`) ; un échec d'extraction n'est jamais
+bloquant. Le compteur `memories_extracted` de `/metrics` la mesure. Combinée
+à `memory.consolidation`, cette extraction forme le cycle complet de la
+mémoire : les faits entrent au fil des compactions, la consolidation
+nocturne les fusionne et purge les périmés.
 
 ## identities
 

@@ -177,6 +177,17 @@ func (f *fakeMemoryStore) Forget(ctx context.Context, id string) error {
 
 func (f *fakeMemoryStore) Reindex(ctx context.Context) error { return nil }
 
+func (f *fakeMemoryStore) List(ctx context.Context) ([]memory.Memory, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var all []memory.Memory
+	for _, m := range f.memories {
+		all = append(all, m)
+	}
+	return all, nil
+}
+
 var _ memory.Store = &fakeMemoryStore{}
 
 // fakeExecutor est un action.Executor factice, permettant de tester

@@ -43,6 +43,8 @@ type Metrics struct {
 	remindersCreated         atomic.Int64
 	remindersSent            atomic.Int64
 	conversationsCompacted   atomic.Int64
+	memoriesExtracted        atomic.Int64
+	memoriesConsolidated     atomic.Int64
 	deliveryErrors           atomic.Int64
 	toolResultsTruncated     atomic.Int64
 
@@ -292,6 +294,26 @@ func (m *Metrics) IncConversationCompacted() {
 	m.conversationsCompacted.Add(1)
 }
 
+// AddMemoriesExtracted incrémente de n le compteur de faits durables
+// mémorisés automatiquement lors des compactions d'historique
+// (internal/conversation.Compactor).
+func (m *Metrics) AddMemoriesExtracted(n int) {
+	if m == nil || n <= 0 {
+		return
+	}
+	m.memoriesExtracted.Add(int64(n))
+}
+
+// AddMemoriesConsolidated incrémente de n le compteur de souvenirs
+// supprimés (fusionnés ou oubliés) par la réorganisation périodique de la
+// mémoire (internal/consolidation).
+func (m *Metrics) AddMemoriesConsolidated(n int) {
+	if m == nil || n <= 0 {
+		return
+	}
+	m.memoriesConsolidated.Add(int64(n))
+}
+
 // IncCronOccurrence incrémente le compteur d'occurrences planifiées
 // déclenchées pour le schedule scheduleID.
 func (m *Metrics) IncCronOccurrence(scheduleID string) {
@@ -366,6 +388,8 @@ func (m *Metrics) Snapshot() map[string]any {
 		"reminders_created":           m.remindersCreated.Load(),
 		"reminders_sent":              m.remindersSent.Load(),
 		"conversations_compacted":     m.conversationsCompacted.Load(),
+		"memories_extracted":          m.memoriesExtracted.Load(),
+		"memories_consolidated":       m.memoriesConsolidated.Load(),
 		"delivery_errors":             m.deliveryErrors.Load(),
 		"tool_results_truncated":      m.toolResultsTruncated.Load(),
 		"transcription_latency":       m.transcriptionLatency.snapshot(),

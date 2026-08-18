@@ -72,6 +72,10 @@ func validateConversation(cfg *Config) []error {
 		errs = append(errs, fmt.Errorf("conversation.compaction.client: client llm %q introuvable dans llm_clients", compaction.Client))
 	}
 
+	if compaction.MaxFacts < 0 {
+		errs = append(errs, fmt.Errorf("conversation.compaction.max_facts: ne peut pas être négatif (valeur actuelle: %d)", compaction.MaxFacts))
+	}
+
 	return errs
 }
 
@@ -575,6 +579,25 @@ func validateMemory(cfg *Config) []error {
 			errs = append(errs, fmt.Errorf("memory.indexes: identifiant dupliqué %q", idx.ID))
 		} else {
 			seen[idx.ID] = true
+		}
+	}
+
+	consolidation := cfg.Memory.Consolidation
+	if consolidation.MinMemories < 0 {
+		errs = append(errs, fmt.Errorf("memory.consolidation.min_memories: ne peut pas être négatif (valeur actuelle: %d)", consolidation.MinMemories))
+	}
+
+	if consolidation.Enabled {
+		if consolidation.Client == "" {
+			errs = append(errs, fmt.Errorf("memory.consolidation.client: requis lorsque memory.consolidation.enabled est vrai"))
+		} else if _, ok := cfg.LLMClients[consolidation.Client]; !ok {
+			errs = append(errs, fmt.Errorf("memory.consolidation.client: client llm %q introuvable dans llm_clients", consolidation.Client))
+		}
+
+		if consolidation.Cron != "" {
+			if _, err := cron.ParseStandard(consolidation.Cron); err != nil {
+				errs = append(errs, fmt.Errorf("memory.consolidation.cron: expression cron invalide %q: %w", consolidation.Cron, err))
+			}
 		}
 	}
 

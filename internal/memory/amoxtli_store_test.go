@@ -358,3 +358,71 @@ func TestRemember_IndexingFailureNoPhantomMemory(t *testing.T) {
 		t.Errorf("mémoire fantôme trouvée après échec d'indexation: %+v", results)
 	}
 }
+
+func TestList(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	seeds := []memory.NewMemory{
+		{Content: "Alice adore le café au lait.", Scope: model.ScopePersonal, ScopeID: "alice", OrgID: "home", OwnerPrincipalID: "alice", CreatedBy: "alice", Origin: "compaction"},
+		{Content: "La famille dîne ensemble le dimanche.", Scope: model.ScopeGroup, ScopeID: "famille", OrgID: "home", OwnerPrincipalID: "bob", CreatedBy: "bob"},
+	}
+
+	ids := map[string]memory.NewMemory{}
+	for _, seed := range seeds {
+		mem, err := s.Remember(ctx, seed)
+		if err != nil {
+			t.Fatalf("Remember: %v", err)
+		}
+		ids[mem.ID] = seed
+	}
+
+	all, err := s.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(all) != len(seeds) {
+		t.Fatalf("List: %d mémoires, attendu %d", len(all), len(seeds))
+	}
+
+	for _, mem := range all {
+		seed, ok := ids[mem.ID]
+		if !ok {
+			t.Errorf("List: identifiant inattendu %q", mem.ID)
+			continue
+		}
+		if mem.Content != seed.Content {
+			t.Errorf("List: contenu %q, attendu %q (le préfixe d'identifiant doit être retiré)", mem.Content, seed.Content)
+		}
+		if mem.Metadata["scope"] != string(seed.Scope) || mem.Metadata["scope_id"] != string(seed.ScopeID) || mem.Metadata["org_id"] != string(seed.OrgID) {
+			t.Errorf("List: métadonnées de portée %v, attendu %s/%s/%s", mem.Metadata, seed.OrgID, seed.Scope, seed.ScopeID)
+		}
+		if mem.Metadata["owner_principal_id"] != string(seed.OwnerPrincipalID) {
+			t.Errorf("List: owner %q, attendu %q", mem.Metadata["owner_principal_id"], seed.OwnerPrincipalID)
+		}
+		if seed.Origin != "" && mem.Metadata["origin"] != seed.Origin {
+			t.Errorf("List: origin %q, attendu %q", mem.Metadata["origin"], seed.Origin)
+		}
+		if mem.CreatedAt.IsZero() {
+			t.Errorf("List: created_at absent pour %q", mem.ID)
+		}
+	}
+
+	// Une mémoire oubliée disparaît de l'énumération.
+	var firstID string
+	for id := range ids {
+		firstID = id
+		break
+	}
+	if err := s.Forget(ctx, firstID); err != nil {
+		t.Fatalf("Forget: %v", err)
+	}
+
+	all, err = s.List(ctx)
+	if err != nil {
+		t.Fatalf("List après Forget: %v", err)
+	}
+	if len(all) != len(seeds)-1 {
+		t.Fatalf("List après Forget: %d mémoires, attendu %d", len(all), len(seeds)-1)
+	}
+}

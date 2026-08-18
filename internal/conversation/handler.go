@@ -186,7 +186,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 	// de résumé indisponible, etc.) est journalisé et le tour continue avec
 	// le résumé précédent — au pire, l'historique déborde comme avant.
 	if h.compactor != nil {
-		if err := h.compactor.CompactIfNeeded(ctx, conv.ID); err != nil {
+		if err := h.compactor.CompactIfNeeded(ctx, identity, conv); err != nil {
 			h.logger.WarnContext(ctx, "conversation: compaction de l'historique en échec, tour poursuivi sans",
 				"conversation_id", conv.ID, "error", err)
 		}

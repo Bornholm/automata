@@ -272,6 +272,10 @@ conversation:
     # Un modèle économique suffit pour résumer.
     client: main
     max_summary_chars: 2000
+    # Extrait aussi les faits durables des messages condensés vers la
+    # mémoire à long terme (portée de la conversation, jamais org).
+    extract_facts: true
+    max_facts: 5
 
 memory:
   store:
@@ -287,6 +291,17 @@ memory:
   policies:
     private_can_write_org: false
     org_readable_by_children: true
+
+  # Réorganisation périodique des souvenirs : fusion des redondances, oubli
+  # des faits périmés, portée par portée, pour que la mémoire ne s'accumule
+  # pas sans limite.
+  consolidation:
+    enabled: true
+    client: main
+    # Cadence cron (heure locale du serveur). Défaut : chaque nuit à 4h40.
+    cron: "40 4 * * *"
+    # En dessous de ce nombre de souvenirs, une portée est laissée intacte.
+    min_memories: 10
 
 identities:
   roles:

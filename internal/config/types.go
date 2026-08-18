@@ -189,6 +189,14 @@ type Compaction struct {
 	// MaxSummaryChars borne la taille du résumé persisté. 0 applique le
 	// défaut (2000 caractères).
 	MaxSummaryChars int `yaml:"max_summary_chars"`
+	// ExtractFacts extrait, à chaque compaction, les faits durables des
+	// messages condensés et les stocke dans la mémoire à long terme
+	// (Amoxtli), dans la portée de la conversation. Requiert Enabled et un
+	// système de mémoire configuré.
+	ExtractFacts bool `yaml:"extract_facts"`
+	// MaxFacts borne le nombre de faits mémorisés par compaction. 0
+	// applique le défaut (5).
+	MaxFacts int `yaml:"max_facts"`
 }
 
 // Audio décrit la configuration de traitement des messages vocaux.
@@ -365,9 +373,29 @@ type MCPTools struct {
 
 // Memory décrit la configuration du système de mémoire (Amoxtli).
 type Memory struct {
-	Store    MemoryStore    `yaml:"store"`
-	Indexes  []MemoryIndex  `yaml:"indexes"`
-	Policies MemoryPolicies `yaml:"policies"`
+	Store         MemoryStore         `yaml:"store"`
+	Indexes       []MemoryIndex       `yaml:"indexes"`
+	Policies      MemoryPolicies      `yaml:"policies"`
+	Consolidation MemoryConsolidation `yaml:"consolidation"`
+}
+
+// MemoryConsolidation décrit la réorganisation périodique des souvenirs
+// (internal/consolidation) : fusion des redondances et oubli des faits
+// périmés, portée par portée, pour que la mémoire ne s'accumule pas sans
+// limite. Désactivée par défaut.
+type MemoryConsolidation struct {
+	Enabled bool `yaml:"enabled"`
+	// Client référence l'entrée de llm_clients utilisée pour produire les
+	// plans de consolidation. Requis lorsque Enabled est vrai.
+	Client string `yaml:"client"`
+	// Cron est l'expression cron standard (5 champs, heure locale du
+	// serveur) de la cadence de consolidation. Vide applique le défaut
+	// ("40 4 * * *", chaque nuit vers 4h40).
+	Cron string `yaml:"cron"`
+	// MinMemories est le nombre de souvenirs à partir duquel une portée est
+	// consolidée : en dessous, elle est laissée intacte (rien à gagner, et
+	// aucun appel LLM). 0 applique le défaut (10).
+	MinMemories int `yaml:"min_memories"`
 }
 
 // MemoryStore décrit le stockage principal de la mémoire.

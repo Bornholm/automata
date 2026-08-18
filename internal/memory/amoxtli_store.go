@@ -11,6 +11,7 @@ import (
 
 	"github.com/bornholm/amoxtli"
 	amoxtliindex "github.com/bornholm/amoxtli/index"
+	amoxtliingest "github.com/bornholm/amoxtli/ingest"
 	amoxtlimodel "github.com/bornholm/amoxtli/model"
 	amoxtlitask "github.com/bornholm/amoxtli/task"
 
@@ -154,6 +155,10 @@ func (s *AmoxtliStore) Remember(ctx context.Context, mem NewMemory) (Memory, err
 		memoryIDMetadataKey:      id,
 	}
 
+	if origin := strings.TrimSpace(mem.Origin); origin != "" {
+		metadata["origin"] = origin
+	}
+
 	// Le contenu réellement indexé est préfixé par l'identifiant, sur sa
 	// propre ligne : c'est ce qui permet à GetByID de retrouver une mémoire
 	// de façon fiable par une recherche plein texte filtrée sur l'identifiant
@@ -262,6 +267,78 @@ func (s *AmoxtliStore) Forget(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+// listPageSize est la taille de page utilisée par List pour parcourir le
+// store document par document sans jamais tout charger d'un bloc.
+const listPageSize = 200
+
+// List implémente Store. Contrairement à Search, qui passe par l'index
+// plein texte (et exige donc un texte de requête), List interroge
+// directement le store documentaire d'amoxtli (Codex.Manager) en filtrant
+// sur le préfixe des URL sources synthétiques : c'est le seul moyen exposé
+// par amoxtli d'énumérer exhaustivement les documents (voir
+// ingest.Store.QueryDocuments), et c'est exactement ce dont la
+// consolidation périodique a besoin. Voir l'avertissement de l'interface :
+// aucune restriction de portée n'est appliquée ici.
+func (s *AmoxtliStore) List(ctx context.Context) ([]Memory, error) {
+	manager := s.codex.Manager()
+
+	// SourcePattern est un motif LIKE %pattern% côté store : le préfixe des
+	// URL synthétiques suffit à exclure tout document indexé par un autre
+	// mécanisme dans le même codex.
+	pattern := sourceScheme + "://" + sourceHost + "/"
+
+	var memories []Memory
+
+	for page := 0; ; page++ {
+		p := page
+		limit := listPageSize
+		documents, _, err := manager.QueryDocuments(ctx, amoxtliingest.QueryDocumentsOptions{
+			Page:          &p,
+			Limit:         &limit,
+			SourcePattern: &pattern,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("memory: énumération des mémoires (page %d): %w", page, err)
+		}
+
+		for _, doc := range documents {
+			id, ok := memoryIDFromSource(doc.Source())
+			if !ok {
+				continue
+			}
+
+			raw, err := doc.Content()
+			if err != nil {
+				return nil, fmt.Errorf("memory: lecture du contenu de %q: %w", id, err)
+			}
+
+			var (
+				metadata  map[string]string
+				createdAt time.Time
+			)
+			if rawMeta := amoxtlimodel.Metadata(doc); rawMeta != nil {
+				metadata = stringMetadata(rawMeta)
+				if createdAtStr, ok := metadata["created_at"]; ok {
+					if parsed, err := time.Parse(time.RFC3339, createdAtStr); err == nil {
+						createdAt = parsed
+					}
+				}
+			}
+
+			memories = append(memories, Memory{
+				ID:        id,
+				Content:   stripIDPrefix(string(raw), id),
+				Metadata:  metadata,
+				CreatedAt: createdAt,
+			})
+		}
+
+		if len(documents) < listPageSize {
+			return memories, nil
+		}
+	}
 }
 
 // Reindex implémente Store.
