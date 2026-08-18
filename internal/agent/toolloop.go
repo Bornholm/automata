@@ -161,7 +161,11 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 	)
 
 	for iteration := range maxIterations {
-		resp, err := client.ChatCompletion(ctx, llm.WithMessages(messages...), llm.WithTools(tools...))
+		// ToolChoiceAuto explicite : ne jamais dépendre du défaut de la
+		// bibliothèque — un défaut à "none" a historiquement interdit tout
+		// appel d'outil en silence, les modèles promettant alors des actions
+		// qu'ils n'avaient pas le droit d'exécuter.
+		resp, err := client.ChatCompletion(ctx, llm.WithMessages(messages...), llm.WithTools(tools...), llm.WithToolChoice(llm.ToolChoiceAuto))
 		if err != nil {
 			return toolLoopResult{}, fmt.Errorf("agent: appel du client llm: %w", err)
 		}
