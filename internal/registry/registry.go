@@ -115,7 +115,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		logger.ErrorContext(ctx, "registry: échec de la récupération des plans d'actions interrompus", "error", err)
 	}
 
-	handler, agents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, metrics, logger)
+	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, metrics, logger)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
@@ -154,7 +154,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	// leur échéance, l'exécuteur fait tourner l'agent qui les a créées et
 	// c'est sa réponse qui est délivrée.
 	reminderDispatcher := reminder.NewDispatcher(db, providers, logger, metrics).
-		WithTaskRunner(agent.NewTaskRunner(cfg, agents, logger))
+		WithTaskRunner(agent.NewTaskRunner(cfg, taskAgents, logger))
 
 	wg.Add(1)
 	go func() {
@@ -267,7 +267,7 @@ func buildCourierProviders(cfg *config.Config) (map[string]courier.Provider, err
 // réutilisé tel quel par internal/scheduler pour exécuter les tâches
 // planifiées (PLAN.md §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, error) {
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
 	memoryTools := buildMemoryTools(cfg, memStore, metrics)
 
 	// Les outils de rappels partagent la base applicative et l'Authorizer de
@@ -286,12 +286,28 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 
 	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, mcpManager, metrics, logger)
 	if err != nil {
-		return nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
+		return nil, nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
+	}
+
+	// Registre distinct pour l'exécution des tâches planifiées : mêmes
+	// agents, mêmes outils MCP, même mémoire, mais AUCUN outil de
+	// programmation (ReminderTools nulle).
+	//
+	// Ce n'est pas une précaution théorique : à l'échéance, un agent qui voit
+	// schedule_task devant une consigne rédigée comme une demande
+	// (« Préparer un bulletin météo… ») la REPROGRAMME au lieu de
+	// l'exécuter — observé en production. Retirer l'outil rend la confusion
+	// impossible, là où une consigne de prompt ne ferait que la rendre moins
+	// probable ; et cela ferme du même coup la boucle d'une tâche qui se
+	// reprogrammerait indéfiniment.
+	taskAgents, err := agent.NewRegistryWithMemory(cfg, memoryTools, agent.ReminderTools{}, mcpManager, metrics, logger)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("construction du registre d'agents des tâches planifiées: %w", err)
 	}
 
 	mainAgent, err := agents.Get(mainAgentName)
 	if err != nil {
-		return nil, nil, fmt.Errorf("récupération de l'agent %q: %w", mainAgentName, err)
+		return nil, nil, nil, fmt.Errorf("récupération de l'agent %q: %w", mainAgentName, err)
 	}
 
 	audioCfg := audio.Config{}
@@ -300,12 +316,12 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	if cfg.Audio.Enabled {
 		llmClientCfg, ok := cfg.LLMClients[cfg.Audio.TranscriptionClient]
 		if !ok {
-			return nil, nil, fmt.Errorf("audio: client llm %q (référencé par audio.transcription_client) introuvable dans la configuration", cfg.Audio.TranscriptionClient)
+			return nil, nil, nil, fmt.Errorf("audio: client llm %q (référencé par audio.transcription_client) introuvable dans la configuration", cfg.Audio.TranscriptionClient)
 		}
 
 		transcriptionClient, err := agent.BuildTranscriptionClient(context.Background(), llmClientCfg)
 		if err != nil {
-			return nil, nil, fmt.Errorf("audio: construction du client de transcription %q: %w", cfg.Audio.TranscriptionClient, err)
+			return nil, nil, nil, fmt.Errorf("audio: construction du client de transcription %q: %w", cfg.Audio.TranscriptionClient, err)
 		}
 
 		audioCfg = audio.Config{
@@ -331,7 +347,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		// l'enveloppe des mêmes middlewares de résilience que les agents.
 		compactionClient, err := agent.BuildLLMClient(context.Background(), cfg.LLMClients[cfg.Conversation.Compaction.Client])
 		if err != nil {
-			return nil, nil, fmt.Errorf("conversation: construction du client de compaction %q: %w", cfg.Conversation.Compaction.Client, err)
+			return nil, nil, nil, fmt.Errorf("conversation: construction du client de compaction %q: %w", cfg.Conversation.Compaction.Client, err)
 		}
 
 		compactor := conversation.NewCompactor(db, compactionClient, cfg.Conversation.HistoryLimit, cfg.Conversation.Compaction.MaxSummaryChars, logger, metrics)
@@ -350,5 +366,5 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		handler = handler.WithCompactor(compactor)
 	}
 
-	return handler, agents, nil
+	return handler, agents, taskAgents, nil
 }

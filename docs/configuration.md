@@ -334,7 +334,16 @@ Trois garde-fous, aucun laissé au modèle :
 - **Identité figée.** La tâche s'exécute sous le principal qui l'a créée,
   dans sa conversation d'origine, avec la portée du canal telle qu'elle est
   déclarée aujourd'hui — pas celle du jour de la création. Un canal qui
-  change de portée emmène ses tâches avec lui.
+  change de portée emmène ses tâches avec lui. Elle ne peut donc rien faire
+  que son auteur ne puisse demander en direct : c'est pourquoi son
+  déclencheur (`scheduled_task`) suit les règles de son canal, là où un
+  `schedules` de configuration (`cron`, principal de service que personne n'a
+  nommément mandaté) reste tenu à l'écart des données personnelles.
+- **Aucun outil de programmation pendant l'exécution.** À l'échéance, l'agent
+  n'a ni `schedule_task` ni `create_reminder`. Sans cela, devant une consigne
+  rédigée comme une demande (« Prépare un bulletin météo… »), il la
+  reprogramme au lieu de l'exécuter — et une tâche peut se réarmer
+  indéfiniment.
 - **Lecture seule stricte.** Les actions sensibles proposées pendant un tour
   planifié sont ignorées et signalées dans le message livré. Personne n'est
   devant l'écran pour confirmer : rien ne doit pouvoir écrire dehors.

@@ -245,3 +245,46 @@ func TestAuthorizeCronOrgReadAllowed(t *testing.T) {
 		t.Fatalf("Authorize: %v", err)
 	}
 }
+
+// Une tâche planifiée créée conversationnellement porte l'identité de
+// l'humain qui l'a demandée : elle suit les règles de son canal, pas celles
+// d'un cron de configuration. Sans cette distinction, l'assistant répond
+// « je n'ai pas l'autorisation d'accéder aux ressources nécessaires » à
+// l'échéance d'une tâche que la personne vient de lui demander sur ses
+// propres données — observé en production.
+func TestAuthorize_ScheduledTaskFollowsChannelRules(t *testing.T) {
+	authorizer := authorization.NewAuthorizer(testConfig())
+
+	base := model.ExecutionIdentity{
+		PrincipalID: "alice",
+		OrgID:       "home",
+		ChannelKind: model.ChannelPrivate,
+		Scope:       model.ScopePersonal,
+		ScopeID:     "alice",
+	}
+
+	request := func(identity model.ExecutionIdentity) authorization.AuthorizationRequest {
+		return authorization.AuthorizationRequest{
+			Identity:      identity,
+			Permission:    "memory.personal.read",
+			TargetOrgID:   "home",
+			TargetScope:   model.ScopePersonal,
+			TargetScopeID: "alice",
+		}
+	}
+
+	task := base
+	task.Trigger = model.TriggerScheduledTask
+	if err := authorizer.Authorize(context.Background(), request(task)); err != nil {
+		t.Errorf("tâche planifiée sur les données de son auteur refusée: %v", err)
+	}
+
+	// Le cron de configuration, lui, reste tenu à l'écart du personnel : il
+	// s'exécute sous un principal de service que personne n'a nommément
+	// mandaté.
+	cron := base
+	cron.Trigger = model.TriggerCron
+	if err := authorizer.Authorize(context.Background(), request(cron)); err == nil {
+		t.Error("un cron de configuration ne doit pas accéder aux ressources personnelles")
+	}
+}

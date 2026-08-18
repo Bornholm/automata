@@ -98,6 +98,19 @@ func checkInvariantRules(req AuthorizationRequest, action string) error {
 	switch req.Identity.Trigger {
 	case model.TriggerCron:
 		return checkCronRules(req)
+	case model.TriggerScheduledTask:
+		// Volontairement les règles du canal, pas celles du cron : une tâche
+		// planifiée conversationnellement porte l'identité de l'humain qui
+		// l'a demandée et retourne dans sa conversation. Lui refuser ses
+		// propres données ici alors qu'il y a droit en direct n'ajouterait
+		// aucune sécurité — la même question posée deux minutes plus tôt
+		// aurait obtenu la réponse.
+		switch req.Identity.ChannelKind {
+		case model.ChannelPrivate:
+			return checkPrivateRules(req, action)
+		case model.ChannelGroup:
+			return checkGroupRules(req)
+		}
 	default:
 		switch req.Identity.ChannelKind {
 		case model.ChannelPrivate:

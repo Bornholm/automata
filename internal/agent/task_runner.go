@@ -52,7 +52,7 @@ func NewTaskRunner(cfg *config.Config, agents *Registry, logger *slog.Logger) *T
 // privés (AGENTS.md). Seuls les identifiants le sont.
 func (r *TaskRunner) RunTask(ctx context.Context, task persistence.Reminder) (string, error) {
 	logCtx := []any{
-		"trigger", model.TriggerCron,
+		"trigger", model.TriggerScheduledTask,
 		"task_id", task.ID,
 		"org_id", task.OrgID,
 		"principal_id", task.PrincipalID,
@@ -129,7 +129,7 @@ func (r *TaskRunner) buildIdentity(task persistence.Reminder) (model.ExecutionId
 		ChannelKind:    channelKind,
 		Scope:          scope,
 		ScopeID:        scopeID,
-		Trigger:        model.TriggerCron,
+		Trigger:        model.TriggerScheduledTask,
 	}
 
 	conversation := model.Conversation{

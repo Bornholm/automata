@@ -71,7 +71,20 @@ type Trigger string
 
 const (
 	TriggerMessage Trigger = "message"
-	TriggerCron    Trigger = "cron"
+	// TriggerCron est une occurrence d'un schedule DÉCLARÉ EN CONFIGURATION,
+	// exécutée sous un principal de service que personne n'a nommément
+	// mandaté : elle n'accède jamais aux ressources personnelles.
+	TriggerCron Trigger = "cron"
+	// TriggerScheduledTask est une tâche créée CONVERSATIONNELLEMENT par un
+	// humain (outil schedule_task), rejouée plus tard sous SON identité,
+	// dans SA conversation, et livrée là seulement.
+	//
+	// Elle suit donc les règles de son canal d'origine, comme un message :
+	// elle ne peut rien faire que son auteur ne puisse demander en direct,
+	// et la traiter comme un cron de configuration reviendrait à lui refuser
+	// l'accès à ses propres données — ce qui rend la fonctionnalité inutile
+	// (« je n'ai pas l'autorisation d'accéder aux ressources nécessaires »).
+	TriggerScheduledTask Trigger = "scheduled_task"
 )
 
 // ExecutionIdentity décrit l'identité d'exécution résolue pour un
