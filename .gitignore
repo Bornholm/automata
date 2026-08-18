@@ -18,6 +18,8 @@
 # Outils de développement installés localement (modd).
 /tools/
 /local/
-*.log# Espace de travail local pour itérer sur les dépôts frères (jamais versionné).
+*.log# Espace de travail local pour itérer sur un dépôt frère avant publication
+# (jamais versionné) : la règle reste qu'un clone nu compile seul, donc
+# go.mod ne porte aucun replace.
 /go.work
 /go.work.sum

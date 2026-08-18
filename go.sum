@@ -72,10 +72,8 @@ github.com/blevesearch/zapx/v16 v16.2.2 h1:MifKJVRTEhMTgSlle2bDRTb39BGc9jXFRLPZc
 github.com/blevesearch/zapx/v16 v16.2.2/go.mod h1:B9Pk4G1CqtErgQV9DyCSA9Lb7WZe4olYfGw7fVDZ4sk=
 github.com/bornholm/amoxtli v0.16.0 h1:gmQ2O9uCYSYIVc38MQw0u3dB64iGS6ztBwsBDD12T+c=
 github.com/bornholm/amoxtli v0.16.0/go.mod h1:N4nYlxH0DeGjz3ds7WW0WL2HmITAw0aBTgFs7F4c5ZI=
-github.com/bornholm/genai v0.34.0 h1:7iVoffa59GAJb7VIMxBbtL0pHqTfsYEByDzUp3aJv6c=
-github.com/bornholm/genai v0.34.0/go.mod h1:ajuzZJvHAhy2SOsjxVNI1WUZaYKvGfabRE9UnLWirr0=
-github.com/bornholm/go-courier v0.1.0 h1:QWV+bBybOzI3Bhr2d80tHYA0+DXGoZaoCqMxlLNySTA=
-github.com/bornholm/go-courier v0.1.0/go.mod h1:ZnsWOOAjZL1hS0STz2UH3KDWWTzCvj/LtT/WAF/7Xaw=
+github.com/bornholm/genai v0.35.0 h1:jsNRhEwPtLYMjWwsSIdqdg+Zx3tyB1BgE4tFmDiUW8U=
+github.com/bornholm/genai v0.35.0/go.mod h1:ajuzZJvHAhy2SOsjxVNI1WUZaYKvGfabRE9UnLWirr0=
 github.com/bornholm/go-courier v0.2.0 h1:5MFqWtik6fQRjbNRYBUhKTOoHD8N355CYU3orsRsLVg=
 github.com/bornholm/go-courier v0.2.0/go.mod h1:ZnsWOOAjZL1hS0STz2UH3KDWWTzCvj/LtT/WAF/7Xaw=
 github.com/bornholm/go-x v0.0.0-20260127104343-c6737ea35324 h1:urrNBFQGXI3uvAivANnjEBdZVMDfmWn/okKIwDDqJ/w=
@@ -311,6 +309,7 @@ github.com/tidwall/pretty v1.2.1/go.mod h1:ITEVvHYasfjBbM0u2Pg8T2nJnzm8xPwvNhhso
 github.com/tidwall/sjson v1.2.5 h1:kLy8mja+1c9jlljvWTlSazM7cKDRfJuR/bOJhcY5NcY=
 github.com/tidwall/sjson v1.2.5/go.mod h1:Fvgq9kS/6ociJEDnK0Fk1cpYF4FIW6ZF7LAe+6jwd28=
 github.com/tj/assert v0.0.0-20171129193455-018094318fb0/go.mod h1:mZ9/Rh9oLWpLLDRpvE+3b7gP/C2YyLFYxNmcLnPTMe0=
+github.com/tj/assert v0.0.3 h1:Df/BlaZ20mq6kuai7f5z2TvPFiwC3xaWJSDQNiIS3Rk=
 github.com/tj/assert v0.0.3/go.mod h1:Ne6X72Q+TB1AteidzQncjw9PabbMp4PBMZ1k+vd1Pvk=
 github.com/tj/go-buffer v1.1.0/go.mod h1:iyiJpfFcR2B9sXu7KvjbT9fpM4mOelRSDTbntVj52Uc=
 github.com/tj/go-elastic v0.0.0-20171221160941-36157cbbebc2/go.mod h1:WjeM0Oo1eNAjXGDx2yma7uG2XoyRZTq1uv3M/o7imD0=
