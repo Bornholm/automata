@@ -92,6 +92,50 @@ func TestGenerateImage_AttachmentReachesResult(t *testing.T) {
 	}
 }
 
+// L'image générée part à l'utilisateur, jamais au modèle. La réinjecter
+// exigerait un client acceptant les images en entrée : un modèle qui n'en
+// accepte pas (« no endpoints found that support image input ») fait alors
+// échouer le tour entier APRÈS une génération pourtant réussie et facturée.
+func TestGenerateImage_IsNotSentBackToTheModel(t *testing.T) {
+	generator := &fakeImageGenerator{}
+
+	var attachmentsSeenByModel int
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("call-1", "generate_image", `{"prompt":"a red apple"}`)), nil
+			}
+
+			for _, m := range opts.Messages {
+				attachmentsSeenByModel += len(m.Attachments())
+			}
+
+			return scriptedFinalResponse("Voici ton image !"), nil
+		},
+	}
+
+	cfg := &config.Config{Organization: config.Organization{ID: "home", DisplayName: "Maison"}}
+
+	specialist := agent.NewMCPToolAgent(client, "system", "imagine", cfg, nil, nil, mcp.Limits{}, 3).
+		WithExtraTools(agent.NewGenerateImageToolForTest(generator))
+
+	res, err := specialist.Execute(context.Background(), agent.Request{
+		Identity: model.ExecutionIdentity{PrincipalID: "alice", OrgID: "home"},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if attachmentsSeenByModel != 0 {
+		t.Errorf("le modèle a reçu %d pièce(s) jointe(s), attendu 0", attachmentsSeenByModel)
+	}
+
+	if len(res.Attachments) != 1 {
+		t.Fatalf("attachments = %d, attendu 1 : l'image doit tout de même atteindre l'utilisateur", len(res.Attachments))
+	}
+}
+
 // Un échec de génération ne fait pas échouer le tour : le modèle reçoit
 // l'erreur en résultat d'outil et peut l'expliquer.
 func TestGenerateImage_FailureIsExplainedNotFatal(t *testing.T) {

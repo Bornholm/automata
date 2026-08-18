@@ -85,6 +85,26 @@ func (c *mediaCollector) add(medias ...media.Media) {
 	c.medias = append(c.medias, medias...)
 }
 
+// mediaCollectorContextKey est un type dédié pour éviter toute collision de
+// clé de contexte avec d'autres packages.
+type mediaCollectorContextKey struct{}
+
+// withMediaCollector attache collector à ctx.
+//
+// Le collecteur voyage par le contexte, et non par la fermeture de l'outil,
+// parce que les outils d'un agent sont construits UNE fois au démarrage et
+// partagés par toutes les requêtes : un collecteur capturé à la
+// construction mélangerait les médias de conversations concurrentes.
+func withMediaCollector(ctx context.Context, collector *mediaCollector) context.Context {
+	return context.WithValue(ctx, mediaCollectorContextKey{}, collector)
+}
+
+// mediaCollectorFromContext extrait le collecteur de médias de ctx.
+func mediaCollectorFromContext(ctx context.Context) (*mediaCollector, bool) {
+	collector, ok := ctx.Value(mediaCollectorContextKey{}).(*mediaCollector)
+	return collector, ok && collector != nil
+}
+
 // take retourne les médias accumulés. Sûr sur un récepteur nil.
 func (c *mediaCollector) take() []media.Media {
 	if c == nil {

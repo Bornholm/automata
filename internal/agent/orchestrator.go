@@ -160,7 +160,7 @@ func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentit
 	tools := make([]llm.Tool, 0, len(a.specialists))
 
 	for agentID, specialist := range a.specialists {
-		tools = append(tools, newDelegationTool(agentID, a.specialistDescriptions[agentID], specialist, identity, attachments, collector, mediaCollector, a.metrics))
+		tools = append(tools, newDelegationTool(agentID, a.specialistDescriptions[agentID], specialist, identity, attachments, collector, mediaCollector, a.metrics, a.logger))
 	}
 
 	// Ordre déterministe : la map d'origine n'a pas d'ordre garanti, et un
@@ -177,7 +177,7 @@ func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentit
 // comme erreur Go (ce qui ferait échouer tout le tour) : il est transmis au
 // modèle comme contenu de résultat d'outil, en clair, pour qu'il puisse
 // s'adapter (PLAN.md Phase 8, test "spécialiste en erreur").
-func newDelegationTool(agentID, description string, specialist delegation.Specialist, identity model.ExecutionIdentity, attachments []media.Media, collector *proposalCollector, mediaCollector *mediaCollector, metrics *observability.Metrics) llm.Tool {
+func newDelegationTool(agentID, description string, specialist delegation.Specialist, identity model.ExecutionIdentity, attachments []media.Media, collector *proposalCollector, mediaCollector *mediaCollector, metrics *observability.Metrics, logger *slog.Logger) llm.Tool {
 	schema := llm.NewJSONSchema().
 		RequiredProperty("goal", "Precise objective for the specialist to reach.", "string").
 		Property("relevant_input", "Context strictly needed for the task, spelled out. Never pass the whole conversation history.", "string").
@@ -227,6 +227,14 @@ func newDelegationTool(agentID, description string, specialist delegation.Specia
 				Attachments: attachments,
 			})
 			if err != nil {
+				// L'échec part au modèle sous forme de texte : sans cette
+				// trace, il ne subsisterait AUCUNE trace technique de la
+				// panne, le tour se terminant par un « tour terminé » normal
+				// après que le modèle a reformulé l'erreur à sa façon.
+				if logger != nil {
+					logger.WarnContext(ctx, "agent: spécialiste en échec", "agent", agentID, "error", err)
+				}
+
 				return llm.NewToolResult(fmt.Sprintf("le spécialiste %q a échoué: %v", agentID, err)), nil
 			}
 

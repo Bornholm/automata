@@ -13,6 +13,7 @@ import (
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/mcp"
+	"github.com/bornholm/automata/internal/media"
 )
 
 // ErrMaxToolCallsReached est retournée par MCPToolAgent.Execute lorsque le
@@ -147,7 +148,12 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 		maxIterations = 1
 	}
 
-	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, a.agentName)
+	// Les outils qui produisent un média destiné à l'utilisateur, et non au
+	// modèle, le déposent ici (voir newGenerateImageTool). Le collecteur est
+	// créé par tour : les outils, eux, sont partagés par toutes les requêtes.
+	mediaCollector := newMediaCollector()
+
+	loopResult, err := runToolLoop(withMediaCollector(ctx, mediaCollector), a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, a.agentName)
 	if err != nil {
 		return Result{}, err
 	}
@@ -156,7 +162,7 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 		Reply:           loopResult.Text,
 		References:      extractReferences(loopResult.ToolResults),
 		ProposedActions: collector.take(),
-		Attachments:     loopResult.Attachments,
+		Attachments:     append(append([]media.Media(nil), loopResult.Attachments...), mediaCollector.take()...),
 	}, nil
 }
 

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/bornholm/genai/llm"
+
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/genai/llm/provider"
 	"github.com/bornholm/genai/llm/provider/minimax"
 	"github.com/bornholm/genai/llm/provider/openai"
@@ -69,9 +71,16 @@ func BuildImageGenerationClient(ctx context.Context, cfg config.ImageClient) (ll
 }
 
 // newGenerateImageTool expose generate_image à un spécialiste. L'image
-// produite est JOINTE au résultat d'outil : la boucle de tool-calling la
-// remonte alors dans Result.Attachments, jusqu'au canal — le modèle n'a
-// rien à faire d'autre que décrire ce qu'il a demandé.
+// produite remonte dans Result.Attachments, jusqu'au canal — le modèle n'a
+// rien à faire d'autre que confirmer ce qu'il a demandé.
+//
+// Elle n'est PAS renvoyée au modèle. C'est délibéré : l'outil demande
+// explicitement de ne pas décrire l'image, la relire n'apporte donc rien,
+// et la réinjecter exigerait que le client de l'agent accepte les images en
+// entrée — beaucoup de modèles, dont plusieurs excellents en tool-calling,
+// répondent « no endpoints found that support image input » et font échouer
+// le tour entier après une génération pourtant réussie. Le média passe par
+// le collecteur du contexte, hors de la conversation.
 func newGenerateImageTool(generator llm.ImageGenerationClient) llm.Tool {
 	schema := llm.NewJSONSchema().
 		RequiredProperty("prompt", "Detailed description of the image to generate, in English (image models understand English best): subject, style, lighting, composition.", "string").
@@ -111,18 +120,34 @@ func newGenerateImageTool(generator llm.ImageGenerationClient) llm.Tool {
 			}
 
 			attachments := make([]llm.Attachment, 0, len(images))
+			medias := make([]media.Media, 0, len(images))
+
 			for _, img := range images {
 				attachment, err := llm.NewImageAttachment(img.MediaType(), base64.StdEncoding.EncodeToString(img.Data()), false)
 				if err != nil {
 					return llm.NewToolResult(fmt.Sprintf("generated image cannot be attached: %v", err)), nil
 				}
+
 				attachments = append(attachments, attachment)
+
+				if m, ok := media.FromLLM(attachment, ""); ok {
+					medias = append(medias, m)
+				}
 			}
 
-			return llm.NewToolResult(
-				fmt.Sprintf("%d image(s) generated and attached to the reply. Confirm briefly; do not describe the image in detail.", len(images)),
-				attachments...,
-			), nil
+			summary := fmt.Sprintf("%d image(s) generated and attached to the reply. Confirm briefly; do not describe the image in detail.", len(images))
+
+			// Sans collecteur (agent construit hors d'un tour, test), on
+			// retombe sur la pièce jointe portée par le résultat d'outil :
+			// l'image atteint l'utilisateur dans tous les cas.
+			collector, ok := mediaCollectorFromContext(ctx)
+			if !ok || len(medias) != len(attachments) {
+				return llm.NewToolResult(summary, attachments...), nil
+			}
+
+			collector.add(medias...)
+
+			return llm.NewToolResult(summary), nil
 		},
 	)
 }
