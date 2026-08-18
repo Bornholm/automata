@@ -3,7 +3,7 @@ module github.com/bornholm/automata
 go 1.26.5
 
 require (
-	github.com/bornholm/amoxtli v0.14.2-0.20260818142645-b2201cee2397
+	github.com/bornholm/amoxtli v0.16.0
 	github.com/bornholm/go-courier v0.1.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/jsonschema-go v0.4.2
