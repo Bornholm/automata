@@ -305,6 +305,20 @@ type MCPServer struct {
 	Transport string            `yaml:"transport"`
 	URL       string            `yaml:"url"`
 	Headers   map[string]string `yaml:"headers"`
+	// Command est la commande lancée pour un serveur en transport "stdio" :
+	// exécutable puis arguments, sans interprétation par un shell. Les
+	// arguments et les valeurs de Env peuvent contenir des patrons {{nom}},
+	// résolus par principal via identities.principals[].mcp.<serveur>.values
+	// — c'est ce qui permet à chacun d'atteindre SON service (hôte, compte)
+	// derrière une commande commune. Requis quand Transport vaut "stdio",
+	// sans effet sinon.
+	Command []string `yaml:"command"`
+	// Env est l'environnement ajouté au processus du serveur stdio, en plus
+	// de celui du worker. Les secrets (mots de passe, jetons) passent par
+	// ici, JAMAIS par Command : les arguments d'un processus sont lisibles
+	// par tout processus local (/proc/<pid>/cmdline), son environnement ne
+	// l'est que par le même utilisateur système.
+	Env map[string]string `yaml:"env"`
 	// Resource, si déclarée, fait injecter par l'application un identifiant
 	// de ressource dans chaque appel d'outil. Absente, les arguments passent
 	// tels quels.
@@ -456,12 +470,18 @@ type Principal struct {
 
 // MCPOverride décrit la connexion d'un principal à un serveur MCP donné.
 //
-// URL vide conserve celle du serveur. Les en-têtes déclarés ici s'ajoutent à
-// ceux du serveur et l'emportent en cas de même nom, ce qui permet de ne
-// surcharger que l'autorisation sans réécrire le reste.
+// Serveur http : URL vide conserve celle du serveur ; les en-têtes déclarés
+// ici s'ajoutent à ceux du serveur et l'emportent en cas de même nom, ce qui
+// permet de ne surcharger que l'autorisation sans réécrire le reste.
+//
+// Serveur stdio : Values fournit les valeurs des patrons {{nom}} déclarés
+// dans Command et Env du serveur. Un principal sans surcharge pour un
+// serveur à patrons n'y a simplement pas accès (l'outil est indisponible
+// pour lui) : il n'existe AUCUN repli sur les valeurs d'un autre principal.
 type MCPOverride struct {
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"`
+	Values  map[string]string `yaml:"values"`
 }
 
 // Origin associe une identité externe (fournisseur + identifiant externe) à

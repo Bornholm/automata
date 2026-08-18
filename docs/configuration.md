@@ -307,8 +307,37 @@ mcp_servers:
       dedupe_writes: false
 ```
 
-Seul le transport `http` existe. Pas de `stdio`, pas de serveur lancé en
-sous-processus.
+Deux transports existent : `http` (ci-dessus) et `stdio`, où Automata lance
+lui-même le serveur en sous-processus local :
+
+```yaml
+mcp_servers:
+  imap:
+    transport: stdio
+    command: ["imap-mcp", "--host", "{{host}}", "--port", "{{port}}"]
+    env:
+      IMAP_USER: "{{user}}"
+      IMAP_PASSWORD: "{{password}}"
+    permission_domain: mail
+    tools:
+      confirm_writes: true
+      read_prefixes: [list_, get_, search_, fetch_]
+```
+
+`command` est l'exécutable puis ses arguments, sans interprétation par un
+shell. `env` complète l'environnement du worker pour le processus enfant —
+les secrets passent TOUJOURS par `env`, jamais par `command` : les arguments
+d'un processus sont lisibles par tout processus local (`/proc/<pid>/cmdline`),
+son environnement non.
+
+Les patrons `{{nom}}` de `command` et `env` sont résolus **par principal**
+via `identities.principals[].mcp.<serveur>.values` (voir
+[agents.md](agents.md)) : chacun obtient son propre processus, lancé avec
+SES identifiants (hôte, compte, mot de passe). Un principal sans `values`
+pour un serveur à patrons n'y a simplement pas accès — jamais de repli sur
+les valeurs d'un autre. Un serveur stdio sans patron est partagé par session,
+comme un serveur http. La validation au chargement vérifie que chaque
+surcharge couvre tous les patrons du serveur, en ne citant que leurs noms.
 
 Aucun nom de serveur n'a de signification pour l'application. Tout ce qui
 distingue un agenda d'une recherche web se déclare dans les champs ci-dessous,

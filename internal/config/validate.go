@@ -290,12 +290,31 @@ func validateMCPServers(cfg *Config) []error {
 
 	for _, name := range sortedKeys(cfg.MCPServers) {
 		server := cfg.MCPServers[name]
-		if server.Transport == "" {
+		switch server.Transport {
+		case "":
 			errs = append(errs, fmt.Errorf("mcp_servers.%s.transport: requis", name))
-		}
-
-		if server.URL == "" {
-			errs = append(errs, fmt.Errorf("mcp_servers.%s.url: requis", name))
+		case "http":
+			if server.URL == "" {
+				errs = append(errs, fmt.Errorf("mcp_servers.%s.url: requis pour un transport http", name))
+			}
+			if len(server.Command) > 0 {
+				errs = append(errs, fmt.Errorf("mcp_servers.%s.command: sans effet pour un transport http", name))
+			}
+			if len(server.Env) > 0 {
+				errs = append(errs, fmt.Errorf("mcp_servers.%s.env: sans effet pour un transport http", name))
+			}
+		case "stdio":
+			if len(server.Command) == 0 {
+				errs = append(errs, fmt.Errorf("mcp_servers.%s.command: requis pour un transport stdio", name))
+			}
+			if server.URL != "" {
+				errs = append(errs, fmt.Errorf("mcp_servers.%s.url: sans effet pour un transport stdio", name))
+			}
+			if len(server.Headers) > 0 {
+				errs = append(errs, fmt.Errorf("mcp_servers.%s.headers: sans effet pour un transport stdio (utiliser env)", name))
+			}
+		default:
+			errs = append(errs, fmt.Errorf("mcp_servers.%s.transport: %q non supporté (transports: \"http\", \"stdio\")", name, server.Transport))
 		}
 
 		if server.Resource != nil {
@@ -452,13 +471,44 @@ func validateIdentities(cfg *Config) []error {
 		// jeton commun, donc potentiellement aux ressources de quelqu'un
 		// d'autre. C'est une erreur de configuration, pas un détail.
 		for _, serverName := range sortedKeys(principal.MCP) {
-			if _, ok := cfg.MCPServers[serverName]; !ok {
+			server, known := cfg.MCPServers[serverName]
+			if !known {
 				errs = append(errs, fmt.Errorf("%s.mcp: serveur mcp inconnu %q", prefix, serverName))
 			}
 
 			override := principal.MCP[serverName]
-			if override.URL == "" && len(override.Headers) == 0 {
-				errs = append(errs, fmt.Errorf("%s.mcp.%s: surcharge vide (déclarer au moins une url ou un en-tête)", prefix, serverName))
+			if override.URL == "" && len(override.Headers) == 0 && len(override.Values) == 0 {
+				errs = append(errs, fmt.Errorf("%s.mcp.%s: surcharge vide (déclarer une url, un en-tête ou des values)", prefix, serverName))
+			}
+
+			if !known {
+				continue
+			}
+
+			// Chaque champ de surcharge n'a de sens que pour un transport :
+			// une surcharge silencieusement inopérante ferait croire à une
+			// connexion personnelle qui n'existe pas.
+			switch server.Transport {
+			case "stdio":
+				if override.URL != "" {
+					errs = append(errs, fmt.Errorf("%s.mcp.%s.url: sans effet pour un serveur stdio", prefix, serverName))
+				}
+				if len(override.Headers) > 0 {
+					errs = append(errs, fmt.Errorf("%s.mcp.%s.headers: sans effet pour un serveur stdio", prefix, serverName))
+				}
+
+				// Une surcharge incomplète ne démarrerait jamais : autant le
+				// dire au chargement, avec les noms manquants (jamais les
+				// valeurs, potentiellement secrètes).
+				for _, placeholder := range server.TemplatePlaceholders() {
+					if _, ok := override.Values[placeholder]; !ok {
+						errs = append(errs, fmt.Errorf("%s.mcp.%s.values: patron {{%s}} du serveur sans valeur", prefix, serverName, placeholder))
+					}
+				}
+			case "http":
+				if len(override.Values) > 0 {
+					errs = append(errs, fmt.Errorf("%s.mcp.%s.values: sans effet pour un serveur http", prefix, serverName))
+				}
 			}
 		}
 	}

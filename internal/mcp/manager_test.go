@@ -149,7 +149,7 @@ func TestManagerUnknownServerName(t *testing.T) {
 func TestManagerUnsupportedTransport(t *testing.T) {
 	cfg := &config.Config{
 		MCPServers: map[string]config.MCPServer{
-			"fake": {Transport: "stdio", URL: "irrelevant"},
+			"fake": {Transport: "websocket", URL: "irrelevant"},
 		},
 	}
 	m := NewManager(cfg, nil)

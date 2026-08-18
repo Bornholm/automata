@@ -248,6 +248,23 @@ mcp_servers:
     # Aucune ressource, aucune confirmation : tous les outils s'exécutent
     # directement. C'est le réglage d'un service en lecture seule.
 
+  # Serveur lancé localement en sous-processus (transport stdio). Les
+  # patrons {{nom}} de command et env sont résolus PAR PRINCIPAL via
+  # identities.principals[].mcp.imap.values : chacun obtient son propre
+  # processus, connecté avec SES identifiants. Les secrets passent par env,
+  # jamais par command — les arguments d'un processus sont lisibles par tout
+  # processus local, son environnement non.
+  # imap:
+  #   transport: stdio
+  #   command: ["imap-mcp", "--host", "{{host}}", "--port", "{{port}}"]
+  #   env:
+  #     IMAP_USER: "{{user}}"
+  #     IMAP_PASSWORD: "{{password}}"
+  #   permission_domain: mail
+  #   tools:
+  #     confirm_writes: true
+  #     read_prefixes: [list_, get_, search_, fetch_]
+
   todo:
     transport: http
     url: ${TODO_MCP_URL}
@@ -358,6 +375,16 @@ identities:
       kind: human
       display_name: Alice
       roles: [adult]
+      # Connexions MCP propres à ce principal (voir docs/agents.md). Pour un
+      # serveur stdio, values résout les patrons {{nom}} de sa commande et
+      # de son environnement : Alice obtient son propre processus imap.
+      # mcp:
+      #   imap:
+      #     values:
+      #       host: imap.example.com
+      #       port: "993"
+      #       user: alice@example.com
+      #       password: ${ALICE_IMAP_PASSWORD}
 
     - id: leo
       kind: human

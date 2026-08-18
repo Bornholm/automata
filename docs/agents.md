@@ -270,12 +270,51 @@ commune à la conversation, avec les en-têtes du serveur.
 ceux du serveur et l'emportent en cas de même nom, ce qui permet de ne
 surcharger que l'autorisation.
 
+### Serveurs stdio : un processus par principal
+
+Pour un serveur en transport `stdio` (voir
+[configuration.md](configuration.md), `mcp_servers`), la surcharge ne porte
+ni URL ni en-têtes mais des `values`, qui résolvent les patrons `{{nom}}`
+déclarés dans `command` et `env` du serveur :
+
+```yaml
+identities:
+  principals:
+    - id: alice
+      kind: human
+      roles: [adult]
+      mcp:
+        imap:
+          values:
+            host: imap.example.com
+            port: "993"
+            user: alice@example.com
+            password: ${ALICE_IMAP_PASSWORD}
+```
+
+Chaque principal surchargé obtient **son propre processus serveur**, lancé
+avec ses valeurs — Alice interroge sa boîte mail, jamais celle de Léo, même
+dans un groupe. Ce processus est partagé entre toutes les conversations du
+même principal (la frontière de sécurité est le principal, pas la
+conversation), ce qui borne le nombre de processus à un par couple
+(principal, serveur). Un principal sans `values` pour un serveur à patrons
+n'y a pas accès du tout : l'outil lui est refusé avec une erreur explicite,
+sans repli possible sur les identifiants d'un autre.
+
+Le cloisonnement par portée reste l'affaire des permissions : c'est
+`mail.personal.read` (sans `mail.group.*`) qui empêche de demander la
+lecture d'une boîte personnelle depuis un canal de groupe, pas le transport.
+
 ### Ce qui est vérifié au démarrage
 
 Une surcharge visant un serveur inexistant est une erreur de validation, pas
 un avertissement. Sans cela, le principal se rabattrait silencieusement sur le
 jeton commun, donc potentiellement sur les ressources de quelqu'un d'autre.
-Une surcharge vide est refusée pour la même raison.
+Une surcharge vide est refusée pour la même raison. La validation vérifie
+aussi la cohérence transport/surcharge (`url`/`headers` pour `http`,
+`values` pour `stdio`) et que chaque surcharge stdio couvre tous les patrons
+du serveur — les erreurs ne citent que les noms de patrons, jamais les
+valeurs.
 
 ### Ce que le mécanisme ne fait pas
 

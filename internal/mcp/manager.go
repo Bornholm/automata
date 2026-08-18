@@ -19,6 +19,9 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"os"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -26,6 +29,7 @@ import (
 	"github.com/bornholm/genai/llm"
 	genaimcp "github.com/bornholm/genai/mcp"
 	genaihttp "github.com/bornholm/genai/mcp/http"
+	genaistdio "github.com/bornholm/genai/mcp/stdio"
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/model"
@@ -149,6 +153,19 @@ func (m *Manager) GetToolsFor(ctx context.Context, sessionKey SessionKey, princi
 	cacheKey := sessionKey
 	if hasOverride {
 		cacheKey = SessionKey(string(sessionKey) + "|" + string(principalID))
+
+		// Serveur stdio surchargé : la connexion est un processus enfant
+		// lancé avec les identifiants du principal. La frontière de sécurité
+		// est donc le principal, pas la conversation — partager ce processus
+		// entre toutes les sessions du même principal est sûr (chaque appel
+		// arrive déjà authentifié comme lui) et borne le nombre de processus
+		// à un par (principal, serveur), au lieu d'un par conversation
+		// active. Les serveurs http conservent la clé par session : une
+		// connexion HTTP ne coûte rien et la garantie historique de §9.3
+		// reste inchangée pour eux.
+		if server, ok := m.cfg.MCPServers[serverName]; ok && server.Transport == "stdio" {
+			cacheKey = SessionKey("principal|" + string(principalID))
+		}
 	}
 
 	client, err := m.getOrCreateClient(ctx, cacheKey, serverName, override)
@@ -227,12 +244,11 @@ func (m *Manager) getOrCreateClient(ctx context.Context, sessionKey SessionKey, 
 // buildClient construit (sans le démarrer) le client MCP réel pour
 // serverName, à partir de cfg.MCPServers[serverName].
 //
-// Seul le transport "http" est représentable par le schéma de configuration
-// actuel (config.MCPServer{Transport, URL, Headers}) : aucun champ n'existe
-// pour une commande à exécuter, un support "stdio" serait donc spéculatif.
-// Toute autre valeur de Transport retourne une erreur claire.
-// override, lorsqu'elle est renseignée, remplace l'URL et complète les
-// en-têtes du serveur avec ceux du principal courant.
+// Transports supportés : "http" (URL + en-têtes, éventuellement surchargés
+// par principal) et "stdio" (commande locale, dont les arguments et
+// l'environnement peuvent porter des patrons {{nom}} résolus par les values
+// du principal courant — voir config.MCPOverride). Toute autre valeur de
+// Transport retourne une erreur claire.
 func (m *Manager) buildClient(serverName string, override config.MCPOverride) (genaimcp.Client, error) {
 	serverCfg, ok := m.cfg.MCPServers[serverName]
 	if !ok {
@@ -260,9 +276,61 @@ func (m *Manager) buildClient(serverName string, override config.MCPOverride) (g
 		}
 
 		return genaihttp.NewClient(url, genaihttp.WithHTTPClient(httpClient)), nil
+	case "stdio":
+		command, env, err := renderStdioCommand(serverCfg, override)
+		if err != nil {
+			return nil, fmt.Errorf("mcp: serveur %q: %w", serverName, err)
+		}
+
+		return genaistdio.NewClient(command, genaistdio.WithEnv(env...)), nil
 	default:
-		return nil, fmt.Errorf("mcp: transport %q non supporté pour le serveur %q (seul \"http\" est représentable par la configuration actuelle)", serverCfg.Transport, serverName)
+		return nil, fmt.Errorf("mcp: transport %q non supporté pour le serveur %q (transports: \"http\", \"stdio\")", serverCfg.Transport, serverName)
 	}
+}
+
+// renderStdioCommand résout les patrons {{nom}} de la commande et de
+// l'environnement du serveur stdio avec les values du principal courant, et
+// construit l'environnement complet du processus enfant (celui du worker,
+// complété par les variables déclarées — ces dernières l'emportent, étant
+// ajoutées en dernier).
+//
+// Un patron sans valeur est une erreur, jamais un passage tel quel : lancer
+// une commande avec un {{host}} littéral au mieux échouerait de façon
+// obscure, au pire se connecterait ailleurs que prévu. L'erreur ne cite que
+// les NOMS de patrons manquants — les valeurs, elles, sont des secrets
+// potentiels et ne sont jamais journalisées (AGENTS.md).
+func renderStdioCommand(serverCfg config.MCPServer, override config.MCPOverride) ([]string, []string, error) {
+	// Défense en profondeur : config.Validate refuse déjà un serveur stdio
+	// sans commande, mais le client genai paniquerait sur une commande vide
+	// — un garde local coûte une ligne et évite un crash du worker si un
+	// chemin de construction contourne un jour la validation.
+	if len(serverCfg.Command) == 0 {
+		return nil, nil, fmt.Errorf("commande vide pour un transport stdio")
+	}
+
+	var missing []string
+
+	command := make([]string, len(serverCfg.Command))
+	for i, arg := range serverCfg.Command {
+		rendered, miss := config.RenderMCPTemplate(arg, override.Values)
+		command[i] = rendered
+		missing = append(missing, miss...)
+	}
+
+	env := os.Environ()
+	for _, key := range slices.Sorted(maps.Keys(serverCfg.Env)) {
+		rendered, miss := config.RenderMCPTemplate(serverCfg.Env[key], override.Values)
+		missing = append(missing, miss...)
+		env = append(env, key+"="+rendered)
+	}
+
+	if len(missing) > 0 {
+		slices.Sort(missing)
+		missing = slices.Compact(missing)
+		return nil, nil, fmt.Errorf("patrons sans valeur pour le principal courant ({{%s}}) : serveur indisponible sans surcharge identities.principals[].mcp", strings.Join(missing, "}}, {{"))
+	}
+
+	return command, env, nil
 }
 
 // headerRoundTripper injecte des en-têtes HTTP fixes (déjà résolus par
