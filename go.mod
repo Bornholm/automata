@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/bornholm/amoxtli v0.16.0
-	github.com/bornholm/go-courier v0.1.0
+	github.com/bornholm/go-courier v0.2.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/jsonschema-go v0.4.2
 	github.com/modelcontextprotocol/go-sdk v1.3.0
@@ -16,9 +16,11 @@ require (
 
 require (
 	github.com/Bornholm/amatl v0.21.1 // indirect
+	github.com/DusanKasan/parsemail v1.2.0 // indirect
 	github.com/RealAlexandreAI/json-repair v0.0.14 // indirect
 	github.com/RoaringBitmap/roaring/v2 v2.4.5 // indirect
 	github.com/abadojack/whatlanggo v1.0.1 // indirect
+	github.com/apex/log v1.9.0 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect
 	github.com/bits-and-blooms/bitset v1.22.0 // indirect
 	github.com/blevesearch/bleve/v2 v2.5.0 // indirect
@@ -40,16 +42,22 @@ require (
 	github.com/blevesearch/zapx/v15 v15.4.1 // indirect
 	github.com/blevesearch/zapx/v16 v16.2.2 // indirect
 	github.com/bornholm/go-x v0.0.0-20260127104343-c6737ea35324 // indirect
+	github.com/bwmarrin/discordgo v0.29.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/elliotchance/orderedmap/v3 v3.1.0 // indirect
+	github.com/emersion/go-imap/v2 v2.0.0-beta.6 // indirect
+	github.com/emersion/go-message v0.18.1 // indirect
+	github.com/emersion/go-sasl v0.0.0-20231106173351-e73c9f7bad43 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/golang/geo v0.0.0-20210211234256-740aa86cb551 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
+	github.com/gopackage/ddp v0.0.6 // indirect
+	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.10.0 // indirect
@@ -58,6 +66,7 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
+	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
@@ -70,6 +79,7 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.27 // indirect
+	github.com/web-ridge/email-reply-parser v0.0.0-20230428184542-95e2a82fa6bd // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
 	github.com/yuin/goldmark-meta v1.1.0 // indirect
@@ -82,6 +92,8 @@ require (
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
+	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
+	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df // indirect
 	gopkg.in/yaml.v2 v2.3.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect
 	gorm.io/gorm v1.25.12 // indirect
