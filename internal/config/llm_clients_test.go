@@ -31,3 +31,23 @@ func TestValidateLLMClients_RequiresEveryField(t *testing.T) {
 		t.Fatalf("client complet refusé: %v", errs)
 	}
 }
+
+func TestValidateLLMClients_RejectsUnknownEffort(t *testing.T) {
+	cfg := &Config{
+		LLMClients: map[string]LLMClient{
+			"main": {
+				Provider: "openai", Model: "m", APIKey: "k", BaseURL: "https://x.test/v1",
+				Reasoning: &LLMReasoning{Effort: "beaucoup"},
+			},
+		},
+	}
+	assertHasError(t, validateLLMClients(cfg), `reasoning.effort: "beaucoup" inconnu`)
+
+	cfg.LLMClients["main"] = LLMClient{
+		Provider: "openai", Model: "m", APIKey: "k", BaseURL: "https://x.test/v1",
+		Reasoning: &LLMReasoning{Effort: "low"},
+	}
+	if errs := validateLLMClients(cfg); len(errs) != 0 {
+		t.Fatalf("effort valide refusé: %v", errs)
+	}
+}

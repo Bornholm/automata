@@ -228,7 +228,40 @@ llm_clients:
     base_url: ${TRANSCRIPTION_BASE_URL}
 ```
 
-`provider` accepte `openai`, `mistral` et `openrouter`.
+`provider` accepte `openai`, `mistral` et `openrouter`. Pour un service
+compatible OpenAI — OpenRouter compris — préférez `openai` avec la `base_url`
+du service : le provider `openrouter` construit son client sur l'URL du
+service en dur et ignore `base_url`.
+
+### reasoning
+
+Les modèles à réflexion peuvent voir leur budget réglé par client :
+
+```yaml
+  main:
+    provider: openai
+    model: ${MAIN_MODEL}
+    api_key: ${MAIN_API_KEY}
+    base_url: ${MAIN_BASE_URL}
+    reasoning:
+      effort: low     # minimal | low | medium | high (aussi none, xhigh selon le fournisseur)
+```
+
+Le réglage vaut pour **tous** les appels de ce client : conversation,
+délégation, compaction, consolidation. Sans la clé `reasoning`, le défaut du
+modèle s'applique et rien n'est imposé au fournisseur.
+
+C'est un arbitrage entre qualité et vivacité, et il ne se pose pas de la même
+façon selon l'agent. L'orchestrateur ne fait qu'aiguiller et reformuler : sa
+réflexion se paie sur chaque message, y compris un simple « coucou », pendant
+que la personne regarde l'indicateur « en train d'écrire ». Un spécialiste qui
+recoupe des sources, ou une tâche planifiée que personne n'attend, méritent
+davantage. D'où l'intérêt de déclarer deux clients sur le même modèle, l'un
+bridé pour l'orchestrateur, l'autre non — rien n'oblige les agents à partager
+un client.
+
+Mesuré sur `qwen3.8-27b` via OpenRouter, pour un simple « Coucou ! » : 65
+jetons de réflexion sans réglage, 46 avec `effort: low`.
 
 Les quatre champs sont **obligatoires**, `base_url` comprise, et la
 configuration est refusée au chargement s'il en manque un. Aucun défaut

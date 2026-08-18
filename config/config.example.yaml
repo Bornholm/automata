@@ -118,6 +118,12 @@ llm_clients:
     model: ${MAIN_MODEL}
     api_key: ${MAIN_API_KEY}
     base_url: ${MAIN_BASE_URL}
+    # Budget de réflexion des modèles « reasoning », appliqué à tous les
+    # appels de ce client. Absent, le défaut du modèle s'applique.
+    # L'orchestrateur ne fait qu'aiguiller : sa réflexion se paie en attente
+    # sur chaque message, banalités comprises.
+    # reasoning:
+    #   effort: low
 
   # base_url est obligatoire ici aussi, et se règle indépendamment de celui
   # du client principal : tous les fournisseurs de complétion ne

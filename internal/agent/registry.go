@@ -303,7 +303,12 @@ func BuildLLMClient(ctx context.Context, cfg config.LLMClient) (llm.Client, erro
 		return nil, fmt.Errorf("création du client llm (provider %q): %w", cfg.Provider, err)
 	}
 
-	return wrapResilience(client), nil
+	reasoning, err := reasoningOptions(cfg.Reasoning)
+	if err != nil {
+		return nil, fmt.Errorf("client llm (provider %q): %w", cfg.Provider, err)
+	}
+
+	return wrapResilience(withReasoning(client, reasoning)), nil
 }
 
 // BuildTranscriptionClient construit un llm.TranscriptionClient GenAI à

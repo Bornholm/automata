@@ -242,6 +242,22 @@ type LLMClient struct {
 	Model    string `yaml:"model"`
 	APIKey   string `yaml:"api_key"`
 	BaseURL  string `yaml:"base_url"`
+	// Reasoning règle le budget de réflexion des modèles qui en ont un.
+	// Absente, la valeur par défaut du modèle s'applique.
+	Reasoning *LLMReasoning `yaml:"reasoning"`
+}
+
+// LLMReasoning règle la réflexion d'un modèle « reasoning ».
+//
+// Le réglage vaut pour tous les appels du client : conversation, délégation,
+// compaction, consolidation. Réfléchir coûte du temps sur chaque message,
+// banalités comprises — un « coucou » peut demander une demi-minute — et un
+// assistant de messagerie se juge aussi à sa vivacité.
+type LLMReasoning struct {
+	// Effort vaut "minimal", "low", "medium", "high" (valeurs documentées
+	// par OpenRouter), ou "none"/"xhigh" que certains fournisseurs
+	// acceptent. Un modèle sans mode réflexion l'ignore.
+	Effort string `yaml:"effort"`
 }
 
 // AgentType énumère les types d'agents supportés.

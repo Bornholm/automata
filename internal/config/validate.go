@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -49,6 +50,12 @@ func Validate(cfg *Config, baseDir string) error {
 	return joinErrors(errs)
 }
 
+// validReasoningEfforts énumère les niveaux de réflexion acceptés. La liste
+// est dupliquée depuis internal/agent (qui les traduit en options genai)
+// plutôt qu'importée : internal/config ne dépend d'aucun paquet applicatif,
+// et l'écart éventuel est couvert par un test.
+var validReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
+
 // validateLLMClients vérifie que chaque client déclaré a de quoi appeler un
 // fournisseur.
 //
@@ -75,6 +82,10 @@ func validateLLMClients(cfg *Config) []error {
 		}
 		if client.BaseURL == "" {
 			errs = append(errs, fmt.Errorf("llm_clients.%s.base_url: requis (point d'entrée du fournisseur, ex: https://api.openai.com/v1)", name))
+		}
+
+		if client.Reasoning != nil && client.Reasoning.Effort != "" && !slices.Contains(validReasoningEfforts, client.Reasoning.Effort) {
+			errs = append(errs, fmt.Errorf("llm_clients.%s.reasoning.effort: %q inconnu (valeurs: %s)", name, client.Reasoning.Effort, strings.Join(validReasoningEfforts, ", ")))
 		}
 	}
 
