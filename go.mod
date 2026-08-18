@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	github.com/bornholm/amoxtli v0.16.0
-	github.com/bornholm/go-courier v0.2.0
+	github.com/bornholm/go-courier v0.2.1
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/jsonschema-go v0.4.2
 	github.com/modelcontextprotocol/go-sdk v1.3.0
