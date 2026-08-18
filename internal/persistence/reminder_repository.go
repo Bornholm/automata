@@ -16,6 +16,14 @@ const (
 	ReminderStatusFailed    = "failed"
 )
 
+// Natures d'une entrée de la table reminders. Un rappel délivre son message
+// tel quel ; une tâche le donne comme consigne à un agent et délivre la
+// réponse (voir migration 0007).
+const (
+	ReminderKindMessage = "message"
+	ReminderKindTask    = "task"
+)
+
 // ReminderRepository donne accès à la table reminders.
 type ReminderRepository struct{}
 
@@ -24,12 +32,20 @@ func NewReminderRepository() *ReminderRepository {
 	return &ReminderRepository{}
 }
 
-// Insert insère un rappel.
+// Insert insère un rappel ou une tâche planifiée.
+//
+// Une nature vide vaut ReminderKindMessage : c'est le comportement
+// historique, et une entrée dont la nature ne correspond à rien serait
+// invisible de tous les outils de liste comme du dispatcher.
 func (r *ReminderRepository) Insert(ctx context.Context, q Querier, rem Reminder) error {
+	if rem.Kind == "" {
+		rem.Kind = ReminderKindMessage
+	}
+
 	_, err := q.ExecContext(ctx, `
-		INSERT INTO reminders (id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, rem.ID, rem.OrgID, rem.PrincipalID, rem.ConversationID, rem.Provider, rem.ChannelID, rem.Message, rem.FireAt, rem.Status, rem.CreatedAt, rem.SentAt, rem.Recurrence, rem.Timezone)
+		INSERT INTO reminders (id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, rem.ID, rem.OrgID, rem.PrincipalID, rem.ConversationID, rem.Provider, rem.ChannelID, rem.Message, rem.FireAt, rem.Status, rem.CreatedAt, rem.SentAt, rem.Recurrence, rem.Timezone, rem.Kind, rem.AgentID)
 	if err != nil {
 		return fmt.Errorf("insertion du rappel %q: %w", rem.ID, err)
 	}
@@ -40,7 +56,7 @@ func (r *ReminderRepository) Insert(ctx context.Context, q Querier, rem Reminder
 // pas.
 func (r *ReminderRepository) FindByID(ctx context.Context, q Querier, id ReminderID) (Reminder, bool, error) {
 	row := q.QueryRowContext(ctx, `
-		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone
+		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id
 		FROM reminders
 		WHERE id = ?
 	`, id)
@@ -62,7 +78,7 @@ func (r *ReminderRepository) FindByID(ctx context.Context, q Querier, id Reminde
 // d'abord, bornés à limit.
 func (r *ReminderRepository) ListDue(ctx context.Context, q Querier, now string, limit int) ([]Reminder, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone
+		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id
 		FROM reminders
 		WHERE status = ? AND fire_at <= ?
 		ORDER BY fire_at ASC
@@ -76,15 +92,21 @@ func (r *ReminderRepository) ListDue(ctx context.Context, q Querier, now string,
 	return collectReminders(rows)
 }
 
-// ListPendingByConversation retourne les rappels pending d'une conversation,
-// par échéance croissante.
-func (r *ReminderRepository) ListPendingByConversation(ctx context.Context, q Querier, conversationID string) ([]Reminder, error) {
+// ListPendingByConversation retourne les entrées pending d'une conversation
+// pour une nature donnée (ReminderKindMessage ou ReminderKindTask), par
+// échéance croissante.
+//
+// Le filtre par nature n'est pas cosmétique : list_reminders et
+// list_scheduled_tasks sont deux outils distincts, et un rappel qui
+// apparaîtrait dans la liste des tâches serait annulable par
+// cancel_scheduled_task — une confusion que rien ne rattraperait ensuite.
+func (r *ReminderRepository) ListPendingByConversation(ctx context.Context, q Querier, conversationID, kind string) ([]Reminder, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone
+		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id
 		FROM reminders
-		WHERE conversation_id = ? AND status = ?
+		WHERE conversation_id = ? AND status = ? AND kind = ?
 		ORDER BY fire_at ASC
-	`, conversationID, ReminderStatusPending)
+	`, conversationID, ReminderStatusPending, kind)
 	if err != nil {
 		return nil, fmt.Errorf("liste des rappels de la conversation %q: %w", conversationID, err)
 	}
@@ -139,7 +161,7 @@ func (r *ReminderRepository) RescheduleNext(ctx context.Context, q Querier, id R
 
 func scanReminder(row *sql.Row) (Reminder, error) {
 	var rem Reminder
-	err := row.Scan(&rem.ID, &rem.OrgID, &rem.PrincipalID, &rem.ConversationID, &rem.Provider, &rem.ChannelID, &rem.Message, &rem.FireAt, &rem.Status, &rem.CreatedAt, &rem.SentAt, &rem.Recurrence, &rem.Timezone)
+	err := row.Scan(&rem.ID, &rem.OrgID, &rem.PrincipalID, &rem.ConversationID, &rem.Provider, &rem.ChannelID, &rem.Message, &rem.FireAt, &rem.Status, &rem.CreatedAt, &rem.SentAt, &rem.Recurrence, &rem.Timezone, &rem.Kind, &rem.AgentID)
 	return rem, err
 }
 
@@ -147,7 +169,7 @@ func collectReminders(rows *sql.Rows) ([]Reminder, error) {
 	var reminders []Reminder
 	for rows.Next() {
 		var rem Reminder
-		if err := rows.Scan(&rem.ID, &rem.OrgID, &rem.PrincipalID, &rem.ConversationID, &rem.Provider, &rem.ChannelID, &rem.Message, &rem.FireAt, &rem.Status, &rem.CreatedAt, &rem.SentAt, &rem.Recurrence, &rem.Timezone); err != nil {
+		if err := rows.Scan(&rem.ID, &rem.OrgID, &rem.PrincipalID, &rem.ConversationID, &rem.Provider, &rem.ChannelID, &rem.Message, &rem.FireAt, &rem.Status, &rem.CreatedAt, &rem.SentAt, &rem.Recurrence, &rem.Timezone, &rem.Kind, &rem.AgentID); err != nil {
 			return nil, fmt.Errorf("lecture d'un rappel: %w", err)
 		}
 		reminders = append(reminders, rem)

@@ -231,6 +231,7 @@ Détaillé dans [agents.md](agents.md). Résumé des champs :
 | `delegates` | Noms des spécialistes joignables. Orchestrateur seulement |
 | `memory` | Drapeaux `search`, `remember`, `forget` |
 | `reminders` | Expose les outils de rappels ponctuels. Orchestrateur seulement |
+| `scheduled_tasks` | Expose les outils de tâches planifiées (l'agent travaille à l'échéance). Orchestrateur seulement |
 | `mcp_servers` | Serveurs MCP autorisés. Spécialiste seulement |
 | `capabilities` | Permissions applicatives de l'agent |
 | `limits` | Plafonds d'exécution, tous obligatoires |
@@ -280,8 +281,48 @@ Chaque appel d'outil est autorisé par principal via les permissions du
 domaine `reminder` (`reminder.personal.write`, `reminder.group.read`, etc.,
 voir `identities.roles`) : activer le drapeau sans accorder ces permissions
 donne des outils qui refusent poliment. Un rappel n'est visible et annulable
-que depuis sa conversation d'origine. Les récurrences restent du ressort des
-`schedules` déclarés dans la configuration.
+que depuis sa conversation d'origine.
+
+### scheduled_tasks
+
+`scheduled_tasks: true` ajoute `schedule_task`, `list_scheduled_tasks` et
+`cancel_scheduled_task`. Une tâche planifiée partage tout avec un rappel —
+échéance, récurrence cron, fuseau, annulation, cloisonnement par
+conversation — sauf l'essentiel : à l'échéance, l'agent **travaille**, avec
+ses outils et ses délégués, et c'est sa réponse qui est envoyée.
+
+C'est la différence qui compte à l'usage. « Chaque matin, un bulletin
+météo » n'est pas un rappel : un rappel enverrait tous les jours le texte
+« bulletin météo ». Une tâche va chercher la météo du jour.
+
+```yaml
+  main:
+    reminders: true
+    scheduled_tasks: true
+```
+
+Trois garde-fous, aucun laissé au modèle :
+
+- **Identité figée.** La tâche s'exécute sous le principal qui l'a créée,
+  dans sa conversation d'origine, avec la portée du canal telle qu'elle est
+  déclarée aujourd'hui — pas celle du jour de la création. Un canal qui
+  change de portée emmène ses tâches avec lui.
+- **Lecture seule stricte.** Les actions sensibles proposées pendant un tour
+  planifié sont ignorées et signalées dans le message livré. Personne n'est
+  devant l'écran pour confirmer : rien ne doit pouvoir écrire dehors.
+- **Permissions distinctes.** Le domaine est `task`
+  (`task.personal.write`…), séparé de `reminder` : programmer un travail de
+  l'assistant est un pouvoir plus large que poser un pense-bête, et ne
+  s'accorde pas par mégarde avec lui.
+
+Une tâche dont l'exécution échoue n'envoie rien et ne réarme pas sa
+récurrence : elle passe en `failed`. Un bulletin quotidien qui casse
+s'arrête donc visiblement, au lieu d'échouer en silence tous les matins.
+
+Différence avec `schedules` : ceux-ci sont déclarés en configuration,
+peuvent viser n'importe quel canal, n'importe quel agent et une politique
+`require_confirmation` ; une tâche naît en conversation, reste dans la
+sienne, et ne sait qu'observer. Les deux coexistent.
 
 Les limites, sans exception :
 

@@ -115,7 +115,7 @@ func listReminderRows(t *testing.T, db *persistence.DB, conversationID string) [
 	var rows []persistence.Reminder
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		var err error
-		rows, err = repo.ListPendingByConversation(context.Background(), tx, conversationID)
+		rows, err = repo.ListPendingByConversation(context.Background(), tx, conversationID, persistence.ReminderKindMessage)
 		return err
 	})
 	if err != nil {
@@ -134,7 +134,7 @@ func TestCreateReminder_PersistsForCurrentConversation(t *testing.T) {
 		"message": "sortir les poubelles",
 	})
 
-	if !strings.Contains(result, "Rappel programmé") {
+	if !strings.Contains(result, "Reminder scheduled") {
 		t.Fatalf("résultat = %q, attendu une confirmation de programmation", result)
 	}
 
@@ -161,7 +161,7 @@ func TestCreateReminder_RejectsPastAndFarFuture(t *testing.T) {
 		"fire_at": "2026-08-17T09:00:00Z",
 		"message": "trop tard",
 	})
-	if !strings.Contains(past, "déjà passé") {
+	if !strings.Contains(past, "already past") {
 		t.Errorf("résultat pour une date passée = %q, attendu un refus 'déjà passé'", past)
 	}
 
@@ -169,7 +169,7 @@ func TestCreateReminder_RejectsPastAndFarFuture(t *testing.T) {
 		"fire_at": "2028-01-01T09:00:00Z",
 		"message": "trop loin",
 	})
-	if !strings.Contains(far, "plus d'un an") {
+	if !strings.Contains(far, "more than a year") {
 		t.Errorf("résultat pour une date trop lointaine = %q, attendu un refus 'plus d'un an'", far)
 	}
 
@@ -187,7 +187,7 @@ func TestCreateReminder_DeniedWithoutWritePermission(t *testing.T) {
 		"message": "interdit",
 	})
 
-	if !strings.Contains(result, "refusée") {
+	if !strings.Contains(result, "refused") {
 		t.Errorf("résultat = %q, attendu un refus d'autorisation", result)
 	}
 
@@ -215,13 +215,13 @@ func TestCancelReminder_IsolatedByConversation(t *testing.T) {
 	// invisible et inannulable, même pour alice.
 	group := groupIdentity("alice", "famille")
 	fromGroup := executeReminderTool(t, tools, group, "cancel_reminder", map[string]any{"id": id})
-	if !strings.Contains(fromGroup, "aucun rappel") {
+	if !strings.Contains(fromGroup, "no pending reminder") {
 		t.Errorf("annulation depuis une autre conversation = %q, attendu 'aucun rappel'", fromGroup)
 	}
 
 	// Depuis la conversation d'origine, l'annulation réussit.
 	fromOwn := executeReminderTool(t, tools, alice, "cancel_reminder", map[string]any{"id": id})
-	if !strings.Contains(fromOwn, "annulé") {
+	if !strings.Contains(fromOwn, "cancelled") {
 		t.Errorf("annulation depuis la conversation d'origine = %q, attendu 'annulé'", fromOwn)
 	}
 
@@ -259,7 +259,7 @@ func TestCreateReminder_RecurringComputesFirstOccurrence(t *testing.T) {
 		"message":    "sortir les poubelles",
 	})
 
-	if !strings.Contains(result, "Rappel récurrent programmé") {
+	if !strings.Contains(result, "Repeating reminder scheduled") {
 		t.Fatalf("résultat = %q, attendu une confirmation de rappel récurrent", result)
 	}
 
@@ -285,7 +285,7 @@ func TestCreateReminder_RejectsInvalidRecurrence(t *testing.T) {
 		"recurrence": "pas du cron",
 		"message":    "invalide",
 	})
-	if !strings.Contains(badCron, "'recurrence' invalide") {
+	if !strings.Contains(badCron, "invalid 'recurrence'") {
 		t.Errorf("résultat = %q, attendu un refus d'expression cron invalide", badCron)
 	}
 
@@ -294,7 +294,7 @@ func TestCreateReminder_RejectsInvalidRecurrence(t *testing.T) {
 		"timezone":   "Mars/Olympus",
 		"message":    "invalide",
 	})
-	if !strings.Contains(badTZ, "'timezone' inconnu") {
+	if !strings.Contains(badTZ, "unknown 'timezone'") {
 		t.Errorf("résultat = %q, attendu un refus de fuseau inconnu", badTZ)
 	}
 

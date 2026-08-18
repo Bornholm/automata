@@ -3,10 +3,14 @@
 // boucle périodique liste les rappels échus en base et envoie leur message
 // sur le canal où ils ont été demandés.
 //
-// Contrairement au scheduler (internal/scheduler), rien ici n'exécute
-// d'agent : un rappel est un texte figé à la création, délivré tel quel.
-// Le message d'un rappel est du contenu privé : il n'apparaît jamais dans
-// les journaux (AGENTS.md).
+// La même boucle porte les tâches planifiées (outil schedule_task) : une
+// entrée de nature "task" ne délivre pas son texte, elle le donne comme
+// consigne à un agent — via TaskRunner — et délivre SA réponse. Tout le
+// reste est commun : échéance, récurrence, réarmement, annulation,
+// cloisonnement par conversation.
+//
+// Le message d'un rappel comme la consigne d'une tâche sont du contenu
+// privé : ils n'apparaissent jamais dans les journaux (AGENTS.md).
 package reminder
 
 import (
@@ -14,6 +18,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/bornholm/go-courier"
@@ -49,9 +54,18 @@ type Dispatcher struct {
 	db      *persistence.DB
 	repo    *persistence.ReminderRepository
 	senders map[string]courier.Provider
+	runner  TaskRunner
 	logger  *slog.Logger
 	metrics *observability.Metrics
 	now     func() time.Time
+}
+
+// TaskRunner exécute la consigne d'une tâche planifiée et retourne la
+// réponse à délivrer. Implémenté par agent.TaskRunner ; l'interface est
+// déclarée ici, côté consommateur, pour que la livraison des rappels ne
+// dépende pas du paquet agent.
+type TaskRunner interface {
+	RunTask(ctx context.Context, task persistence.Reminder) (string, error)
 }
 
 // NewDispatcher construit un Dispatcher. senders associe chaque nom de
@@ -70,6 +84,14 @@ func NewDispatcher(db *persistence.DB, senders map[string]courier.Provider, logg
 		metrics: metrics,
 		now:     time.Now,
 	}
+}
+
+// WithTaskRunner câble l'exécuteur des tâches planifiées. Sans lui, une
+// tâche échue est classée failed plutôt que délivrée à vide : mieux vaut une
+// trace d'échec qu'un message vide présenté comme le travail demandé.
+func (d *Dispatcher) WithTaskRunner(runner TaskRunner) *Dispatcher {
+	d.runner = runner
+	return d
 }
 
 // WithClock remplace l'horloge (tests).
@@ -147,11 +169,17 @@ func (d *Dispatcher) deliver(ctx context.Context, rem persistence.Reminder) {
 		return
 	}
 
+	body, ok := d.body(ctx, rem, logCtx)
+	if !ok {
+		d.markFinal(ctx, rem, persistence.ReminderStatusFailed, nil, logCtx)
+		return
+	}
+
 	outgoing := courier.NewMessage(
 		courier.RandomMessageID(),
 		courier.NewChannelRef(courier.ChannelID(rem.ChannelID)),
 		courier.NewUser(courier.UserID(rem.PrincipalID), string(rem.PrincipalID)),
-		courier.WithMessageMainPart("⏰ Rappel : "+rem.Message),
+		courier.WithMessageMainPart(body),
 	)
 
 	if err := d.send(ctx, provider, outgoing); err != nil {
@@ -182,6 +210,40 @@ func (d *Dispatcher) deliver(ctx context.Context, rem persistence.Reminder) {
 	sentAt := d.now().UTC().Format(time.RFC3339)
 	d.logger.InfoContext(ctx, "reminder: rappel délivré", logCtx...)
 	d.markFinal(ctx, rem, persistence.ReminderStatusSent, &sentAt, logCtx)
+}
+
+// body construit le texte à envoyer. Un rappel délivre son message tel
+// quel ; une tâche fait travailler son agent et délivre sa réponse.
+//
+// ok vaut false quand la tâche n'a pas pu être exécutée : l'entrée est alors
+// classée failed. Une tâche qui échoue ne réarme donc pas sa récurrence —
+// un bulletin quotidien qui échoue une fois s'arrête, ce qui se voit et se
+// corrige, plutôt que d'échouer en silence tous les matins.
+func (d *Dispatcher) body(ctx context.Context, rem persistence.Reminder, logCtx []any) (string, bool) {
+	if rem.Kind != persistence.ReminderKindTask {
+		return "⏰ Rappel : " + rem.Message, true
+	}
+
+	if d.runner == nil {
+		d.logger.ErrorContext(ctx, "reminder: tâche planifiée sans exécuteur câblé, classée failed", logCtx...)
+		return "", false
+	}
+
+	reply, err := d.runner.RunTask(ctx, rem)
+	if err != nil {
+		d.logger.ErrorContext(ctx, "reminder: échec de l'exécution de la tâche planifiée", append(logCtx, "error", err)...)
+		return "", false
+	}
+
+	reply = strings.TrimSpace(reply)
+	if reply == "" {
+		d.logger.ErrorContext(ctx, "reminder: tâche planifiée sans réponse, classée failed", logCtx...)
+		return "", false
+	}
+
+	d.metrics.IncScheduledTaskRun()
+
+	return reply, true
 }
 
 // nextOccurrence calcule l'occurrence suivante d'un rappel récurrent, en

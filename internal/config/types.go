@@ -271,10 +271,20 @@ type Agent struct {
 	// (create_reminder, list_reminders, cancel_reminder). L'autorisation
 	// effective de chaque appel reste vérifiée par principal via les
 	// permissions reminder.<scope>.<action> (identities.roles).
-	Reminders    bool        `yaml:"reminders"`
-	MCPServers   []string    `yaml:"mcp_servers"`
-	Capabilities []string    `yaml:"capabilities"`
-	Limits       AgentLimits `yaml:"limits"`
+	Reminders bool `yaml:"reminders"`
+	// ScheduledTasks expose à cet agent les outils de tâches planifiées
+	// (schedule_task, list_scheduled_tasks, cancel_scheduled_task). Une
+	// tâche fait TRAVAILLER l'agent à l'échéance, là où un rappel ne fait
+	// que délivrer un texte : c'est un pouvoir distinct, accordé
+	// séparément, et soumis aux permissions task.<portée>.<action>.
+	//
+	// L'exécution est en lecture seule stricte : les actions sensibles
+	// proposées pendant un tour planifié sont ignorées, jamais exécutées
+	// sans humain devant l'écran.
+	ScheduledTasks bool        `yaml:"scheduled_tasks"`
+	MCPServers     []string    `yaml:"mcp_servers"`
+	Capabilities   []string    `yaml:"capabilities"`
+	Limits         AgentLimits `yaml:"limits"`
 }
 
 // SystemPrompt décrit la source du system prompt d'un agent : soit un

@@ -150,7 +150,11 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	// Livraison des rappels ponctuels créés conversationnellement
 	// (internal/reminder) : indépendante du scheduler, qui ne connaît que
 	// les schedules récurrents de la configuration.
-	reminderDispatcher := reminder.NewDispatcher(db, providers, logger, metrics)
+	// Le même dispatcher porte les tâches planifiées (schedule_task) : à
+	// leur échéance, l'exécuteur fait tourner l'agent qui les a créées et
+	// c'est sa réponse qui est délivrée.
+	reminderDispatcher := reminder.NewDispatcher(db, providers, logger, metrics).
+		WithTaskRunner(agent.NewTaskRunner(cfg, agents, logger))
 
 	wg.Add(1)
 	go func() {
@@ -274,6 +278,10 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		Repo:       persistence.NewReminderRepository(),
 		Authorizer: authorizer,
 		Metrics:    metrics,
+		// Un exécuteur de tâches est câblé sur le dispatcher juste après
+		// (voir Run) : les agents qui déclarent scheduled_tasks peuvent donc
+		// réellement en programmer.
+		Tasks: true,
 	}
 
 	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, mcpManager, metrics, logger)

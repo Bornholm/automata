@@ -246,3 +246,128 @@ func TestReminderRepository_RescheduleNextRespectsCancellation(t *testing.T) {
 		t.Fatalf("RescheduleNext: %v", err)
 	}
 }
+
+// stubRunner joue le rôle de l'exécuteur de tâches sans faire tourner de
+// modèle : il enregistre ce qu'on lui demande et rend une réponse fixe.
+type stubRunner struct {
+	reply string
+	err   error
+	tasks []persistence.Reminder
+}
+
+func (r *stubRunner) RunTask(ctx context.Context, task persistence.Reminder) (string, error) {
+	r.tasks = append(r.tasks, task)
+	if r.err != nil {
+		return "", r.err
+	}
+	return r.reply, nil
+}
+
+func baseTask(id, provider, fireAt string) persistence.Reminder {
+	task := baseReminder(id, provider, fireAt)
+	task.Kind = persistence.ReminderKindTask
+	task.AgentID = "main"
+	task.Message = "Prépare un bulletin météo court"
+	return task
+}
+
+// Une tâche planifiée ne délivre pas sa consigne : elle délivre le travail
+// de l'agent. C'est toute la différence avec un rappel — l'utilisateur qui
+// demande un bulletin météo quotidien attend la météo, pas la phrase
+// « prépare un bulletin météo ».
+func TestDispatcher_ScheduledTaskDeliversAgentReply(t *testing.T) {
+	db := testDB(t)
+	provider := memory.NewProvider(memory.WithChannels(courier.NewChannel("chan-alice", courier.ChannelKindDirect, "Alice")))
+	t.Cleanup(func() { _ = provider.Close() })
+
+	insertReminder(t, db, baseTask("task", "memory", "2026-08-17T11:59:00Z"))
+
+	runner := &stubRunner{reply: "Ciel dégagé, 24 °C cet après-midi."}
+	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+		WithTaskRunner(runner).
+		WithClock(func() time.Time { return dispatcherTestNow })
+
+	if err := d.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	if len(runner.tasks) != 1 {
+		t.Fatalf("tâches exécutées = %d, attendu 1", len(runner.tasks))
+	}
+	if runner.tasks[0].AgentID != "main" {
+		t.Errorf("agent exécutant = %q, attendu celui figé à la création", runner.tasks[0].AgentID)
+	}
+
+	sent := provider.Sent()
+	if len(sent) != 1 {
+		t.Fatalf("messages envoyés = %d, attendu 1", len(sent))
+	}
+
+	content, err := courier.GetMessageMainContent(context.Background(), sent[0])
+	if err != nil {
+		t.Fatalf("GetMessageMainContent: %v", err)
+	}
+	if !strings.Contains(content, "Ciel dégagé") {
+		t.Errorf("contenu = %q, attendu la réponse de l'agent", content)
+	}
+	if strings.Contains(content, "Rappel") || strings.Contains(content, "bulletin météo court") {
+		t.Errorf("contenu = %q, la consigne a été délivrée au lieu du travail", content)
+	}
+
+	if got := reminderStatus(t, db, "task"); got != persistence.ReminderStatusSent {
+		t.Errorf("statut = %q, attendu sent", got)
+	}
+}
+
+// Une tâche dont l'exécution échoue n'envoie rien et ne réarme pas sa
+// récurrence : un échec quotidien silencieux serait pire qu'un arrêt visible.
+func TestDispatcher_ScheduledTaskFailureDoesNotDeliver(t *testing.T) {
+	db := testDB(t)
+	provider := memory.NewProvider(memory.WithChannels(courier.NewChannel("chan-alice", courier.ChannelKindDirect, "Alice")))
+	t.Cleanup(func() { _ = provider.Close() })
+
+	task := baseTask("task", "memory", "2026-08-17T11:59:00Z")
+	task.Recurrence = "0 8 * * *"
+	task.Timezone = "Europe/Paris"
+	insertReminder(t, db, task)
+
+	runner := &stubRunner{err: context.DeadlineExceeded}
+	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+		WithTaskRunner(runner).
+		WithClock(func() time.Time { return dispatcherTestNow })
+
+	if err := d.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	if len(provider.Sent()) != 0 {
+		t.Errorf("messages envoyés = %d, attendu 0 : rien ne doit partir quand le travail a échoué", len(provider.Sent()))
+	}
+	if got := reminderStatus(t, db, "task"); got != persistence.ReminderStatusFailed {
+		t.Errorf("statut = %q, attendu failed", got)
+	}
+}
+
+// Sans exécuteur câblé, une tâche échue échoue franchement plutôt que de
+// délivrer un message vide présenté comme le travail demandé.
+func TestDispatcher_ScheduledTaskWithoutRunnerFails(t *testing.T) {
+	db := testDB(t)
+	provider := memory.NewProvider(memory.WithChannels(courier.NewChannel("chan-alice", courier.ChannelKindDirect, "Alice")))
+	t.Cleanup(func() { _ = provider.Close() })
+
+	insertReminder(t, db, baseTask("task", "memory", "2026-08-17T11:59:00Z"))
+
+	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+		WithClock(func() time.Time { return dispatcherTestNow })
+
+	if err := d.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	if len(provider.Sent()) != 0 {
+		t.Errorf("messages envoyés = %d, attendu 0", len(provider.Sent()))
+	}
+	if got := reminderStatus(t, db, "task"); got != persistence.ReminderStatusFailed {
+		t.Errorf("statut = %q, attendu failed", got)
+	}
+}

@@ -42,6 +42,8 @@ type Metrics struct {
 	memorySearches           atomic.Int64
 	remindersCreated         atomic.Int64
 	remindersSent            atomic.Int64
+	scheduledTasksCreated    atomic.Int64
+	scheduledTasksRun        atomic.Int64
 	conversationsCompacted   atomic.Int64
 	memoriesExtracted        atomic.Int64
 	memoriesConsolidated     atomic.Int64
@@ -276,6 +278,24 @@ func (m *Metrics) IncReminderCreated() {
 	m.remindersCreated.Add(1)
 }
 
+// IncScheduledTaskCreated incrémente le compteur de tâches planifiées créées
+// via l'outil schedule_task.
+func (m *Metrics) IncScheduledTaskCreated() {
+	if m == nil {
+		return
+	}
+	m.scheduledTasksCreated.Add(1)
+}
+
+// IncScheduledTaskRun incrémente le compteur d'exécutions de tâches
+// planifiées menées à bien par le dispatcher (internal/reminder).
+func (m *Metrics) IncScheduledTaskRun() {
+	if m == nil {
+		return
+	}
+	m.scheduledTasksRun.Add(1)
+}
+
 // IncReminderSent incrémente le compteur de rappels ponctuels effectivement
 // délivrés par le dispatcher (internal/reminder).
 func (m *Metrics) IncReminderSent() {
@@ -387,6 +407,8 @@ func (m *Metrics) Snapshot() map[string]any {
 		"memory_searches":             m.memorySearches.Load(),
 		"reminders_created":           m.remindersCreated.Load(),
 		"reminders_sent":              m.remindersSent.Load(),
+		"scheduled_tasks_created":     m.scheduledTasksCreated.Load(),
+		"scheduled_tasks_run":         m.scheduledTasksRun.Load(),
 		"conversations_compacted":     m.conversationsCompacted.Load(),
 		"memories_extracted":          m.memoriesExtracted.Load(),
 		"memories_consolidated":       m.memoriesConsolidated.Load(),

@@ -44,6 +44,17 @@ type ReminderTools struct {
 	Repo       *persistence.ReminderRepository
 	Authorizer *authorization.Authorizer
 
+	// Tasks expose en plus les outils de tâches planifiées (schedule_task,
+	// list_scheduled_tasks, cancel_scheduled_task). Contrairement à un
+	// rappel, qui délivre un texte figé, une tâche fait TRAVAILLER un agent
+	// à l'échéance : elle n'est proposée que si un exécuteur est réellement
+	// câblé côté dispatcher (voir internal/registry), sinon l'assistant
+	// promettrait un travail que personne ne ferait.
+	Tasks bool
+	// AgentName est l'agent figé sur les tâches créées ici : celui qui les
+	// exécutera. Voir migration 0007.
+	AgentName string
+
 	// Now permet aux tests de fixer l'horloge ; nil vaut time.Now.
 	Now func() time.Time
 
@@ -71,24 +82,36 @@ func (t ReminderTools) buildReminderTools(identity model.ExecutionIdentity) []ll
 		return nil
 	}
 
-	return []llm.Tool{
+	tools := []llm.Tool{
 		t.newCreateReminderTool(identity),
 		t.newListRemindersTool(identity),
 		t.newCancelReminderTool(identity),
 	}
+
+	if t.Tasks {
+		tools = append(tools,
+			t.newScheduleTaskTool(identity),
+			t.newListScheduledTasksTool(identity),
+			t.newCancelScheduledTaskTool(identity),
+		)
+	}
+
+	return tools
 }
 
-// authorize vérifie la permission reminder.<scope>.<action> pour la portée
-// de la conversation courante et retourne cette portée.
-func (t ReminderTools) authorize(ctx context.Context, identity model.ExecutionIdentity, action string) (model.Scope, error) {
+// authorize vérifie la permission <domain>.<scope>.<action> pour la portée
+// de la conversation courante et retourne cette portée. domain vaut
+// "reminder" ou "task" : programmer un travail de l'assistant est un
+// pouvoir distinct de poser un pense-bête, et se donne séparément.
+func (t ReminderTools) authorize(ctx context.Context, identity model.ExecutionIdentity, domain, action string) (model.Scope, error) {
 	scope, ok := writeScope(identity)
 	if !ok {
-		return "", fmt.Errorf("les rappels ne sont pas disponibles dans ce contexte d'exécution")
+		return "", fmt.Errorf("reminders and scheduled tasks are not available in this execution context")
 	}
 
 	err := t.Authorizer.Authorize(ctx, authorization.AuthorizationRequest{
 		Identity:      identity,
-		Permission:    fmt.Sprintf("reminder.%s.%s", scope, action),
+		Permission:    fmt.Sprintf("%s.%s.%s", domain, scope, action),
 		TargetOrgID:   identity.OrgID,
 		TargetScope:   scope,
 		TargetScopeID: scopeID(scope, identity),
@@ -102,67 +125,33 @@ func (t ReminderTools) authorize(ctx context.Context, identity model.ExecutionId
 
 func (t ReminderTools) newCreateReminderTool(identity model.ExecutionIdentity) llm.Tool {
 	schema := llm.NewJSONSchema().
-		Property("fire_at", "Date et heure d'un rappel PONCTUEL au format RFC 3339 avec décalage horaire (ex: 2026-08-18T09:00:00+02:00), calculée à partir de la date et l'heure courantes du contexte d'exécution. Ignoré si 'recurrence' est fourni.", "string").
-		Property("recurrence", "Expression cron standard à 5 champs pour un rappel RÉCURRENT (ex: '0 20 * * 2' pour chaque mardi à 20h). L'application calcule elle-même la première occurrence.", "string").
-		Property("timezone", "Fuseau IANA dans lequel évaluer 'recurrence' (ex: 'Europe/Paris'). Par défaut, le fuseau du serveur, visible dans la date courante du contexte d'exécution.", "string").
-		RequiredProperty("message", "Texte du rappel, tel qu'il sera envoyé dans la conversation à chaque échéance.", "string")
+		Property("fire_at", "RFC 3339 date-time with offset for a ONE-OFF reminder (e.g. 2026-08-18T09:00:00+02:00), derived from the current date and time given in the execution context. Ignored when 'recurrence' is set.", "string").
+		Property("recurrence", "Standard 5-field cron expression for a REPEATING reminder (e.g. '0 20 * * 2' for every Tuesday at 8pm). The application computes the first occurrence itself.", "string").
+		Property("timezone", "IANA timezone used to evaluate 'recurrence' (e.g. 'Europe/Paris'). Defaults to the server timezone shown in the execution context.", "string").
+		RequiredProperty("message", "The reminder text, sent to the conversation as is at each due time.", "string")
 
 	return llm.NewFuncTool(
 		"create_reminder",
-		"Programme un rappel dans la conversation courante : ponctuel avec 'fire_at', ou récurrent avec 'recurrence' (cron). Utiliser pour « rappelle-moi ... », « préviens-nous chaque ... ». Un rappel récurrent se répète jusqu'à son annulation (cancel_reminder).",
+		"Schedule a plain reminder in the current conversation: one-off with 'fire_at', repeating with 'recurrence' (cron). Its text is delivered AS IS, no work is done at the due time. Use it for \"remind me to ...\", \"ping us every ...\". Use schedule_task instead when the due time requires actual work (a weather report, a summary).",
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			message := strings.TrimSpace(stringParam(params, "message"))
 			if message == "" {
-				return llm.NewToolResult("erreur: le paramètre 'message' est requis et ne peut pas être vide."), nil
+				return llm.NewToolResult("error: 'message' is required and cannot be empty."), nil
 			}
 			if len(message) > reminderMaxMessageLen {
-				return llm.NewToolResult(fmt.Sprintf("erreur: message trop long (%d caractères, maximum %d).", len(message), reminderMaxMessageLen)), nil
+				return llm.NewToolResult(fmt.Sprintf("error: message too long (%d characters, maximum %d).", len(message), reminderMaxMessageLen)), nil
 			}
 
 			now := t.now()
-			recurrence := strings.TrimSpace(stringParam(params, "recurrence"))
-			timezone := strings.TrimSpace(stringParam(params, "timezone"))
 
-			var fireAt time.Time
-
-			if recurrence != "" {
-				schedule, err := cron.ParseStandard(recurrence)
-				if err != nil {
-					return llm.NewToolResult(fmt.Sprintf("erreur: 'recurrence' invalide (%v). Format attendu: expression cron standard à 5 champs, ex: '0 20 * * 2'.", err)), nil
-				}
-
-				loc := time.Local
-				if timezone != "" {
-					loc, err = time.LoadLocation(timezone)
-					if err != nil {
-						return llm.NewToolResult(fmt.Sprintf("erreur: 'timezone' inconnu (%v). Format attendu: nom IANA, ex: 'Europe/Paris'.", err)), nil
-					}
-				} else {
-					timezone = loc.String()
-				}
-
-				fireAt = schedule.Next(now.In(loc))
-				if fireAt.IsZero() {
-					return llm.NewToolResult("erreur: cette expression cron n'a aucune occurrence future."), nil
-				}
-			} else {
-				var err error
-				fireAt, err = time.Parse(time.RFC3339, strings.TrimSpace(stringParam(params, "fire_at")))
-				if err != nil {
-					return llm.NewToolResult(fmt.Sprintf("erreur: 'fire_at' invalide (%v). Format attendu: RFC 3339 avec décalage horaire, ex: 2026-08-18T09:00:00+02:00 — ou fournir 'recurrence' pour un rappel récurrent.", err)), nil
-				}
-
-				if !fireAt.After(now) {
-					return llm.NewToolResult(fmt.Sprintf("erreur: 'fire_at' (%s) est déjà passé (heure courante: %s).", fireAt.Format(time.RFC3339), now.Format(time.RFC3339))), nil
-				}
-				if fireAt.Sub(now) > reminderMaxHorizon {
-					return llm.NewToolResult("erreur: 'fire_at' est à plus d'un an ; vérifier la date avant de réessayer."), nil
-				}
+			fireAt, recurrence, timezone, problem := parseSchedule(params, now)
+			if problem != "" {
+				return llm.NewToolResult(problem), nil
 			}
 
-			if _, err := t.authorize(ctx, identity, "write"); err != nil {
-				return llm.NewToolResult(fmt.Sprintf("création de rappel refusée: %v", err)), nil
+			if _, err := t.authorize(ctx, identity, "reminder", "write"); err != nil {
+				return llm.NewToolResult(fmt.Sprintf("reminder creation refused: %v", err)), nil
 			}
 
 			rem := persistence.Reminder{
@@ -178,22 +167,23 @@ func (t ReminderTools) newCreateReminderTool(identity model.ExecutionIdentity) l
 				CreatedAt:      now.UTC().Format(time.RFC3339),
 				Recurrence:     recurrence,
 				Timezone:       timezone,
+				Kind:           persistence.ReminderKindMessage,
 			}
 
 			err := t.DB.WithTx(ctx, func(tx *sql.Tx) error {
 				return t.Repo.Insert(ctx, tx, rem)
 			})
 			if err != nil {
-				return llm.NewToolResult(fmt.Sprintf("échec de la création du rappel: %v", err)), nil
+				return llm.NewToolResult(fmt.Sprintf("could not create the reminder: %v", err)), nil
 			}
 
 			t.Metrics.IncReminderCreated()
 
 			if recurrence != "" {
-				return llm.NewToolResult(fmt.Sprintf("Rappel récurrent programmé (%s, fuseau %s), prochaine occurrence %s (id: %s).", recurrence, timezone, fireAt.Format(time.RFC3339), rem.ID)), nil
+				return llm.NewToolResult(fmt.Sprintf("Repeating reminder scheduled (%s, timezone %s), next occurrence %s (id: %s).", recurrence, timezone, fireAt.Format(time.RFC3339), rem.ID)), nil
 			}
 
-			return llm.NewToolResult(fmt.Sprintf("Rappel programmé pour %s (id: %s).", fireAt.Format(time.RFC3339), rem.ID)), nil
+			return llm.NewToolResult(fmt.Sprintf("Reminder scheduled for %s (id: %s).", fireAt.Format(time.RFC3339), rem.ID)), nil
 		},
 	)
 }
@@ -201,32 +191,32 @@ func (t ReminderTools) newCreateReminderTool(identity model.ExecutionIdentity) l
 func (t ReminderTools) newListRemindersTool(identity model.ExecutionIdentity) llm.Tool {
 	return llm.NewFuncTool(
 		"list_reminders",
-		"Liste les rappels en attente de la conversation courante, avec leur identifiant (utilisable par cancel_reminder) et leur échéance.",
+		"List the pending reminders of the current conversation, with their id (for cancel_reminder) and due time.",
 		llm.NewJSONSchema(),
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
-			if _, err := t.authorize(ctx, identity, "read"); err != nil {
-				return llm.NewToolResult(fmt.Sprintf("liste des rappels refusée: %v", err)), nil
+			if _, err := t.authorize(ctx, identity, "reminder", "read"); err != nil {
+				return llm.NewToolResult(fmt.Sprintf("listing refused: %v", err)), nil
 			}
 
 			var reminders []persistence.Reminder
 			err := t.DB.WithTx(ctx, func(tx *sql.Tx) error {
 				var err error
-				reminders, err = t.Repo.ListPendingByConversation(ctx, tx, string(identity.ConversationID))
+				reminders, err = t.Repo.ListPendingByConversation(ctx, tx, string(identity.ConversationID), persistence.ReminderKindMessage)
 				return err
 			})
 			if err != nil {
-				return llm.NewToolResult(fmt.Sprintf("échec de la liste des rappels: %v", err)), nil
+				return llm.NewToolResult(fmt.Sprintf("could not list the reminders: %v", err)), nil
 			}
 
 			if len(reminders) == 0 {
-				return llm.NewToolResult("Aucun rappel en attente dans cette conversation."), nil
+				return llm.NewToolResult("No pending reminder in this conversation."), nil
 			}
 
 			var b strings.Builder
-			b.WriteString("Rappels en attente :\n")
+			b.WriteString("Pending reminders:\n")
 			for i, rem := range reminders {
 				if rem.Recurrence != "" {
-					fmt.Fprintf(&b, "%d. [id: %s] récurrent (%s, %s), prochaine occurrence %s — %s\n", i+1, rem.ID, rem.Recurrence, rem.Timezone, rem.FireAt, rem.Message)
+					fmt.Fprintf(&b, "%d. [id: %s] repeating (%s, %s), next occurrence %s — %s\n", i+1, rem.ID, rem.Recurrence, rem.Timezone, rem.FireAt, rem.Message)
 					continue
 				}
 				fmt.Fprintf(&b, "%d. [id: %s] %s — %s\n", i+1, rem.ID, rem.FireAt, rem.Message)
@@ -239,20 +229,20 @@ func (t ReminderTools) newListRemindersTool(identity model.ExecutionIdentity) ll
 
 func (t ReminderTools) newCancelReminderTool(identity model.ExecutionIdentity) llm.Tool {
 	schema := llm.NewJSONSchema().
-		RequiredProperty("id", "Identifiant du rappel à annuler, obtenu via list_reminders ou lors de la création.", "string")
+		RequiredProperty("id", "Id of the reminder to cancel, as returned by list_reminders or when it was created.", "string")
 
 	return llm.NewFuncTool(
 		"cancel_reminder",
-		"Annule un rappel en attente de la conversation courante.",
+		"Cancel a pending reminder of the current conversation.",
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			id := strings.TrimSpace(stringParam(params, "id"))
 			if id == "" {
-				return llm.NewToolResult("erreur: le paramètre 'id' est requis."), nil
+				return llm.NewToolResult("error: 'id' is required."), nil
 			}
 
-			if _, err := t.authorize(ctx, identity, "delete"); err != nil {
-				return llm.NewToolResult(fmt.Sprintf("annulation de rappel refusée: %v", err)), nil
+			if _, err := t.authorize(ctx, identity, "reminder", "delete"); err != nil {
+				return llm.NewToolResult(fmt.Sprintf("reminder cancellation refused: %v", err)), nil
 			}
 
 			var outcome string
@@ -264,9 +254,11 @@ func (t ReminderTools) newCancelReminderTool(identity model.ExecutionIdentity) l
 
 				// Cloisonnement : un rappel n'est visible et annulable que
 				// depuis la conversation où il a été créé — jamais depuis un
-				// autre canal, même pour le même principal.
-				if !found || rem.ConversationID != identity.ConversationID {
-					outcome = fmt.Sprintf("aucun rappel en attente avec l'identifiant %q dans cette conversation.", id)
+				// autre canal, même pour le même principal. Le filtre de
+				// nature évite en outre qu'une tâche planifiée disparaisse
+				// par un cancel_reminder.
+				if !found || rem.ConversationID != identity.ConversationID || rem.Kind != persistence.ReminderKindMessage {
+					outcome = fmt.Sprintf("no pending reminder with id %q in this conversation.", id)
 					return nil
 				}
 
@@ -275,18 +267,65 @@ func (t ReminderTools) newCancelReminderTool(identity model.ExecutionIdentity) l
 					return err
 				}
 				if !ok {
-					outcome = fmt.Sprintf("le rappel %q n'est plus en attente (déjà envoyé ou annulé).", id)
+					outcome = fmt.Sprintf("reminder %q is no longer pending (already sent or cancelled).", id)
 					return nil
 				}
 
-				outcome = fmt.Sprintf("Rappel %q annulé.", id)
+				outcome = fmt.Sprintf("Reminder %q cancelled.", id)
 				return nil
 			})
 			if err != nil {
-				return llm.NewToolResult(fmt.Sprintf("échec de l'annulation du rappel: %v", err)), nil
+				return llm.NewToolResult(fmt.Sprintf("could not cancel the reminder: %v", err)), nil
 			}
 
 			return llm.NewToolResult(outcome), nil
 		},
 	)
+}
+
+// parseSchedule interprète les paramètres d'échéance communs aux rappels et
+// aux tâches planifiées : soit 'recurrence' (cron + fuseau), soit 'fire_at'
+// (RFC 3339). problem, non vide, est le message d'erreur à rendre au modèle
+// — jamais une erreur Go : une échéance mal formulée est une chose que le
+// modèle peut corriger lui-même au tour suivant.
+func parseSchedule(params map[string]any, now time.Time) (fireAt time.Time, recurrence, timezone string, problem string) {
+	recurrence = strings.TrimSpace(stringParam(params, "recurrence"))
+	timezone = strings.TrimSpace(stringParam(params, "timezone"))
+
+	if recurrence != "" {
+		schedule, err := cron.ParseStandard(recurrence)
+		if err != nil {
+			return time.Time{}, "", "", fmt.Sprintf("error: invalid 'recurrence' (%v). Expected a standard 5-field cron expression, e.g. '0 20 * * 2'.", err)
+		}
+
+		loc := time.Local
+		if timezone != "" {
+			loc, err = time.LoadLocation(timezone)
+			if err != nil {
+				return time.Time{}, "", "", fmt.Sprintf("error: unknown 'timezone' (%v). Expected an IANA name, e.g. 'Europe/Paris'.", err)
+			}
+		} else {
+			timezone = loc.String()
+		}
+
+		fireAt = schedule.Next(now.In(loc))
+		if fireAt.IsZero() {
+			return time.Time{}, "", "", "error: this cron expression has no future occurrence."
+		}
+
+		return fireAt, recurrence, timezone, ""
+	}
+
+	fireAt, err := time.Parse(time.RFC3339, strings.TrimSpace(stringParam(params, "fire_at")))
+	if err != nil {
+		return time.Time{}, "", "", fmt.Sprintf("error: invalid 'fire_at' (%v). Expected RFC 3339 with offset, e.g. 2026-08-18T09:00:00+02:00 — or set 'recurrence' for a repeating occurrence.", err)
+	}
+	if !fireAt.After(now) {
+		return time.Time{}, "", "", fmt.Sprintf("error: 'fire_at' (%s) is already past (current time: %s).", fireAt.Format(time.RFC3339), now.Format(time.RFC3339))
+	}
+	if fireAt.Sub(now) > reminderMaxHorizon {
+		return time.Time{}, "", "", "error: 'fire_at' is more than a year away; check the date before retrying."
+	}
+
+	return fireAt, "", "", ""
 }

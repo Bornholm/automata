@@ -234,11 +234,11 @@ func formatMemoryList(memories []memory.Memory) string {
 // déterminée par identity (PLAN.md, Phase 10).
 func (t MemoryTools) newSearchMemoryTool(identity model.ExecutionIdentity) llm.Tool {
 	schema := llm.NewJSONSchema().
-		RequiredProperty("query", "Texte de recherche dans la mémoire.", "string")
+		RequiredProperty("query", "Search text.", "string")
 
 	return llm.NewFuncTool(
 		"search_memory",
-		"Recherche dans la mémoire persistante de l'assistant, cloisonnée automatiquement selon la conversation courante.",
+		"Search the assistant's persistent memory. Scoping to the current conversation is automatic.",
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			query, _ := params["query"].(string)
@@ -263,11 +263,11 @@ func (t MemoryTools) newSearchMemoryTool(identity model.ExecutionIdentity) llm.T
 // courante (jamais org, voir writeScope).
 func (t MemoryTools) newRememberTool(identity model.ExecutionIdentity) llm.Tool {
 	schema := llm.NewJSONSchema().
-		RequiredProperty("content", "Contenu textuel à mémoriser durablement.", "string")
+		RequiredProperty("content", "Text to store durably.", "string")
 
 	return llm.NewFuncTool(
 		"remember",
-		"Enregistre une information dans la mémoire persistante de l'assistant, dans la portée de la conversation courante.",
+		"Store a piece of information in the assistant's persistent memory, within the scope of the current conversation.",
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			content, _ := params["content"].(string)
@@ -323,12 +323,12 @@ func (t MemoryTools) newRememberTool(identity model.ExecutionIdentity) llm.Tool 
 // au sein de ce tour d'outil.
 func (t MemoryTools) newForgetMemoryTool(identity model.ExecutionIdentity, collector *proposalCollector) llm.Tool {
 	schema := llm.NewJSONSchema().
-		Property("query", "Texte décrivant la ou les mémoires à supprimer. À utiliser seul, sans 'id', pour obtenir une liste numérotée de candidats.", "string").
-		Property("id", "Identifiant précis d'une mémoire à supprimer, obtenu via une recherche préalable (search_memory ou un appel précédent de forget_memory avec 'query').", "string")
+		Property("query", "Text describing the entries to delete. Use it alone, without 'id', to get a numbered list of candidates.", "string").
+		Property("id", "Exact id of the entry to delete, obtained from a prior search (search_memory, or an earlier forget_memory call with 'query').", "string")
 
 	return llm.NewFuncTool(
 		"forget_memory",
-		"Propose la suppression d'une mémoire de la mémoire persistante. Une requête textuelle seule ne supprime jamais rien : elle ne fait que lister des candidats. Un 'id' précis propose une suppression, qui ne sera exécutée qu'après confirmation explicite de l'utilisateur dans la conversation (répondre \"confirmer\").",
+		"Propose deleting an entry from persistent memory. A text query alone never deletes anything: it only lists candidates. A precise 'id' proposes a deletion, carried out only after the user explicitly confirms in the conversation (replying \"confirmer\").",
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			query := strings.TrimSpace(stringParam(params, "query"))

@@ -142,9 +142,21 @@ agents:
       remember: true
       forget: true
     # Outils de rappels ponctuels (« rappelle-moi demain à 9h... ») :
-    # create_reminder, list_reminders, cancel_reminder. Chaque appel reste
-    # soumis aux permissions reminder.<scope>.<action> du principal.
+    # create_reminder, list_reminders, cancel_reminder. Un texte figé,
+    # délivré tel quel à l'échéance. Chaque appel reste soumis aux
+    # permissions reminder.<scope>.<action> du principal.
     reminders: true
+    # Outils de tâches planifiées (« chaque matin, un bulletin météo ») :
+    # schedule_task, list_scheduled_tasks, cancel_scheduled_task. À
+    # l'échéance, l'agent TRAVAILLE avec ses outils et sa réponse est
+    # envoyée dans la conversation — c'est toute la différence avec un
+    # rappel.
+    #
+    # L'exécution est en lecture seule stricte : les actions sensibles
+    # proposées pendant un tour planifié sont ignorées, personne n'étant
+    # devant l'écran pour les confirmer. Soumis aux permissions
+    # task.<scope>.<action>, distinctes de reminder.<scope>.<action>.
+    scheduled_tasks: true
     limits:
       # Nombre de tours d'appels d'outils enchaînés dans un même échange.
       max_sequential_tool_calls: 8
@@ -366,6 +378,14 @@ identities:
         - reminder.group.read
         - reminder.group.write
         - reminder.group.delete
+        # Programmer un travail de l'assistant est un pouvoir distinct de
+        # poser un pense-bête : il se donne séparément.
+        - task.personal.read
+        - task.personal.write
+        - task.personal.delete
+        - task.group.read
+        - task.group.write
+        - task.group.delete
         - calendar.personal.read
         - calendar.personal.write
         - calendar.group.read

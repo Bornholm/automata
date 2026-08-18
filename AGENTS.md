@@ -15,6 +15,12 @@ Règles d'implémentation pour ce dépôt. Voir `PLAN.md` pour le plan complet.
 - Vocabulaire francophone du dépôt : employer exclusivement `org`, jamais
   `family`.
 - Ne pas déplacer les règles de sécurité dans les prompts.
+- Tout ce qui part vers le modèle s'écrit en ANGLAIS : prompts (`prompts/`,
+  `InvariantRules`, `honestyRules`, blocs de contexte), descriptions et
+  paramètres d'outils, résultats d'outils. C'est du budget de tokens payé à
+  chaque tour. Le code, les commentaires, les journaux, la documentation et
+  les messages destinés à l'utilisateur restent en français ; les prompts
+  demandent explicitement de répondre dans la langue du message reçu.
 - Ne pas exposer les identifiants de ressources externes aux modèles.
 - Ne pas stocker les audios ou transcriptions.
 - Les pièces jointes non vocales (images, documents) sont conservées, elles :

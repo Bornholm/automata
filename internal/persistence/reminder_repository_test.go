@@ -119,7 +119,7 @@ func TestReminderRepository_ListPendingByConversationIsolates(t *testing.T) {
 	var mine []persistence.Reminder
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		var err error
-		mine, err = repo.ListPendingByConversation(context.Background(), tx, "conv-alice")
+		mine, err = repo.ListPendingByConversation(context.Background(), tx, "conv-alice", persistence.ReminderKindMessage)
 		return err
 	})
 	if err != nil {

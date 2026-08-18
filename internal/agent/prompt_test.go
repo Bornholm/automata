@@ -138,11 +138,17 @@ func TestBuildSystemPrompt_ContainsHonestyRules(t *testing.T) {
 
 	for name, cfg := range cfgs {
 		prompt := agent.BuildSystemPrompt(name, cfg)
-		if !strings.Contains(prompt, "## Limites et honnêteté") {
+		if !strings.Contains(prompt, "## Limits and honesty") {
 			t.Errorf("le prompt de %q doit contenir la section codée en dur sur les limites et l'honnêteté", name)
 		}
-		if !strings.Contains(prompt, "N'annonce donc jamais une action à venir") {
+		if !strings.Contains(prompt, "never announce a future action") {
 			t.Errorf("le prompt de %q doit interdire d'annoncer une action future", name)
+		}
+		// Le durcissement anti-fausse confirmation est codé en dur, hors de
+		// portée de la configuration : c'est le garde-fou qui rattrape un
+		// prompt d'agent mal rédigé.
+		if !strings.Contains(prompt, "unless a\ntool call in THIS turn returned success") {
+			t.Errorf("le prompt de %q doit interdire d'annoncer une action non exécutée", name)
 		}
 	}
 }

@@ -199,6 +199,12 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 		agentReminderTools := ReminderTools{}
 		if agentCfg.Reminders {
 			agentReminderTools = reminderTools
+			agentReminderTools.AgentName = name
+			// Les outils de tâches ne s'ajoutent que si l'agent les déclare
+			// ET qu'un exécuteur est câblé (reminderTools.Tasks) : promettre
+			// un travail que rien n'exécutera serait pire que ne pas le
+			// proposer.
+			agentReminderTools.Tasks = reminderTools.Tasks && agentCfg.ScheduledTasks
 		}
 
 		agents[name] = orchestrator.

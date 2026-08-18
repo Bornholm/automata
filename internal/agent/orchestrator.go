@@ -181,17 +181,17 @@ func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentit
 // s'adapter (PLAN.md Phase 8, test "spécialiste en erreur").
 func newDelegationTool(agentID, description string, specialist delegation.Specialist, identity model.ExecutionIdentity, attachments []media.Media, collector *proposalCollector, mediaCollector *mediaCollector, metrics *observability.Metrics) llm.Tool {
 	schema := llm.NewJSONSchema().
-		RequiredProperty("goal", "Objectif précis à atteindre par le spécialiste.", "string").
-		Property("relevant_input", "Éléments de contexte explicitement nécessaires à la tâche, formulés en clair. Ne jamais transmettre l'historique complet de la conversation.", "string").
-		Property("constraints", "Contraintes additionnelles à respecter par le spécialiste.", "array", map[string]any{"type": "string"}, "items")
+		RequiredProperty("goal", "Precise objective for the specialist to reach.", "string").
+		Property("relevant_input", "Context strictly needed for the task, spelled out. Never pass the whole conversation history.", "string").
+		Property("constraints", "Additional constraints the specialist must respect.", "array", map[string]any{"type": "string"}, "items")
 
 	// La description du spécialiste (agents.<nom>.description) est ce sur
 	// quoi le modèle décide de déléguer ou non : sans elle il ne connaît que
 	// le nom du délégué, et un petit modèle préfère répondre qu'il ne sait
 	// pas faire plutôt que d'appeler un outil dont il ignore la portée.
-	toolDescription := fmt.Sprintf("Délègue une tâche au spécialiste %q et retourne un résumé de son résultat.", agentID)
+	toolDescription := fmt.Sprintf("Delegate a task to the %q specialist and get a summary of its result.", agentID)
 	if strings.TrimSpace(description) != "" {
-		toolDescription = fmt.Sprintf("Délègue une tâche au spécialiste %q, qui %s. Retourne un résumé de son résultat.", agentID, strings.TrimSpace(description))
+		toolDescription = fmt.Sprintf("Delegate a task to the %q specialist, which %s. Returns a summary of its result.", agentID, strings.TrimSpace(description))
 	}
 
 	return llm.NewFuncTool(
