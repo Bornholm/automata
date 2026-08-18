@@ -248,6 +248,17 @@ mcp_servers:
     # Aucune ressource, aucune confirmation : tous les outils s'exécutent
     # directement. C'est le réglage d'un service en lecture seule.
 
+  # Un serveur http peut aussi porter des patrons {{nom}} dans url et
+  # headers, résolus PAR PRINCIPAL via identities.principals[].mcp : chacun
+  # obtient sa propre connexion avec SA clé. Préférer un en-tête à une clé
+  # en variable d'URL quand le serveur le permet (une URL fuit dans les
+  # journaux intermédiaires).
+  # meteo:
+  #   transport: http
+  #   url: https://mcp.example.com/tenants/{{tenant}}/mcp
+  #   headers:
+  #     X-Api-Key: "{{api_key}}"
+
   # Serveur lancé localement en sous-processus (transport stdio). Les
   # patrons {{nom}} de command et env sont résolus PAR PRINCIPAL via
   # identities.principals[].mcp.imap.values : chacun obtient son propre
