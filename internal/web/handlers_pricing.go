@@ -33,6 +33,8 @@ func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
 		}
 
 		page.USDPerCredit = trimFloat(p.USDPerCredit)
+		page.TargetMargin = trimFloat(p.TargetMargin)
+		page.CreditCost = fmt.Sprintf("%.5f €", p.CreditCostEUR())
 		page.EURPerUSD = trimFloat(p.EURPerUSD)
 		page.WelcomeCredits = p.WelcomeCredits
 		page.DefaultAllowance = p.DefaultAllowance
@@ -87,6 +89,23 @@ func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
 			if pack.Credits > 0 {
 				row.PerThousand = formatEuros(pack.PriceEUR / float64(pack.Credits) * 1000)
 			}
+
+			// Marge de l'offre : c'est le seul endroit où l'on voit, avant
+			// de publier un tarif, s'il couvre le coût qu'il autorise.
+			if margin, ok := p.UnitMargin(pack.Credits, pack.PriceEUR); ok {
+				row.Margin = fmt.Sprintf("%.0f %%", margin)
+				switch {
+				case margin < 0:
+					row.MarginTone = "crit"
+					page.LossMaking++
+				case margin < p.TargetMargin:
+					row.MarginTone = "warn"
+				}
+				if margin < p.TargetMargin {
+					row.Recommended = formatEuros(p.RecommendedPrice(pack.Credits))
+				}
+			}
+
 			page.Packs = append(page.Packs, row)
 		}
 
@@ -190,6 +209,7 @@ func (s *Server) handlePricingSettings(w http.ResponseWriter, r *http.Request) {
 			persistence.SettingDefaultAllowance:   r.PostFormValue("default_allowance"),
 			persistence.SettingDefaultInputPrice:  r.PostFormValue("default_input"),
 			persistence.SettingDefaultOutputPrice: r.PostFormValue("default_output"),
+			persistence.SettingTargetMargin:       r.PostFormValue("target_margin"),
 		} {
 			value := strings.TrimSpace(strings.Replace(raw, ",", ".", 1))
 			if value == "" {

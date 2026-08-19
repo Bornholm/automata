@@ -1141,6 +1141,19 @@ coût couvert par un crédit, les crédits de bienvenue et l'allocation par
 défaut vivent en base et priment sur `web.credits`. Tant qu'aucune offre
 n'a été créée en ligne, celles de la configuration font foi.
 
+Deux réglages fixent l'économie du produit et se lisent ensemble : le
+**coût couvert par un crédit** (`usd_per_credit`) dit ce qu'un crédit doit
+payer d'inférence, et la **marge visée** (`target_margin`, 60 % par
+défaut) dit ce qu'il doit rapporter en plus. L'écran calcule alors, pour
+chaque offre, sa marge réelle et le prix qui atteindrait la cible — et
+signale en rouge toute offre **vendue à perte**, avant qu'elle ne soit
+proposée aux clients plutôt qu'à la fin du mois.
+
+La marge visée n'est pas une contrainte : elle n'empêche pas de publier un
+tarif d'appel. Prévoyez-y de la place, car tout ne se facture pas — les
+crédits offerts, les coûts qu'un fournisseur ne rapporte pas, les appels
+échoués pèsent sur le résultat sans être payés par personne.
+
 L'écran de tarification affiche surtout la seule mesure qui compte pour
 l'exploitant : **crédits vendus contre coût réel** sur le mois, avec la
 marge estimée et le nombre d'appels dont le fournisseur n'a rapporté aucun

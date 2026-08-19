@@ -22,6 +22,40 @@ type pricing struct {
 	// Tarifs de repli appliqués aux modèles absents de la grille.
 	DefaultInput  float64
 	DefaultOutput float64
+	// TargetMargin est la marge visée sur la vente de crédits (%).
+	TargetMargin float64
+}
+
+// CreditCostEUR est ce qu'un crédit doit couvrir de coût réel, converti en
+// euros — le plancher sous lequel une offre est vendue à perte.
+func (p pricing) CreditCostEUR() float64 {
+	return p.USDPerCredit * p.EURPerUSD
+}
+
+// UnitMargin retourne la marge d'une offre, en pourcentage du prix payé.
+// Une valeur négative signale une vente à perte.
+func (p pricing) UnitMargin(credits int64, priceEUR float64) (float64, bool) {
+	if credits <= 0 || priceEUR <= 0 {
+		return 0, false
+	}
+
+	unitPrice := priceEUR / float64(credits)
+	if unitPrice <= 0 {
+		return 0, false
+	}
+
+	return (unitPrice - p.CreditCostEUR()) / unitPrice * 100, true
+}
+
+// RecommendedPrice retourne le prix qu'il faudrait demander pour un pack
+// afin d'atteindre la marge visée.
+func (p pricing) RecommendedPrice(credits int64) float64 {
+	margin := p.TargetMargin
+	if margin < 0 || margin >= 100 {
+		margin = persistence.DefaultTargetMargin
+	}
+
+	return float64(credits) * p.CreditCostEUR() / (1 - margin/100)
 }
 
 // defaultEURPerUSD sert d'ordre de grandeur pour comparer des recettes en
@@ -38,6 +72,7 @@ func (s *Server) pricing(ctx context.Context, q persistence.Querier) (pricing, e
 		EURPerUSD:        defaultEURPerUSD,
 		DefaultInput:     persistence.FallbackInputPrice,
 		DefaultOutput:    persistence.FallbackOutputPrice,
+		TargetMargin:     persistence.DefaultTargetMargin,
 	}
 
 	for key, target := range map[string]*float64{
@@ -45,6 +80,7 @@ func (s *Server) pricing(ctx context.Context, q persistence.Querier) (pricing, e
 		persistence.SettingEURPerUSD:          &p.EURPerUSD,
 		persistence.SettingDefaultInputPrice:  &p.DefaultInput,
 		persistence.SettingDefaultOutputPrice: &p.DefaultOutput,
+		persistence.SettingTargetMargin:       &p.TargetMargin,
 	} {
 		value, found, err := s.pricingRepo.GetSetting(ctx, q, key)
 		if err != nil {

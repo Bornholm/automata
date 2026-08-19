@@ -32,7 +32,18 @@ const (
 	// SettingEURPerUSD sert à comparer des recettes en euros à des coûts
 	// en dollars ; c'est une estimation, jamais une conversion comptable.
 	SettingEURPerUSD = "credits.eur_per_usd"
+	// SettingTargetMargin est la marge visée sur la vente de crédits, en
+	// pourcentage du prix payé. Elle ne contraint rien par elle-même :
+	// elle sert à calculer le prix recommandé d'une offre et à signaler
+	// celles qui passent en dessous — une offre vendue à perte doit se
+	// voir avant d'être publiée, pas à la fin du mois.
+	SettingTargetMargin = "credits.target_margin"
 )
+
+// DefaultTargetMargin est la marge visée par défaut : les coûts non
+// rapportés par les fournisseurs, les crédits offerts et les échecs
+// d'appels ne sont pas facturés au client mais pèsent sur le résultat.
+const DefaultTargetMargin = 60.0
 
 // PricingRepository donne accès aux packs de crédits et aux réglages de
 // l'instance (migration 0013).

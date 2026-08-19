@@ -12,6 +12,12 @@ type PricingPack struct {
 	// PerThousand rapporte le prix à mille crédits : c'est ce qui rend
 	// deux offres comparables d'un coup d'œil.
 	PerThousand string
+	// Margin est la marge de l'offre, en pourcentage du prix payé, et
+	// MarginTone la qualifie : sous la cible, ou vendue à perte.
+	Margin     string
+	MarginTone string
+	// Recommended est le prix qui atteindrait la marge visée.
+	Recommended string
 	Featured    bool
 	// FromConfig marque un pack encore issu du fichier de configuration :
 	// il n'est pas modifiable tant qu'il n'a pas été repris en base.
@@ -57,6 +63,12 @@ type PricingPage struct {
 	DefaultOutput string
 	// EstimatedShare décrit la part d'appels estimés sur la période.
 	EstimatedShare string
+	// TargetMargin est la marge visée sur la vente de crédits, et
+	// CreditCost ce qu'un crédit doit couvrir.
+	TargetMargin string
+	CreditCost   string
+	// LossMaking compte les offres vendues sous leur coût.
+	LossMaking int
 }
 
 // ModelPriceRow est une ligne de la grille tarifaire.
@@ -112,20 +124,36 @@ templ AdminPricing(page PricingPage) {
 					}
 				</div>
 			</div>
+			if page.LossMaking > 0 {
+				<div class="rounded-[11px] border border-crit-wash bg-crit-row px-5 py-4">
+					<div class="text-[15px] font-semibold text-crit-deep">
+						if page.LossMaking == 1 {
+							Une offre est vendue à perte
+						} else {
+							{ itoa(page.LossMaking) } offres sont vendues à perte
+						}
+					</div>
+					<div class="mt-1 text-sm leading-normal text-text-2">Leur prix ne couvre pas le coût d'inférence qu'elles autorisent : chaque achat creuse le résultat. Le prix conseillé est indiqué en face de chacune.</div>
+				</div>
+			}
 			<div class="flex items-start gap-5">
 				<div class="min-w-0 flex-1 overflow-hidden rounded-[11px] border border-line-2 bg-white">
-					<div class="border-b border-line-2 px-5 py-3.5 text-[15px] font-semibold text-ink">Offres proposées au profil</div>
+					<div class="flex items-baseline gap-3 border-b border-line-2 px-5 py-3.5">
+						<div class="text-[15px] font-semibold text-ink">Offres proposées au profil</div>
+						<div class="text-[13px] text-text-4">un crédit coûte { page.CreditCost }, marge visée { page.TargetMargin }</div>
+					</div>
 					if len(page.Packs) == 0 {
 						<div class="px-5 py-8 text-center text-sm text-text-4">Aucune offre. Sans pack, la page de crédits ne propose aucun achat.</div>
 					} else {
-						<div class="grid grid-cols-[1fr_1fr_1fr_auto] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
+						<div class="grid grid-cols-[1fr_1fr_1fr_1.2fr_auto] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
 							<div>Crédits</div>
 							<div>Prix</div>
 							<div>Pour mille</div>
+							<div>Marge</div>
 							<div></div>
 						</div>
 						for _, pack := range page.Packs {
-							<div class="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0">
+							<div class="grid grid-cols-[1fr_1fr_1fr_1.2fr_auto] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0">
 								<div class="flex items-center gap-2">
 									<span class="font-mono text-sm text-text">{ FormatInt(pack.Credits) }</span>
 									if pack.Featured {
@@ -134,6 +162,12 @@ templ AdminPricing(page PricingPage) {
 								</div>
 								<div class="font-mono text-sm text-text">{ pack.PriceEUR }</div>
 								<div class="font-mono text-sm text-text-3">{ pack.PerThousand }</div>
+								<div>
+									<div class={ "font-mono text-sm", marginToneClass(pack.MarginTone) }>{ pack.Margin }</div>
+									if pack.Recommended != "" {
+										<div class="mt-0.5 text-[12px] leading-snug text-text-4">viser { pack.Recommended }</div>
+									}
+								</div>
 								<div class="flex gap-2">
 									if pack.FromConfig {
 										<span class="text-[13px] text-text-4" title="Défini dans le fichier de configuration">Hérité du fichier</span>
@@ -180,6 +214,11 @@ templ AdminPricing(page PricingPage) {
 						<label class="block">
 							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Taux € par $ <span class="font-normal text-text-4">— estimation</span></span>
 							<input type="text" name="eur_per_usd" value={ page.EURPerUSD } class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+						</label>
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Marge visée (%)</span>
+							<input type="text" name="target_margin" value={ page.TargetMargin } class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+							<span class="mt-1.5 block text-[13px] leading-snug text-text-4">Sert à calculer le prix conseillé des offres et à signaler celles qui passent en dessous. Prévoyez de la place : les crédits offerts et les coûts non rapportés ne sont facturés à personne.</span>
 						</label>
 						<label class="block">
 							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Crédits de bienvenue</span>
@@ -259,5 +298,18 @@ templ AdminPricing(page PricingPage) {
 				</div>
 			</div>
 		</div>
+	}
+}
+
+// marginToneClass colore la marge d'une offre : une vente à perte doit se
+// voir sans avoir à lire le chiffre.
+func marginToneClass(tone string) string {
+	switch tone {
+	case "crit":
+		return "text-crit"
+	case "warn":
+		return "text-warn-deep"
+	default:
+		return "text-ok"
 	}
 }
