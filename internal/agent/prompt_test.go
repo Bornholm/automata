@@ -113,12 +113,15 @@ func TestBuildSystemPrompt_InvariantRulesPresentInAllAgents(t *testing.T) {
 
 func TestBuildContextBlock_ContainsAllowedVariablesOnly(t *testing.T) {
 	identity := model.ExecutionIdentity{
-		Scope:          model.ScopeGroup,
-		ChannelKind:    model.ChannelGroup,
-		OrgDisplayName: "Maison",
+		Scope:                model.ScopeGroup,
+		ChannelKind:          model.ChannelGroup,
+		OrgDisplayName:       "Maison",
+		PrincipalDisplayName: "Alice",
+		PrincipalID:          "alice-internal-id",
+		Trigger:              model.TriggerMessage,
 	}
 
-	block := agent.BuildContextBlock(identity, "agenda", time.Now())
+	block := agent.BuildContextBlock(identity, "Groupe principal", "agenda", time.Now())
 
 	if !strings.Contains(block, "agenda") {
 		t.Error("le bloc de contexte doit mentionner le nom de l'agent")
@@ -131,6 +134,37 @@ func TestBuildContextBlock_ContainsAllowedVariablesOnly(t *testing.T) {
 	}
 	if !strings.Contains(block, string(model.ChannelGroup)) {
 		t.Error("le bloc de contexte doit mentionner le type de canal")
+	}
+	if !strings.Contains(block, "Talking to: Alice") {
+		t.Error("le bloc de contexte doit nommer l'interlocuteur par son nom affiché")
+	}
+	if strings.Contains(block, "alice-internal-id") {
+		t.Error("l'identifiant interne du principal ne doit JAMAIS atteindre le modèle")
+	}
+	if !strings.Contains(block, "Channel name: Groupe principal") {
+		t.Error("le bloc de contexte doit mentionner le nom du canal")
+	}
+	if !strings.Contains(block, "Trigger: incoming user message") {
+		t.Error("le bloc de contexte doit mentionner le déclencheur")
+	}
+}
+
+// Une exécution planifiée ne répond à personne : le bloc de contexte doit le
+// dire au modèle, sinon il rédige comme s'il répondait à un message.
+func TestBuildContextBlock_ScheduledTriggerIsExplicit(t *testing.T) {
+	identity := model.ExecutionIdentity{
+		Trigger:     model.TriggerScheduledTask,
+		Scope:       model.ScopePersonal,
+		ChannelKind: model.ChannelPrivate,
+	}
+
+	block := agent.BuildContextBlock(identity, "", "main", time.Now())
+
+	if !strings.Contains(block, "a task you previously scheduled") {
+		t.Error("le bloc doit signaler l'exécution planifiée")
+	}
+	if strings.Contains(block, "Channel name:") {
+		t.Error("un canal sans nom ne doit pas produire de ligne vide")
 	}
 }
 

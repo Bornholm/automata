@@ -223,7 +223,7 @@ func (a *GenAIAgent) WithOrgSystemPrompts(prompts map[string]string) *GenAIAgent
 func buildChatMessages(systemPrompt, agentName string, textOnly bool, req Request) []llm.Message {
 	messages := make([]llm.Message, 0, len(req.History)+2)
 
-	systemMessage := systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, agentName, time.Now())
+	systemMessage := systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, req.Conversation.DisplayName, agentName, time.Now())
 
 	if req.Summary != "" {
 		systemMessage += "\n\n---\n\n## Résumé de la conversation antérieure\n\n" +

@@ -94,7 +94,12 @@ const (
 type ExecutionIdentity struct {
 	Trigger     Trigger
 	PrincipalID PrincipalID
-	OrgID       OrgID
+	// PrincipalDisplayName est le nom affiché du principal, tel que déclaré
+	// en configuration. C'est la seule désignation de l'interlocuteur qui
+	// atteint le modèle : PrincipalID reste un identifiant interne, jamais
+	// exposé (PLAN.md §7.3).
+	PrincipalDisplayName string
+	OrgID                OrgID
 	// OrgDisplayName est le nom affiché de l'organisation, résolu depuis la
 	// configuration en même temps que le reste de l'identité. Il voyage
 	// avec elle parce qu'une instance sert plusieurs organisations : le nom

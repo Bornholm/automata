@@ -90,6 +90,19 @@ func (r *TaskRunner) RunTask(ctx context.Context, task persistence.Reminder) (st
 	return reply, nil
 }
 
+// principalDisplayName retourne le nom affiché configuré du principal, ou
+// une chaîne vide s'il est inconnu — jamais l'identifiant interne, qui ne
+// doit pas atteindre le modèle.
+func principalDisplayName(cfg *config.Config, principalID string) string {
+	for _, p := range cfg.Identities.Principals {
+		if p.ID == principalID {
+			return p.DisplayName
+		}
+	}
+
+	return ""
+}
+
 // buildIdentity reconstruit l'identité d'exécution et la conversation d'une
 // tâche depuis ce qui a été figé à sa création, complété par la portée du
 // canal telle que déclarée en configuration.
@@ -121,16 +134,17 @@ func (r *TaskRunner) buildIdentity(task persistence.Reminder) (model.ExecutionId
 	}
 
 	identity := model.ExecutionIdentity{
-		PrincipalID:    task.PrincipalID,
-		OrgID:          task.OrgID,
-		OrgDisplayName: r.cfg.OrganizationDisplayName(string(task.OrgID)),
-		ConversationID: task.ConversationID,
-		Provider:       task.Provider,
-		ChannelID:      task.ChannelID,
-		ChannelKind:    channelKind,
-		Scope:          scope,
-		ScopeID:        scopeID,
-		Trigger:        model.TriggerScheduledTask,
+		PrincipalID:          task.PrincipalID,
+		PrincipalDisplayName: principalDisplayName(r.cfg, string(task.PrincipalID)),
+		OrgID:                task.OrgID,
+		OrgDisplayName:       r.cfg.OrganizationDisplayName(string(task.OrgID)),
+		ConversationID:       task.ConversationID,
+		Provider:             task.Provider,
+		ChannelID:            task.ChannelID,
+		ChannelKind:          channelKind,
+		Scope:                scope,
+		ScopeID:              scopeID,
+		Trigger:              model.TriggerScheduledTask,
 	}
 
 	conversation := model.Conversation{

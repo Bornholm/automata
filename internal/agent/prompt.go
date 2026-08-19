@@ -183,13 +183,14 @@ func buildCapabilitiesSection(agentCfg config.Agent) string {
 }
 
 // BuildContextBlock produit le bloc de contexte d'exécution injecté à
-// chaque requête, séparément du system prompt statique (PLAN.md §7.3). Il
-// se limite strictement aux variables autorisées par le plan : nom de
-// l'agent, nom de l'organisation, portée d'exécution, type de canal. Ce
-// n'est volontairement PAS un template interprété (pas de {{ }}) : il
-// s'agit d'une simple concaténation de texte, pour réduire les risques
-// d'injection et la complexité (PLAN.md §7.3, "il est préférable de ne pas
-// interpréter les prompts comme des templates").
+// chaque requête, séparément du system prompt statique (PLAN.md §7.3) :
+// nom de l'agent, nom de l'organisation, interlocuteur (nom affiché
+// configuré, jamais l'identifiant interne), canal (type et nom),
+// déclencheur, portée d'exécution, date et heure. Ce n'est volontairement
+// PAS un template interprété (pas de {{ }}) : il s'agit d'une simple
+// concaténation de texte, pour réduire les risques d'injection et la
+// complexité (PLAN.md §7.3, "il est préférable de ne pas interpréter les
+// prompts comme des templates").
 //
 // N'y sont jamais inclus : secrets, jetons MCP, identifiants internes ou
 // arguments bruts de sécurité — identity ne les porte de toute façon pas
@@ -206,7 +207,9 @@ func buildCapabilitiesSection(agentCfg config.Agent) string {
 // l'appelant : une instance sert plusieurs organisations, l'agent qui
 // répond est le même pour toutes, et seule l'identité résolue sait de
 // laquelle vient la requête.
-func BuildContextBlock(identity model.ExecutionIdentity, agentName string, now time.Time) string {
+// channelName est le nom affiché de la conversation (nom du groupe, par
+// exemple) ; vide, la ligne est omise.
+func BuildContextBlock(identity model.ExecutionIdentity, channelName string, agentName string, now time.Time) string {
 	var b strings.Builder
 
 	orgName := identity.OrgDisplayName
@@ -217,10 +220,36 @@ func BuildContextBlock(identity model.ExecutionIdentity, agentName string, now t
 	b.WriteString("## Execution context\n\n")
 	fmt.Fprintf(&b, "- Agent: %s\n", agentName)
 	fmt.Fprintf(&b, "- Organisation: %s\n", orgName)
+
+	// Le nom affiché seulement : dans un groupe, savoir QUI écrit change la
+	// réponse (préférences, tutoiement, permissions sociales), et une tâche
+	// planifiée doit savoir pour qui elle travaille.
+	if identity.PrincipalDisplayName != "" {
+		fmt.Fprintf(&b, "- Talking to: %s\n", identity.PrincipalDisplayName)
+	}
+
 	fmt.Fprintf(&b, "- Execution scope: %s\n", identity.Scope)
 	fmt.Fprintf(&b, "- Channel kind: %s\n", identity.ChannelKind)
+
+	if channelName != "" {
+		fmt.Fprintf(&b, "- Channel name: %s\n", channelName)
+	}
+
+	// Une exécution planifiée ne répond à personne : sans cette ligne, le
+	// modèle rédige « comme convenu, voici… » en s'adressant à un
+	// interlocuteur qui n'a rien demandé à cet instant.
+	switch identity.Trigger {
+	case model.TriggerScheduledTask:
+		b.WriteString("- Trigger: a task you previously scheduled (nobody just wrote to you; deliver the result directly)\n")
+	case model.TriggerCron:
+		b.WriteString("- Trigger: a configured schedule (nobody just wrote to you; deliver the result directly)\n")
+	default:
+		b.WriteString("- Trigger: incoming user message\n")
+	}
+
 	if !now.IsZero() {
-		fmt.Fprintf(&b, "- Current date and time: %s (%s)\n", now.Format(time.RFC3339), now.Weekday())
+		zone, _ := now.Zone()
+		fmt.Fprintf(&b, "- Current date and time: %s (%s, %s)\n", now.Format(time.RFC3339), now.Weekday(), zone)
 	}
 
 	return strings.TrimSpace(b.String())

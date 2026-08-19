@@ -612,6 +612,18 @@ func (s *Scheduler) executeAndDeliver(ctx context.Context, sched config.Schedule
 	s.deliverIfNeeded(ctx, sched, runID, reply, false)
 }
 
+// schedulerPrincipalDisplayName retourne le nom affiché configuré du
+// principal d'exécution, ou une chaîne vide s'il est inconnu.
+func schedulerPrincipalDisplayName(cfg *config.Config, principalID string) string {
+	for _, p := range cfg.Identities.Principals {
+		if p.ID == principalID {
+			return p.DisplayName
+		}
+	}
+
+	return ""
+}
+
 // buildIdentity construit l'identité d'exécution et la conversation d'une
 // occurrence planifiée (PLAN.md §9.3, §11.2). Aucun accès personnel
 // implicite : Scope/ScopeID proviennent exclusivement de la configuration de
@@ -642,16 +654,17 @@ func (s *Scheduler) buildIdentity(sched config.Schedule, runID persistence.Sched
 	}
 
 	identity := model.ExecutionIdentity{
-		Trigger:        model.TriggerCron,
-		PrincipalID:    model.PrincipalID(sched.Execution.PrincipalID),
-		OrgID:          model.OrgID(sched.Execution.OrgID),
-		OrgDisplayName: s.cfg.OrganizationDisplayName(sched.Execution.OrgID),
-		ConversationID: conversationID,
-		Provider:       sched.Delivery.Provider,
-		ChannelID:      sched.Delivery.ChannelID,
-		ChannelKind:    channelKind,
-		Scope:          model.Scope(sched.Execution.Scope),
-		ScopeID:        model.ScopeID(sched.Execution.ScopeID),
+		Trigger:              model.TriggerCron,
+		PrincipalID:          model.PrincipalID(sched.Execution.PrincipalID),
+		PrincipalDisplayName: schedulerPrincipalDisplayName(s.cfg, sched.Execution.PrincipalID),
+		OrgID:                model.OrgID(sched.Execution.OrgID),
+		OrgDisplayName:       s.cfg.OrganizationDisplayName(sched.Execution.OrgID),
+		ConversationID:       conversationID,
+		Provider:             sched.Delivery.Provider,
+		ChannelID:            sched.Delivery.ChannelID,
+		ChannelKind:          channelKind,
+		Scope:                model.Scope(sched.Execution.Scope),
+		ScopeID:              model.ScopeID(sched.Execution.ScopeID),
 	}
 
 	conversation := model.Conversation{

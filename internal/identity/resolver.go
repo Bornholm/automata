@@ -112,16 +112,17 @@ func (r *Resolver) ResolveMessage(ctx context.Context, provider, externalUserID,
 	conversationID := model.ConversationID(provider + ":" + channelID)
 
 	identity := model.ExecutionIdentity{
-		Trigger:        model.TriggerMessage,
-		PrincipalID:    model.PrincipalID(principalID),
-		OrgID:          model.OrgID(ch.OrgID),
-		OrgDisplayName: r.cfg.OrganizationDisplayName(ch.OrgID),
-		ConversationID: conversationID,
-		Provider:       provider,
-		ChannelID:      channelID,
-		ChannelKind:    channelKind,
-		Scope:          model.Scope(ch.Scope),
-		ScopeID:        model.ScopeID(ch.ScopeID),
+		Trigger:              model.TriggerMessage,
+		PrincipalID:          model.PrincipalID(principalID),
+		PrincipalDisplayName: r.principalIndex[principalID].DisplayName,
+		OrgID:                model.OrgID(ch.OrgID),
+		OrgDisplayName:       r.cfg.OrganizationDisplayName(ch.OrgID),
+		ConversationID:       conversationID,
+		Provider:             provider,
+		ChannelID:            channelID,
+		ChannelKind:          channelKind,
+		Scope:                model.Scope(ch.Scope),
+		ScopeID:              model.ScopeID(ch.ScopeID),
 	}
 
 	conversation := model.Conversation{
