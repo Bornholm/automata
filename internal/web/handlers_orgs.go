@@ -498,7 +498,32 @@ func (s *Server) handleOrgOffered(w http.ResponseWriter, r *http.Request) {
 			org.MonthlyAllowance = allowance
 		}
 		org.UpdatedAt = s.now()
-		return s.orgs.Update(r.Context(), tx, org)
+		if err := s.orgs.Update(r.Context(), tx, org); err != nil {
+			return err
+		}
+
+		// Apport immédiat : sans lui, une organisation qu'on vient d'offrir
+		// devrait attendre le 1er du mois suivant pour recevoir ses crédits
+		// — et son service resterait en pause jusque-là.
+		if !org.Offered || org.MonthlyAllowance <= 0 {
+			return nil
+		}
+
+		balance, err := s.wallet.Balance(r.Context(), tx, orgID)
+		if err != nil {
+			return err
+		}
+		if balance >= org.MonthlyAllowance {
+			return nil
+		}
+
+		return s.wallet.Insert(r.Context(), tx, persistence.WalletEntry{
+			OrgID:     orgID,
+			Kind:      persistence.WalletKindAllowance,
+			Label:     "Allocation mensuelle offerte",
+			Amount:    org.MonthlyAllowance - balance,
+			CreatedAt: s.now(),
+		})
 	})
 	if !ok {
 		return
