@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/bornholm/automata/internal/config"
@@ -79,11 +80,25 @@ func computeWalletState(org persistence.Organization, balance, lastCredit, month
 	}
 }
 
-// usageCredits convertit un coût mesuré (USD, usage_records) en crédits
-// selon le taux provisoire de la configuration.
-func (s *Server) usageCredits(cost float64) int64 {
-	rate := s.cfg.Web.Credits.EffectiveUSDPerCredit()
+// usageCredits convertit un coût mesuré (USD, usage_records) en crédits.
+// rate vient des réglages de l'instance (écran de tarification) ; zéro
+// retombe sur la configuration.
+func (s *Server) usageCredits(cost float64, rate float64) int64 {
+	if rate <= 0 {
+		rate = s.cfg.Web.Credits.EffectiveUSDPerCredit()
+	}
 	return int64(cost / rate)
+}
+
+// creditRate lit le taux de conversion effectif.
+func (s *Server) creditRate(ctx context.Context, q persistence.Querier) float64 {
+	value, found, err := s.pricingRepo.GetSetting(ctx, q, persistence.SettingUSDPerCredit)
+	if err == nil && found {
+		if parsed, parseErr := strconv.ParseFloat(value, 64); parseErr == nil && parsed > 0 {
+			return parsed
+		}
+	}
+	return s.cfg.Web.Credits.EffectiveUSDPerCredit()
 }
 
 // orgUsageCredits retourne la consommation d'une organisation sur la
@@ -94,9 +109,10 @@ func (s *Server) orgUsageCredits(ctx context.Context, q persistence.Querier, fro
 		return nil, err
 	}
 
+	rate := s.creditRate(ctx, q)
 	usageByOrg := map[string]int64{}
 	for _, agg := range aggregates {
-		usageByOrg[agg.Keys[0]] += s.usageCredits(agg.CostAmount)
+		usageByOrg[agg.Keys[0]] += s.usageCredits(agg.CostAmount, rate)
 	}
 
 	return usageByOrg, nil
@@ -110,9 +126,11 @@ func (s *Server) singleOrgUsageCredits(ctx context.Context, q persistence.Querie
 		return 0, err
 	}
 
+	rate := s.creditRate(ctx, q)
+
 	var total int64
 	for _, agg := range aggregates {
-		total += s.usageCredits(agg.CostAmount)
+		total += s.usageCredits(agg.CostAmount, rate)
 	}
 
 	return total, nil

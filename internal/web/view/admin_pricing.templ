@@ -1,0 +1,184 @@
+package view
+
+// ADM-08 — Tarification et conversion : ce que valent les crédits, ce
+// qu'ils coûtent réellement, et ce qu'ils rapportent. C'est le seul écran
+// qui répond à « est-ce que je gagne de l'argent ? » — d'où le bandeau de
+// contrôle en tête, avant les réglages qui l'expliquent.
+
+type PricingPack struct {
+	ID       int64
+	Credits  int64
+	PriceEUR string
+	// PerThousand rapporte le prix à mille crédits : c'est ce qui rend
+	// deux offres comparables d'un coup d'œil.
+	PerThousand string
+	Featured    bool
+	// FromConfig marque un pack encore issu du fichier de configuration :
+	// il n'est pas modifiable tant qu'il n'a pas été repris en base.
+	FromConfig bool
+}
+
+type MarginPanel struct {
+	SoldCredits  int64
+	SoldEUR      string
+	GivenCredits int64
+	UsedCredits  int64
+	CostUSD      string
+	CostEUR      string
+	MarginEUR    string
+	// Positive colore le résultat ; Ratio est la marge en pourcentage des
+	// recettes, vide si aucune recette.
+	Positive bool
+	Ratio    string
+	// Unreported compte les appels dont le fournisseur n'a rapporté aucun
+	// coût : la marge est optimiste d'autant, et le dire est plus utile
+	// que de l'ignorer.
+	Unreported int64
+	Period     string
+}
+
+type PricingPage struct {
+	Platforms []SidebarPlatform
+	CSRFToken string
+	Flash     string
+
+	Margin MarginPanel
+	Packs  []PricingPack
+
+	USDPerCredit     string
+	EURPerUSD        string
+	WelcomeCredits   int64
+	DefaultAllowance int64
+}
+
+templ marginFigure(label string, value string, valueClass string, hint string) {
+	<div class="flex-1">
+		@Eyebrow(label, "text-text-4")
+		<div class={ "mt-2 font-mono text-2xl", valueClass }>{ value }</div>
+		if hint != "" {
+			<div class="mt-1 text-[13px] leading-snug text-text-4">{ hint }</div>
+		}
+	</div>
+}
+
+templ AdminPricing(page PricingPage) {
+	@AdminLayout("Tarification — Automata Admin", "pricing", page.Platforms, page.CSRFToken) {
+		<header class="border-b border-line-2 bg-white px-7 py-5.5">
+			<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Tarification et conversion</h1>
+			<div class="mt-0.5 text-sm text-text-3">Ce que valent les crédits, ce qu'ils coûtent, ce qu'ils rapportent</div>
+		</header>
+		<div class="flex flex-col gap-5.5 p-7">
+			if page.Flash != "" {
+				<div class="rounded-lg bg-ok-wash px-4 py-2.5 text-sm text-ok-deep">{ page.Flash }</div>
+			}
+			<div class="rounded-[11px] border border-line-2 bg-white p-5.5">
+				<div class="mb-4 flex items-baseline gap-3">
+					<div class="text-[15px] font-semibold text-ink">Crédits vendus contre coût réel</div>
+					<div class="text-[13px] text-text-4">{ page.Margin.Period }</div>
+				</div>
+				<div class="flex gap-5">
+					@marginFigure("Recettes", page.Margin.SoldEUR, "text-ink", FormatInt(page.Margin.SoldCredits)+" crédits achetés")
+					<div class="w-px bg-line-2"></div>
+					@marginFigure("Coût d'inférence", page.Margin.CostEUR, "text-ink", page.Margin.CostUSD+" mesurés")
+					<div class="w-px bg-line-2"></div>
+					if page.Margin.Positive {
+						@marginFigure("Marge estimée", page.Margin.MarginEUR, "text-ok", page.Margin.Ratio)
+					} else {
+						@marginFigure("Marge estimée", page.Margin.MarginEUR, "text-crit", page.Margin.Ratio)
+					}
+					<div class="w-px bg-line-2"></div>
+					@marginFigure("Crédits offerts", FormatInt(page.Margin.GivenCredits), "text-text-3", "bienvenue, gestes, allocations")
+				</div>
+				<div class="mt-4 border-t border-line-3 pt-3 text-[13px] leading-normal text-text-4">
+					if page.Margin.Unreported > 0 {
+						{ FormatInt(page.Margin.Unreported) } appel(s) sans coût rapporté par le fournisseur sur la période : la marge affichée est optimiste d'autant.
+					} else {
+						Le coût est celui rapporté par les fournisseurs, converti en euros au taux ci-dessous — une estimation, pas une conversion comptable.
+					}
+				</div>
+			</div>
+			<div class="flex items-start gap-5">
+				<div class="min-w-0 flex-1 overflow-hidden rounded-[11px] border border-line-2 bg-white">
+					<div class="border-b border-line-2 px-5 py-3.5 text-[15px] font-semibold text-ink">Offres proposées au profil</div>
+					if len(page.Packs) == 0 {
+						<div class="px-5 py-8 text-center text-sm text-text-4">Aucune offre. Sans pack, la page de crédits ne propose aucun achat.</div>
+					} else {
+						<div class="grid grid-cols-[1fr_1fr_1fr_auto] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
+							<div>Crédits</div>
+							<div>Prix</div>
+							<div>Pour mille</div>
+							<div></div>
+						</div>
+						for _, pack := range page.Packs {
+							<div class="grid grid-cols-[1fr_1fr_1fr_auto] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0">
+								<div class="flex items-center gap-2">
+									<span class="font-mono text-sm text-text">{ FormatInt(pack.Credits) }</span>
+									if pack.Featured {
+										<span class="rounded-full bg-brand px-1.5 py-0.5 text-[11px] font-semibold text-white">Mis en avant</span>
+									}
+								</div>
+								<div class="font-mono text-sm text-text">{ pack.PriceEUR }</div>
+								<div class="font-mono text-sm text-text-3">{ pack.PerThousand }</div>
+								<div class="flex gap-2">
+									if pack.FromConfig {
+										<span class="text-[13px] text-text-4" title="Défini dans le fichier de configuration">Hérité du fichier</span>
+									} else {
+										if !pack.Featured {
+											<form method="post" action="/admin/pricing/packs/feature">
+												<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+												<input type="hidden" name="id" value={ FormatPlainInt(pack.ID) }/>
+												<button type="submit" class="text-[13px] font-medium text-brand">Mettre en avant</button>
+											</form>
+										}
+										<form method="post" action="/admin/pricing/packs/delete">
+											<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+											<input type="hidden" name="id" value={ FormatPlainInt(pack.ID) }/>
+											<button type="submit" class="text-[13px] font-medium text-crit">Retirer</button>
+										</form>
+									}
+								</div>
+							</div>
+						}
+					}
+					<form method="post" action="/admin/pricing/packs" class="flex items-end gap-3 border-t border-line-2 bg-panel px-5 py-4">
+						<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Crédits</span>
+							<input type="number" name="credits" min="1" required class="h-[38px] w-[140px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+						</label>
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Prix (€)</span>
+							<input type="number" name="price_eur" min="0" step="0.01" required class="h-[38px] w-[120px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+						</label>
+						<button type="submit" class="h-[38px] rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong">Ajouter l'offre</button>
+					</form>
+				</div>
+				<form method="post" action="/admin/pricing/settings" class="w-[360px] shrink-0 rounded-[11px] border border-line-2 bg-white p-5.5">
+					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+					<div class="mb-4 text-[15px] font-semibold text-ink">Conversion et cadeaux</div>
+					<div class="flex flex-col gap-4">
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Coût couvert par un crédit ($)</span>
+							<input type="text" name="usd_per_credit" value={ page.USDPerCredit } class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+							<span class="mt-1.5 block text-[13px] leading-snug text-text-4">Plus il est bas, plus un même usage consomme de crédits.</span>
+						</label>
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Taux € par $ <span class="font-normal text-text-4">— estimation</span></span>
+							<input type="text" name="eur_per_usd" value={ page.EURPerUSD } class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+						</label>
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Crédits de bienvenue</span>
+							<input type="number" name="welcome_credits" min="0" value={ FormatPlainInt(page.WelcomeCredits) } class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+						</label>
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Allocation mensuelle par défaut</span>
+							<input type="number" name="default_allowance" min="0" value={ FormatPlainInt(page.DefaultAllowance) } class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+							<span class="mt-1.5 block text-[13px] leading-snug text-text-4">Proposée à la création d'une organisation offerte.</span>
+						</label>
+						<button type="submit" class="h-[38px] rounded-lg bg-brand text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	}
+}

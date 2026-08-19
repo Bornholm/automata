@@ -1102,6 +1102,23 @@ explication et un lien de recharge, sans appel au modèle, au plus une fois
 par heure et par conversation. Une organisation sans aucun mouvement de
 portefeuille (instance non facturée) n'est jamais mise en pause.
 
+Depuis les écrans **Tarification** et **Consommation**, l'économie de la
+monnaie virtuelle se pilote sans redémarrage : les offres de crédits, le
+coût couvert par un crédit, les crédits de bienvenue et l'allocation par
+défaut vivent en base et priment sur `web.credits`. Tant qu'aucune offre
+n'a été créée en ligne, celles de la configuration font foi.
+
+L'écran de tarification affiche surtout la seule mesure qui compte pour
+l'exploitant : **crédits vendus contre coût réel** sur le mois, avec la
+marge estimée et le nombre d'appels dont le fournisseur n'a rapporté aucun
+coût — la marge est optimiste d'autant. La conversion des dollars en euros
+utilise un taux configurable ; c'est un ordre de grandeur, pas une
+conversion comptable.
+
+L'écran de consommation croise les traces d'usage selon les dimensions
+voulues (organisation, membre, agent, modèle, nature, fournisseur, jour,
+mois), sur la période choisie, et s'exporte en CSV avec les mêmes filtres.
+
 Le paiement en ligne s'active en renseignant les deux secrets Stripe —
 l'un sans l'autre est refusé au chargement (une session de paiement dont
 le résultat ne pourrait pas être crédité ferait payer un client pour

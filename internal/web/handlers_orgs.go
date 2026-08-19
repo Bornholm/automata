@@ -399,6 +399,8 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 // d'ADM-03), normalisées sur 96px de haut.
 func (s *Server) weeklyUsage(ctx context.Context, tx *sql.Tx, orgID string, now time.Time) ([]view.WeekBar, error) {
 	const weeks = 5
+
+	rate := s.creditRate(ctx, tx)
 	start := now.AddDate(0, 0, -7*weeks)
 
 	aggregates, err := s.usage.AggregateUsage(ctx, tx, start, now, []string{"day"}, persistence.UsageFilter{OrgID: orgID})
@@ -416,7 +418,7 @@ func (s *Server) weeklyUsage(ctx context.Context, tx *sql.Tx, orgID string, now 
 		if index < 0 || index >= weeks {
 			continue
 		}
-		totals[index] += s.usageCredits(agg.CostAmount)
+		totals[index] += s.usageCredits(agg.CostAmount, rate)
 	}
 
 	var max int64 = 1

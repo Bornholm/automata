@@ -213,9 +213,10 @@ func (s *Server) buildMemberPage(ctx context.Context, tx *sql.Tx, w http.Respons
 		if err != nil {
 			return page, err
 		}
+		rate := s.creditRate(ctx, tx)
 		var total int64
 		for _, agg := range aggregates {
-			total += s.usageCredits(agg.CostAmount)
+			total += s.usageCredits(agg.CostAmount, rate)
 		}
 		page.MonthUsage = view.FormatCredits(total)
 	} else {

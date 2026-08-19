@@ -61,6 +61,7 @@ type Server struct {
 	profileLinks *persistence.ProfileLinkRepository
 	usage        *persistence.UsageRecordRepository
 	platforms    *persistence.PlatformRepository
+	pricingRepo  *persistence.PricingRepository
 	bindings     *persistence.ChannelBindingRepository
 }
 
@@ -97,6 +98,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 		profileLinks: persistence.NewProfileLinkRepository(),
 		usage:        persistence.NewUsageRecordRepository(),
 		platforms:    persistence.NewPlatformRepository(),
+		pricingRepo:  persistence.NewPricingRepository(),
 		bindings:     persistence.NewChannelBindingRepository(),
 	}
 
@@ -151,6 +153,13 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /admin/platforms", admin(s.handlePlatformCreate))
 	mux.HandleFunc("POST /admin/platforms/{id}/toggle", admin(s.handlePlatformToggle))
 	mux.HandleFunc("POST /admin/platforms/{id}/delete", admin(s.handlePlatformDelete))
+	mux.HandleFunc("GET /admin/pricing", admin(s.handlePricing))
+	mux.HandleFunc("POST /admin/pricing/packs", admin(s.handlePricingPackCreate))
+	mux.HandleFunc("POST /admin/pricing/packs/delete", admin(s.handlePricingPackDelete))
+	mux.HandleFunc("POST /admin/pricing/packs/feature", admin(s.handlePricingPackFeature))
+	mux.HandleFunc("POST /admin/pricing/settings", admin(s.handlePricingSettings))
+	mux.HandleFunc("GET /admin/usage", admin(s.handleUsage))
+	mux.HandleFunc("GET /admin/usage.csv", admin(s.handleUsageCSV))
 
 	mux.HandleFunc("GET /p/{link}", s.handleProfile)
 	mux.HandleFunc("GET /p/{link}/credits", s.handleProfileCredits)

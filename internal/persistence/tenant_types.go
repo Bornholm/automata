@@ -105,6 +105,10 @@ type WalletEntry struct {
 	// rejoué n'est jamais crédité deux fois. Vide pour les mouvements
 	// internes (usage, allocation, geste commercial).
 	ExternalRef string
+	// PriceEUR est la somme réellement payée pour cet apport, en euros.
+	// Sans elle, le portefeuille dirait combien de crédits ont été vendus
+	// mais pas ce qu'ils ont rapporté. Zéro hors achat.
+	PriceEUR float64
 }
 
 // États d'un lien de profil (profile_links.status) : usage unique à

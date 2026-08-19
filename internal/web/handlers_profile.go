@@ -351,8 +351,13 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 			page.BalanceHint = view.HumanUsageDuration(balance, rate)
 		}
 
-		// Packs configurés, durée estimée au rythme courant.
-		for i, pack := range s.cfg.Web.Credits.Packs {
+		// Offres effectives : celles de l'écran de tarification, sinon
+		// celles de la configuration (voir pricing.go).
+		pricingSettings, err := s.pricing(r.Context(), tx)
+		if err != nil {
+			return err
+		}
+		for i, pack := range pricingSettings.Packs {
 			row := view.CreditPack{
 				Index:    i,
 				Credits:  pack.Credits,
@@ -423,10 +428,11 @@ func (s *Server) fillUsageSplit(r *http.Request, tx *sql.Tx, page *view.CreditsP
 		return err
 	}
 
+	rate := s.creditRate(r.Context(), tx)
 	buckets := map[string]int64{}
 	var total int64
 	for _, agg := range aggregates {
-		credits := s.usageCredits(agg.CostAmount)
+		credits := s.usageCredits(agg.CostAmount, rate)
 		label := "Conversations"
 		switch {
 		case agg.Keys[1] == "image":

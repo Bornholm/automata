@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"time"
 
 	"github.com/bornholm/automata/internal/config"
@@ -45,11 +46,16 @@ type Debiter struct {
 	logger  *slog.Logger
 	metrics *observability.Metrics
 	now     func() time.Time
+	// rate est le taux de conversion lu en base au début de chaque
+	// passage : l'écran de tarification doit pouvoir l'ajuster sans
+	// redémarrage.
+	rate float64
 
-	runs   *persistence.MaintenanceRunRepository
-	usage  *persistence.UsageRecordRepository
-	wallet *persistence.WalletRepository
-	orgs   *persistence.OrganizationRepository
+	runs    *persistence.MaintenanceRunRepository
+	pricing *persistence.PricingRepository
+	usage   *persistence.UsageRecordRepository
+	wallet  *persistence.WalletRepository
+	orgs    *persistence.OrganizationRepository
 }
 
 // New construit le débiteur.
@@ -65,6 +71,7 @@ func New(db *persistence.DB, cfg *config.Config, logger *slog.Logger, metrics *o
 		metrics: metrics,
 		now:     time.Now,
 		runs:    persistence.NewMaintenanceRunRepository(),
+		pricing: persistence.NewPricingRepository(),
 		usage:   persistence.NewUsageRecordRepository(),
 		wallet:  persistence.NewWalletRepository(),
 		orgs:    persistence.NewOrganizationRepository(),
@@ -143,6 +150,16 @@ func (d *Debiter) Debit(ctx context.Context) error {
 	var debited int
 
 	err = d.db.WithTx(ctx, func(tx *sql.Tx) error {
+		// Taux de conversion courant : réglable depuis l'administration
+		// (écran de tarification), sinon celui de la configuration.
+		if value, found, err := d.pricing.GetSetting(ctx, tx, persistence.SettingUSDPerCredit); err != nil {
+			return err
+		} else if found {
+			if parsed, err := strconv.ParseFloat(value, 64); err == nil && parsed > 0 {
+				d.rate = parsed
+			}
+		}
+
 		// Groupé par organisation ET par nature d'appel : le libellé du
 		// mouvement doit rester compréhensible dans le portefeuille du
 		// client (« Usage — génération d'images »), sans jargon.
@@ -217,7 +234,10 @@ func (d *Debiter) credits(cost float64) int64 {
 		return 0
 	}
 
-	rate := d.cfg.Web.Credits.EffectiveUSDPerCredit()
+	rate := d.rate
+	if rate <= 0 {
+		rate = d.cfg.Web.Credits.EffectiveUSDPerCredit()
+	}
 	credits := int64(cost / rate)
 	if float64(credits)*rate < cost {
 		credits++
