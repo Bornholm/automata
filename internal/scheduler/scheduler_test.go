@@ -287,7 +287,7 @@ func TestScheduler_Tick_Triggers(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
@@ -334,7 +334,7 @@ func TestScheduler_Tick_Disabled(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
@@ -377,7 +377,7 @@ func TestScheduler_Tick_Timezones(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"paris-agent": parisAgent, "tokyo-agent": tokyoAgent})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	clock := newFakeClock(parisAt.UTC())
 	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
@@ -426,7 +426,7 @@ func TestScheduler_Tick_DaylightSavingTransition(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	clock := newFakeClock(beforeDST.UTC())
 	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
@@ -467,7 +467,7 @@ func TestScheduler_Tick_DaylightSavingNonexistentHourSkipped(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	// Première occurrence le 30/03 à 02:30 (heure d'hiver), pour ancrer le
 	// schedule avant la transition.
@@ -539,7 +539,7 @@ func TestScheduler_Tick_DaylightSavingRepeatedHourRunsOnce(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	// Ancrage la veille, puis un tick couvrant les deux passages de 02:30.
 	before := time.Date(2024, 10, 26, 2, 30, 0, 0, parisLoc)
@@ -598,7 +598,7 @@ func TestScheduler_Tick_DaylightSavingRepeatedHourIntervalStillRunsTwice(t *test
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	// Ancrage à 01:00 CEST, juste avant la fenêtre répétée.
 	before := time.Date(2024, 10, 27, 1, 0, 0, 0, parisLoc)
@@ -637,7 +637,7 @@ func TestScheduler_Tick_DuplicateOccurrence(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
@@ -671,7 +671,7 @@ func TestScheduler_Tick_ConcurrencyForbid(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	// Simule une exécution déjà en cours pour une occurrence antérieure.
 	runningFor := at.Add(-24 * time.Hour).UTC().Format(time.RFC3339)
@@ -714,7 +714,7 @@ func TestScheduler_Tick_Timeout(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
@@ -763,7 +763,7 @@ func TestScheduler_Tick_RestartDuringCron(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	// Exécution restée "running" depuis 2 minutes (> Concurrency.Timeout de
 	// 1 minute), pour une occurrence antérieure à celle attendue à "at".
@@ -799,7 +799,7 @@ func TestScheduler_Tick_StaleLockErrorCode(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	staleFor := at.Add(-24 * time.Hour).UTC().Format(time.RFC3339)
 	staleStartedAt := at.Add(-2 * time.Minute).UTC().Format(time.RFC3339)
@@ -839,7 +839,7 @@ func TestScheduler_Tick_LockNotYetStale(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	staleFor := at.Add(-24 * time.Hour).UTC().Format(time.RFC3339)
 	startedAt := at.Add(-time.Minute).UTC().Format(time.RFC3339)
@@ -877,7 +877,7 @@ func TestScheduler_Tick_MinimalPermissionsIdentity(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
@@ -919,7 +919,7 @@ func TestScheduler_Delivery(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
@@ -961,7 +961,7 @@ func TestScheduler_Delivery_FailureDoesNotReexecute(t *testing.T) {
 	fake := replyingAgent("contenu")
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
-	senders := map[string]courier.Provider{"broken": failingProvider{}}
+	senders := scheduler.SenderMap{"broken": failingProvider{}}
 
 	s := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
@@ -1217,7 +1217,7 @@ func TestScheduler_RequireConfirmation_ProposesPlan(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	authorizer := authorization.NewAuthorizer(cfg)
 	executor := &fakePlanExecutor{}
@@ -1277,7 +1277,7 @@ func TestScheduler_RequireConfirmation_ConfirmByAuthorizedHuman(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	authorizer := authorization.NewAuthorizer(cfg)
 	executor := &fakePlanExecutor{}
@@ -1328,7 +1328,7 @@ func TestScheduler_RequireConfirmation_InsufficientPermission(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	authorizer := authorization.NewAuthorizer(cfg)
 	executor := &fakePlanExecutor{}
@@ -1375,7 +1375,7 @@ func TestScheduler_RequireConfirmation_Expiration(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	authorizer := authorization.NewAuthorizer(cfg)
 	executor := &fakePlanExecutor{}
@@ -1426,7 +1426,7 @@ func TestScheduler_RequireConfirmation_TickTwiceDoesNotDuplicatePlan(t *testing.
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	authorizer := authorization.NewAuthorizer(cfg)
 	executor := &fakePlanExecutor{}
@@ -1474,7 +1474,7 @@ func TestScheduler_RequireConfirmation_RestartThenConfirm(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	authorizer := authorization.NewAuthorizer(cfg)
 	executor := &fakePlanExecutor{}
@@ -1540,7 +1540,7 @@ func TestScheduler_RequireConfirmation_Audit(t *testing.T) {
 	registry := newRegistry(map[string]agent.Agent{"main": fake})
 
 	provider := memory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	authorizer := authorization.NewAuthorizer(cfg)
 	executor := &fakePlanExecutor{}

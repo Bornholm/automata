@@ -16,6 +16,8 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/bornholm/go-courier"
+
 	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/audio"
@@ -32,8 +34,10 @@ import (
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/platform"
 	"github.com/bornholm/automata/internal/reminder"
 	"github.com/bornholm/automata/internal/scheduler"
+	"github.com/bornholm/automata/internal/secretbox"
 	"github.com/bornholm/automata/internal/usage"
 	"github.com/bornholm/automata/internal/web"
 )
@@ -88,9 +92,19 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	}
 	resolver = resolver.WithDynamicSource(tenants)
 
-	providers, err := buildCourierProviders(cfg)
-	if err != nil {
-		return fmt.Errorf("registry: construction des fournisseurs courier: %w", err)
+	// Comptes de messagerie : ils vivent désormais en base et se gèrent
+	// depuis l'administration (pilier 2). Les comptes encore déclarés dans
+	// courier.providers sont importés une seule fois, configuration
+	// comprise — un ré-appairage ne doit jamais être le prix d'une montée
+	// de version.
+	secrets, err := secretbox.New(cfg.Web.SessionSecret)
+	if err != nil && cfg.Web.Enabled {
+		return fmt.Errorf("registry: dérivation de la clé de chiffrement: %w", err)
+	}
+	if secrets != nil {
+		if err := migratePlatforms(ctx, db, cfg, secrets, logger); err != nil {
+			return err
+		}
 	}
 
 	memRes, err := buildMemory(ctx, cfg)
@@ -133,27 +147,36 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
 
-	sched := scheduler.NewScheduler(cfg, scheduler.RealClock{}, db, agents, providers, actionEngine, logger).WithMetrics(metrics)
+	// Le gestionnaire porte un pipeline d'ingestion par compte actif, et
+	// les fournisseurs que le scheduler et les rappels utilisent pour
+	// émettre : tous suivent donc les ajouts et retraits à chaud.
+	platforms := platform.NewManager(db, secrets,
+		func(id, providerType string, providerConfig map[string]any, qrHandler func(code string, linked bool)) (courier.Provider, error) {
+			return buildManagedProvider(id, providerType, providerConfig, qrHandler)
+		},
+		func(pipelineCtx context.Context, id string, provider courier.Provider) error {
+			return ingress.NewPipeline(id, provider, resolver, db, handler, logger, metrics).
+				WithCoalesceWindow(cfg.Courier.EffectiveCoalesceWindow()).
+				// Un inconnu porteur d'un jeton valide se rattache lui-même
+				// (socle SaaS) : sans serveur web configuré, aucun jeton n'a
+				// pu être émis, la liaison reste donc inutile.
+				WithLinking(cfg.Web.Enabled).
+				Run(pipelineCtx)
+		},
+		logger)
+
+	sched := scheduler.NewScheduler(cfg, scheduler.RealClock{}, db, agents, platforms, actionEngine, logger).WithMetrics(metrics)
 
 	var wg sync.WaitGroup
 
-	for name, provider := range providers {
-		pipeline := ingress.NewPipeline(name, provider, resolver, db, handler, logger, metrics).
-			WithCoalesceWindow(cfg.Courier.EffectiveCoalesceWindow()).
-			// Un inconnu porteur d'un jeton valide se rattache lui-même
-			// (socle SaaS) : sans serveur web configuré, aucun jeton n'a pu
-			// être émis, la liaison reste donc inutile.
-			WithLinking(cfg.Web.Enabled)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-		wg.Add(1)
-		go func(name string, pipeline *ingress.Pipeline) {
-			defer wg.Done()
-
-			if err := pipeline.Run(ctx); err != nil && ctx.Err() == nil {
-				logger.ErrorContext(ctx, "registry: pipeline ingress arrêté en erreur", "provider", name, "error", err)
-			}
-		}(name, pipeline)
-	}
+		if err := platforms.Run(ctx); err != nil && ctx.Err() == nil {
+			logger.ErrorContext(ctx, "registry: gestionnaire de plateformes arrêté en erreur", "error", err)
+		}
+	}()
 
 	wg.Add(1)
 	go func() {
@@ -170,7 +193,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	// Le même dispatcher porte les tâches planifiées (schedule_task) : à
 	// leur échéance, l'exécuteur fait tourner l'agent qui les a créées et
 	// c'est sa réponse qui est délivrée.
-	reminderDispatcher := reminder.NewDispatcher(db, providers, logger, metrics).
+	reminderDispatcher := reminder.NewDispatcher(db, platforms, logger, metrics).
 		WithTaskRunner(agent.NewTaskRunner(cfg, taskAgents, logger))
 
 	wg.Add(1)
@@ -256,7 +279,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			return fmt.Errorf("registry: construction de l'expéditeur de courriels: %w", err)
 		}
 
-		webServer := web.NewServer(cfg, db, mailSender, logger)
+		webServer := web.NewServer(cfg, db, mailSender, logger).
+			WithPlatformManager(platforms)
 
 		wg.Add(1)
 		go func() {

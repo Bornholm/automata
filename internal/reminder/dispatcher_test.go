@@ -126,7 +126,7 @@ func TestDispatcher_DeliversDueReminder(t *testing.T) {
 	insertReminder(t, db, baseReminder("due", "memory", "2026-08-17T11:59:00Z"))
 	insertReminder(t, db, baseReminder("future", "memory", "2026-08-17T13:00:00Z"))
 
-	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+	d := reminder.NewDispatcher(db, reminder.SenderMap{"memory": provider}, testLogger(), nil).
 		WithClock(func() time.Time { return dispatcherTestNow })
 
 	if err := d.Tick(context.Background()); err != nil {
@@ -159,7 +159,7 @@ func TestDispatcher_UnknownProviderMarksFailed(t *testing.T) {
 
 	insertReminder(t, db, baseReminder("orphan", "disparu", "2026-08-17T11:00:00Z"))
 
-	d := reminder.NewDispatcher(db, map[string]courier.Provider{}, testLogger(), nil).
+	d := reminder.NewDispatcher(db, reminder.SenderMap{}, testLogger(), nil).
 		WithClock(func() time.Time { return dispatcherTestNow })
 
 	if err := d.Tick(context.Background()); err != nil {
@@ -178,7 +178,7 @@ func TestDispatcher_TickIsIdempotent(t *testing.T) {
 
 	insertReminder(t, db, baseReminder("once", "memory", "2026-08-17T11:00:00Z"))
 
-	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+	d := reminder.NewDispatcher(db, reminder.SenderMap{"memory": provider}, testLogger(), nil).
 		WithClock(func() time.Time { return dispatcherTestNow })
 
 	for range 2 {
@@ -205,7 +205,7 @@ func TestDispatcher_RecurringReminderIsRearmed(t *testing.T) {
 	rem.Timezone = "Europe/Paris"
 	insertReminder(t, db, rem)
 
-	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+	d := reminder.NewDispatcher(db, reminder.SenderMap{"memory": provider}, testLogger(), nil).
 		WithClock(func() time.Time { return dispatcherTestNow })
 
 	if err := d.Tick(context.Background()); err != nil {
@@ -306,7 +306,7 @@ func TestDispatcher_ScheduledTaskDeliversAgentReply(t *testing.T) {
 	insertReminder(t, db, baseTask("task", "memory", "2026-08-17T11:59:00Z"))
 
 	runner := &stubRunner{reply: "Ciel dégagé, 24 °C cet après-midi."}
-	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+	d := reminder.NewDispatcher(db, reminder.SenderMap{"memory": provider}, testLogger(), nil).
 		WithTaskRunner(runner).
 		WithClock(func() time.Time { return dispatcherTestNow })
 
@@ -358,7 +358,7 @@ func TestDispatcher_ScheduledTaskFailureIsRetriedLater(t *testing.T) {
 	insertReminder(t, db, task)
 
 	runner := &stubRunner{err: context.DeadlineExceeded}
-	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+	d := reminder.NewDispatcher(db, reminder.SenderMap{"memory": provider}, testLogger(), nil).
 		WithTaskRunner(runner).
 		WithClock(func() time.Time { return dispatcherTestNow })
 
@@ -403,7 +403,7 @@ func TestDispatcher_StaleRecurringOccurrenceIsSkipped(t *testing.T) {
 	insertReminder(t, db, task)
 
 	runner := &stubRunner{reply: "bulletin"}
-	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+	d := reminder.NewDispatcher(db, reminder.SenderMap{"memory": provider}, testLogger(), nil).
 		WithTaskRunner(runner).
 		WithClock(func() time.Time { return dispatcherTestNow })
 
@@ -447,7 +447,7 @@ func TestDispatcher_RecurringFailureNearDeadlineRearmsTheSeries(t *testing.T) {
 	insertReminder(t, db, task)
 
 	runner := &stubRunner{err: context.DeadlineExceeded}
-	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+	d := reminder.NewDispatcher(db, reminder.SenderMap{"memory": provider}, testLogger(), nil).
 		WithTaskRunner(runner).
 		WithClock(func() time.Time { return dispatcherTestNow })
 
@@ -480,7 +480,7 @@ func TestDispatcher_OneShotFailureExhaustsAttemptsThenFails(t *testing.T) {
 	insertReminder(t, db, task)
 
 	runner := &stubRunner{err: context.DeadlineExceeded}
-	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+	d := reminder.NewDispatcher(db, reminder.SenderMap{"memory": provider}, testLogger(), nil).
 		WithTaskRunner(runner).
 		WithClock(func() time.Time { return dispatcherTestNow })
 
@@ -495,7 +495,7 @@ func TestDispatcher_OneShotFailureExhaustsAttemptsThenFails(t *testing.T) {
 	}
 
 	// 8e tentative : la dernière, l'entrée est classée failed.
-	late := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+	late := reminder.NewDispatcher(db, reminder.SenderMap{"memory": provider}, testLogger(), nil).
 		WithTaskRunner(runner).
 		WithClock(func() time.Time { return dispatcherTestNow.Add(2 * time.Hour) })
 
@@ -517,7 +517,7 @@ func TestDispatcher_ScheduledTaskWithoutRunnerFails(t *testing.T) {
 
 	insertReminder(t, db, baseTask("task", "memory", "2026-08-17T11:59:00Z"))
 
-	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+	d := reminder.NewDispatcher(db, reminder.SenderMap{"memory": provider}, testLogger(), nil).
 		WithClock(func() time.Time { return dispatcherTestNow })
 
 	if err := d.Tick(context.Background()); err != nil {

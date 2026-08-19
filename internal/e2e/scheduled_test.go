@@ -106,7 +106,7 @@ func TestScheduled_MorningSummary(t *testing.T) {
 	registry := agent.NewRegistryFromAgents(map[string]agent.Agent{"main": fake})
 
 	provider := couriermemory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	sched2 := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
@@ -149,7 +149,7 @@ func TestScheduled_NoContentSkipsDelivery(t *testing.T) {
 	registry := agent.NewRegistryFromAgents(map[string]agent.Agent{"main": fake})
 
 	provider := couriermemory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	sched2 := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
@@ -182,7 +182,7 @@ func TestScheduled_DeliveryFailureDoesNotReexecute(t *testing.T) {
 	fake := replyingScheduledAgent("contenu")
 	registry := agent.NewRegistryFromAgents(map[string]agent.Agent{"main": fake})
 
-	senders := map[string]courier.Provider{"broken": failingProvider{}}
+	senders := scheduler.SenderMap{"broken": failingProvider{}}
 
 	sched2 := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
@@ -211,7 +211,7 @@ func TestScheduled_DuplicateOccurrenceTriggersOnce(t *testing.T) {
 	registry := agent.NewRegistryFromAgents(map[string]agent.Agent{"main": fake})
 
 	provider := couriermemory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	sched2 := scheduler.NewScheduler(cfg, clock, db, registry, senders, nil, nil)
 
@@ -318,7 +318,7 @@ func TestScheduled_ActionProposalCreatesPlan(t *testing.T) {
 	registry := agent.NewRegistryFromAgents(map[string]agent.Agent{"main": fake})
 
 	provider := couriermemory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	authorizer := authorization.NewAuthorizer(cfg)
 	executor := &fakePlanExecutor{}
@@ -377,7 +377,7 @@ func TestScheduled_HumanConfirmationExecutes(t *testing.T) {
 	registry := agent.NewRegistryFromAgents(map[string]agent.Agent{"main": fake})
 
 	provider := couriermemory.NewProvider()
-	senders := map[string]courier.Provider{"whatsapp": provider}
+	senders := scheduler.SenderMap{"whatsapp": provider}
 
 	authorizer := authorization.NewAuthorizer(cfg)
 	executor := &fakePlanExecutor{}

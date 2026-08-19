@@ -15,6 +15,8 @@ import (
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/platform"
+	"github.com/bornholm/automata/internal/secretbox"
 	"github.com/bornholm/automata/internal/web/view"
 	"github.com/bornholm/automata/internal/weblink"
 )
@@ -44,9 +46,13 @@ type Server struct {
 	mail   MailSender
 
 	stripe  *stripeClient
-	limiter *loginLimiter
-	reveals *revealStash
-	codes   *codeStore
+	secrets *secretbox.Box
+	// platformManager, s'il est renseigné, porte l'état réel des comptes
+	// de messagerie et applique leurs changements à chaud (pilier 2).
+	platformManager PlatformManager
+	limiter         *loginLimiter
+	reveals         *revealStash
+	codes           *codeStore
 
 	orgs         *persistence.OrganizationRepository
 	members      *persistence.MemberRepository
@@ -54,6 +60,16 @@ type Server struct {
 	wallet       *persistence.WalletRepository
 	profileLinks *persistence.ProfileLinkRepository
 	usage        *persistence.UsageRecordRepository
+	platforms    *persistence.PlatformRepository
+	bindings     *persistence.ChannelBindingRepository
+}
+
+// PlatformManager est la vue qu'a le serveur web du gestionnaire de
+// comptes de messagerie (internal/platform) : lire l'état, et demander
+// l'application immédiate d'un changement.
+type PlatformManager interface {
+	Statuses() map[string]platform.Status
+	Wake()
 }
 
 // NewServer construit le serveur décrit par cfg.Web. mail peut être nil
@@ -80,6 +96,14 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 		wallet:       persistence.NewWalletRepository(),
 		profileLinks: persistence.NewProfileLinkRepository(),
 		usage:        persistence.NewUsageRecordRepository(),
+		platforms:    persistence.NewPlatformRepository(),
+		bindings:     persistence.NewChannelBindingRepository(),
+	}
+
+	// La clé de chiffrement des secrets dérive du secret de session : la
+	// configuration des comptes de messagerie porte des mots de passe.
+	if box, err := secretbox.New(cfg.Web.SessionSecret); err == nil {
+		s.secrets = box
 	}
 
 	if cfg.Web.Stripe.Enabled() {
@@ -124,6 +148,9 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /admin/members/{id}/profile-link", admin(s.handleMemberProfileLink))
 	mux.HandleFunc("GET /admin/platforms", admin(s.handlePlatforms))
 	mux.HandleFunc("POST /admin/platforms/group-token", admin(s.handlePlatformsGroupToken))
+	mux.HandleFunc("POST /admin/platforms", admin(s.handlePlatformCreate))
+	mux.HandleFunc("POST /admin/platforms/{id}/toggle", admin(s.handlePlatformToggle))
+	mux.HandleFunc("POST /admin/platforms/{id}/delete", admin(s.handlePlatformDelete))
 
 	mux.HandleFunc("GET /p/{link}", s.handleProfile)
 	mux.HandleFunc("GET /p/{link}/credits", s.handleProfileCredits)
@@ -134,6 +161,14 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 
 	s.httpServer = &http.Server{Addr: cfg.Web.Addr, Handler: mux}
 
+	return s
+}
+
+// WithPlatformManager branche le gestionnaire de comptes de messagerie :
+// sans lui, l'écran des plateformes affiche la configuration enregistrée
+// mais aucun état de connexion.
+func (s *Server) WithPlatformManager(manager PlatformManager) *Server {
+	s.platformManager = manager
 	return s
 }
 

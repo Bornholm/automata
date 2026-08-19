@@ -113,7 +113,7 @@ type Scheduler struct {
 	clock        Clock
 	db           *persistence.DB
 	agents       *agent.Registry
-	senders      map[string]courier.Provider
+	senders      SenderSet
 	actionEngine *action.Engine
 
 	scheduledRuns    *persistence.ScheduledRunRepository
@@ -125,6 +125,24 @@ type Scheduler struct {
 	metrics *observability.Metrics
 }
 
+// SenderSet donne accès aux fournisseurs Courier par nom. Une interface
+// plutôt qu'une map : les comptes de messagerie s'ajoutent et se retirent
+// en cours d'exécution (internal/platform), et une map figée au démarrage
+// ne verrait jamais les nouveaux.
+type SenderSet interface {
+	Get(name string) (courier.Provider, bool)
+}
+
+// SenderMap adapte un ensemble figé de fournisseurs à SenderSet — pour
+// les tests et les appelants dont la liste ne change pas.
+type SenderMap map[string]courier.Provider
+
+// Get implémente SenderSet.
+func (m SenderMap) Get(name string) (courier.Provider, bool) {
+	provider, ok := m[name]
+	return provider, ok
+}
+
 // NewScheduler construit un Scheduler. senders doit contenir un
 // courier.Provider par nom de fournisseur déclaré dans cfg.Courier.Providers
 // (la même map que celle utilisée pour l'ingress, voir internal/registry).
@@ -134,7 +152,7 @@ type Scheduler struct {
 // déclare cette politique (ValidateSchedules ne l'impose pas explicitement,
 // mais une exécution require_confirmation avec actionEngine nil échoue
 // proprement, voir executeAndDeliver).
-func NewScheduler(cfg *config.Config, clock Clock, db *persistence.DB, agents *agent.Registry, senders map[string]courier.Provider, actionEngine *action.Engine, logger *slog.Logger) *Scheduler {
+func NewScheduler(cfg *config.Config, clock Clock, db *persistence.DB, agents *agent.Registry, senders SenderSet, actionEngine *action.Engine, logger *slog.Logger) *Scheduler {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -841,7 +859,7 @@ func shouldDeliver(mode config.DeliveryMode, reply string, failed bool) bool {
 // l'agent ni ne recrée l'exécution planifiée : elle échoue uniquement la
 // tentative de livraison.
 func (s *Scheduler) deliver(ctx context.Context, sched config.Schedule, runID persistence.ScheduledRunID, reply string) {
-	provider, ok := s.senders[sched.Delivery.Provider]
+	provider, ok := s.senders.Get(sched.Delivery.Provider)
 	if !ok {
 		s.recordDeliveryAttempt(ctx, runID, sched, DeliveryStatusFailed, ptr(errCodeProviderNotFound))
 		s.logger.ErrorContext(ctx, "scheduler: fournisseur courier de livraison introuvable", "schedule_id", sched.ID, "provider", sched.Delivery.Provider)

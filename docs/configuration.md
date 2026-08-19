@@ -1060,6 +1060,28 @@ agents:
     profile_link: true
 ```
 
+### Comptes de messagerie
+
+Depuis le pilier 2, les comptes de messagerie vivent **en base** et se
+gèrent depuis l'écran « Canaux et plateformes » : ajout, arrêt, remise en
+route et retrait, sans redémarrage du processus. Les comptes encore
+déclarés dans `courier.providers` sont importés automatiquement au premier
+démarrage, **configuration reprise à l'identique** — le chemin de session
+WhatsApp compris, de sorte qu'aucun ré-appairage n'est nécessaire. Une fois
+importés, ils ne sont plus relus depuis le YAML : la base fait foi.
+
+La configuration de chaque compte est **chiffrée au repos**
+(AES-256-GCM, clé dérivée de `web.session_secret` par HKDF) : elle porte
+des mots de passe et des jetons d'accès. Changer `web.session_secret` rend
+ces configurations illisibles, et les comptes concernés doivent alors être
+ressaisis.
+
+L'écran affiche l'état réel de chaque compte — connectée, appairage
+requis, arrêtée, déconnectée — et, pour un compte WhatsApp non encore lié,
+**le QR code à scanner directement dans le navigateur** (il n'est plus
+imprimé dans les journaux du worker). Cela repose sur l'option
+`whatsapp.WithQRHandler` de go-courier.
+
 ### Facturation
 
 Dès que le serveur web est activé, la consommation mesurée

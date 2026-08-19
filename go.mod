@@ -3,6 +3,8 @@ module github.com/bornholm/automata
 go 1.26.5
 
 require (
+	github.com/Oudwins/tailwind-merge-go v0.2.3
+	github.com/a-h/templ v0.3.1020
 	github.com/bornholm/amoxtli v0.16.0
 	github.com/bornholm/go-courier v0.2.1
 	github.com/dustin/go-humanize v1.0.1
@@ -11,16 +13,15 @@ require (
 	github.com/ncruces/go-sqlite3 v0.28.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
+	github.com/templui/templui v1.13.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
 	github.com/Bornholm/amatl v0.21.1 // indirect
 	github.com/DusanKasan/parsemail v1.2.0 // indirect
-	github.com/Oudwins/tailwind-merge-go v0.2.3 // indirect
 	github.com/RealAlexandreAI/json-repair v0.0.14 // indirect
 	github.com/RoaringBitmap/roaring/v2 v2.4.5 // indirect
-	github.com/a-h/templ v0.3.1020 // indirect
 	github.com/abadojack/whatlanggo v1.0.1 // indirect
 	github.com/apex/log v1.9.0 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect
@@ -76,7 +77,7 @@ require (
 	github.com/odvcencio/gotreesitter v0.38.0 // indirect
 	github.com/openai/openai-go v0.1.0-beta.10 // indirect
 	github.com/revrost/go-openrouter v1.6.0 // indirect
-	github.com/templui/templui v1.13.1 // indirect
+	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
@@ -120,7 +121,7 @@ require (
 	go.mau.fi/libsignal v0.2.2 // indirect
 	go.mau.fi/util v0.10.0 // indirect
 	go.mau.fi/whatsmeow v0.0.0-20260816113502-fb386f152837 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/crypto v0.55.0
 	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect

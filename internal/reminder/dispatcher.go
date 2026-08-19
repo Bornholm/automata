@@ -75,7 +75,7 @@ const (
 type Dispatcher struct {
 	db      *persistence.DB
 	repo    *persistence.ReminderRepository
-	senders map[string]courier.Provider
+	senders SenderSet
 	runner  TaskRunner
 	logger  *slog.Logger
 	metrics *observability.Metrics
@@ -90,10 +90,28 @@ type TaskRunner interface {
 	RunTask(ctx context.Context, task persistence.Reminder) (string, error)
 }
 
+// SenderSet donne accès aux fournisseurs Courier par nom. Une interface
+// plutôt qu'une map : les comptes de messagerie s'ajoutent et se retirent
+// en cours d'exécution (internal/platform), et une map figée au démarrage
+// ne verrait jamais les nouveaux.
+type SenderSet interface {
+	Get(name string) (courier.Provider, bool)
+}
+
+// SenderMap adapte un ensemble figé de fournisseurs à SenderSet — pour
+// les tests et les appelants dont la liste ne change pas.
+type SenderMap map[string]courier.Provider
+
+// Get implémente SenderSet.
+func (m SenderMap) Get(name string) (courier.Provider, bool) {
+	provider, ok := m[name]
+	return provider, ok
+}
+
 // NewDispatcher construit un Dispatcher. senders associe chaque nom de
 // fournisseur courier (tel que figé sur les rappels à leur création) au
 // provider correspondant — la même table que celle du scheduler.
-func NewDispatcher(db *persistence.DB, senders map[string]courier.Provider, logger *slog.Logger, metrics *observability.Metrics) *Dispatcher {
+func NewDispatcher(db *persistence.DB, senders SenderSet, logger *slog.Logger, metrics *observability.Metrics) *Dispatcher {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -202,7 +220,7 @@ func (d *Dispatcher) deliver(ctx context.Context, rem persistence.Reminder) {
 		}
 	}
 
-	provider, ok := d.senders[rem.Provider]
+	provider, ok := d.senders.Get(rem.Provider)
 	if !ok {
 		// Erreur de configuration, pas une panne transitoire : retenter ne
 		// changerait rien tant que la configuration n'a pas changé.
