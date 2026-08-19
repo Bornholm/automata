@@ -225,3 +225,49 @@ func newLinkingPipeline(t *testing.T, handler ingress.Handler) (*ingress.Pipelin
 
 	return pipeline.WithLinking(true), provider, db
 }
+
+// TestPipeline_PersonalTokenBindsDirectRoom : Rocket.Chat, Discord et le
+// courriel donnent à un tête-à-tête un identifiant de salon distinct de
+// celui de la personne. Se fier à leur égalité laissait la conversation
+// inconnue du pipeline : le rattachement réussissait, puis le message
+// suivant était ignoré.
+func TestPipeline_PersonalTokenBindsDirectRoom(t *testing.T) {
+	handler := &countingHandler{reply: "ignoré"}
+	pipeline, provider, db := newLinkingPipeline(t, handler)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+	provider.waitReady(t)
+
+	clear := seedTenant(t, db, persistence.LinkTokenKindPersonal, "camille")
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannel("salon-prive-42", courier.ChannelKindDirect, "Camille Roux"),
+		courier.NewUser("camille-ext", "Camille Roux"),
+		courier.WithMessageMainPart("voici mon code "+clear),
+	)
+	if err := provider.Deliver(context.Background(), msg); err != nil {
+		t.Fatalf("provider.Deliver: %v", err)
+	}
+
+	if !waitUntil(t, 2*time.Second, func() bool { return len(provider.Sent()) > 0 }) {
+		t.Fatal("aucune réponse de bienvenue envoyée")
+	}
+
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		binding, found, err := persistence.NewChannelBindingRepository().Find(context.Background(), tx, testProviderName, "salon-prive-42")
+		if err != nil {
+			return err
+		}
+		if !found {
+			t.Fatal("le salon privé n'a pas été rattaché : le message suivant serait ignoré")
+		}
+		if binding.MemberID != "camille" || binding.OrgID != "atelier" {
+			t.Errorf("liaison inattendue: %+v", binding)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("vérification en base: %v", err)
+	}
+}

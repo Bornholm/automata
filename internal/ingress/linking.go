@@ -166,10 +166,13 @@ func (p *Pipeline) linkPersonal(ctx context.Context, tx *sql.Tx, token persisten
 		return linkResult{}, err
 	}
 
-	// Le canal d'où vient le message : privé si l'expéditeur en est aussi
-	// l'identifiant (convention des messageries directes), sinon on ne lie
-	// que la personne — le groupe a son propre jeton.
-	if channelID == externalUserID {
+	// Le canal d'où vient le message est lié dès qu'il s'agit d'une
+	// conversation directe. Se fier à l'égalité entre l'expéditeur et le
+	// canal ne vaut que pour les messageries qui identifient un tête-à-tête
+	// par la personne (WhatsApp, REST) : Rocket.Chat, Discord ou le
+	// courriel donnent au privé un identifiant de salon distinct, et la
+	// conversation restait alors inconnue malgré le rattachement.
+	if msg.Channel().Kind() == courier.ChannelKindDirect || channelID == externalUserID {
 		bindings := persistence.NewChannelBindingRepository()
 		if err := bindings.Upsert(ctx, tx, persistence.ChannelBinding{
 			Provider:    p.providerName,
