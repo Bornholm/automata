@@ -39,8 +39,10 @@ type PlatformsPage struct {
 	// FlashToken : jeton de groupe fraîchement généré.
 	FlashToken *TokenPanelData
 	// Pairing ouvre le gabarit d'appairage avec la variante demandée :
-	// "" (fermé) | "qr" | "credentials".
-	Pairing string
+	// "" (fermé) | "qr" | "credentials". PairingPlatform est la plateforme
+	// sélectionnée dans le gabarit (whatsapp, signal, rocket…).
+	Pairing         string
+	PairingPlatform string
 }
 
 templ channelsSummary(page PlatformsPage) {
@@ -141,8 +143,8 @@ templ AdminPlatforms(page PlatformsPage) {
 }
 
 templ pairingPlatformOption(page PlatformsPage, mode string, platformType string, label string) {
-	{{ selected := (mode == "qr" && page.Pairing == "qr" && platformType == "whatsapp") || (mode == "credentials" && page.Pairing == "credentials" && platformType == "rocket") }}
-	<a href={ templ.SafeURL("/admin/platforms?pairing=" + mode) } class={ "flex flex-1 flex-col items-center gap-1.5 rounded-[9px] border px-2 py-2 hover:no-underline", templ.KV("border-brand bg-brand-wash", selected), templ.KV("border-line-2", !selected) }>
+	{{ selected := page.PairingPlatform == platformType }}
+	<a href={ templ.SafeURL("/admin/platforms?pairing=" + mode + "&platform=" + platformType) } class={ "flex flex-1 flex-col items-center gap-1.5 rounded-[9px] border px-2 py-2 hover:no-underline", templ.KV("border-brand bg-brand-wash", selected), templ.KV("border-line-2", !selected) }>
 		@PlatformBadge(platformType, "size-[22px] rounded-md", "text-[10px]")
 		if selected {
 			<span class="text-xs font-semibold text-brand-deep">{ label }</span>
@@ -190,7 +192,7 @@ templ pairingPanel(page PlatformsPage) {
 					<div class="flex size-[176px] items-center justify-center rounded-[10px] border border-line-2 bg-panel">
 						<div class="text-center font-mono text-[11px] leading-relaxed text-text-4">QR code<br/>d'appairage</div>
 					</div>
-					<div class="max-w-[290px] text-center text-sm leading-normal text-text-3">Dans WhatsApp, ouvrez <span class="font-medium text-text">Appareils connectés</span> et scannez ce code. Il se renouvelle toutes les 20 secondes.</div>
+					<div class="max-w-[290px] text-center text-sm leading-normal text-text-3">Dans { platformDisplayLabel(page.PairingPlatform) }, ouvrez <span class="font-medium text-text">Appareils connectés</span> et scannez ce code. Il se renouvelle toutes les 20 secondes.</div>
 					<div class="flex items-center gap-2">
 						<span class="size-[7px] rounded-full bg-warn"></span>
 						<span class="font-mono text-[13px] text-warn-deep">Prochain lot — appairage à chaud</span>
@@ -203,4 +205,16 @@ templ pairingPanel(page PlatformsPage) {
 			</div>
 		</div>
 	</div>
+}
+
+// platformDisplayLabel nomme une plateforme dans une phrase.
+func platformDisplayLabel(platformType string) string {
+	switch platformType {
+	case "signal":
+		return "Signal"
+	case "rocket":
+		return "Rocket.Chat"
+	default:
+		return "WhatsApp"
+	}
 }

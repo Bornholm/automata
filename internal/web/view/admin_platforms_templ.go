@@ -47,8 +47,10 @@ type PlatformsPage struct {
 	// FlashToken : jeton de groupe fraîchement généré.
 	FlashToken *TokenPanelData
 	// Pairing ouvre le gabarit d'appairage avec la variante demandée :
-	// "" (fermé) | "qr" | "credentials".
-	Pairing string
+	// "" (fermé) | "qr" | "credentials". PairingPlatform est la plateforme
+	// sélectionnée dans le gabarit (whatsapp, signal, rocket…).
+	Pairing         string
+	PairingPlatform string
 }
 
 func channelsSummary(page PlatformsPage) templ.Component {
@@ -80,7 +82,7 @@ func channelsSummary(page PlatformsPage) templ.Component {
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(page.Active))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 48, Col: 27}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 50, Col: 27}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {
@@ -93,7 +95,7 @@ func channelsSummary(page PlatformsPage) templ.Component {
 			var templ_7745c5c3_Var3 string
 			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(page.PendingCnt))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 48, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 50, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 			if templ_7745c5c3_Err != nil {
@@ -111,7 +113,7 @@ func channelsSummary(page PlatformsPage) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(page.Active))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 50, Col: 27}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 52, Col: 27}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -189,7 +191,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(card.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 73, Col: 68}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 75, Col: 68}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
@@ -221,7 +223,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 					var templ_7745c5c3_Var8 string
 					templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(line)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 81, Col: 15}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 83, Col: 15}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 					if templ_7745c5c3_Err != nil {
@@ -248,7 +250,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 			var templ_7745c5c3_Var9 string
 			templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 98, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 100, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var9)
 			if templ_7745c5c3_Err != nil {
@@ -266,7 +268,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(org.ID)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 102, Col: 31}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 104, Col: 31}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
 				if templ_7745c5c3_Err != nil {
@@ -279,7 +281,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(org.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 102, Col: 44}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 104, Col: 44}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -328,7 +330,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(row.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 118, Col: 71}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 120, Col: 71}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -341,7 +343,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(row.Kind)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 120, Col: 50}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 122, Col: 50}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 				if templ_7745c5c3_Err != nil {
@@ -359,7 +361,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 					var templ_7745c5c3_Var16 string
 					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(row.OrgName)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 122, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 124, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 					if templ_7745c5c3_Err != nil {
@@ -391,7 +393,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 					var templ_7745c5c3_Var17 string
 					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(row.TokenPrefix)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 129, Col: 70}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 131, Col: 70}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 					if templ_7745c5c3_Err != nil {
@@ -452,7 +454,7 @@ func pairingPlatformOption(page PlatformsPage, mode string, platformType string,
 			templ_7745c5c3_Var18 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		selected := (mode == "qr" && page.Pairing == "qr" && platformType == "whatsapp") || (mode == "credentials" && page.Pairing == "credentials" && platformType == "rocket")
+		selected := page.PairingPlatform == platformType
 		var templ_7745c5c3_Var19 = []any{"flex flex-1 flex-col items-center gap-1.5 rounded-[9px] border px-2 py-2 hover:no-underline", templ.KV("border-brand bg-brand-wash", selected), templ.KV("border-line-2", !selected)}
 		templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var19...)
 		if templ_7745c5c3_Err != nil {
@@ -463,9 +465,9 @@ func pairingPlatformOption(page PlatformsPage, mode string, platformType string,
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var20 templ.SafeURL
-		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/admin/platforms?pairing=" + mode))
+		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/admin/platforms?pairing=" + mode + "&platform=" + platformType))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 145, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 147, Col: 90}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
@@ -500,7 +502,7 @@ func pairingPlatformOption(page PlatformsPage, mode string, platformType string,
 			var templ_7745c5c3_Var22 string
 			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 148, Col: 62}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 150, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 			if templ_7745c5c3_Err != nil {
@@ -518,7 +520,7 @@ func pairingPlatformOption(page PlatformsPage, mode string, platformType string,
 			var templ_7745c5c3_Var23 string
 			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 150, Col: 56}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 152, Col: 56}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var23))
 			if templ_7745c5c3_Err != nil {
@@ -588,17 +590,42 @@ func pairingPanel(page PlatformsPage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "<div class=\"flex flex-col items-center gap-3.5 py-1\"><div class=\"flex size-[176px] items-center justify-center rounded-[10px] border border-line-2 bg-panel\"><div class=\"text-center font-mono text-[11px] leading-relaxed text-text-4\">QR code<br>d'appairage</div></div><div class=\"max-w-[290px] text-center text-sm leading-normal text-text-3\">Dans WhatsApp, ouvrez <span class=\"font-medium text-text\">Appareils connectés</span> et scannez ce code. Il se renouvelle toutes les 20 secondes.</div><div class=\"flex items-center gap-2\"><span class=\"size-[7px] rounded-full bg-warn\"></span> <span class=\"font-mono text-[13px] text-warn-deep\">Prochain lot — appairage à chaud</span></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "<div class=\"flex flex-col items-center gap-3.5 py-1\"><div class=\"flex size-[176px] items-center justify-center rounded-[10px] border border-line-2 bg-panel\"><div class=\"text-center font-mono text-[11px] leading-relaxed text-text-4\">QR code<br>d'appairage</div></div><div class=\"max-w-[290px] text-center text-sm leading-normal text-text-3\">Dans ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var25 string
+			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(platformDisplayLabel(page.PairingPlatform))
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_platforms.templ`, Line: 195, Col: 128}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, ", ouvrez <span class=\"font-medium text-text\">Appareils connectés</span> et scannez ce code. Il se renouvelle toutes les 20 secondes.</div><div class=\"flex items-center gap-2\"><span class=\"size-[7px] rounded-full bg-warn\"></span> <span class=\"font-mono text-[13px] text-warn-deep\">Prochain lot — appairage à chaud</span></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 48, "<div class=\"mt-5 flex gap-2.5 border-t border-line-3 pt-4\"><a href=\"/admin/platforms\" class=\"flex h-[38px] flex-1 items-center justify-center rounded-lg border border-line text-sm font-medium text-text hover:bg-panel hover:no-underline\">Annuler</a> <span class=\"flex h-[38px] flex-1 cursor-not-allowed items-center justify-center rounded-lg bg-brand/50 text-sm font-semibold text-white\" title=\"L'appairage à chaud des comptes arrive dans un prochain lot\">Vérifier</span></div></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<div class=\"mt-5 flex gap-2.5 border-t border-line-3 pt-4\"><a href=\"/admin/platforms\" class=\"flex h-[38px] flex-1 items-center justify-center rounded-lg border border-line text-sm font-medium text-text hover:bg-panel hover:no-underline\">Annuler</a> <span class=\"flex h-[38px] flex-1 cursor-not-allowed items-center justify-center rounded-lg bg-brand/50 text-sm font-semibold text-white\" title=\"L'appairage à chaud des comptes arrive dans un prochain lot\">Vérifier</span></div></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		return nil
 	})
+}
+
+// platformDisplayLabel nomme une plateforme dans une phrase.
+func platformDisplayLabel(platformType string) string {
+	switch platformType {
+	case "signal":
+		return "Signal"
+	case "rocket":
+		return "Rocket.Chat"
+	default:
+		return "WhatsApp"
+	}
 }
 
 var _ = templruntime.GeneratedTemplate

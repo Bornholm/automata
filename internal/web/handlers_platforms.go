@@ -17,10 +17,27 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 		pairing = ""
 	}
 
+	// Plateforme sélectionnée dans le gabarit d'appairage : elle décide de
+	// la variante affichée autant que du surlignage du sélecteur.
+	pairingPlatform := r.URL.Query().Get("platform")
+	switch pairingPlatform {
+	case "whatsapp", "signal":
+		pairing = "qr"
+	case "rocket":
+		pairing = "credentials"
+	default:
+		if pairing == "credentials" {
+			pairingPlatform = "rocket"
+		} else if pairing == "qr" {
+			pairingPlatform = "whatsapp"
+		}
+	}
+
 	page := view.PlatformsPage{
-		Platforms: s.sidebarPlatforms(),
-		CSRFToken: s.csrfToken(w, r),
-		Pairing:   pairing,
+		Platforms:       s.sidebarPlatforms(),
+		CSRFToken:       s.csrfToken(w, r),
+		Pairing:         pairing,
+		PairingPlatform: pairingPlatform,
 	}
 
 	// Cartes de plateformes : go-courier n'expose pas d'état de connexion
@@ -57,7 +74,7 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 		for _, ch := range s.cfg.Channels {
 			page.Channels = append(page.Channels, view.ChannelRow{
 				PlatformType: providerTypeOf(s.cfg, ch.Provider),
-				Name:         ch.DisplayName,
+				Name:         s.channelDisplayName(ch),
 				Kind:         channelKindLabel(ch.Kind),
 				OrgName:      s.orgDisplayName(r.Context(), tx, ch.OrgID),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},

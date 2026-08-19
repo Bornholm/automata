@@ -71,6 +71,20 @@ type OrgPage struct {
 	Channels []OrgChannelRow
 }
 
+// balanceHintClass colore l'indication de solde selon l'état : une
+// organisation saine ne doit pas afficher son autonomie en teinte
+// d'alerte.
+func balanceHintClass(tone string) string {
+	switch tone {
+	case "warn":
+		return "text-warn-deep"
+	case "crit":
+		return "text-crit-deep"
+	default:
+		return "text-text-3"
+	}
+}
+
 func weekBarClass(tone string) string {
 	switch tone {
 	case "current":
@@ -218,7 +232,7 @@ templ orgCreditsTab(page OrgPage) {
 					@Gauge(page.GaugePct, page.GaugeTone, "h-2")
 				</div>
 				<div class="mt-2 flex justify-between">
-					<div class="text-[13px] leading-snug text-warn-deep">{ page.BalanceHint }</div>
+					<div class={ "text-[13px] leading-snug", balanceHintClass(page.GaugeTone) }>{ page.BalanceHint }</div>
 					if page.GaugeRef > 0 {
 						<div class="font-mono text-xs text-text-4">/{ FormatInt(page.GaugeRef) }</div>
 					}

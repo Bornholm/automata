@@ -201,3 +201,27 @@ func (s *Server) orgDisplayName(ctx context.Context, q persistence.Querier, orgI
 	}
 	return orgID
 }
+
+// channelDisplayName retourne un libellé lisible pour un canal de la
+// configuration : son nom affiché s'il en a un, sinon le nom de la
+// personne dont c'est la conversation privée. Un identifiant de messagerie
+// brut n'apprend rien à l'écran et n'a pas sa place dans une interface.
+func (s *Server) channelDisplayName(ch config.Channel) string {
+	if ch.DisplayName != "" {
+		return ch.DisplayName
+	}
+
+	if ch.Kind == config.ChannelKindGroup {
+		return "Groupe sans nom"
+	}
+
+	if ch.PrincipalID != "" {
+		for _, principal := range s.cfg.Identities.Principals {
+			if principal.ID == ch.PrincipalID && principal.DisplayName != "" {
+				return principal.DisplayName
+			}
+		}
+	}
+
+	return "Conversation privée"
+}

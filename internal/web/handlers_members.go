@@ -157,7 +157,7 @@ func (s *Server) memberChannels(memberID string) []view.OrgChannelRow {
 		}
 		rows = append(rows, view.OrgChannelRow{
 			PlatformType: providerTypeOf(s.cfg, ch.Provider),
-			Name:         ch.DisplayName,
+			Name:         s.channelDisplayName(ch),
 			Kind:         channelKindLabel(ch.Kind),
 		})
 	}
@@ -165,13 +165,24 @@ func (s *Server) memberChannels(memberID string) []view.OrgChannelRow {
 }
 
 // maskedIdentity décrit l'identité de messagerie sans exposer
-// l'identifiant brut complet (fin d'identifiant seulement).
+// l'identifiant brut complet : seuls les derniers caractères de la partie
+// locale sont montrés — le domaine technique (« @lid », « @g.us ») ne dit
+// rien à personne et ne distingue rien.
 func maskedIdentity(providerType, externalUserID string) string {
-	suffix := externalUserID
-	if len(suffix) > 4 {
-		suffix = suffix[len(suffix)-4:]
+	local, _, found := strings.Cut(externalUserID, "@")
+	if !found {
+		local = externalUserID
 	}
-	return platformDisplayName(providerType, providerType) + " · …" + suffix
+	if len(local) > 4 {
+		local = local[len(local)-4:]
+	}
+
+	label := platformDisplayName(providerType, providerType)
+	if local == "" {
+		return label
+	}
+
+	return label + " · …" + local
 }
 
 // buildMemberPage assemble la fiche ADM-04.
