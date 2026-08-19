@@ -31,6 +31,15 @@ func resolvePaths(cfg *Config, baseDir string) {
 			cfg.Courier.Providers[name] = provider
 		}
 	}
+
+	// Les sauvegardes suivent la même règle que le reste : un chemin
+	// relatif se lit depuis le fichier de configuration, pas depuis le
+	// répertoire de lancement — sinon les copies atterrissent où le
+	// service a été démarré, et les bases annexes restent introuvables.
+	cfg.Backup.Directory = resolvePath(baseDir, cfg.Backup.Directory)
+	for name, path := range cfg.Backup.ExtraPaths {
+		cfg.Backup.ExtraPaths[name] = resolvePath(baseDir, path)
+	}
 }
 
 // loadSystemPrompts résout le chemin des prompts basés sur un fichier et

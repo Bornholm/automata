@@ -47,6 +47,7 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateSchedules(cfg)...)
 	errs = append(errs, validateObservability(cfg)...)
 	errs = append(errs, validateWeb(cfg)...)
+	errs = append(errs, validateBackup(cfg)...)
 	errs = append(errs, validateCourier(cfg)...)
 	errs = append(errs, validateCourierProviders(cfg)...)
 	errs = append(errs, validateConversation(cfg)...)
@@ -204,6 +205,29 @@ func validateWeb(cfg *Config) []error {
 	}
 	if cfg.Web.Credits.USDPerCredit < 0 {
 		errs = append(errs, fmt.Errorf("web.credits.usd_per_credit: ne peut pas être négatif"))
+	}
+
+	return errs
+}
+
+// validateBackup vérifie la section backup.
+func validateBackup(cfg *Config) []error {
+	if !cfg.Backup.Enabled {
+		return nil
+	}
+
+	var errs []error
+
+	if cfg.Backup.Directory == "" {
+		errs = append(errs, fmt.Errorf("backup.directory: requis lorsque backup.enabled vaut true"))
+	}
+	if cfg.Backup.Keep < 0 {
+		errs = append(errs, fmt.Errorf("backup.keep: ne peut pas être négatif"))
+	}
+	// Une sauvegarde plus fréquente que la minute sature le disque sans
+	// rien protéger de plus : le service écrit en continu.
+	if interval := cfg.Backup.Interval.Duration(); interval != 0 && interval < time.Minute {
+		errs = append(errs, fmt.Errorf("backup.interval: au moins une minute"))
 	}
 
 	return errs

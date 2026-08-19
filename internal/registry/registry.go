@@ -22,6 +22,7 @@ import (
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/authorization"
+	"github.com/bornholm/automata/internal/backup"
 	"github.com/bornholm/automata/internal/billing"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/consolidation"
@@ -245,6 +246,37 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 			if err := debiter.Run(ctx); err != nil && ctx.Err() == nil {
 				logger.ErrorContext(ctx, "registry: facturation arrêtée en erreur", "error", err)
+			}
+		}()
+	}
+
+	// Sauvegardes périodiques des bases SQLite : conversations,
+	// portefeuilles, souvenirs et sessions de messagerie. Sans elles, une
+	// panne de disque coûte tout l'historique des organisations servies.
+	if cfg.Backup.Enabled {
+		sources := []backup.Source{
+			{Name: "app", Path: cfg.Storage.Application.Path, Driver: cfg.Storage.Application.Driver},
+		}
+		if cfg.Memory.Store.Path != "" {
+			sources = append(sources, backup.Source{Name: "memory", Path: cfg.Memory.Store.Path})
+		}
+		for name, path := range cfg.Backup.ExtraPaths {
+			sources = append(sources, backup.Source{Name: name, Path: path})
+		}
+
+		backupRunner := backup.New(backup.Options{
+			Directory: cfg.Backup.Directory,
+			Interval:  cfg.Backup.EffectiveInterval(),
+			Keep:      cfg.Backup.EffectiveKeep(),
+			Sources:   sources,
+		}, logger)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			if err := backupRunner.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.ErrorContext(ctx, "registry: sauvegardes arrêtées en erreur", "error", err)
 			}
 		}()
 	}

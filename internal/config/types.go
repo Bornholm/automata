@@ -89,6 +89,42 @@ type Config struct {
 	Schedules     []Schedule             `yaml:"schedules"`
 	Observability Observability          `yaml:"observability"`
 	Web           Web                    `yaml:"web"`
+	Backup        Backup                 `yaml:"backup"`
+}
+
+// Backup décrit les sauvegardes périodiques des bases SQLite. Désactivées
+// par défaut ; activées, elles couvrent la base applicative, la mémoire et
+// les sessions de messagerie — perdre l'une d'elles coûte respectivement
+// les conversations et les portefeuilles, les souvenirs, ou un
+// ré-appairage de chaque compte.
+type Backup struct {
+	Enabled bool `yaml:"enabled"`
+	// Directory reçoit les copies ; il doit vivre hors du répertoire de
+	// données, idéalement sur un autre support.
+	Directory string `yaml:"directory"`
+	// Interval sépare deux sauvegardes. Vide : six heures.
+	Interval Duration `yaml:"interval"`
+	// Keep borne le nombre de copies conservées par base. Zéro : dix.
+	Keep int `yaml:"keep"`
+	// ExtraPaths ajoute des bases SQLite à sauvegarder (sessions de
+	// messagerie, index annexes) : nom d'affichage → chemin.
+	ExtraPaths map[string]string `yaml:"extra_paths"`
+}
+
+// EffectiveInterval retourne l'intervalle configuré, ou six heures.
+func (b Backup) EffectiveInterval() time.Duration {
+	if interval := b.Interval.Duration(); interval > 0 {
+		return interval
+	}
+	return 6 * time.Hour
+}
+
+// EffectiveKeep retourne la rétention configurée, ou dix copies.
+func (b Backup) EffectiveKeep() int {
+	if b.Keep > 0 {
+		return b.Keep
+	}
+	return 10
 }
 
 // Observability décrit le serveur HTTP local optionnel de santé et de

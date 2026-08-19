@@ -1169,6 +1169,37 @@ binaire Tailwind sous `tools/` ; `make web-generate` régénère les fichiers
 `*_templ.go` et `internal/web/assets/app.css`. Les fichiers générés sont
 commités : `go build` reste autonome.
 
+## backup
+
+Sauvegardes périodiques des bases SQLite. Désactivées par défaut ; une
+instance qui sert des clients ne devrait jamais tourner sans.
+
+```yaml
+backup:
+  enabled: true
+  directory: ./backups   # relatif au fichier de configuration
+  interval: 6h           # défaut : 6h
+  keep: 10               # copies conservées par base, défaut : 10
+  extra_paths:
+    whatsapp-session: ./whatsapp/data/courier/whatsapp?_foreign_keys=on
+```
+
+La base applicative (`storage.application`) et la mémoire
+(`memory.store`) sont sauvegardées automatiquement ; `extra_paths` ajoute
+les bases annexes — la **session de messagerie** en particulier, sans
+laquelle une restauration coûterait un ré-appairage de chaque compte.
+
+La copie se fait par `VACUUM INTO`, qui produit une base cohérente pendant
+que le service écrit : copier le fichier à chaud donnerait une sauvegarde
+corrompue en mode WAL. Chaque copie est d'abord écrite sous un nom
+temporaire puis renommée — une copie partielle ne doit jamais pouvoir
+passer pour une sauvegarde valide — et reçoit les permissions `0600`
+(le répertoire, `0700`) : elle porte les mêmes données personnelles que
+l'original.
+
+Une base absente est ignorée sans erreur, et l'échec d'une source
+n'empêche pas les autres d'être sauvegardées.
+
 ## Comptabilité d'usage
 
 Aucune clé de configuration : dès que le stockage applicatif est présent
