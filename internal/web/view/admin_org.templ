@@ -1,0 +1,328 @@
+package view
+
+// ADM-03 — Organisation, détail. L'onglet Crédits est le pivot :
+// mouvements du portefeuille, panneau de solde (durée avant chiffre),
+// consommation par semaine, bascule « organisation offerte ». Membres et
+// Canaux sont des listes simples ; Personnalisation est un lot ultérieur.
+
+type OrgStat struct {
+	Label string
+	Value string
+}
+
+type WalletRow struct {
+	At     string
+	Label  string
+	Badge  string // ex. "STRIPE", vide sinon
+	Amount int64
+	After  int64
+}
+
+type WeekBar struct {
+	Label string
+	Pct   int
+	// Tone : "" (passée), "current" (semaine en cours, accent), "empty".
+	Tone string
+}
+
+type MemberRow struct {
+	ID    string
+	Name  string
+	Role  string
+	Chip  Chip
+	Email string
+}
+
+type OrgChannelRow struct {
+	PlatformType string
+	Name         string
+	Kind         string
+	Chip         Chip
+}
+
+type OrgPage struct {
+	Platforms []SidebarPlatform
+	CSRFToken string
+
+	ID    string
+	Name  string
+	Chip  Chip
+	Stats []OrgStat
+	// Tab : credits | members | channels.
+	Tab string
+
+	// Onglet Crédits.
+	Ledger        []WalletRow
+	Balance       int64
+	GaugePct      int
+	GaugeTone     string
+	BalanceHint   string // « Environ 2 jours d'usage courant »
+	GaugeRef      int64  // dernier apport (« /2 500 »)
+	AutoTopUp     string // « Inactive » (l'activation vit côté profil)
+	DailyRate     string // « ≈ 105 cr./j » ou « — »
+	Weeks         []WeekBar
+	Offered       bool
+	Allowance     int64
+	FlashToken    *TokenPanelData // jeton de groupe fraîchement généré, sinon nil
+	Flash         string
+
+	// Onglets Membres / Canaux.
+	Members  []MemberRow
+	Channels []OrgChannelRow
+}
+
+func weekBarClass(tone string) string {
+	switch tone {
+	case "current":
+		return "bg-brand"
+	case "empty":
+		return "bg-track"
+	default:
+		return "bg-brand-line"
+	}
+}
+
+templ orgTab(page OrgPage, tab string, label string) {
+	if page.Tab == tab {
+		<span class="px-0.5 pb-3 text-sm font-semibold text-ink shadow-[inset_0_-2px_0_var(--color-brand)]">{ label }</span>
+	} else {
+		<a href={ templ.SafeURL("/admin/orgs/" + page.ID + "?tab=" + tab) } class="px-0.5 pb-3 text-sm font-medium text-text-3 hover:text-ink hover:no-underline">{ label }</a>
+	}
+}
+
+templ AdminOrg(page OrgPage) {
+	@AdminLayout(page.Name+" — Automata Admin", "orgs", page.Platforms, page.CSRFToken) {
+		<header class="border-b border-line-2 bg-white px-7 pt-5">
+			<div class="mb-2.5 text-[13px] text-text-4"><a href="/admin/orgs">Organisations</a> / <span class="text-text">{ page.Name }</span></div>
+			<div class="flex items-start gap-5">
+				<div>
+					<div class="flex items-center gap-3">
+						<h1 class="text-2xl font-semibold leading-tight tracking-[-.015em] text-ink">{ page.Name }</h1>
+						@StatusChip(page.Chip)
+					</div>
+					<div class="mt-2.5 flex gap-5 pb-4.5">
+						for i, stat := range page.Stats {
+							if i > 0 {
+								<div class="w-px bg-line-2"></div>
+							}
+							<div>
+								@Eyebrow(stat.Label, "text-text-4")
+								<div class="mt-1 font-mono text-base text-text">{ stat.Value }</div>
+							</div>
+						}
+					</div>
+				</div>
+				<div class="ml-auto flex gap-2.5">
+					<span class="flex h-9 items-center rounded-lg border border-line bg-white px-3.5 text-sm font-medium text-text-4" title="Paiement Stripe : prochain lot">Portail Stripe</span>
+					<button type="button" onclick="document.getElementById('grant-dialog').showModal()" class="h-9 rounded-lg bg-brand px-3.5 text-sm font-semibold text-white hover:bg-brand-strong">Offrir des crédits</button>
+				</div>
+			</div>
+			<div class="flex gap-6">
+				@orgTab(page, "members", "Membres")
+				@orgTab(page, "channels", "Canaux")
+				@orgTab(page, "credits", "Crédits")
+				<span class="flex items-center gap-1.5 px-0.5 pb-3 text-sm font-medium text-text-3" title="Prochain lot">Personnalisation <span class="rounded bg-panel-2 px-1 py-0.5 font-mono text-[9px] font-bold text-text-4">P2</span></span>
+			</div>
+		</header>
+		<div class="p-7">
+			if page.Flash != "" {
+				<div class="mb-4 rounded-lg bg-ok-wash px-4 py-2.5 text-sm text-ok-deep">{ page.Flash }</div>
+			}
+			if page.FlashToken != nil {
+				<div class="mb-5">
+					@TokenPanel(*page.FlashToken)
+				</div>
+			}
+			switch page.Tab {
+				case "members":
+					@orgMembersTab(page)
+				case "channels":
+					@orgChannelsTab(page)
+				default:
+					@orgCreditsTab(page)
+			}
+		</div>
+		@grantDialog(page)
+	}
+}
+
+templ orgCreditsTab(page OrgPage) {
+	<div class="flex items-start gap-5">
+		<div class="flex min-w-0 flex-1 flex-col gap-4.5">
+			<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
+				<div class="flex items-center border-b border-line-2 px-5 py-3.5">
+					<div class="text-[15px] font-semibold text-ink">Mouvements du portefeuille</div>
+					<a href={ templ.SafeURL("/admin/orgs/" + page.ID + "/wallet.csv") } class="ml-auto text-[13px] text-brand">Exporter en CSV</a>
+				</div>
+				if len(page.Ledger) == 0 {
+					<div class="px-5 py-8 text-center text-sm text-text-4">Aucun mouvement pour l'instant. Les crédits de bienvenue et les gestes commerciaux apparaîtront ici.</div>
+				} else {
+					<div class="grid grid-cols-[1fr_1.7fr_.9fr_.9fr] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
+						<div>Date</div>
+						<div>Nature</div>
+						<div class="text-right">Mouvement</div>
+						<div class="text-right">Solde après</div>
+					</div>
+					for _, row := range page.Ledger {
+						<div class="grid grid-cols-[1fr_1.7fr_.9fr_.9fr] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0">
+							<div class="font-mono text-[13px] text-text-3">{ row.At }</div>
+							<div class="text-sm text-text">
+								{ row.Label }
+								if row.Badge != "" {
+									<span class="ml-1.5 rounded bg-brand-wash px-1.5 py-0.5 font-mono text-[10px] font-bold text-brand-deep">{ row.Badge }</span>
+								}
+							</div>
+							if row.Amount >= 0 {
+								<div class="text-right font-mono text-sm text-ok">{ FormatSignedCredits(row.Amount) }</div>
+							} else {
+								<div class="text-right font-mono text-sm text-crit">{ FormatSignedCredits(row.Amount) }</div>
+							}
+							<div class="text-right font-mono text-sm text-text">{ FormatInt(row.After) }</div>
+						</div>
+					}
+				}
+			</div>
+			<div class="rounded-[11px] border border-line-2 bg-white p-5">
+				<form method="post" action={ templ.SafeURL("/admin/orgs/" + page.ID + "/offered") } class="flex items-start gap-4">
+					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+					<button type="submit" name="offered" value={ boolFlip(page.Offered) }
+						class={ "flex h-[22px] w-[38px] shrink-0 rounded-full p-0.5 transition-colors", templ.KV("justify-end bg-ok", page.Offered), templ.KV("bg-track", !page.Offered) }
+						title="Basculer le statut offert">
+						<span class="size-[18px] rounded-full bg-white shadow-sm"></span>
+					</button>
+					<div class="min-w-0">
+						<div class="text-[15px] font-semibold text-ink">Organisation offerte par la maison</div>
+						<div class="mt-1 max-w-[560px] text-sm leading-normal text-text-3">Remplace l'achat par une allocation mensuelle non cumulative, remise à niveau le 1<sup>er</sup> de chaque mois. Les boutons d'achat disparaissent du profil.</div>
+						<div class={ "mt-3 flex items-center gap-2.5", templ.KV("opacity-45", !page.Offered) }>
+							<span class="text-sm font-medium text-text">Allocation mensuelle</span>
+							<input type="number" name="allowance" value={ FormatPlainInt(page.Allowance) } min="0"
+								disabled?={ !page.Offered }
+								class="h-[34px] w-[120px] rounded-lg border border-line bg-white px-2.5 font-mono text-sm text-text outline-none focus:border-brand disabled:bg-panel disabled:text-text-3"/>
+							<span class="text-sm text-text-3">crédits</span>
+							if page.Offered {
+								<button type="submit" name="offered" value="true" class="h-[34px] rounded-lg border border-line px-3 text-[13px] font-medium text-text hover:bg-panel">Enregistrer</button>
+							}
+						</div>
+					</div>
+				</form>
+			</div>
+		</div>
+		<div class="flex w-[330px] shrink-0 flex-col gap-4.5">
+			<div class="rounded-[11px] border border-line-2 bg-white p-5">
+				@Eyebrow("Solde actuel", "text-text-4")
+				<div class="mt-2.5 flex items-baseline gap-2">
+					<div class="font-mono text-3xl text-ink">{ FormatInt(page.Balance) }</div>
+					<div class="text-[15px] text-text-3">crédits</div>
+				</div>
+				<div class="mt-3.5">
+					@Gauge(page.GaugePct, page.GaugeTone, "h-2")
+				</div>
+				<div class="mt-2 flex justify-between">
+					<div class="text-[13px] leading-snug text-warn-deep">{ page.BalanceHint }</div>
+					if page.GaugeRef > 0 {
+						<div class="font-mono text-xs text-text-4">/{ FormatInt(page.GaugeRef) }</div>
+					}
+				</div>
+				<div class="my-4 h-px bg-line-3"></div>
+				<div class="mb-2 flex justify-between text-sm"><span class="text-text-3">Recharge automatique</span><span class="font-medium text-text">{ page.AutoTopUp }</span></div>
+				<div class="flex justify-between text-sm"><span class="text-text-3">Rythme de consommation</span><span class="font-mono text-text">{ page.DailyRate }</span></div>
+			</div>
+			<div class="rounded-[11px] border border-line-2 bg-white p-5">
+				@Eyebrow("Consommation par semaine", "text-text-4")
+				<div class="mt-3.5 flex h-24 items-end gap-2">
+					for _, week := range page.Weeks {
+						<div class="flex-1">
+							<div class={ "w-full rounded-t-[3px]", weekBarClass(week.Tone) } style={ templ.SafeCSS("height:" + itoa(week.Pct) + "px") }></div>
+						</div>
+					}
+				</div>
+				<div class="mt-2 flex gap-2">
+					for _, week := range page.Weeks {
+						<div class="flex-1 text-center font-mono text-[11px] text-text-4">{ week.Label }</div>
+					}
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+templ orgMembersTab(page OrgPage) {
+	<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
+		<div class="flex items-center border-b border-line-2 px-5 py-3.5">
+			<div class="text-[15px] font-semibold text-ink">Membres</div>
+			<a href={ templ.SafeURL("/admin/orgs/" + page.ID + "/members/new") } class="ml-auto flex h-8 items-center rounded-lg bg-brand px-3 text-[13px] font-semibold text-white hover:bg-brand-strong hover:no-underline">Pré-créer un membre</a>
+		</div>
+		if len(page.Members) == 0 {
+			<div class="px-5 py-8 text-center text-sm text-text-4">Aucun membre. Pré-créez le premier : il recevra un jeton à envoyer à Automata pour se rattacher.</div>
+		} else {
+			for _, member := range page.Members {
+				<a href={ templ.SafeURL("/admin/members/" + member.ID) } class="flex items-center gap-3.5 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline">
+					<div class="min-w-0 flex-1">
+						<div class="text-[15px] font-semibold text-ink">{ member.Name }</div>
+						if member.Email != "" {
+							<div class="mt-0.5 text-[13px] text-text-4">{ member.Email }</div>
+						}
+					</div>
+					<span class="text-[13px] text-text-3">{ member.Role }</span>
+					@StatusChip(member.Chip)
+					<span class="text-[15px] font-semibold text-text-5">›</span>
+				</a>
+			}
+		}
+	</div>
+}
+
+templ orgChannelsTab(page OrgPage) {
+	<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
+		<div class="flex items-center border-b border-line-2 px-5 py-3.5">
+			<div class="text-[15px] font-semibold text-ink">Canaux</div>
+			<form method="post" action={ templ.SafeURL("/admin/orgs/" + page.ID + "/group-token") } class="ml-auto">
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				<button type="submit" class="h-8 rounded-lg border border-line bg-white px-3 text-[13px] font-medium text-text hover:bg-panel">Générer un jeton de groupe</button>
+			</form>
+		</div>
+		if len(page.Channels) == 0 {
+			<div class="px-5 py-8 text-center text-sm text-text-4">Aucun canal rattaché. Générez un jeton de groupe et envoyez-le dans la conversation à lier.</div>
+		} else {
+			for _, ch := range page.Channels {
+				<div class="flex items-center gap-3 border-b border-line-3 px-5 py-3 last:border-b-0">
+					@PlatformBadge(ch.PlatformType, "size-5 rounded-md", "text-[9px]")
+					<span class="text-sm font-medium text-text">{ ch.Name }</span>
+					<span class="text-sm text-text-3">{ ch.Kind }</span>
+					<div class="ml-auto">
+						@StatusChip(ch.Chip)
+					</div>
+				</div>
+			}
+		}
+	</div>
+}
+
+templ grantDialog(page OrgPage) {
+	<dialog id="grant-dialog" class="m-auto w-[380px] rounded-xl border border-line bg-white p-0 shadow-[0_8px_24px_rgba(22,28,39,.1)] backdrop:bg-ink/40">
+		<form method="post" action={ templ.SafeURL("/admin/orgs/" + page.ID + "/grant") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<div class="flex items-center gap-2.5 border-b border-line-2 px-5 py-4">
+				<div class="text-base font-semibold text-ink">Offrir des crédits</div>
+				<button type="button" onclick="document.getElementById('grant-dialog').close()" class="ml-auto text-lg text-text-4">×</button>
+			</div>
+			<div class="flex flex-col gap-3.5 p-5">
+				<label class="block">
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">Montant</span>
+					<div class="flex items-center gap-2">
+						<input type="number" name="amount" value="300" min="1" required class="h-[38px] w-[140px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+						<span class="text-sm text-text-3">crédits</span>
+					</div>
+				</label>
+				<label class="block">
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">Motif <span class="font-normal text-text-4">— visible dans les mouvements</span></span>
+					<input type="text" name="label" placeholder="Geste commercial — …" required class="h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+				</label>
+			</div>
+			<div class="flex gap-2.5 border-t border-line-3 px-5 py-4">
+				<button type="button" onclick="document.getElementById('grant-dialog').close()" class="h-[38px] flex-1 rounded-lg border border-line text-sm font-medium text-text hover:bg-panel">Annuler</button>
+				<button type="submit" class="h-[38px] flex-1 rounded-lg bg-brand text-sm font-semibold text-white hover:bg-brand-strong">Créditer</button>
+			</div>
+		</form>
+	</dialog>
+}

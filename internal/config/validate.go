@@ -46,6 +46,7 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateMemory(cfg)...)
 	errs = append(errs, validateSchedules(cfg)...)
 	errs = append(errs, validateObservability(cfg)...)
+	errs = append(errs, validateWeb(cfg)...)
 	errs = append(errs, validateCourier(cfg)...)
 	errs = append(errs, validateCourierProviders(cfg)...)
 	errs = append(errs, validateConversation(cfg)...)
@@ -157,6 +158,51 @@ func validateConversation(cfg *Config) []error {
 // négative n'a pas de sens, et une fenêtre de plus de 30 secondes ferait
 // passer l'assistant pour muet : chaque tour attend au moins la fenêtre
 // entière avant de traiter.
+// validateWeb vérifie la section web (serveur d'administration et de
+// profil). Ne s'applique que si le serveur est activé : une section absente
+// est valide et ne démarre rien.
+func validateWeb(cfg *Config) []error {
+	if !cfg.Web.Enabled {
+		return nil
+	}
+
+	var errs []error
+
+	if cfg.Web.Addr == "" {
+		errs = append(errs, fmt.Errorf("web.addr: requis lorsque web.enabled vaut true"))
+	}
+	if cfg.Web.BaseURL == "" {
+		errs = append(errs, fmt.Errorf("web.base_url: requis lorsque web.enabled vaut true (compose les liens de profil)"))
+	}
+	if len(cfg.Web.SessionSecret) < 32 {
+		errs = append(errs, fmt.Errorf("web.session_secret: au moins 32 octets requis (utiliser une variable d'environnement)"))
+	}
+	if cfg.Web.Admin.Email == "" {
+		errs = append(errs, fmt.Errorf("web.admin.email: requis lorsque web.enabled vaut true"))
+	}
+	if cfg.Web.Admin.PasswordHash == "" {
+		errs = append(errs, fmt.Errorf("web.admin.password_hash: requis (générer avec \"automata web hash-password\")"))
+	}
+	if cfg.Web.MailProvider != "" {
+		if _, ok := cfg.Courier.Providers[cfg.Web.MailProvider]; !ok {
+			errs = append(errs, fmt.Errorf("web.mail_provider: provider courier %q introuvable dans courier.providers", cfg.Web.MailProvider))
+		}
+	}
+	for i, pack := range cfg.Web.Credits.Packs {
+		if pack.Credits <= 0 {
+			errs = append(errs, fmt.Errorf("web.credits.packs[%d].credits: doit être strictement positif", i))
+		}
+		if pack.PriceEUR <= 0 {
+			errs = append(errs, fmt.Errorf("web.credits.packs[%d].price_eur: doit être strictement positif", i))
+		}
+	}
+	if cfg.Web.Credits.USDPerCredit < 0 {
+		errs = append(errs, fmt.Errorf("web.credits.usd_per_credit: ne peut pas être négatif"))
+	}
+
+	return errs
+}
+
 func validateCourier(cfg *Config) []error {
 	if cfg.Courier.CoalesceWindow == nil {
 		return nil

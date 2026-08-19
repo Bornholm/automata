@@ -88,6 +88,7 @@ type Config struct {
 	Channels      []Channel              `yaml:"channels"`
 	Schedules     []Schedule             `yaml:"schedules"`
 	Observability Observability          `yaml:"observability"`
+	Web           Web                    `yaml:"web"`
 }
 
 // Observability décrit le serveur HTTP local optionnel de santé et de
@@ -98,6 +99,63 @@ type Config struct {
 type Observability struct {
 	Enabled bool   `yaml:"enabled"`
 	Addr    string `yaml:"addr"`
+}
+
+// Web décrit le serveur web d'administration et de profil (socle SaaS,
+// maquettes P1). Désactivé par défaut, comme Observability. Lorsque
+// Enabled est vrai : Addr, BaseURL, SessionSecret et les identifiants
+// d'opérateur sont requis (voir validateWeb).
+type Web struct {
+	Enabled bool   `yaml:"enabled"`
+	Addr    string `yaml:"addr"`
+	// BaseURL est l'URL publique servant à composer les liens de profil
+	// envoyés dans les conversations (ex: https://automata.exemple.fr).
+	BaseURL string `yaml:"base_url"`
+	// SessionSecret signe les cookies de session (HMAC-SHA256). Au moins
+	// 32 octets ; passe par une variable d'environnement, jamais en clair.
+	SessionSecret string   `yaml:"session_secret"`
+	Admin         WebAdmin `yaml:"admin"`
+	// MailProvider est le nom d'un provider courier de type "mail" utilisé
+	// pour envoyer les codes de vérification de courriel (PRO-01).
+	// Optionnel : sans lui, la vérification est proposée mais désactivée.
+	MailProvider string     `yaml:"mail_provider"`
+	Credits      WebCredits `yaml:"credits"`
+}
+
+// WebAdmin décrit le compte opérateur de l'interface d'administration.
+type WebAdmin struct {
+	Email string `yaml:"email"`
+	// PasswordHash est un hachage bcrypt, produit par la sous-commande
+	// "automata web hash-password". Jamais de mot de passe en clair.
+	PasswordHash string `yaml:"password_hash"`
+}
+
+// WebCredits décrit l'économie provisoire de la monnaie virtuelle côté
+// affichage (l'écran de pilotage ADM-08 arrive dans un lot ultérieur).
+type WebCredits struct {
+	// USDPerCredit convertit le coût réel mesuré (usage_records, USD) en
+	// crédits pour l'affichage de la consommation. Défaut : 0.001 (1 000
+	// crédits par dollar) via EffectiveUSDPerCredit.
+	USDPerCredit float64 `yaml:"usd_per_credit"`
+	// Packs sont les offres d'achat affichées sur le profil (PRO-02). Le
+	// paiement Stripe arrive dans un lot ultérieur.
+	Packs []WebCreditPack `yaml:"packs"`
+}
+
+// EffectiveUSDPerCredit retourne le taux configuré, ou le défaut 0.001.
+func (c WebCredits) EffectiveUSDPerCredit() float64 {
+	if c.USDPerCredit > 0 {
+		return c.USDPerCredit
+	}
+	return 0.001
+}
+
+// WebCreditPack est une offre d'achat de crédits.
+type WebCreditPack struct {
+	Credits  int64   `yaml:"credits"`
+	PriceEUR float64 `yaml:"price_eur"`
+	// Featured met le pack en avant (« Le plus choisi » sur PRO-02).
+	Featured bool `yaml:"featured"`
 }
 
 // Organization décrit une organisation servie par l'instance.

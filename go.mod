@@ -17,8 +17,10 @@ require (
 require (
 	github.com/Bornholm/amatl v0.21.1 // indirect
 	github.com/DusanKasan/parsemail v1.2.0 // indirect
+	github.com/Oudwins/tailwind-merge-go v0.2.3 // indirect
 	github.com/RealAlexandreAI/json-repair v0.0.14 // indirect
 	github.com/RoaringBitmap/roaring/v2 v2.4.5 // indirect
+	github.com/a-h/templ v0.3.1020 // indirect
 	github.com/abadojack/whatlanggo v1.0.1 // indirect
 	github.com/apex/log v1.9.0 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect
@@ -74,6 +76,7 @@ require (
 	github.com/odvcencio/gotreesitter v0.38.0 // indirect
 	github.com/openai/openai-go v0.1.0-beta.10 // indirect
 	github.com/revrost/go-openrouter v1.6.0 // indirect
+	github.com/templui/templui v1.13.1 // indirect
 	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
@@ -82,7 +85,7 @@ require (
 	github.com/vektah/gqlparser/v2 v2.5.27 // indirect
 	github.com/web-ridge/email-reply-parser v0.0.0-20230428184542-95e2a82fa6bd // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
-	github.com/yuin/goldmark v1.7.8 // indirect
+	github.com/yuin/goldmark v1.7.13 // indirect
 	github.com/yuin/goldmark-meta v1.1.0 // indirect
 	go.etcd.io/bbolt v1.4.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect

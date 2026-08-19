@@ -94,10 +94,17 @@ type UsageAggregate struct {
 	ReportedCalls int64
 }
 
+// UsageFilter restreint une agrégation à une organisation et/ou un
+// principal (écrans du serveur web) ; les champs vides ne filtrent pas.
+type UsageFilter struct {
+	OrgID       string
+	PrincipalID string
+}
+
 // AggregateUsage agrège les traces de la période [from, to) selon les
-// dimensions groupBy (voir usageGroupColumns). Les lignes sont triées par
-// coût décroissant, puis tokens décroissants.
-func (r *UsageRecordRepository) AggregateUsage(ctx context.Context, q Querier, from, to time.Time, groupBy []string) ([]UsageAggregate, error) {
+// dimensions groupBy (voir usageGroupColumns), restreintes par filter.
+// Les lignes sont triées par coût décroissant, puis tokens décroissants.
+func (r *UsageRecordRepository) AggregateUsage(ctx context.Context, q Querier, from, to time.Time, groupBy []string, filter UsageFilter) ([]UsageAggregate, error) {
 	exprs := make([]string, 0, len(groupBy))
 	for _, key := range groupBy {
 		expr, ok := usageGroupColumns[key]
@@ -112,13 +119,24 @@ func (r *UsageRecordRepository) AggregateUsage(ctx context.Context, q Querier, f
 		"SUM(cached_tokens)", "SUM(cost_amount)", "SUM(cost_reported)")
 	groupCols := append(append([]string{}, exprs...), "cost_currency")
 
+	where := `created_at >= ? AND created_at < ?`
+	args := []any{from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339)}
+	if filter.OrgID != "" {
+		where += ` AND org_id = ?`
+		args = append(args, filter.OrgID)
+	}
+	if filter.PrincipalID != "" {
+		where += ` AND principal_id = ?`
+		args = append(args, filter.PrincipalID)
+	}
+
 	query := "SELECT " + strings.Join(selectCols, ", ") + `
 		FROM usage_records
-		WHERE created_at >= ? AND created_at < ?
+		WHERE ` + where + `
 		GROUP BY ` + strings.Join(groupCols, ", ") + `
 		ORDER BY SUM(cost_amount) DESC, SUM(total_tokens) DESC`
 
-	rows, err := q.QueryContext(ctx, query, from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339))
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("agrégation des traces d'usage: %w", err)
 	}

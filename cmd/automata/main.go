@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/registry"
+	"github.com/bornholm/automata/internal/web"
 )
 
 func main() {
@@ -87,6 +89,7 @@ func newRootCommand(logger *slog.Logger) *cobra.Command {
 	root.AddCommand(newMemoryCommand(logger))
 	root.AddCommand(newAdminCommand())
 	root.AddCommand(newUsageCommand())
+	root.AddCommand(newWebCommand())
 
 	return root
 }
@@ -345,6 +348,100 @@ func newMemoryReindexCommand(logger *slog.Logger) *cobra.Command {
 			}
 
 			fmt.Fprintln(cmd.OutOrStdout(), "réindexation terminée avec succès")
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+// newWebCommand construit la commande "web" et ses sous-commandes
+// "hash-password" (hachage bcrypt du mot de passe opérateur) et
+// "bootstrap" (import des tenants de la configuration vers la base).
+func newWebCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "web",
+		Short: "Outils du serveur web d'administration et de profil",
+	}
+
+	cmd.AddCommand(newWebHashPasswordCommand())
+	cmd.AddCommand(newWebBootstrapCommand())
+
+	return cmd
+}
+
+// newWebHashPasswordCommand lit le mot de passe sur l'entrée standard
+// (jamais en argument : il apparaîtrait dans l'historique du shell) et
+// imprime le hachage bcrypt à placer dans web.admin.password_hash.
+func newWebHashPasswordCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "hash-password",
+		Short: "Hache un mot de passe opérateur (lu sur stdin) pour web.admin.password_hash",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			raw, err := io.ReadAll(cmd.InOrStdin())
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "lecture du mot de passe:", err)
+				return errSilent
+			}
+
+			password := strings.TrimRight(string(raw), "\r\n")
+			if len(password) < 12 {
+				fmt.Fprintln(cmd.ErrOrStderr(), "mot de passe trop court : 12 caractères au minimum")
+				return errSilent
+			}
+
+			hash, err := web.HashPassword(password)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "hachage échoué:", err)
+				return errSilent
+			}
+
+			fmt.Fprintln(cmd.OutOrStdout(), hash)
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+// newWebBootstrapCommand importe organisations et membres de la
+// configuration vers les tables du socle SaaS (idempotent).
+func newWebBootstrapCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                "bootstrap",
+		Short:              "Importe les organisations et membres de la configuration dans la base",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fs := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
+			fs.SetOutput(cmd.ErrOrStderr())
+
+			configPath := fs.String("config", "", "chemin du fichier de configuration YAML (requis)")
+
+			if err := fs.Parse(args); err != nil {
+				return errSilent
+			}
+
+			if *configPath == "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "le drapeau -config est requis")
+				return errSilent
+			}
+
+			cfg, err := config.Load(*configPath)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "configuration invalide:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
+
+			if err := registry.WebBootstrap(cmd.Context(), cfg, cmd.OutOrStdout()); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "bootstrap échoué:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
 
 			return nil
 		},

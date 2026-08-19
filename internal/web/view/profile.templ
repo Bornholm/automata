@@ -1,0 +1,389 @@
+package view
+
+// Profil utilisateur (PRO-01, PRO-02, PRO-90) — mobile d'abord, ouvert par
+// lien temporaire. Chaque page s'ouvre sur l'en-tête d'identification
+// (ProfileLayout) puis une tâche unique. Le solde est toujours énoncé en
+// durée avant d'être chiffré ; le chiffre reste présent, en mono et en
+// second plan (annotation des maquettes).
+
+// ProfileNav relie les pages du profil pendant la validité de la session
+// courte. Ma consommation et Confidentialité sont des lots ultérieurs.
+templ profileNav(linkID string, active string) {
+	<div class="mt-6 flex gap-4 border-t border-line-3 pt-4">
+		if active == "profile" {
+			<span class="text-sm font-semibold text-ink">Profil</span>
+		} else {
+			<a href={ templ.SafeURL("/p/" + linkID) } class="text-sm font-medium text-brand">Profil</a>
+		}
+		if active == "credits" {
+			<span class="text-sm font-semibold text-ink">Crédits</span>
+		} else {
+			<a href={ templ.SafeURL("/p/" + linkID + "/credits") } class="text-sm font-medium text-brand">Crédits</a>
+		}
+		<span class="text-sm font-medium text-text-5" title="Bientôt">Ma consommation</span>
+		<span class="text-sm font-medium text-text-5" title="Bientôt">Confidentialité</span>
+	</div>
+}
+
+// --- PRO-01 — Mon profil ---
+
+type ProfileChannel struct {
+	PlatformType string
+	Name         string
+	Detail       string
+}
+
+type ProfilePage struct {
+	LinkID    string
+	Header    ProfileHeader
+	CSRFToken string
+
+	// EmailState : absent | pending | verified.
+	EmailState string
+	Email      string
+	// MailConfigured : sans provider mail configuré, l'envoi de code est
+	// proposé mais désactivé.
+	MailConfigured bool
+	Error          string
+
+	Channels []ProfileChannel
+}
+
+templ ProfileHome(page ProfilePage) {
+	@ProfileLayout("Votre profil — Automata", page.Header) {
+		if page.EmailState == "pending" {
+			<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Vérifions cette adresse</h1>
+			<p class="mt-2 text-[15px] leading-normal text-text-3">Nous avons envoyé six chiffres à <span class="font-medium text-text">{ page.Email }</span>.</p>
+			<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/email/verify") }>
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				if page.Error != "" {
+					<div class="mt-4 rounded-lg bg-crit-wash px-3.5 py-2.5 text-sm text-crit-deep">{ page.Error }</div>
+				}
+				<input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus placeholder="······"
+					class="mt-5 h-14 w-full rounded-[10px] border border-brand-line-2 bg-brand-wash-2 text-center font-mono text-[22px] font-bold tracking-[.5em] text-ink outline-none placeholder:text-text-5 focus:border-brand"/>
+				<button type="submit" class="mt-4 h-12 w-full rounded-[10px] bg-brand text-base font-semibold text-white hover:bg-brand-strong">Valider</button>
+			</form>
+			<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/email") } class="mt-3.5 text-center">
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				<input type="hidden" name="email" value={ page.Email }/>
+				<span class="text-sm text-text-4">Rien reçu ? </span>
+				<button type="submit" class="text-sm font-medium text-brand">Renvoyer le code</button>
+			</form>
+			<div class="mt-6 rounded-[11px] bg-panel p-3.5 text-sm leading-normal text-text-3">Vous pouvez fermer cette page : Automata vous renverra un lien si besoin, il suffit de le lui demander dans votre conversation.</div>
+		} else {
+			<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Votre profil</h1>
+			if page.EmailState == "verified" {
+				<p class="mt-2 text-[15px] leading-normal text-text-3">Votre adresse de secours est en place.</p>
+				<div class="mt-5 flex items-center gap-3 rounded-xl border border-ok-line bg-ok-wash-2 p-4">
+					<span class="flex size-6 shrink-0 items-center justify-center rounded-full bg-ok text-sm font-bold text-white">✓</span>
+					<div class="min-w-0">
+						<div class="truncate text-[15px] font-semibold text-ok-deeper">{ page.Email }</div>
+						<div class="text-[13px] text-ok-deep">Adresse vérifiée. Nous ne l'utiliserons que pour vous retrouver.</div>
+					</div>
+				</div>
+			} else {
+				<p class="mt-2 text-[15px] leading-normal text-text-3">Une adresse électronique nous permet de vous retrouver si vous changez de téléphone ou de numéro.</p>
+				<div class="mt-5 rounded-xl border border-brand-line bg-brand-wash-2 p-4.5">
+					<div class="text-base font-semibold leading-snug text-ink">Votre adresse de secours</div>
+					<div class="mt-1 text-sm leading-normal text-text-2">Nous ne l'utiliserons que pour cela. Aucun courriel d'information.</div>
+					<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/email") }>
+						<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+						if page.Error != "" {
+							<div class="mt-3 rounded-lg bg-crit-wash px-3 py-2 text-[13px] text-crit-deep">{ page.Error }</div>
+						}
+						<input type="email" name="email" value={ page.Email } required placeholder="vous@exemple.fr"
+							class="mt-3.5 h-12 w-full rounded-[10px] border border-brand-line-2 bg-white px-3.5 text-base text-ink outline-none placeholder:text-text-5 focus:border-brand"/>
+						if page.MailConfigured {
+							<button type="submit" class="mt-2.5 h-12 w-full rounded-[10px] bg-brand text-base font-semibold text-white hover:bg-brand-strong">Recevoir un code</button>
+						} else {
+							<span class="mt-2.5 flex h-12 w-full cursor-not-allowed items-center justify-center rounded-[10px] bg-brand/40 text-base font-semibold text-white" title="L'envoi de courriels n'est pas encore configuré sur cette instance">Recevoir un code</span>
+						}
+					</form>
+				</div>
+			}
+			<div class="mt-6">
+				@Eyebrow("Vos conversations avec Automata", "text-text-4")
+			</div>
+			<div class="mt-3 flex flex-col gap-2">
+				if len(page.Channels) == 0 {
+					<div class="rounded-[11px] border border-dashed border-line px-3.5 py-3 text-sm text-text-4">Aucune conversation rattachée pour l'instant.</div>
+				}
+				for _, ch := range page.Channels {
+					<div class="flex items-center gap-2.5 rounded-[11px] border border-line-2 px-3.5 py-3">
+						@PlatformBadge(ch.PlatformType, "size-[26px] rounded-lg", "text-[11px]")
+						<div class="min-w-0">
+							<div class="truncate text-[15px] font-medium text-text">{ ch.Name }</div>
+							<div class="text-xs text-text-4">{ ch.Detail }</div>
+						</div>
+					</div>
+				}
+			</div>
+			@profileNav(page.LinkID, "profile")
+		}
+	}
+}
+
+// --- PRO-02 — Crédits et recharge ---
+
+type CreditPack struct {
+	Credits  int64
+	Duration string // « Environ un mois »
+	PriceEUR string // « 35 € »
+	Featured bool
+	// FeaturedLabel : « Le plus choisi » / « Votre habitude ».
+	FeaturedLabel string
+}
+
+type MonthUsage struct {
+	Label   string
+	Credits int64
+}
+
+type UsageSplit struct {
+	Label   string
+	Credits int64
+	Pct     int
+	// Shade : "" (accent), "soft", "faint" — dégradé des barres.
+	Shade string
+}
+
+type CreditsPage struct {
+	LinkID    string
+	Header    ProfileHeader
+	CSRFToken string
+
+	// State : ok | low | empty | offered.
+	State       string
+	Balance     int64
+	GaugeRef    int64
+	GaugePct    int
+	BalanceHint string // durée parlée, toujours avant le chiffre
+
+	// Offerte.
+	Allowance  int64
+	UsedCredits int64
+	NextReset  string // « le 1ᵉʳ septembre »
+	Split      []UsageSplit
+
+	// Payante.
+	AutoTopUp       bool
+	AutoTopUpAmount int64
+	AutoTopUpBelow  int64
+	Packs           []CreditPack
+	FeaturedPrice   string
+	Months          []MonthUsage
+}
+
+func usageSplitClass(shade string) string {
+	switch shade {
+	case "soft":
+		return "bg-brand-soft"
+	case "faint":
+		return "bg-brand-line-2"
+	default:
+		return "bg-brand"
+	}
+}
+
+templ creditPackRow(pack CreditPack) {
+	<div class={ "flex items-center gap-3 rounded-[11px] border px-4 py-3.5", templ.KV("border-brand bg-brand-wash-2", pack.Featured), templ.KV("border-line-2", !pack.Featured) }>
+		<div class="min-w-0 flex-1">
+			<div class="flex items-center gap-2">
+				<div class="text-base font-semibold leading-tight text-text">{ FormatInt(pack.Credits) } crédits</div>
+				if pack.Featured && pack.FeaturedLabel != "" {
+					<span class="rounded-full bg-brand px-1.5 py-0.5 text-[11px] font-semibold text-white">{ pack.FeaturedLabel }</span>
+				}
+			</div>
+			if pack.Duration != "" {
+				<div class={ "mt-0.5 text-[13px] leading-tight", templ.KV("text-text-2", pack.Featured), templ.KV("text-text-4", !pack.Featured) }>{ pack.Duration }</div>
+			}
+		</div>
+		<div class="font-mono text-base text-text">{ pack.PriceEUR }</div>
+	</div>
+}
+
+templ payButton(label string) {
+	<span class="mt-3.5 flex h-12 w-full cursor-not-allowed items-center justify-center rounded-[10px] bg-brand/40 text-base font-semibold text-white" title="Paiement Stripe — prochainement">{ label }</span>
+	<div class="mt-2 text-center text-[13px] leading-normal text-text-4">Paiement Stripe — prochainement. Vos crédits peuvent déjà être ajoutés par l'exploitant du service.</div>
+}
+
+templ ProfileCredits(page CreditsPage) {
+	@ProfileLayout("Vos crédits — Automata", page.Header) {
+		switch page.State {
+			case "offered":
+				<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Votre usage du mois</h1>
+				<div class="mt-5 rounded-[14px] border border-line-2 p-4.5">
+					<div class="text-[21px] font-semibold leading-snug text-ink">{ page.BalanceHint }</div>
+					<div class="mt-4">
+						@Gauge(page.GaugePct, "brand", "h-2.5")
+					</div>
+					<div class="mt-2 flex justify-between font-mono text-[13px]">
+						<span class="text-text-3">{ FormatInt(page.UsedCredits) } crédits utilisés</span>
+						<span class="text-text-4">sur { FormatInt(page.Allowance) }</span>
+					</div>
+					<div class="mt-3.5 text-sm leading-normal text-text-3">Votre allocation revient à { FormatInt(page.Allowance) } crédits { page.NextReset }. Elle ne se cumule pas d'un mois sur l'autre — inutile d'économiser.</div>
+				</div>
+				<div class="mt-4 flex items-center gap-2.5 rounded-[11px] bg-brand-wash-2 px-4 py-3">
+					@Logo("size-[22px] rounded-[7px]", "text-[11px]")
+					<div class="text-sm leading-snug text-brand-deep">Cet accès vous est offert par Automata. Rien à payer, rien à renouveler.</div>
+				</div>
+				if len(page.Split) > 0 {
+					<div class="mt-6">
+						@Eyebrow("Ce mois-ci, en gros", "text-text-4")
+					</div>
+					<div class="mt-3.5 flex flex-col gap-3">
+						for _, split := range page.Split {
+							<div>
+								<div class="mb-1.5 flex justify-between">
+									<span class="text-[15px] leading-tight text-text">{ split.Label }</span>
+									<span class="font-mono text-sm leading-tight text-text-3">{ FormatCredits(split.Credits) }</span>
+								</div>
+								<div class="h-[7px] w-full overflow-hidden rounded-full bg-track">
+									<div class={ "h-full rounded-full", usageSplitClass(split.Shade) } style={ templ.SafeCSS("width:" + itoa(split.Pct) + "%") }></div>
+								</div>
+							</div>
+						}
+					</div>
+				}
+			case "empty":
+				<div class="rounded-[14px] bg-ink p-5">
+					@Eyebrow("Service en pause", "text-brand-soft")
+					<div class="mt-3.5 text-2xl font-semibold leading-tight tracking-[-.01em] text-white">Automata vous attend, ses crédits sont épuisés</div>
+					<div class="mt-2.5 text-[15px] leading-relaxed text-sidebar-text">Vos souvenirs, vos rappels et vos conversations sont intacts. Une recharge et tout reprend là où vous l'avez laissé.</div>
+					<div class="mt-4.5 h-2.5 rounded-full bg-ink-3"></div>
+					<div class="mt-2 font-mono text-[13px] text-sidebar-muted">0 crédit</div>
+				</div>
+				<div class="mt-5 flex flex-col gap-2">
+					for _, pack := range page.Packs {
+						@creditPackRow(pack)
+					}
+				</div>
+				@payButton("Réactiver Automata — " + page.FeaturedPrice)
+			default:
+				<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Vos crédits</h1>
+				if page.State == "low" {
+					<div class="mt-5 rounded-[14px] border border-warn-line bg-warn-row p-4.5">
+						<div class="text-[21px] font-semibold leading-snug text-ink">{ page.BalanceHint }</div>
+						<div class="mt-4 h-2.5 w-full overflow-hidden rounded-full bg-warn-track">
+							<div class="h-full rounded-full bg-warn" style={ templ.SafeCSS("width:" + itoa(page.GaugePct) + "%") }></div>
+						</div>
+						<div class="mt-2 flex justify-between font-mono text-[13px]">
+							<span class="text-warn-deep">{ FormatInt(page.Balance) } crédits</span>
+							if page.GaugeRef > 0 {
+								<span class="text-warn-soft">sur { FormatInt(page.GaugeRef) }</span>
+							}
+						</div>
+						<div class="mt-3.5 text-sm leading-normal text-warn-deep">Rien n'est interrompu pour l'instant. Une recharge maintenant vous évite une coupure.</div>
+					</div>
+				} else {
+					<div class="mt-5 rounded-[14px] border border-line-2 p-4.5">
+						<div class="text-[21px] font-semibold leading-snug text-ink">{ page.BalanceHint }</div>
+						<div class="mt-4">
+							@Gauge(page.GaugePct, "brand", "h-2.5")
+						</div>
+						<div class="mt-2 flex justify-between font-mono text-[13px]">
+							<span class="text-text-3">{ FormatInt(page.Balance) } crédits</span>
+							if page.GaugeRef > 0 {
+								<span class="text-text-4">sur { FormatInt(page.GaugeRef) }</span>
+							}
+						</div>
+					</div>
+				}
+				if page.AutoTopUp {
+					<div class="mt-4 flex gap-2.5 rounded-xl border border-ok-line bg-ok-wash-2 px-4 py-3.5">
+						<div class="flex h-[22px] w-[38px] shrink-0 justify-end rounded-full bg-ok p-0.5"><span class="size-[18px] rounded-full bg-white"></span></div>
+						<div>
+							<div class="text-[15px] font-semibold leading-snug text-ok-deeper">Recharge automatique active</div>
+							<div class="mt-0.5 text-sm leading-normal text-ok-deep">Nous rechargeons { FormatInt(page.AutoTopUpAmount) } crédits dès que vous descendez sous { FormatInt(page.AutoTopUpBelow) }. Vous n'avez rien à surveiller.</div>
+						</div>
+					</div>
+				} else {
+					<div class="mt-4 flex gap-2.5 rounded-xl border border-line-2 px-4 py-4" title="Activation à venir avec le paiement Stripe">
+						<div class="flex h-[22px] w-[38px] shrink-0 rounded-full bg-track p-0.5"><span class="size-[18px] rounded-full bg-white"></span></div>
+						<div>
+							<div class="text-[15px] font-semibold leading-snug text-ink">Ne plus y penser</div>
+							<div class="mt-0.5 text-sm leading-normal text-text-3">Rechargez automatiquement dès que le solde passe sous un seuil. Arrive avec le paiement en ligne.</div>
+						</div>
+					</div>
+				}
+				<div class="mt-6">
+					@Eyebrow("Ajouter des crédits", "text-text-4")
+				</div>
+				<div class="mt-3 flex flex-col gap-2">
+					for _, pack := range page.Packs {
+						@creditPackRow(pack)
+					}
+				</div>
+				if page.FeaturedPrice != "" {
+					@payButton("Payer " + page.FeaturedPrice + " en sécurité")
+				}
+				if len(page.Months) > 0 {
+					<div class="mt-6 border-t border-line-3 pt-4">
+						@Eyebrow("Ces derniers mois", "text-text-4")
+						<div class="mt-2 flex flex-col">
+							for i, month := range page.Months {
+								if i > 0 {
+									<div class="h-px bg-line-3"></div>
+								}
+								<div class="flex justify-between py-2">
+									<span class="text-[15px] text-text">{ month.Label }</span>
+									<span class="font-mono text-sm text-text-3">{ FormatCredits(month.Credits) }</span>
+								</div>
+							}
+						</div>
+					</div>
+				}
+		}
+		@profileNav(page.LinkID, "credits")
+	}
+}
+
+// --- PRO-90 — États de lien ---
+
+// LinkStatePage : expired | used | error.
+type LinkStatePage struct {
+	State string
+	// Ref est la référence courte d'incident (état erreur).
+	Ref string
+}
+
+templ ProfileLinkState(page LinkStatePage) {
+	@ProfileStateLayout("Automata") {
+		if page.State == "error" {
+			<div class="flex size-11 items-center justify-center rounded-xl bg-panel-2 font-mono text-[21px] font-bold text-text-4">a</div>
+		} else {
+			@Logo("size-11 rounded-xl", "text-[21px]")
+		}
+		<div>
+			switch page.State {
+				case "used":
+					<h1 class="text-[27px] font-semibold leading-tight tracking-[-.015em] text-ink">Ce lien a déjà servi</h1>
+					<p class="mt-2.5 text-base leading-relaxed text-text-3">Chaque lien ne s'ouvre qu'une fois. Si vous avez fermé la page trop tôt, il suffit d'en redemander un.</p>
+				case "error":
+					<h1 class="text-[27px] font-semibold leading-tight tracking-[-.015em] text-ink">Quelque chose n'a pas fonctionné</h1>
+					<p class="mt-2.5 text-base leading-relaxed text-text-3">Nous n'avons pas pu ouvrir cette page. Réessayez dans un instant, ou dites-le à Automata dans votre conversation.</p>
+				default:
+					<h1 class="text-[27px] font-semibold leading-tight tracking-[-.015em] text-ink">Ce lien a expiré</h1>
+					<p class="mt-2.5 text-base leading-relaxed text-text-3">C'est normal : les liens ne vivent qu'un quart d'heure, pour que personne d'autre ne puisse ouvrir votre profil.</p>
+			}
+		</div>
+		switch page.State {
+			case "used":
+				<div class="rounded-xl border border-brand-line bg-brand-wash-2 p-4.5">
+					<div class="text-base font-semibold leading-snug text-ink">Redemandez-en un à Automata</div>
+					<div class="mt-1.5 text-[15px] leading-relaxed text-text-2">Dans votre conversation, écrivez simplement « mon profil ». Il vous répond avec un nouveau lien.</div>
+				</div>
+			case "error":
+				<button onclick="location.reload()" class="h-12 rounded-[10px] border border-line text-base font-semibold text-text hover:bg-panel">Réessayer</button>
+				if page.Ref != "" {
+					<div class="font-mono text-xs text-text-5">réf. { page.Ref }</div>
+				}
+			default:
+				<div class="rounded-xl border border-brand-line bg-brand-wash-2 p-4.5">
+					<div class="text-base font-semibold leading-snug text-ink">Pour en recevoir un nouveau</div>
+					<div class="mt-1.5 text-[15px] leading-relaxed text-text-2">Retournez dans votre conversation et écrivez à Automata : « envoie-moi le lien de mon profil ».</div>
+				</div>
+				<div class="text-sm text-text-4">Vous pouvez fermer cette page.</div>
+		}
+	}
+}

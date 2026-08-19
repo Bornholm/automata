@@ -29,7 +29,7 @@ func aggregateUsage(t *testing.T, db *persistence.DB, from, to time.Time, groupB
 	var aggregates []persistence.UsageAggregate
 	if err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		var err error
-		aggregates, err = repo.AggregateUsage(context.Background(), tx, from, to, groupBy)
+		aggregates, err = repo.AggregateUsage(context.Background(), tx, from, to, groupBy, persistence.UsageFilter{})
 		return err
 	}); err != nil {
 		t.Fatalf("AggregateUsage: %v", err)
@@ -126,7 +126,7 @@ func TestUsageRecords_AggregateRejectsUnknownDimension(t *testing.T) {
 
 	repo := persistence.NewUsageRecordRepository()
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
-		_, err := repo.AggregateUsage(context.Background(), tx, time.Now().Add(-time.Hour), time.Now(), []string{"org; DROP TABLE usage_records"})
+		_, err := repo.AggregateUsage(context.Background(), tx, time.Now().Add(-time.Hour), time.Now(), []string{"org; DROP TABLE usage_records"}, persistence.UsageFilter{})
 		return err
 	})
 	if err == nil {

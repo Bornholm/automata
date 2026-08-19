@@ -1,0 +1,125 @@
+package view
+
+// Composants récurrents du design system des maquettes P1 : chips d'état,
+// jauges de solde, badges de plateforme, eyebrows Space Mono.
+
+// Chip est une pastille d'état (« Créditée », « Solde faible »…).
+type Chip struct {
+	Label string
+	// Tone : ok | warn | crit | brand | neutral.
+	Tone string
+	// Dot affiche la pastille de couleur devant le libellé.
+	Dot bool
+}
+
+func chipClasses(tone string) string {
+	switch tone {
+	case "ok":
+		return "bg-ok-wash text-ok-deep"
+	case "warn":
+		return "bg-warn-wash text-warn-deep"
+	case "crit":
+		return "bg-crit-wash text-crit-deep"
+	case "brand":
+		return "bg-brand-wash text-brand-deep"
+	default:
+		return "bg-panel-2 text-text-2"
+	}
+}
+
+func chipDotClass(tone string) string {
+	switch tone {
+	case "ok":
+		return "bg-ok"
+	case "warn":
+		return "bg-warn"
+	case "crit":
+		return "bg-crit"
+	case "brand":
+		return "bg-brand"
+	default:
+		return "bg-text-4"
+	}
+}
+
+templ StatusChip(c Chip) {
+	<span class={ "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold leading-[18px]", chipClasses(c.Tone) }>
+		if c.Dot {
+			<span class={ "size-[5px] rounded-full", chipDotClass(c.Tone) }></span>
+		}
+		{ c.Label }
+	</span>
+}
+
+func gaugeFillClass(tone string) string {
+	switch tone {
+	case "warn":
+		return "bg-warn"
+	case "crit":
+		return "bg-crit"
+	default:
+		return "bg-brand"
+	}
+}
+
+// Gauge est la jauge de solde : lisible en comparaison là où la chip est
+// lisible en balayage (annotation ADM-02).
+templ Gauge(pct int, tone string, heightClass string) {
+	<div class={ "w-full overflow-hidden rounded-full bg-track", heightClass }>
+		<div class={ "h-full rounded-full", gaugeFillClass(tone) } style={ templ.SafeCSS("width:" + itoa(pct) + "%") }></div>
+	</div>
+}
+
+// PlatformBadge est le carré coloré à initiale d'une plateforme de
+// messagerie (W/S/R…).
+type Platform struct {
+	// Type courier : whatsapp | signal | rocket | discord | mail.
+	Type string
+	Name string
+}
+
+func platformInitial(t string) string {
+	switch t {
+	case "whatsapp":
+		return "W"
+	case "signal":
+		return "S"
+	case "rocket":
+		return "R"
+	case "discord":
+		return "D"
+	case "mail":
+		return "M"
+	default:
+		return "?"
+	}
+}
+
+func platformColor(t string) string {
+	switch t {
+	case "whatsapp":
+		return "bg-wa"
+	case "signal":
+		return "bg-sig"
+	case "rocket":
+		return "bg-rc"
+	case "discord":
+		return "bg-dc"
+	default:
+		return "bg-ml"
+	}
+}
+
+templ PlatformBadge(platformType string, sizeClass string, textClass string) {
+	<span class={ "flex shrink-0 items-center justify-center rounded-md font-mono font-bold text-white", platformColor(platformType), sizeClass, textClass }>{ platformInitial(platformType) }</span>
+}
+
+// Eyebrow est le sur-titre Space Mono en capitales espacées.
+templ Eyebrow(text string, colorClass string) {
+	<div class={ "font-mono text-[10px] font-bold uppercase tracking-[.1em]", colorClass }>{ text }</div>
+}
+
+// Logo est le carré sombre à « a » indigo de la marque.
+templ Logo(sizeClass string, textClass string) {
+	<div class={ "flex shrink-0 items-center justify-center rounded-lg bg-ink font-mono font-bold text-brand-soft", sizeClass, textClass }>a</div>
+}

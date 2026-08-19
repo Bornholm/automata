@@ -1,0 +1,56 @@
+package view
+
+// ADM-00 — Connexion opérateur : page autonome sur fond sombre, carte
+// blanche centrée. Les états « identifiants invalides » et « session
+// expirée » se rendent dans la même carte.
+
+type LoginPage struct {
+	Email string
+	// Error est le message d'échec (« Ces identifiants ne correspondent
+	// pas. Il vous reste N tentatives. ») ; vide si aucun.
+	Error string
+	// Notice est un message neutre (« Votre session a expiré… »).
+	Notice    string
+	CSRFToken string
+}
+
+templ AdminLogin(page LoginPage) {
+	@Base("Connexion — Automata Admin") {
+		<div class="flex min-h-screen items-center justify-center bg-ink p-8">
+			<div class="w-[372px] rounded-xl bg-white p-8">
+				<div class="mb-7 flex items-center gap-2.5">
+					@Logo("size-[30px]", "text-[15px]")
+					<div class="text-[17px] font-semibold text-ink">Automata</div>
+					<div class="ml-auto font-mono text-[9px] font-bold tracking-[.08em] text-text-4">ADMIN</div>
+				</div>
+				if page.Notice != "" {
+					<div class="mb-4 rounded-lg bg-brand-wash-2 px-3.5 py-2.5 text-sm text-brand-deep">{ page.Notice }</div>
+				}
+				<h1 class="text-[22px] font-semibold leading-tight tracking-[-.01em] text-ink">Connexion opérateur</h1>
+				<p class="mb-5.5 mt-1.5 text-sm leading-normal text-text-3">Cet accès est réservé à l'exploitation du service.</p>
+				<form method="post" action="/admin/login" class="flex flex-col gap-3.5">
+					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+					<label class="block">
+						<span class="mb-1.5 block text-[13px] font-medium text-text-2">Adresse électronique</span>
+						<input type="email" name="email" value={ page.Email } required autocomplete="username"
+							class="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm text-text outline-none focus:border-brand focus:ring-2 focus:ring-brand/25"/>
+					</label>
+					<label class="block">
+						<span class="mb-1.5 block text-[13px] font-medium text-text-2">Mot de passe</span>
+						<input type="password" name="password" required autocomplete="current-password"
+							class={ "h-10 w-full rounded-lg border bg-white px-3 font-mono text-sm text-text outline-none focus:ring-2 focus:ring-brand/25",
+								templ.KV("border-crit", page.Error != ""), templ.KV("border-line focus:border-brand", page.Error == "") }/>
+					</label>
+					if page.Error != "" {
+						<div class="flex items-start gap-2 rounded-lg bg-crit-wash px-3 py-2.5">
+							<span class="flex size-4 shrink-0 items-center justify-center rounded-full bg-crit text-[11px] font-bold text-white">!</span>
+							<div class="text-[13px] leading-snug text-crit-deep">{ page.Error }</div>
+						</div>
+					}
+					<button type="submit" class="h-[42px] rounded-lg bg-brand text-[15px] font-semibold text-white hover:bg-brand-strong">Se connecter</button>
+					<div class="text-center text-[13px] text-text-4" title="Contactez l'exploitant de l'instance">Mot de passe oublié ?</div>
+				</form>
+			</div>
+		</div>
+	}
+}

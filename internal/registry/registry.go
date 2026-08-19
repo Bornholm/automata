@@ -34,6 +34,7 @@ import (
 	"github.com/bornholm/automata/internal/reminder"
 	"github.com/bornholm/automata/internal/scheduler"
 	"github.com/bornholm/automata/internal/usage"
+	"github.com/bornholm/automata/internal/web"
 )
 
 // mainAgentName est l'identifiant conventionnel de l'agent généraliste dans
@@ -217,6 +218,25 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 			if err := obsServer.Run(ctx); err != nil {
 				logger.ErrorContext(ctx, "registry: serveur d'observabilité arrêté en erreur", "error", err)
+			}
+		}()
+	}
+
+	// Serveur web d'administration et de profil (socle SaaS, maquettes P1).
+	if cfg.Web.Enabled {
+		mailSender, err := web.NewSMTPSender(cfg)
+		if err != nil {
+			return fmt.Errorf("registry: construction de l'expéditeur de courriels: %w", err)
+		}
+
+		webServer := web.NewServer(cfg, db, mailSender, logger)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			if err := webServer.Run(ctx); err != nil {
+				logger.ErrorContext(ctx, "registry: serveur web arrêté en erreur", "error", err)
 			}
 		}()
 	}

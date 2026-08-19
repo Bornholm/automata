@@ -63,6 +63,11 @@ func TestOpenCreatesAllTables(t *testing.T) {
 		"delivery_attempts",
 		"audit_events",
 		"usage_records",
+		"organizations",
+		"members",
+		"link_tokens",
+		"wallet_entries",
+		"profile_links",
 	}
 
 	for _, table := range expected {

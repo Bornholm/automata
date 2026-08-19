@@ -1004,6 +1004,52 @@ contraire toutes leurs occurrences réelles, parce que la journée en compte
 légitimement une de plus. Une heure hors de cette plage évite d'avoir à y
 penser.
 
+## web
+
+Serveur web d'administration et de profil du socle SaaS (maquettes P1).
+Désactivé par défaut ; lorsqu'il est activé, il démarre dans le même
+processus que le worker, sur sa propre adresse d'écoute (à exposer derrière
+un reverse proxy TLS).
+
+```yaml
+web:
+  enabled: true
+  addr: "127.0.0.1:8081"
+  base_url: "https://automata.exemple.fr"   # compose les liens de profil /p/<id>
+  session_secret: ${WEB_SESSION_SECRET}     # ≥ 32 octets, signe les cookies
+  admin:
+    email: "operateur@exemple.fr"
+    password_hash: ${WEB_ADMIN_PASSWORD_HASH}   # produit par `automata web hash-password`
+  mail_provider: ""       # optionnel : provider courier "mail" pour les codes de vérification
+  credits:
+    usd_per_credit: 0.001 # taux provisoire d'affichage de la conso en crédits
+    packs:                # offres affichées sur la page Crédits du profil
+      - { credits: 1000, price_eur: 9 }
+      - { credits: 4400, price_eur: 35, featured: true }
+      - { credits: 12000, price_eur: 89 }
+```
+
+Écrans servis : connexion opérateur (`/admin/login`, session cookie signée
+12 h, 5 tentatives par quart d'heure), organisations (liste, détail avec
+portefeuille de crédits, gestes commerciaux, bascule « organisation
+offerte »), comptes membres avec **jeton de liaison affiché une seule
+fois** (seul le SHA-256 est stocké ; la consommation du jeton par
+l'ingress arrive dans un lot ultérieur), canaux et plateformes, et les
+pages de profil ouvertes par **lien temporaire à usage unique** (15
+minutes, `/p/<id>.<secret>`).
+
+Sous-commandes associées :
+
+```
+echo -n 'mot-de-passe' | automata web hash-password
+automata web bootstrap -config config.yaml   # importe orgs et membres de la config (idempotent)
+```
+
+Développement des vues : `make web-tools` installe templ, templui et le
+binaire Tailwind sous `tools/` ; `make web-generate` régénère les fichiers
+`*_templ.go` et `internal/web/assets/app.css`. Les fichiers générés sont
+commités : `go build` reste autonome.
+
 ## Comptabilité d'usage
 
 Aucune clé de configuration : dès que le stockage applicatif est présent

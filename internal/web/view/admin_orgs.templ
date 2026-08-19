@@ -1,0 +1,160 @@
+package view
+
+// ADM-02 — Organisations, liste. La colonne solde porte deux informations
+// dans la même cellule : la chip d'état (balayage) et la jauge
+// (comparaison). Les lignes signalées prennent une teinte de fond très
+// faible — le « rien à signaler » reste blanc (annotation des maquettes).
+
+type OrgRow struct {
+	ID       string
+	Name     string
+	Subtitle string
+	Chip     Chip
+	// BalanceLabel : « 3 180 cr. » ou « 600 cr./mois » (offerte) ; vide
+	// pour une organisation épuisée (la chip suffit).
+	BalanceLabel string
+	GaugePct     int
+	GaugeTone    string
+	Members      int64
+	// MonthUsage : « 1 040 cr. » ou « — ».
+	MonthUsage string
+	CreatedAt  string
+	// RowTone teinte la ligne : "" | warn | crit.
+	RowTone string
+}
+
+type OrgsPage struct {
+	Rows      []OrgRow
+	Total     int
+	Flagged   int
+	Search    string
+	Platforms []SidebarPlatform
+	CSRFToken string
+}
+
+func orgRowToneClass(tone string) string {
+	switch tone {
+	case "warn":
+		return "bg-warn-row"
+	case "crit":
+		return "bg-crit-row"
+	default:
+		return ""
+	}
+}
+
+templ orgsSummary(page OrgsPage) {
+	if page.Flagged > 0 {
+		<span>{ itoa(page.Total) } organisations · { itoa(page.Flagged) } signalées</span>
+	} else {
+		<span>{ itoa(page.Total) } organisations</span>
+	}
+}
+
+templ AdminOrgs(page OrgsPage) {
+	@AdminLayout("Organisations — Automata Admin", "orgs", page.Platforms, page.CSRFToken) {
+		<header class="flex items-center gap-4 border-b border-line-2 bg-white px-7 py-5.5">
+			<div>
+				<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Organisations</h1>
+				<div class="mt-0.5 text-sm text-text-3">
+					@orgsSummary(page)
+				</div>
+			</div>
+			<div class="ml-auto flex items-center gap-2.5">
+				<form method="get" action="/admin/orgs">
+					<input type="search" name="q" value={ page.Search } placeholder="Rechercher une organisation…"
+						class="h-9 w-[230px] rounded-lg border border-line bg-white px-3 text-sm text-text outline-none placeholder:text-text-4 focus:border-brand"/>
+				</form>
+				<a href="/admin/orgs/new" class="flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline">Créer une organisation</a>
+			</div>
+		</header>
+		<div class="p-7">
+			if len(page.Rows) == 0 {
+				<div class="flex flex-col items-center gap-3 rounded-[11px] border border-dashed border-line bg-white px-8 py-14 text-center">
+					@Logo("size-9 rounded-[10px]", "text-lg")
+					if page.Search != "" {
+						<div class="text-[15px] font-semibold text-ink">Aucune organisation ne correspond à « { page.Search } »</div>
+						<div class="max-w-md text-sm text-text-3">Essayez un autre nom, ou <a href="/admin/orgs">affichez tout</a>.</div>
+					} else {
+						<div class="text-[15px] font-semibold text-ink">Aucune organisation pour l'instant</div>
+						<div class="max-w-md text-sm text-text-3">Créez la première, ou importez celles de la configuration avec <span class="font-mono text-[13px]">automata web bootstrap</span>.</div>
+					}
+				</div>
+			} else {
+				<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
+					<div class="grid grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
+						<div>Organisation</div>
+						<div>Solde de crédits</div>
+						<div>Membres</div>
+						<div class="text-right">Conso. du mois</div>
+						<div class="text-right">Création</div>
+						<div></div>
+					</div>
+					for _, row := range page.Rows {
+						<a href={ templ.SafeURL("/admin/orgs/" + row.ID) } class={ "grid grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] items-center gap-4 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline", orgRowToneClass(row.RowTone) }>
+							<div>
+								<div class="text-[15px] font-semibold leading-tight text-ink">{ row.Name }</div>
+								<div class="mt-0.5 text-[13px] leading-tight text-text-4">{ row.Subtitle }</div>
+							</div>
+							<div class="flex flex-col gap-1.5">
+								<div class="flex items-center gap-2">
+									@StatusChip(row.Chip)
+									if row.BalanceLabel != "" {
+										<span class="font-mono text-[13px] text-text-3">{ row.BalanceLabel }</span>
+									}
+								</div>
+								@Gauge(row.GaugePct, row.GaugeTone, "h-[5px]")
+							</div>
+							<div class="font-mono text-sm text-text">{ FormatInt(row.Members) }</div>
+							<div class="text-right font-mono text-sm text-text">{ row.MonthUsage }</div>
+							<div class="text-right font-mono text-[13px] text-text-4">{ row.CreatedAt }</div>
+							<div class="text-right text-[15px] font-semibold text-text-5">›</div>
+						</a>
+					}
+				</div>
+				<div class="mt-3.5 text-[13px] text-text-4">Les crédits de bienvenue sont attribués à la création. L'agent prévient chaque organisation en conversation dès que son solde devient faible.</div>
+			}
+		</div>
+	}
+}
+
+// AdminOrgNew — création en une passe (parcours D) : identité, crédits de
+// bienvenue, premier membre responsable.
+type OrgNewPage struct {
+	Platforms []SidebarPlatform
+	CSRFToken string
+	Error     string
+}
+
+templ AdminOrgNew(page OrgNewPage) {
+	@AdminLayout("Créer une organisation — Automata Admin", "orgs", page.Platforms, page.CSRFToken) {
+		<header class="border-b border-line-2 bg-white px-7 py-5.5">
+			<div class="mb-2 text-[13px] text-text-4"><a href="/admin/orgs">Organisations</a> / <span class="text-text">Nouvelle organisation</span></div>
+			<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Créer une organisation</h1>
+		</header>
+		<div class="p-7">
+			<form method="post" action="/admin/orgs" class="flex max-w-[560px] flex-col gap-4 rounded-[11px] border border-line-2 bg-white p-5.5">
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				if page.Error != "" {
+					<div class="rounded-lg bg-crit-wash px-3 py-2.5 text-[13px] text-crit-deep">{ page.Error }</div>
+				}
+				<label class="block">
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">Nom de l'organisation</span>
+					<input type="text" name="display_name" required class="h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none focus:border-brand"/>
+				</label>
+				<label class="block">
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">Crédits de bienvenue</span>
+					<input type="number" name="welcome_credits" value="500" min="0" class="h-[38px] w-[140px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+				</label>
+				<label class="block">
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">Premier membre responsable <span class="font-normal text-text-4">— facultatif, créable ensuite</span></span>
+					<input type="text" name="owner_name" placeholder="Nom affiché" class="h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+				</label>
+				<div class="flex gap-2.5 border-t border-line-3 pt-4">
+					<a href="/admin/orgs" class="flex h-[38px] flex-1 items-center justify-center rounded-lg border border-line text-sm font-medium text-text hover:bg-panel hover:no-underline">Annuler</a>
+					<button type="submit" class="h-[38px] flex-1 rounded-lg bg-brand text-sm font-semibold text-white hover:bg-brand-strong">Créer</button>
+				</div>
+			</form>
+		</div>
+	}
+}

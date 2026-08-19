@@ -1,0 +1,131 @@
+package view
+
+// Gabarits des deux univers : administration (desktop, sidebar sombre) et
+// profil (mobile, carte unique ouverte par lien temporaire).
+
+// NavItem est une entrée de la navigation d'administration.
+type NavItem struct {
+	Label string
+	Href  string
+	// Active marque la section courante ; Planned marque un écran d'un lot
+	// ultérieur (rendu inerte et atténué, jamais un lien mort).
+	Active  bool
+	Planned bool
+}
+
+// AdminNav retourne la navigation d'administration avec la section active.
+func AdminNav(active string) []NavItem {
+	return []NavItem{
+		{Label: "Tableau de bord", Planned: true},
+		{Label: "Organisations", Href: "/admin/orgs", Active: active == "orgs"},
+		{Label: "Canaux et plateformes", Href: "/admin/platforms", Active: active == "platforms"},
+		{Label: "Consommation", Planned: true},
+		{Label: "Tarification", Planned: true},
+		{Label: "Paramètres d'instance", Planned: true},
+	}
+}
+
+// SidebarPlatform est l'état d'une plateforme dans le pied de la sidebar.
+type SidebarPlatform struct {
+	Type string
+	Name string
+}
+
+templ Base(title string) {
+	<!DOCTYPE html>
+	<html lang="fr">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title }</title>
+			<link rel="stylesheet" href="/assets/app.css"/>
+			<script src="/assets/htmx.min.js" defer></script>
+		</head>
+		<body class="min-h-screen">
+			{ children... }
+		</body>
+	</html>
+}
+
+// AdminLayout est le gabarit desktop : sidebar sombre fixe, contenu clair.
+templ AdminLayout(title string, active string, platforms []SidebarPlatform, csrfToken string) {
+	@Base(title) {
+		<div class="flex min-h-screen">
+			<aside class="flex w-[216px] shrink-0 flex-col gap-6 bg-ink px-3.5 py-5">
+				<div class="flex items-center gap-2.5 px-2">
+					<div class="flex size-[26px] items-center justify-center rounded-[7px] bg-brand font-mono text-[13px] font-bold text-white">a</div>
+					<div class="text-[15px] font-semibold text-white">Automata</div>
+					<div class="ml-auto font-mono text-[9px] font-bold tracking-[.08em] text-sidebar-muted">ADMIN</div>
+				</div>
+				<nav class="flex flex-col gap-0.5">
+					for _, item := range AdminNav(active) {
+						if item.Active {
+							<a href={ templ.SafeURL(item.Href) } class="rounded-[7px] bg-ink-3 px-2.5 py-2 text-sm font-semibold text-white">{ item.Label }</a>
+						} else if item.Planned {
+							<span class="cursor-default rounded-[7px] px-2.5 py-2 text-sm font-medium text-sidebar-muted" title="Prochain lot">{ item.Label }</span>
+						} else {
+							<a href={ templ.SafeURL(item.Href) } class="rounded-[7px] px-2.5 py-2 text-sm font-medium text-sidebar-text hover:bg-ink-3 hover:text-white hover:no-underline">{ item.Label }</a>
+						}
+					}
+				</nav>
+				<div class="mt-auto flex flex-col gap-2 border-t border-ink-3 px-2.5 py-3">
+					@Eyebrow("Plateformes", "text-sidebar-muted")
+					for _, p := range platforms {
+						<div class="flex items-center gap-2">
+							<span class="size-1.5 rounded-full bg-sidebar-muted" title="État de connexion : prochain lot"></span>
+							<span class="text-[13px] text-sidebar-text">{ p.Name }</span>
+						</div>
+					}
+					<form action="/admin/logout" method="post" class="mt-2">
+						<input type="hidden" name="csrf_token" value={ csrfToken }/>
+						<button type="submit" class="text-[13px] text-sidebar-muted hover:text-sidebar-text">Se déconnecter</button>
+					</form>
+				</div>
+			</aside>
+			<main class="min-w-0 flex-1 bg-panel">
+				<div id="admin-content">
+					{ children... }
+				</div>
+			</main>
+		</div>
+	}
+}
+
+// ProfileHeader identifie pour qui la page est ouverte : nom, organisation,
+// minutes de validité restantes (annotation des maquettes profil).
+type ProfileHeader struct {
+	Name         string
+	Organization string
+	MinutesLeft  int
+}
+
+// ProfileLayout est le gabarit mobile d'abord du profil : une colonne
+// blanche unique, une tâche par page.
+templ ProfileLayout(title string, header ProfileHeader) {
+	@Base(title) {
+		<div class="mx-auto min-h-screen w-full max-w-[430px] bg-white px-5.5 pb-8 pt-6 shadow-[0_2px_8px_rgba(22,28,39,.08)]">
+			<div class="mb-5.5 flex items-center gap-2.5">
+				@Logo("size-7 rounded-lg", "text-sm")
+				<div class="min-w-0 flex-1">
+					<div class="truncate text-sm font-semibold text-ink">{ header.Name }</div>
+					<div class="truncate text-xs text-text-4">{ header.Organization }</div>
+				</div>
+				if header.MinutesLeft > 0 {
+					<div class="font-mono text-[11px] text-text-4">{ itoa(header.MinutesLeft) } min</div>
+				}
+			</div>
+			{ children... }
+		</div>
+	}
+}
+
+// ProfileStateLayout est le gabarit des états de lien (PRO-90) : carte
+// centrée verticalement, sans en-tête d'identification — rien à
+// comprendre, une seule chose à faire.
+templ ProfileStateLayout(title string) {
+	@Base(title) {
+		<div class="mx-auto flex min-h-screen w-full max-w-[430px] flex-col justify-center gap-4.5 bg-white px-6.5 py-9">
+			{ children... }
+		</div>
+	}
+}

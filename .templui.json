@@ -1,0 +1,7 @@
+{
+  "componentsDir": "internal/web/ui",
+  "utilsDir": "internal/web/utils",
+  "moduleName": "github.com/bornholm/automata",
+  "jsDir": "internal/web/assets/js",
+  "jsPublicPath": "/assets/js"
+}

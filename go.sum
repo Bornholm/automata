@@ -12,10 +12,14 @@ github.com/DusanKasan/parsemail v1.2.0 h1:CrzTL1nuPLxB41aO4zE/Tzc9GVD8jjifUftlbT
 github.com/DusanKasan/parsemail v1.2.0/go.mod h1:B9lfMbpVe4DMqPImAOCGti7KEwasnRTrKKn66iQefVs=
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
+github.com/Oudwins/tailwind-merge-go v0.2.3 h1:RCiZ/DlLpoJnE5QSs1sRPDtIs3We0RQpsLH7bBWfbUI=
+github.com/Oudwins/tailwind-merge-go v0.2.3/go.mod h1:kkZodgOPvZQ8f7SIrlWkG/w1g9JTbtnptnePIh3V72U=
 github.com/RealAlexandreAI/json-repair v0.0.14 h1:4kTqotVonDVTio5n2yweRUELVcNe2x518wl0bCsw0t0=
 github.com/RealAlexandreAI/json-repair v0.0.14/go.mod h1:GKJi5borR78O8c7HCVbgqjhoiVibZ6hJldxbc6dGrAI=
 github.com/RoaringBitmap/roaring/v2 v2.4.5 h1:uGrrMreGjvAtTBobc0g5IrW1D5ldxDQYe2JW2gggRdg=
 github.com/RoaringBitmap/roaring/v2 v2.4.5/go.mod h1:FiJcsfkGje/nZBZgCu0ZxCPOKD/hVXDS2dXi7/eUFE0=
+github.com/a-h/templ v0.3.1020 h1:ypAT/L5ySWEnZ6Zft/5yfoWXYYkhFNvEFOeeqecg4tw=
+github.com/a-h/templ v0.3.1020/go.mod h1:A2DlK61v+K+NRoGnhmYbNYVmtYHcFO5/AisMvBdDxTM=
 github.com/abadojack/whatlanggo v1.0.1 h1:19N6YogDnf71CTHm3Mp2qhYfkRdyvbgwWdd2EPxJRG4=
 github.com/abadojack/whatlanggo v1.0.1/go.mod h1:66WiQbSbJBIlOZMsvbKe5m6pzQovxCH9B/K8tQB2uoc=
 github.com/agnivade/levenshtein v1.2.1 h1:EHBY3UOn1gwdy/VbFwgo4cxecRznFk7fKWN1KOX7eoM=
@@ -290,6 +294,8 @@ github.com/stretchr/testify v1.6.1/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/stretchr/testify v1.11.1 h1:7s2iGBzp5EwR7/aIZr8ao5+dra3wiQyKjjFuvgVKu7U=
 github.com/stretchr/testify v1.11.1/go.mod h1:wZwfW3scLgRK+23gO65QZefKpKQRnfz6sD981Nm4B6U=
+github.com/templui/templui v1.13.1 h1:9kmR0vCkFoLEBXzkf7PIuQJf/MlD61psoDSdPk2MDmI=
+github.com/templui/templui v1.13.1/go.mod h1:WWX9O4UebQiSipKaoUQ7Cb0UWtqopzZHtgBu1gtItzU=
 github.com/testcontainers/testcontainers-go v0.37.0 h1:L2Qc0vkTw2EHWQ08djon0D2uw7Z/PtHS/QzZZ5Ra/hg=
 github.com/testcontainers/testcontainers-go v0.37.0/go.mod h1:QPzbxZhQ6Bclip9igjLFj6z0hs01bU8lrl2dHQmgFGM=
 github.com/testcontainers/testcontainers-go/modules/ollama v0.35.0 h1:zjEvwHKye8J9uJaCwZ5+Qih01WQOkkB3DjbdsdYG6AQ=
@@ -328,6 +334,8 @@ github.com/yosida95/uritemplate/v3 v3.0.2/go.mod h1:ILOh0sOhIJR3+L/8afwt/kE++YT0
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 github.com/yuin/goldmark v1.7.8 h1:iERMLn0/QJeHFhxSt3p6PeN9mGnvIKSpG9YYorDMnic=
 github.com/yuin/goldmark v1.7.8/go.mod h1:uzxRWxtg69N339t3louHJ7+O03ezfj6PlliRlaOzY1E=
+github.com/yuin/goldmark v1.7.13 h1:GPddIs617DnBLFFVJFgpo1aBfe/4xcvMc3SB5t/D0pA=
+github.com/yuin/goldmark v1.7.13/go.mod h1:ip/1k0VRfGynBgxOz0yCqHrbZXhcjxyuS66Brc7iBKg=
 github.com/yuin/goldmark-meta v1.1.0 h1:pWw+JLHGZe8Rk0EGsMVssiNb/AaPMHfSRszZeUeiOUc=
 github.com/yuin/goldmark-meta v1.1.0/go.mod h1:U4spWENafuA7Zyg+Lj5RqK/MF+ovMYtBvXi1lBb2VP0=
 github.com/yusufpapurcu/wmi v1.2.4 h1:zFUKzehAFReQwLys1b/iSMl+JQGSCSjtVqQn9bBrPo0=

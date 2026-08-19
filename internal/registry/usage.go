@@ -73,7 +73,7 @@ func UsageReport(ctx context.Context, cfg *config.Config, from, to time.Time, gr
 	var aggregates []persistence.UsageAggregate
 	if err := db.WithTx(ctx, func(tx *sql.Tx) error {
 		var err error
-		aggregates, err = repo.AggregateUsage(ctx, tx, from, to, groupBy)
+		aggregates, err = repo.AggregateUsage(ctx, tx, from, to, groupBy, persistence.UsageFilter{})
 		return err
 	}); err != nil {
 		return fmt.Errorf("registry: agrégation des traces d'usage: %w", err)

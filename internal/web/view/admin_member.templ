@@ -1,0 +1,196 @@
+package view
+
+// ADM-04 — Compte membre : création, fiche, et le moment « jeton »
+// (token_panel.templ). Le panneau « Après la liaison » se remplit dès que
+// la personne a envoyé son jeton (lot B) ou que le bootstrap a rattaché
+// son identité de messagerie.
+
+type MemberPage struct {
+	Platforms []SidebarPlatform
+	CSRFToken string
+
+	ID      string
+	OrgID   string
+	OrgName string
+	Name    string
+	Role    string
+	Email   string
+	Chips   []Chip
+
+	// Token est l'encart du jeton personnel ; nil si aucun jeton n'a
+	// jamais été généré (bouton « Générer un jeton » à la place).
+	Token *TokenPanelData
+	Flash string
+
+	// Après la liaison.
+	Linked         bool
+	LinkedIdentity string // « WhatsApp · +33 6 •• » — jamais l'identifiant brut complet
+	LinkedChannels []OrgChannelRow
+	MonthUsage     string
+
+	// ProfileLink est l'URL d'un lien de profil fraîchement généré (bouton
+	// de test, lot A) ; vide sinon.
+	ProfileLink string
+}
+
+templ memberRoleOption(page MemberPage, value string, label string) {
+	if page.Role == value {
+		<button type="submit" name="role" value={ value } class="rounded-lg border border-brand bg-brand-wash px-3 py-1.5 text-[13px] font-semibold text-brand-deep">{ label }</button>
+	} else {
+		<button type="submit" name="role" value={ value } class="rounded-lg border border-line bg-white px-3 py-1.5 text-[13px] font-medium text-text-2 hover:bg-panel">{ label }</button>
+	}
+}
+
+templ AdminMember(page MemberPage) {
+	@AdminLayout(page.Name+" — Automata Admin", "orgs", page.Platforms, page.CSRFToken) {
+		<header class="border-b border-line-2 bg-white px-8 py-5">
+			<div class="mb-2 text-[13px] text-text-4">
+				<a href="/admin/orgs">Organisations</a> / <a href={ templ.SafeURL("/admin/orgs/" + page.OrgID + "?tab=members") }>{ page.OrgName }</a> / Membres / <span class="text-text">{ page.Name }</span>
+			</div>
+			<div class="flex items-center gap-3">
+				<h1 class="text-[22px] font-semibold leading-tight tracking-[-.01em] text-ink">{ page.Name }</h1>
+				for _, chip := range page.Chips {
+					@StatusChip(chip)
+				}
+			</div>
+		</header>
+		<div class="flex flex-col gap-5.5 px-8 pb-8 pt-6">
+			if page.Flash != "" {
+				<div class="rounded-lg bg-ok-wash px-4 py-2.5 text-sm text-ok-deep">{ page.Flash }</div>
+			}
+			if page.ProfileLink != "" {
+				<div class="rounded-lg bg-brand-wash-2 px-4 py-3 text-sm text-brand-deep">
+					Lien de profil (valable 15 minutes, une seule ouverture) : <span class="break-all font-mono text-[13px]">{ page.ProfileLink }</span>
+				</div>
+			}
+			if page.Token != nil {
+				@TokenPanel(*page.Token)
+			} else {
+				<form method="post" action={ templ.SafeURL("/admin/members/" + page.ID + "/token") } class="flex items-center gap-4 rounded-xl bg-ink px-7 py-6">
+					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+					<div class="min-w-0 flex-1">
+						@Eyebrow("Jeton personnel de liaison", "text-brand-soft")
+						<div class="mt-2 text-sm text-sidebar-text">Aucun jeton généré. Générez-en un et transmettez-le : la personne l'envoie à Automata dans sa messagerie, la liaison se fait automatiquement.</div>
+					</div>
+					<button type="submit" class="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong">Générer un jeton</button>
+				</form>
+			}
+			<div class="flex items-start gap-5">
+				<div class="flex-1 rounded-[11px] border border-line-2 bg-white p-5.5">
+					<div class="mb-4.5 text-[15px] font-semibold text-ink">Fiche du compte</div>
+					<form method="post" action={ templ.SafeURL("/admin/members/" + page.ID) } class="flex flex-col gap-4">
+						<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Nom affiché</span>
+							<input type="text" name="display_name" value={ page.Name } required class="h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none focus:border-brand"/>
+						</label>
+						<div>
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Organisation</span>
+							<div class="flex h-[38px] items-center rounded-lg border border-line bg-panel px-3 text-sm text-text-3">{ page.OrgName }</div>
+						</div>
+						<div>
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Permissions</span>
+							<div class="flex gap-2">
+								@memberRoleOption(page, "member", "Membre")
+								@memberRoleOption(page, "owner", "Responsable")
+								@memberRoleOption(page, "readonly", "Lecture seule")
+							</div>
+						</div>
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Courriel de récupération <span class="font-normal text-text-4">— facultatif, la personne peut le renseigner elle-même</span></span>
+							<input type="email" name="email" value={ page.Email } placeholder="nom@exemple.fr" class="h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+						</label>
+						<div class="flex justify-end gap-2.5 border-t border-line-3 pt-4">
+							<button type="submit" class="h-[38px] rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
+						</div>
+					</form>
+				</div>
+				<div class="w-[400px] shrink-0 rounded-[11px] border border-line-2 bg-white p-5.5">
+					<div class="mb-1.5 text-[15px] font-semibold text-ink">Après la liaison</div>
+					if page.Linked {
+						<div class="mb-4 text-sm leading-normal text-text-3">Identité de messagerie rattachée.</div>
+						<div class="flex flex-col gap-2.5">
+							<div class="flex items-center gap-3 rounded-[9px] border border-line-2 px-3.5 py-3">
+								<span class="text-sm text-text">{ page.LinkedIdentity }</span>
+							</div>
+							for _, ch := range page.LinkedChannels {
+								<div class="flex items-center gap-3 rounded-[9px] border border-line-2 px-3.5 py-3">
+									@PlatformBadge(ch.PlatformType, "size-[22px] rounded-md", "text-[10px]")
+									<div class="min-w-0">
+										<div class="text-sm font-medium text-text">{ ch.Name }</div>
+										<div class="text-xs text-text-4">{ ch.Kind }</div>
+									</div>
+								</div>
+							}
+							if page.MonthUsage != "" {
+								<div class="flex items-center justify-between rounded-[9px] border border-line-2 px-3.5 py-3">
+									<span class="text-sm text-text-3">Consommation du mois</span>
+									<span class="font-mono text-sm text-text">{ page.MonthUsage }</span>
+								</div>
+							}
+						</div>
+						<form method="post" action={ templ.SafeURL("/admin/members/" + page.ID + "/profile-link") } class="mt-4 border-t border-line-3 pt-4">
+							<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+							<button type="submit" class="h-[34px] w-full rounded-lg border border-line text-[13px] font-medium text-text hover:bg-panel">Générer un lien de profil de test</button>
+						</form>
+					} else {
+						<div class="mb-4 text-sm leading-normal text-text-3">Cet emplacement se remplit dès que { page.Name } aura envoyé son jeton.</div>
+						<div class="flex flex-col gap-2.5">
+							<div class="flex items-center gap-2.5 rounded-[9px] border border-dashed border-line px-3.5 py-3"><span class="size-[22px] rounded-md bg-panel-2"></span><span class="text-sm text-text-4">Identité de messagerie rattachée</span></div>
+							<div class="flex items-center gap-2.5 rounded-[9px] border border-dashed border-line px-3.5 py-3"><span class="size-[22px] rounded-md bg-panel-2"></span><span class="text-sm text-text-4">Canaux où { firstName(page.Name) } est présent·e</span></div>
+							<div class="flex items-center gap-2.5 rounded-[9px] border border-dashed border-line px-3.5 py-3"><span class="size-[22px] rounded-md bg-panel-2"></span><span class="text-sm text-text-4">Consommation individuelle</span></div>
+						</div>
+					}
+				</div>
+			</div>
+		</div>
+	}
+}
+
+// AdminMemberNew — pré-création (ADM-04, parcours A étape 1).
+type MemberNewPage struct {
+	Platforms []SidebarPlatform
+	CSRFToken string
+	OrgID     string
+	OrgName   string
+	Error     string
+}
+
+templ AdminMemberNew(page MemberNewPage) {
+	@AdminLayout("Pré-créer un membre — Automata Admin", "orgs", page.Platforms, page.CSRFToken) {
+		<header class="border-b border-line-2 bg-white px-8 py-5">
+			<div class="mb-2 text-[13px] text-text-4">
+				<a href="/admin/orgs">Organisations</a> / <a href={ templ.SafeURL("/admin/orgs/" + page.OrgID + "?tab=members") }>{ page.OrgName }</a> / Membres / <span class="text-text">Nouveau membre</span>
+			</div>
+			<h1 class="text-[22px] font-semibold leading-tight tracking-[-.01em] text-ink">Pré-créer un membre</h1>
+		</header>
+		<div class="px-8 py-6">
+			<form method="post" action={ templ.SafeURL("/admin/orgs/" + page.OrgID + "/members") } class="flex max-w-[560px] flex-col gap-4 rounded-[11px] border border-line-2 bg-white p-5.5">
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				if page.Error != "" {
+					<div class="rounded-lg bg-crit-wash px-3 py-2.5 text-[13px] text-crit-deep">{ page.Error }</div>
+				}
+				<label class="block">
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">Nom affiché</span>
+					<input type="text" name="display_name" required class="h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none focus:border-brand"/>
+				</label>
+				<div>
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">Permissions</span>
+					<select name="role" class="h-[38px] w-full rounded-lg border border-line bg-white px-3 text-sm outline-none focus:border-brand">
+						<option value="member">Membre</option>
+						<option value="owner">Responsable</option>
+						<option value="readonly">Lecture seule</option>
+					</select>
+				</div>
+				<label class="block">
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">Courriel de récupération <span class="font-normal text-text-4">— facultatif</span></span>
+					<input type="email" name="email" placeholder="nom@exemple.fr" class="h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+				</label>
+				<div class="flex gap-2.5 border-t border-line-3 pt-4">
+					<a href={ templ.SafeURL("/admin/orgs/" + page.OrgID + "?tab=members") } class="flex h-[38px] flex-1 items-center justify-center rounded-lg border border-line text-sm font-medium text-text hover:bg-panel hover:no-underline">Annuler</a>
+					<button type="submit" class="h-[38px] flex-1 rounded-lg bg-brand text-sm font-semibold text-white hover:bg-brand-strong">Créer et générer le jeton</button>
+				</div>
+			</form>
+		</div>
+	}
+}

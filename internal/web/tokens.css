@@ -1,0 +1,184 @@
+/* Feuille source Tailwind du serveur web (admin + profil).
+   Générée en internal/web/assets/app.css par `make web-generate` (le
+   résultat est commité : le build Go reste autonome).
+
+   Les tokens reprennent le design system des maquettes P1 de Claude
+   Design : Barlow (interface) + Space Mono (données), encre #161C27,
+   accent indigo #5B5BD6, sémantiques vert/ambre/rouge. Les variables
+   shadcn (--background, --primary…) sont mappées sur la même palette pour
+   que les composants templui vendorisés (internal/web/ui) rendent dans
+   l'identité Automata sans retouche. */
+
+@import "tailwindcss";
+
+@source "./view/**/*.templ";
+@source "./ui/**/*.templ";
+@source "./handlers*.go";
+
+/* Fontes vendorisées (internal/web/assets/fonts), sous-ensemble latin. */
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/assets/fonts/Barlow-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/assets/fonts/Barlow-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/assets/fonts/Barlow-600.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Barlow";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/assets/fonts/Barlow-700.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/assets/fonts/SpaceMono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Space Mono";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/assets/fonts/SpaceMono-700.woff2") format("woff2");
+}
+
+@theme {
+  --font-sans: "Barlow", system-ui, sans-serif;
+  --font-mono: "Space Mono", ui-monospace, monospace;
+
+  /* Palette des maquettes. */
+  --color-ink: #161c27;
+  --color-ink-2: #1a1f2b;
+  --color-ink-3: #2a3243;
+  --color-ink-4: #3a4356;
+  --color-text: #1a1f2b;
+  --color-text-2: #4a5364;
+  --color-text-3: #626b7d;
+  --color-text-4: #8a93a5;
+  --color-text-5: #b4bac6;
+  --color-sidebar-text: #9aa3b5;
+  --color-sidebar-muted: #6b7488;
+  --color-ground: #e9ecf1;
+  --color-panel: #f7f8fa;
+  --color-panel-2: #f0f1f5;
+  --color-line: #d8dce4;
+  --color-line-2: #e2e5eb;
+  --color-line-3: #eef0f4;
+  --color-track: #edeff3;
+
+  /* « brand » plutôt qu'« accent » : les composants templui utilisent
+     déjà bg-accent au sens shadcn (teinte de survol), défini plus bas. */
+  --color-brand: #5b5bd6;
+  --color-brand-strong: #4646b8;
+  --color-brand-deep: #3e3ea8;
+  --color-brand-soft: #8f8fe8;
+  --color-brand-wash: #eeeefb;
+  --color-brand-wash-2: #f5f5fe;
+  --color-brand-line: #dcdcf7;
+  --color-brand-line-2: #c9c9ee;
+
+  --color-ok: #17795e;
+  --color-ok-deep: #136b54;
+  --color-ok-deeper: #0f5a45;
+  --color-ok-wash: #e7f4ef;
+  --color-ok-wash-2: #f0faf6;
+  --color-ok-line: #cde9de;
+
+  --color-warn: #b45309;
+  --color-warn-deep: #8a4b08;
+  --color-warn-soft: #b08650;
+  --color-warn-wash: #fdf1df;
+  --color-warn-row: #fffbf5;
+  --color-warn-line: #f0d9ae;
+  --color-warn-track: #f2e7d5;
+
+  --color-crit: #b42318;
+  --color-crit-deep: #8f1d14;
+  --color-crit-soft: #f5a6a0;
+  --color-crit-wash: #fce9e7;
+  --color-crit-row: #fff7f6;
+
+  --color-wa: #25d366;
+  --color-sig: #3a76f0;
+  --color-rc: #f5455c;
+  --color-dc: #5865f2;
+  --color-ml: #7c8496;
+}
+
+/* Variables shadcn attendues par les composants templui vendorisés
+   (internal/web/ui) : mêmes valeurs que la palette ci-dessus. */
+:root {
+  --radius: 0.5rem;
+  --background: #f7f8fa;
+  --foreground: #1a1f2b;
+  --card: #ffffff;
+  --card-foreground: #1a1f2b;
+  --popover: #ffffff;
+  --popover-foreground: #1a1f2b;
+  --primary: #5b5bd6;
+  --primary-foreground: #ffffff;
+  --secondary: #f0f1f5;
+  --secondary-foreground: #1a1f2b;
+  --muted: #f0f1f5;
+  --muted-foreground: #626b7d;
+  --accent: #eeeefb;
+  --accent-foreground: #3e3ea8;
+  --destructive: #b42318;
+  --border: #d8dce4;
+  --input: #d8dce4;
+  --ring: #5b5bd6;
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background: var(--color-ground);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+}
