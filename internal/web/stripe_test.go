@@ -7,11 +7,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/bornholm/automata/internal/persistence"
 )
 
 const testWebhookSecret = "whsec_test_secret"
@@ -115,5 +119,73 @@ func TestCheckoutSession_SendsTaxCode(t *testing.T) {
 	// webhook pourra inscrire au portefeuille.
 	if got := form.Get("metadata[price_eur]"); got != "35" {
 		t.Errorf("prix transmis = %q, attendu 35", got)
+	}
+}
+
+// TestCheckout_ReturnLinkSurvivesTheOriginalLink : le lien de profil est à
+// usage unique, donc déjà consommé quand Stripe renvoie le client sur
+// success_url. Sans lien de retour neuf, l'écran « ce lien a déjà servi »
+// s'affiche juste après le paiement — exactement là où il faut confirmer
+// l'achat.
+func TestCheckout_ReturnLinkSurvivesTheOriginalLink(t *testing.T) {
+	var form url.Values
+
+	stripeAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		form = r.PostForm
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"url":"https://checkout.stripe.test/session"}`)
+	}))
+	defer stripeAPI.Close()
+
+	server, ts, client := testServer(t)
+	server.cfg.Web.BaseURL = ts.URL
+	server.stripe = newStripeClient("sk_test", "txcd_10000000")
+	server.stripe.baseURL = stripeAPI.URL
+
+	seedOrg(t, server, persistence.Organization{ID: "org-a", DisplayName: "Org A"}, 3000)
+	seedMember(t, server, persistence.Member{ID: "cam", OrgID: "org-a", DisplayName: "Camille", Role: "member"})
+
+	path := createProfileLink(t, server, "cam", 15*time.Minute)
+	if _, err := client.Get(ts.URL + path + "/credits"); err != nil {
+		t.Fatalf("GET crédits: %v", err)
+	}
+
+	// Le client refuse de suivre la redirection vers Stripe : seule
+	// l'URL de retour transmise nous intéresse.
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := client.PostForm(ts.URL+path+"/checkout", url.Values{
+		"pack":       {"0"},
+		"csrf_token": {csrfFrom(t, client, ts.URL)},
+	})
+	if err != nil {
+		t.Fatalf("POST checkout: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("redirection vers Stripe attendue, obtenu %d", resp.StatusCode)
+	}
+
+	successURL := form.Get("success_url")
+	if successURL == "" {
+		t.Fatal("aucune URL de retour transmise à Stripe")
+	}
+	if strings.Contains(successURL, path) {
+		t.Fatalf("le retour vise le lien d'origine, déjà consommé: %s", successURL)
+	}
+
+	// Un navigateur sans cookie — l'onglet rouvert, un autre appareil —
+	// doit pouvoir consommer le lien de retour.
+	jar, _ := cookiejar.New(nil)
+	fresh := &http.Client{Jar: jar}
+	returned, err := fresh.Get(successURL)
+	if err != nil {
+		t.Fatalf("GET retour de paiement: %v", err)
+	}
+	if returned.StatusCode != http.StatusOK {
+		t.Fatalf("retour de paiement en %d, attendu 200", returned.StatusCode)
+	}
+	if page := body(t, returned); strings.Contains(page, "déjà servi") {
+		t.Error("le retour de paiement affiche « ce lien a déjà servi »")
 	}
 }

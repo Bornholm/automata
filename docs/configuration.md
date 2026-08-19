@@ -1205,6 +1205,12 @@ fournis par voie électronique — ce que vend Automata. Un régime
 particulier (logiciel professionnel en abonnement, par exemple) se règle
 ici, mais le choix du code relève du comptable, pas du logiciel.
 
+Le retour de paiement ne vise jamais le lien de profil d'origine : celui-ci
+est à usage unique et déjà consommé au moment où Stripe renvoie le client.
+Un lien de retour neuf, valable une heure, est émis à l'ouverture de la
+session de paiement — sans quoi le client verrait « ce lien a déjà servi »
+juste après avoir payé.
+
 Le point de réception des événements est `POST /stripe/webhook` (à
 exposer publiquement, contrairement au reste de l'interface) : la
 signature est vérifiée avec une tolérance de cinq minutes, et le crédit

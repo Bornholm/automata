@@ -7,13 +7,23 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/weblink"
 )
 
 // maxWebhookBody borne la lecture d'un événement Stripe : un corps
 // anormalement gros est un abus, pas un paiement.
 const maxWebhookBody = 1 << 20
+
+// checkoutReturnTTL laisse au paiement le temps d'aboutir. Le retour de
+// Stripe ne peut pas viser le lien d'origine : celui-ci est à usage
+// unique et déjà consommé, et la session courte du profil peut expirer
+// pendant la saisie de la carte ou une authentification bancaire. Sans
+// lien neuf, le client tombe sur « ce lien a déjà servi » au pire moment
+// — juste après avoir payé.
+const checkoutReturnTTL = time.Hour
 
 // handleCheckout crée une session de paiement pour le pack choisi et
 // redirige vers Stripe. Accessible depuis la page de crédits du profil,
@@ -44,7 +54,28 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 	pack := s.cfg.Web.Credits.Packs[index]
 
-	base := strings.TrimSuffix(s.cfg.Web.BaseURL, "/") + linkPath + "/credits"
+	returnID, returnHash, returnPath, err := weblink.NewProfileLink()
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "web: génération du lien de retour de paiement",
+			"member_id", member.ID, "error", err)
+		http.Redirect(w, r, linkPath+"/credits?payment_error=1", http.StatusSeeOther)
+		return
+	}
+	now := s.now()
+	if !s.withTx(w, r, func(tx *sql.Tx) error {
+		return s.profileLinks.Insert(r.Context(), tx, persistence.ProfileLink{
+			ID:        returnID,
+			MemberID:  member.ID,
+			TokenHash: returnHash,
+			Status:    persistence.ProfileLinkStatusPending,
+			ExpiresAt: now.Add(checkoutReturnTTL),
+			CreatedAt: now,
+		})
+	}) {
+		return
+	}
+
+	base := strings.TrimSuffix(s.cfg.Web.BaseURL, "/") + "/p/" + returnPath + "/credits"
 	sessionURL, err := s.stripe.checkoutSession(r.Context(), member.OrgID, pack.Credits, pack.PriceEUR,
 		base+"?paid=1", base+"?canceled=1")
 	if err != nil {
