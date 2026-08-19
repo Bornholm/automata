@@ -766,6 +766,13 @@ différentes, identifiants vérifiés, et au plus un tiers de la portée en
 oublis secs par passe — un plan qui propose de vider la mémoire est refusé.
 Désactivée par défaut.
 
+La même passe peut produire au plus deux « insights » par portée : des
+souvenirs de synthèse déduits d'un motif traversant plusieurs souvenirs
+(« consulte la météo chaque matin »), écrits avec l'origine `reflection`
+sans supprimer les originaux. Le prompt exige la parcimonie — aucun insight
+au moindre doute — et le compteur `memory_insights` de `/metrics` les
+mesure.
+
 La dernière exécution est persistée (table `maintenance_runs`) : un
 redémarrage ne relance pas la consolidation et n'en repousse pas l'échéance.
 Le contenu des souvenirs transite vers le fournisseur du `client` déclaré

@@ -310,3 +310,75 @@ func TestTick_FirstRunOnlyAnchors(t *testing.T) {
 		t.Fatalf("appels llm au tick de contrôle = %d, attendu 1", client.calls)
 	}
 }
+
+// Un insight est un nouveau souvenir de synthèse : écrit dans la portée du
+// lot avec l'origine "reflection", sans supprimer les souvenirs sources.
+func TestConsolidate_WritesInsightsWithoutRemovingSources(t *testing.T) {
+	store := newFakeStore()
+	store.seed("a", "Alice a demandé la météo lundi", "home", "personal", "alice", "alice")
+	store.seed("b", "Alice a demandé la météo mardi", "home", "personal", "alice", "alice")
+
+	client := &scriptedClient{response: `{"merges": [], "forget": [], "insights": ["Alice consulte la météo chaque matin"]}`}
+	consolidator := newConsolidator(t, store, client, 2)
+
+	if err := consolidator.Consolidate(context.Background()); err != nil {
+		t.Fatalf("Consolidate: %v", err)
+	}
+
+	if len(store.forgotten) != 0 {
+		t.Errorf("souvenirs oubliés = %v, attendu aucun : un insight ne remplace rien", store.forgotten)
+	}
+	if len(store.remembered) != 1 {
+		t.Fatalf("souvenirs écrits = %d, attendu 1", len(store.remembered))
+	}
+
+	insight := store.remembered[0]
+	if insight.Content != "Alice consulte la météo chaque matin" {
+		t.Errorf("contenu = %q", insight.Content)
+	}
+	if insight.Origin != "reflection" {
+		t.Errorf("origin = %q, attendu \"reflection\"", insight.Origin)
+	}
+	if insight.Scope != model.ScopePersonal || insight.ScopeID != model.ScopeID("alice") || insight.OrgID != model.OrgID("home") {
+		t.Errorf("portée = %s/%s/%s, attendu celle du lot", insight.OrgID, insight.Scope, insight.ScopeID)
+	}
+	if insight.CreatedBy != consolidatorPrincipal {
+		t.Errorf("created_by = %q, attendu %q", insight.CreatedBy, consolidatorPrincipal)
+	}
+	if insight.OwnerPrincipalID != "" {
+		t.Errorf("owner = %q, attendu vide (la synthèse appartient à la portée)", insight.OwnerPrincipalID)
+	}
+}
+
+// La réflexion est la partie la plus spéculative de la consolidation : un
+// plan qui déborde du quota d'insights (ou en propose de vides) est refusé
+// en bloc.
+func TestConsolidate_RejectsExcessiveOrEmptyInsights(t *testing.T) {
+	cases := []struct {
+		name     string
+		response string
+		wantErr  string
+	}{
+		{"trop d'insights", `{"merges": [], "forget": [], "insights": ["un", "deux", "trois"]}`, "insights proposés"},
+		{"insight vide", `{"merges": [], "forget": [], "insights": ["  "]}`, "insight sans contenu"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStore()
+			store.seed("a", "Fait un", "home", "personal", "alice", "alice")
+			store.seed("b", "Fait deux", "home", "personal", "alice", "alice")
+
+			client := &scriptedClient{response: tc.response}
+			consolidator := newConsolidator(t, store, client, 2)
+
+			err := consolidator.Consolidate(context.Background())
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("erreur = %v, attendu une erreur contenant %q", err, tc.wantErr)
+			}
+			if len(store.remembered) != 0 {
+				t.Errorf("un plan invalide ne doit rien écrire (écrits=%d)", len(store.remembered))
+			}
+		})
+	}
+}

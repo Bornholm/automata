@@ -53,6 +53,12 @@ const defaultMinMemories = 10
 // condenser, pas concaténer.
 const maxMergedChars = 2000
 
+// maxInsights borne le nombre de souvenirs de synthèse (« insights »)
+// qu'une passe peut produire par portée : la réflexion est la partie la
+// plus spéculative de la consolidation, elle doit rester marginale face au
+// fonds qu'elle résume.
+const maxInsights = 2
+
 // consolidatorPrincipal est enregistré comme auteur (created_by) des
 // souvenirs fusionnés : il n'existe aucun principal humain derrière cette
 // écriture, et le marquer explicitement permet de l'auditer.
@@ -66,13 +72,15 @@ Ton objectif : moins de souvenirs, mieux rédigés, sans aucune perte d'informat
 - Propose l'oubli des souvenirs sans valeur durable : demandes ponctuelles passées, états transitoires, informations manifestement périmées.
 - Un souvenir sain et unique reste intact : ne le liste nulle part.
 - N'invente jamais d'information absente des souvenirs fournis.
+- Synthétise, avec parcimonie : si PLUSIEURS souvenirs dessinent ensemble un motif durable qu'aucun n'énonce (une habitude installée, une préférence générale, un projet au long cours), tu peux proposer jusqu'à 2 "insights" — de nouveaux souvenirs de synthèse, formulés prudemment, fondés UNIQUEMENT sur les souvenirs fournis et leurs dates. Jamais de spéculation, jamais de généralisation à partir d'un fait isolé : au moindre doute, aucun insight.
 
 Réponds UNIQUEMENT par un objet JSON de la forme :
-{"merges": [{"ids": ["id1", "id2"], "content": "texte fusionné"}], "forget": ["id3"]}
+{"merges": [{"ids": ["id1", "id2"], "content": "texte fusionné"}], "forget": ["id3"], "insights": ["texte de synthèse"]}
 - "merges" : chaque entrée remplace AU MOINS DEUX souvenirs par le texte donné.
 - "forget" : souvenirs à supprimer purement et simplement, sans remplacement.
+- "insights" : nouveaux souvenirs de synthèse, sans supprimer les originaux.
 - Un identifiant apparaît AU PLUS UNE FOIS dans l'ensemble de la réponse, et uniquement s'il figure dans la liste fournie.
-Réponds {"merges": [], "forget": []} s'il n'y a rien à réorganiser.`
+Réponds {"merges": [], "forget": [], "insights": []} s'il n'y a rien à réorganiser.`
 
 // scopeKey regroupe les souvenirs d'une même portée : la consolidation ne
 // franchit JAMAIS une frontière de portée (PLAN.md §8.3) — fusionner un
@@ -88,6 +96,10 @@ type scopeKey struct {
 type plan struct {
 	Merges []merge  `json:"merges"`
 	Forget []string `json:"forget"`
+	// Insights sont les souvenirs de synthèse proposés : de nouvelles
+	// entrées déduites d'un motif traversant plusieurs souvenirs, sans
+	// suppression des originaux.
+	Insights []string `json:"insights"`
 }
 
 type merge struct {
@@ -361,6 +373,31 @@ func (c *Consolidator) consolidateScope(ctx context.Context, key scopeKey, group
 		removed++
 	}
 
+	for _, insight := range p.Insights {
+		content := strings.TrimSpace(insight)
+		if runes := []rune(content); len(runes) > maxMergedChars {
+			content = string(runes[:maxMergedChars])
+		}
+
+		_, err := c.store.Remember(ctx, memory.NewMemory{
+			Content: content,
+			Scope:   model.Scope(key.scope),
+			ScopeID: model.ScopeID(key.scopeID),
+			OrgID:   model.OrgID(key.orgID),
+			// Une synthèse appartient à la portée, pas à un individu.
+			CreatedBy: consolidatorPrincipal,
+			Origin:    "reflection",
+		})
+		if err != nil {
+			// Les souvenirs sources sont intacts : un insight perdu n'est
+			// qu'une occasion manquée, pas une perte.
+			c.logger.WarnContext(ctx, "consolidation: écriture d'un insight en échec",
+				"scope", key.scope, "error", err)
+			continue
+		}
+		c.metrics.AddMemoryInsights(1)
+	}
+
 	return removed, nil
 }
 
@@ -407,6 +444,15 @@ func validatePlan(p plan, group []memory.Memory) error {
 	for _, id := range p.Forget {
 		if err := claim(id); err != nil {
 			return err
+		}
+	}
+
+	if len(p.Insights) > maxInsights {
+		return fmt.Errorf("plan de consolidation refusé: %d insights proposés, maximum %d", len(p.Insights), maxInsights)
+	}
+	for _, insight := range p.Insights {
+		if strings.TrimSpace(insight) == "" {
+			return fmt.Errorf("plan de consolidation invalide: insight sans contenu")
 		}
 	}
 

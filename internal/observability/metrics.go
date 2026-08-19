@@ -48,6 +48,7 @@ type Metrics struct {
 	memoriesExtracted        atomic.Int64
 	episodesRecorded         atomic.Int64
 	memoryRecalls            atomic.Int64
+	memoryInsights           atomic.Int64
 	memoriesConsolidated     atomic.Int64
 	deliveryErrors           atomic.Int64
 	toolResultsTruncated     atomic.Int64
@@ -345,6 +346,16 @@ func (m *Metrics) IncMemoryRecall() {
 	m.memoryRecalls.Add(1)
 }
 
+// AddMemoryInsights incrémente de n le compteur de souvenirs de synthèse
+// produits par la réflexion de la consolidation périodique
+// (internal/consolidation).
+func (m *Metrics) AddMemoryInsights(n int) {
+	if m == nil || n <= 0 {
+		return
+	}
+	m.memoryInsights.Add(int64(n))
+}
+
 // AddMemoriesConsolidated incrémente de n le compteur de souvenirs
 // supprimés (fusionnés ou oubliés) par la réorganisation périodique de la
 // mémoire (internal/consolidation).
@@ -434,6 +445,7 @@ func (m *Metrics) Snapshot() map[string]any {
 		"memories_extracted":          m.memoriesExtracted.Load(),
 		"episodes_recorded":           m.episodesRecorded.Load(),
 		"memory_recalls":              m.memoryRecalls.Load(),
+		"memory_insights":             m.memoryInsights.Load(),
 		"memories_consolidated":       m.memoriesConsolidated.Load(),
 		"delivery_errors":             m.deliveryErrors.Load(),
 		"tool_results_truncated":      m.toolResultsTruncated.Load(),
