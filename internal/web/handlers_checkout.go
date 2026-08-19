@@ -99,6 +99,11 @@ func (s *Server) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Le prix est facultatif : les paiements antérieurs à son ajout n'en
+	// portent pas, et un achat sans prix connu vaut mieux qu'un achat
+	// perdu.
+	priceEUR, _ := strconv.ParseFloat(event.Data.Object.Metadata.PriceEUR, 64)
+
 	credited := false
 	err = s.db.WithTx(r.Context(), func(tx *sql.Tx) error {
 		insertErr := s.wallet.Insert(r.Context(), tx, persistence.WalletEntry{
@@ -106,6 +111,7 @@ func (s *Server) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 			Kind:        persistence.WalletKindPurchase,
 			Label:       "Achat de crédits",
 			Amount:      credits,
+			PriceEUR:    priceEUR,
 			CreatedAt:   s.now(),
 			ExternalRef: event.Data.Object.ID,
 		})

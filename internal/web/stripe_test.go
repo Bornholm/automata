@@ -1,10 +1,14 @@
 package web
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"testing"
 	"time"
@@ -67,5 +71,49 @@ func TestVerifyStripeSignature_RejectsForgedOrStaleEvents(t *testing.T) {
 				t.Error("événement accepté alors qu'il aurait dû être refusé")
 			}
 		})
+	}
+}
+
+// TestCheckoutSession_SendsTaxCode : Stripe refuse la création de session
+// dès que Stripe Tax est activé sur le compte et que le produit créé à la
+// volée n'est pas classé fiscalement. Le formulaire doit donc porter le
+// code, sans quoi le paiement échoue en production seulement.
+func TestCheckoutSession_SendsTaxCode(t *testing.T) {
+	var form url.Values
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("formulaire illisible: %v", err)
+		}
+		form = r.PostForm
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"url":"https://checkout.stripe.test/session"}`)
+	}))
+	defer server.Close()
+
+	client := newStripeClient("sk_test", "txcd_10103000")
+	client.baseURL = server.URL
+
+	checkoutURL, err := client.checkoutSession(context.Background(), "acme", 4400, 35, "https://exemple/ok", "https://exemple/ko")
+	if err != nil {
+		t.Fatalf("création de session: %v", err)
+	}
+	if checkoutURL != "https://checkout.stripe.test/session" {
+		t.Fatalf("URL de paiement inattendue: %q", checkoutURL)
+	}
+
+	if got := form.Get("line_items[0][price_data][product_data][tax_code]"); got != "txcd_10103000" {
+		t.Errorf("code fiscal transmis = %q, attendu txcd_10103000", got)
+	}
+	if got := form.Get("line_items[0][price_data][unit_amount]"); got != "3500" {
+		t.Errorf("montant transmis = %q, attendu 3500", got)
+	}
+	if got := form.Get("metadata[credits]"); got != "4400" {
+		t.Errorf("crédits transmis = %q, attendu 4400", got)
+	}
+	// Le prix revient par les métadonnées : c'est la seule recette que le
+	// webhook pourra inscrire au portefeuille.
+	if got := form.Get("metadata[price_eur]"); got != "35" {
+		t.Errorf("prix transmis = %q, attendu 35", got)
 	}
 }

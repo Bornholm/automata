@@ -1194,7 +1194,16 @@ web:
   stripe:
     secret_key: ${STRIPE_SECRET_KEY}       # sk_…
     webhook_secret: ${STRIPE_WEBHOOK_SECRET} # whsec_…
+    tax_code: "txcd_10000000"                # facultatif
 ```
+
+Le `tax_code` classe fiscalement les crédits vendus. Stripe l'exige dès
+que Stripe Tax est activé sur le compte : le produit est créé à la volée
+au moment du paiement, il n'existe pas de catalogue où le déclarer une
+fois pour toutes. Le défaut, `txcd_10000000`, correspond aux services
+fournis par voie électronique — ce que vend Automata. Un régime
+particulier (logiciel professionnel en abonnement, par exemple) se règle
+ici, mais le choix du code relève du comptable, pas du logiciel.
 
 Le point de réception des événements est `POST /stripe/webhook` (à
 exposer publiquement, contrairement au reste de l'interface) : la

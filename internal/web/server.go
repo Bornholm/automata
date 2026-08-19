@@ -129,7 +129,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	}
 
 	if cfg.Web.Stripe.Enabled() {
-		s.stripe = newStripeClient(cfg.Web.Stripe.SecretKey)
+		s.stripe = newStripeClient(cfg.Web.Stripe.SecretKey, cfg.Web.Stripe.EffectiveTaxCode())
 	}
 
 	mux := http.NewServeMux()

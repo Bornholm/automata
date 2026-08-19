@@ -31,14 +31,18 @@ const (
 // stripeClient appelle l'API Stripe avec la clé secrète configurée.
 type stripeClient struct {
 	secretKey string
-	http      *http.Client
+	// taxCode classe le produit vendu : Stripe le réclame dès que Stripe
+	// Tax est activé sur le compte.
+	taxCode string
+	http    *http.Client
 	// baseURL est surchargée dans les tests.
 	baseURL string
 }
 
-func newStripeClient(secretKey string) *stripeClient {
+func newStripeClient(secretKey, taxCode string) *stripeClient {
 	return &stripeClient{
 		secretKey: secretKey,
+		taxCode:   taxCode,
 		http:      &http.Client{Timeout: stripeTimeout},
 		baseURL:   stripeAPIBase,
 	}
@@ -57,10 +61,17 @@ func (c *stripeClient) checkoutSession(ctx context.Context, orgID string, credit
 	form.Set("line_items[0][price_data][currency]", "eur")
 	form.Set("line_items[0][price_data][unit_amount]", strconv.FormatInt(int64(priceEUR*100+0.5), 10))
 	form.Set("line_items[0][price_data][product_data][name]", formatCreditsProduct(credits))
+	if c.taxCode != "" {
+		form.Set("line_items[0][price_data][product_data][tax_code]", c.taxCode)
+	}
 	// Les métadonnées reviennent dans l'événement : c'est ce qui permet de
 	// créditer le bon portefeuille sans faire confiance au navigateur.
 	form.Set("metadata[org_id]", orgID)
 	form.Set("metadata[credits]", strconv.FormatInt(credits, 10))
+	// Le prix accompagne les crédits : sans lui, l'achat entrerait au
+	// portefeuille sans recette en face, et la marge de l'instance se
+	// calculerait sur les seuls crédits offerts.
+	form.Set("metadata[price_eur]", strconv.FormatFloat(priceEUR, 'f', -1, 64))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/checkout/sessions", strings.NewReader(form.Encode()))
 	if err != nil {
@@ -113,8 +124,9 @@ type stripeEvent struct {
 			ID            string `json:"id"`
 			PaymentStatus string `json:"payment_status"`
 			Metadata      struct {
-				OrgID   string `json:"org_id"`
-				Credits string `json:"credits"`
+				OrgID    string `json:"org_id"`
+				Credits  string `json:"credits"`
+				PriceEUR string `json:"price_eur"`
 			} `json:"metadata"`
 		} `json:"object"`
 	} `json:"data"`

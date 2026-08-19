@@ -169,6 +169,25 @@ type WebStripe struct {
 	// WebhookSecret (whsec_…) vérifie la signature des événements reçus :
 	// sans elle, n'importe qui pourrait créditer un portefeuille.
 	WebhookSecret string `yaml:"webhook_secret"`
+	// TaxCode est le code fiscal Stripe des crédits vendus. Il n'est exigé
+	// que si Stripe Tax est activé sur le compte, mais le fournir dans
+	// tous les cas ne coûte rien. Défaut : services fournis par voie
+	// électronique (voir EffectiveTaxCode).
+	TaxCode string `yaml:"tax_code"`
+}
+
+// defaultStripeTaxCode classe les crédits comme un service fourni par voie
+// électronique — ce que vend Automata. Un code plus précis (SaaS
+// professionnel, par exemple) se règle par configuration selon le régime
+// applicable, qui relève du comptable, pas du logiciel.
+const defaultStripeTaxCode = "txcd_10000000"
+
+// EffectiveTaxCode retourne le code fiscal configuré, ou le défaut.
+func (s WebStripe) EffectiveTaxCode() string {
+	if s.TaxCode != "" {
+		return s.TaxCode
+	}
+	return defaultStripeTaxCode
 }
 
 // Enabled indique si le paiement en ligne est configuré.
