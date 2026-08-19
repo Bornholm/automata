@@ -36,6 +36,7 @@ import (
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/platform"
+	"github.com/bornholm/automata/internal/privacy"
 	"github.com/bornholm/automata/internal/reminder"
 	"github.com/bornholm/automata/internal/scheduler"
 	"github.com/bornholm/automata/internal/secretbox"
@@ -311,8 +312,24 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			return fmt.Errorf("registry: construction de l'expéditeur de courriels: %w", err)
 		}
 
+		privacyService := privacy.New(db, memRes.store, func(privacyCtx context.Context, q persistence.Querier) float64 {
+			return cfg.Web.Credits.EffectiveUSDPerCredit()
+		}).WithPersonalChannels(func(memberID string) []string {
+			// Les canaux privés déclarés en configuration : sans eux,
+			// l'export d'un membre issu du YAML serait vide et sa
+			// suppression n'effacerait rien.
+			var conversations []string
+			for _, ch := range cfg.Channels {
+				if ch.Kind == config.ChannelKindPrivate && ch.PrincipalID == memberID {
+					conversations = append(conversations, ch.Provider+":"+ch.ChannelID)
+				}
+			}
+			return conversations
+		})
+
 		webServer := web.NewServer(cfg, db, mailSender, logger).
-			WithPlatformManager(platforms)
+			WithPlatformManager(platforms).
+			WithPrivacy(privacyService)
 
 		wg.Add(1)
 		go func() {

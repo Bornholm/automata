@@ -1157,6 +1157,26 @@ est idempotent — l'identifiant de session est unique en base, un
 événement rejoué ne crédite jamais deux fois. Sans ces secrets, les
 boutons d'achat restent visibles mais inertes.
 
+**Confidentialité (RGPD).** La page de profil « Confidentialité » liste ce
+qu'Automata conserve d'une personne, et ouvre deux droits : télécharger
+ses données (JSON lisible, en français) et les faire effacer. La
+suppression exige d'écrire `SUPPRIMER` — elle est irréversible.
+
+Trois règles gouvernent la suppression, et méritent d'être connues avant
+de répondre à une demande :
+
+- **les conversations de groupe ne sont pas effacées** : elles appartiennent
+  aussi aux autres participants ;
+- **le compte survit sous une identité neutre**, détaché de sa messagerie —
+  le supprimer romprait les groupes auxquels la personne a participé ;
+- **les traces de consommation sont conservées mais dissociées** (le
+  principal disparaît, les montants restent) : ce sont des pièces
+  comptables.
+
+Sont effacés : les messages des conversations privées et leurs résumés,
+les souvenirs de portée personnelle, les rappels, les jetons et liens de
+profil, la liaison de canal privé et l'adresse de récupération.
+
 Sous-commandes associées :
 
 ```

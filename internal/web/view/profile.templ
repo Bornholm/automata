@@ -21,7 +21,11 @@ templ profileNav(linkID string, active string) {
 			<a href={ templ.SafeURL("/p/" + linkID + "/credits") } class="text-sm font-medium text-brand">Crédits</a>
 		}
 		<span class="text-sm font-medium text-text-5" title="Bientôt">Ma consommation</span>
-		<span class="text-sm font-medium text-text-5" title="Bientôt">Confidentialité</span>
+		if active == "privacy" {
+			<span class="text-sm font-semibold text-ink">Confidentialité</span>
+		} else {
+			<a href={ templ.SafeURL("/p/" + linkID + "/privacy") } class="text-sm font-medium text-brand">Confidentialité</a>
+		}
 	</div>
 }
 

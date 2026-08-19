@@ -16,6 +16,7 @@ import (
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/platform"
+	"github.com/bornholm/automata/internal/privacy"
 	"github.com/bornholm/automata/internal/secretbox"
 	"github.com/bornholm/automata/internal/web/view"
 	"github.com/bornholm/automata/internal/weblink"
@@ -50,9 +51,12 @@ type Server struct {
 	// platformManager, s'il est renseigné, porte l'état réel des comptes
 	// de messagerie et applique leurs changements à chaud (pilier 2).
 	platformManager PlatformManager
-	limiter         *loginLimiter
-	reveals         *revealStash
-	codes           *codeStore
+	// privacy sert l'export et la suppression des données personnelles ;
+	// nil désactive l'écran de confidentialité.
+	privacy PrivacyService
+	limiter *loginLimiter
+	reveals *revealStash
+	codes   *codeStore
 
 	orgs         *persistence.OrganizationRepository
 	members      *persistence.MemberRepository
@@ -69,6 +73,13 @@ type Server struct {
 // PlatformManager est la vue qu'a le serveur web du gestionnaire de
 // comptes de messagerie (internal/platform) : lire l'état, et demander
 // l'application immédiate d'un changement.
+// PrivacyService est la vue qu'a le serveur du service de confidentialité
+// (internal/privacy).
+type PrivacyService interface {
+	Export(ctx context.Context, memberID string) (privacy.Export, error)
+	Delete(ctx context.Context, memberID string) (privacy.DeletionReport, error)
+}
+
 type PlatformManager interface {
 	Statuses() map[string]platform.Status
 	Wake()
@@ -170,6 +181,9 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /p/{link}/email", s.handleProfileEmail)
 	mux.HandleFunc("POST /p/{link}/email/verify", s.handleProfileEmailVerify)
 	mux.HandleFunc("POST /p/{link}/checkout", s.handleCheckout)
+	mux.HandleFunc("GET /p/{link}/privacy", s.handleProfilePrivacy)
+	mux.HandleFunc("GET /p/{link}/privacy/export", s.handleProfileExport)
+	mux.HandleFunc("POST /p/{link}/privacy/delete", s.handleProfileDelete)
 	mux.HandleFunc("POST /stripe/webhook", s.handleStripeWebhook)
 
 	s.httpServer = &http.Server{Addr: cfg.Web.Addr, Handler: mux}
@@ -182,6 +196,12 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 // mais aucun état de connexion.
 func (s *Server) WithPlatformManager(manager PlatformManager) *Server {
 	s.platformManager = manager
+	return s
+}
+
+// WithPrivacy branche le service de confidentialité (PRO-04).
+func (s *Server) WithPrivacy(service PrivacyService) *Server {
+	s.privacy = service
 	return s
 }
 
