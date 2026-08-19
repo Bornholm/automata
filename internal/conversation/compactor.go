@@ -71,6 +71,18 @@ type Compactor struct {
 	// désactive l'extraction (comportement historique).
 	memories memory.Store
 	maxFacts int
+
+	// episodes, s'il est renseigné (WithEpisodeStore), active la mémoire
+	// épisodique : à chaque compaction, le fragment de conversation sur le
+	// point d'être dilué dans le résumé est aussi conservé VERBATIM dans le
+	// store d'épisodes, retrouvable ensuite par l'outil
+	// search_conversation_history. nil désactive l'enregistrement.
+	episodes memory.EpisodeStore
+	// speakerName résout le nom affiché d'un principal pour étiqueter les
+	// répliques d'un épisode. L'identifiant interne n'apparaît JAMAIS dans
+	// le contenu d'un épisode (il serait ensuite restitué au modèle par la
+	// recherche) : à défaut de nom résolu, c'est le rôle qui étiquette.
+	speakerName func(principalID model.PrincipalID) string
 }
 
 // NewCompactor construit un Compactor. historyLimit doit être la même
@@ -116,6 +128,15 @@ func (c *Compactor) WithMemoryStore(store memory.Store, maxFacts int) *Compactor
 	}
 	c.memories = store
 	c.maxFacts = maxFacts
+	return c
+}
+
+// WithEpisodeStore active la conservation verbatim des fragments condensés
+// (conversation.compaction.record_episodes) : chaque vague de compaction
+// enregistre un épisode dans store, étiqueté par speakerName.
+func (c *Compactor) WithEpisodeStore(store memory.EpisodeStore, speakerName func(principalID model.PrincipalID) string) *Compactor {
+	c.episodes = store
+	c.speakerName = speakerName
 	return c
 }
 
@@ -201,6 +222,16 @@ func (c *Compactor) CompactIfNeeded(ctx context.Context, identity model.Executio
 		"messages_covered_total", next.MessagesCovered,
 	)
 
+	// La conservation d'un épisode n'est jamais bloquante : comme pour les
+	// faits, le résumé est déjà persisté, un échec ne coûte que la version
+	// verbatim de cette vague.
+	if c.episodes != nil {
+		if err := c.recordEpisode(ctx, conv, batch); err != nil {
+			c.logger.WarnContext(ctx, "conversation: enregistrement de l'épisode en échec",
+				"conversation_id", conversationID, "error", err)
+		}
+	}
+
 	// L'extraction de faits durables n'est jamais bloquante : le résumé est
 	// déjà persisté, un échec ici (LLM indisponible, JSON illisible) coûte
 	// au pire quelques faits non mémorisés — ils restent présents dans le
@@ -213,6 +244,69 @@ func (c *Compactor) CompactIfNeeded(ctx context.Context, identity model.Executio
 	}
 
 	return nil
+}
+
+// recordEpisode conserve verbatim le fragment condensé, dans la portée de
+// la conversation — même contrat que extractFacts : jamais en portée org,
+// jamais décidé par le LLM. Aucun appel LLM ici : le contenu est la
+// transcription brute des messages, horodatée et étiquetée par nom affiché.
+func (c *Compactor) recordEpisode(ctx context.Context, conv model.Conversation, batch []persistence.Message) error {
+	if conv.Scope != model.ScopePersonal && conv.Scope != model.ScopeGroup {
+		return nil
+	}
+
+	var (
+		b        strings.Builder
+		from, to time.Time
+	)
+
+	for _, m := range batch {
+		stamp := m.CreatedAt
+		if ts, err := time.Parse(time.RFC3339, m.CreatedAt); err == nil {
+			stamp = ts.UTC().Format("2006-01-02 15:04")
+			if from.IsZero() || ts.Before(from) {
+				from = ts
+			}
+			if ts.After(to) {
+				to = ts
+			}
+		}
+		fmt.Fprintf(&b, "[%s] %s: %s\n", stamp, c.speakerLabel(m), m.Content)
+	}
+
+	_, err := c.episodes.RecordEpisode(ctx, memory.NewEpisode{
+		Content:        b.String(),
+		OrgID:          conv.OrgID,
+		Scope:          conv.Scope,
+		ScopeID:        conv.ScopeID,
+		ConversationID: conv.ID,
+		From:           from,
+		To:             to,
+	})
+	if err != nil {
+		return err
+	}
+
+	c.metrics.IncEpisodeRecorded()
+	// Uniquement des identifiants et des comptes : jamais le contenu.
+	c.logger.InfoContext(ctx, "conversation: épisode mémorisé",
+		"conversation_id", conv.ID, "messages", len(batch))
+
+	return nil
+}
+
+// speakerLabel étiquette une réplique : nom affiché du principal si résolu,
+// sinon le rôle ("user", "assistant"). Jamais l'identifiant interne.
+func (c *Compactor) speakerLabel(m persistence.Message) string {
+	if m.Role != "user" {
+		return m.Role
+	}
+	if c.speakerName != nil {
+		if name := c.speakerName(m.PrincipalID); name != "" {
+			return name
+		}
+	}
+	return m.Role
 }
 
 // factExtractionPrompt encadre l'extraction de faits durables depuis les

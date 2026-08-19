@@ -26,6 +26,12 @@ type MemoryTools struct {
 	Search     bool
 	Remember   bool
 	Forget     bool
+	// Episodes est le store de la mémoire épisodique (fragments verbatim de
+	// conversations passées, conservés à la compaction). nil désactive
+	// l'outil search_conversation_history, quel que soit History.
+	Episodes memory.EpisodeStore
+	// History expose l'outil search_conversation_history.
+	History bool
 	// MaxResults borne le nombre de mémoires retournées par une recherche
 	// (search_memory ou la liste de candidats de forget_memory). Une valeur
 	// <= 0 retombe sur 5.
@@ -71,6 +77,9 @@ func (t MemoryTools) buildMemoryTools(identity model.ExecutionIdentity, collecto
 	}
 	if t.Forget {
 		tools = append(tools, t.newForgetMemoryTool(identity, collector))
+	}
+	if t.History && t.Episodes != nil {
+		tools = append(tools, t.newSearchHistoryTool(identity))
 	}
 
 	return tools
@@ -263,6 +272,89 @@ func (t MemoryTools) newSearchMemoryTool(identity model.ExecutionIdentity) llm.T
 			return llm.NewToolResult(formatMemoryList(results)), nil
 		},
 	)
+}
+
+// newSearchHistoryTool construit l'outil "search_conversation_history".
+// Contrairement à search_memory, qui balaie toutes les portées lisibles, la
+// recherche épisodique est bornée à la portée de la conversation COURANTE :
+// un épisode est du verbatim, il n'a de sens (et de légitimité) que là où
+// il a été prononcé. La permission requise est la même lecture mémoire que
+// search_memory.
+func (t MemoryTools) newSearchHistoryTool(identity model.ExecutionIdentity) llm.Tool {
+	schema := llm.NewJSONSchema().
+		RequiredProperty("query", "Search text.", "string")
+
+	return llm.NewFuncTool(
+		"search_conversation_history",
+		"Search verbatim excerpts of older messages from this conversation, beyond the recent history you already see. Useful to recall what was actually said or decided in past discussions. Results are dated fragments of the original exchange.",
+		schema,
+		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
+			query, _ := params["query"].(string)
+			if strings.TrimSpace(query) == "" {
+				return llm.NewToolResult("erreur: le paramètre 'query' est requis et ne peut pas être vide."), nil
+			}
+
+			scope := identity.Scope
+			if scope != model.ScopePersonal && scope != model.ScopeGroup {
+				return llm.NewToolResult("No conversation history is available in this context."), nil
+			}
+
+			if err := t.Authorizer.Authorize(ctx, authorization.AuthorizationRequest{
+				Identity:      identity,
+				Permission:    fmt.Sprintf("memory.%s.read", scope),
+				TargetOrgID:   identity.OrgID,
+				TargetScope:   scope,
+				TargetScopeID: identity.ScopeID,
+			}); err != nil {
+				return llm.NewToolResult("No conversation history is available in this context."), nil
+			}
+
+			episodes, err := t.Episodes.SearchEpisodes(ctx, memory.EpisodeQuery{
+				Text:       query,
+				OrgID:      identity.OrgID,
+				Scope:      scope,
+				ScopeID:    identity.ScopeID,
+				MaxResults: t.maxResults(),
+			})
+			if err != nil {
+				return llm.NewToolResult(fmt.Sprintf("erreur lors de la recherche d'historique: %v", err)), nil
+			}
+
+			return llm.NewToolResult(formatEpisodeList(episodes)), nil
+		},
+	)
+}
+
+// episodeExcerptLimit borne la taille d'un épisode restitué au modèle : un
+// fragment est potentiellement une vague de compaction entière, bien plus
+// long qu'un souvenir.
+const episodeExcerptLimit = 2000
+
+// formatEpisodeList formate episodes en liste datée.
+func formatEpisodeList(episodes []memory.Episode) string {
+	if len(episodes) == 0 {
+		return "No matching conversation history found."
+	}
+
+	var b strings.Builder
+	for i, ep := range episodes {
+		excerpt := ep.Content
+		if len(excerpt) > episodeExcerptLimit {
+			excerpt = excerpt[:episodeExcerptLimit] + "…"
+		}
+
+		period := ""
+		switch {
+		case !ep.From.IsZero() && !ep.To.IsZero():
+			period = fmt.Sprintf(" [%s → %s]", ep.From.Format("2006-01-02"), ep.To.Format("2006-01-02"))
+		case !ep.From.IsZero():
+			period = fmt.Sprintf(" [%s]", ep.From.Format("2006-01-02"))
+		}
+
+		fmt.Fprintf(&b, "%d.%s\n%s\n\n", i+1, period, excerpt)
+	}
+
+	return strings.TrimRight(b.String(), "\n") + "\n"
 }
 
 // newRememberTool construit l'outil "remember". La portée d'écriture n'est

@@ -550,3 +550,84 @@ func TestMemoryTools_DisabledWhenFlagFalse(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 }
+
+// fakeEpisodeStore restitue des épisodes prédéfinis et capture la requête.
+type fakeEpisodeStore struct {
+	mu        sync.Mutex
+	episodes  []memory.Episode
+	lastQuery memory.EpisodeQuery
+}
+
+func (f *fakeEpisodeStore) RecordEpisode(ctx context.Context, ep memory.NewEpisode) (memory.Episode, error) {
+	return memory.Episode{}, fmt.Errorf("non utilisé")
+}
+
+func (f *fakeEpisodeStore) SearchEpisodes(ctx context.Context, query memory.EpisodeQuery) ([]memory.Episode, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastQuery = query
+	return f.episodes, nil
+}
+
+var _ memory.EpisodeStore = &fakeEpisodeStore{}
+
+// La recherche d'historique est bornée à la portée de la conversation
+// courante : la requête transmise au store doit porter exactement cette
+// portée, et le résultat restituer le fragment daté.
+func TestSearchConversationHistory_ScopedToCurrentConversation(t *testing.T) {
+	episodes := &fakeEpisodeStore{episodes: []memory.Episode{
+		{
+			ID:      "ep-1",
+			Content: "[2026-07-02 09:00] Alice: on avait retenu dokku pour le déploiement",
+			From:    time.Date(2026, 7, 2, 9, 0, 0, 0, time.UTC),
+			To:      time.Date(2026, 7, 2, 9, 30, 0, 0, time.UTC),
+		},
+	}}
+
+	tools := agent.MemoryTools{
+		Store:      newFakeMemoryStore(),
+		Authorizer: authorization.NewAuthorizer(memoryTestConfig()),
+		Episodes:   episodes,
+		History:    true,
+	}
+
+	text := executeMemoryTool(t, tools, groupIdentity("alice", "main-group"), "search_conversation_history", map[string]any{"query": "dokku"})
+
+	if !strings.Contains(text, "on avait retenu dokku") {
+		t.Errorf("fragment absent du résultat: %q", text)
+	}
+	if !strings.Contains(text, "2026-07-02") {
+		t.Errorf("date absente du résultat: %q", text)
+	}
+
+	episodes.mu.Lock()
+	q := episodes.lastQuery
+	episodes.mu.Unlock()
+
+	if q.Scope != model.ScopeGroup || q.ScopeID != "main-group" || q.OrgID != "home" {
+		t.Errorf("portée de la requête = %s/%s/%s, attendu group/main-group/home", q.OrgID, q.Scope, q.ScopeID)
+	}
+}
+
+// Sans permission de lecture mémoire sur la portée courante, l'outil répond
+// qu'aucun historique n'est disponible — sans erreur ni fuite.
+func TestSearchConversationHistory_UnauthorizedGetsNothing(t *testing.T) {
+	episodes := &fakeEpisodeStore{episodes: []memory.Episode{{ID: "ep-1", Content: "secret du groupe"}}}
+
+	tools := agent.MemoryTools{
+		Store:      newFakeMemoryStore(),
+		Authorizer: authorization.NewAuthorizer(memoryTestConfig()),
+		Episodes:   episodes,
+		History:    true,
+	}
+
+	// "leo" n'a que memory.org.read : la lecture de groupe lui est refusée.
+	text := executeMemoryTool(t, tools, groupIdentity("leo", "main-group"), "search_conversation_history", map[string]any{"query": "secret"})
+
+	if strings.Contains(text, "secret du groupe") {
+		t.Errorf("fuite d'épisode vers une identité non autorisée: %q", text)
+	}
+	if !strings.Contains(text, "No conversation history") {
+		t.Errorf("réponse inattendue: %q", text)
+	}
+}

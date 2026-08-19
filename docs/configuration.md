@@ -396,7 +396,7 @@ Détaillé dans [agents.md](agents.md). Résumé des champs :
 | `client` | Entrée de `llm_clients` |
 | `system_prompt.file` ou `.inline` | Personnalité et mission. Exactement une des deux |
 | `delegates` | Noms des spécialistes joignables. Orchestrateur seulement |
-| `memory` | Drapeaux `search`, `remember`, `forget` |
+| `memory` | Drapeaux `search`, `remember`, `forget`, `history` |
 | `reminders` | Expose les outils de rappels ponctuels. Orchestrateur seulement |
 | `scheduled_tasks` | Expose les outils de tâches planifiées (l'agent travaille à l'échéance). Orchestrateur seulement |
 | `mcp_servers` | Serveurs MCP autorisés. Spécialiste seulement |
@@ -714,6 +714,14 @@ memory:
       type: bleve
       path: /data/memory.bleve
       weight: 1
+    - id: vector
+      type: sqlitevec
+      path: /data/memory-vec.sqlite
+      client: embeddings
+      weight: 1
+  retrieval:
+    profile: balanced
+    client: small
   policies:
     private_can_write_org: false
     org_readable_by_children: true
@@ -728,6 +736,19 @@ Mémoire persistante, portée par Amoxtli. Le store garde le contenu, l'index
 sert la recherche. Les deux doivent être sauvegardés ensemble : un index sans
 store ne vaut rien, un store sans index rend les souvenirs introuvables
 jusqu'à `automata memory reindex`.
+
+Chaque entrée de `indexes` déclare un index : `bleve` (plein texte) ou
+`sqlitevec` (sémantique, vecteurs). Un index `sqlitevec` exige `client`, une
+entrée de `llm_clients` fournissant les embeddings (ex. provider `mistral`,
+modèle `mistral-embed`) ; chaque souvenir indexé et chaque recherche coûtent
+alors un appel d'embeddings. Déclarer les deux types donne une recherche
+hybride, fusionnée selon `weight`.
+
+`retrieval.profile` choisit le compromis coût/qualité de la recherche, calqué
+sur les profils amoxtli : `fast` (défaut) n'ajoute aucun appel LLM ;
+`balanced` active HyDE — le `client` déclaré (requis, un modèle économique
+suffit) reformule chaque requête distincte en document hypothétique avant la
+recherche, ce qui améliore nettement la recherche sémantique.
 
 `private_can_write_org` à `true` autoriserait une conversation privée à écrire
 dans la mémoire commune. Le plan l'interdit et la valeur par défaut le reflète.
@@ -762,6 +783,7 @@ conversation:
     client: main
     max_summary_chars: 2000
     extract_facts: true
+    record_episodes: true
     max_facts: 5
 ```
 
@@ -798,6 +820,16 @@ bloquant. Le compteur `memories_extracted` de `/metrics` la mesure. Combinée
 à `memory.consolidation`, cette extraction forme le cycle complet de la
 mémoire : les faits entrent au fil des compactions, la consolidation
 nocturne les fusionne et purge les périmés.
+
+`record_episodes` conserve en plus le fragment condensé VERBATIM dans la
+mémoire épisodique (même store Amoxtli, hors de portée de la consolidation
+et de `search_memory`), horodaté et étiqueté par nom affiché — jamais par
+identifiant interne. C'est ce qui alimente l'outil
+`search_conversation_history` (drapeau `memory.history` de l'agent) : quand
+le résumé et les faits extraits n'ont pas retenu le détail d'une discussion
+passée, l'agent peut retrouver ce qui a réellement été dit. Aucun appel LLM
+supplémentaire : le fragment est enregistré tel quel. Le compteur
+`episodes_recorded` de `/metrics` le mesure.
 
 ## identities
 

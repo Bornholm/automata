@@ -449,6 +449,11 @@ func scopeConditions(orgID model.OrgID, scope model.Scope, scopeID model.ScopeID
 	conditions := []amoxtliindex.Condition{
 		amoxtliindex.Eq("org_id", string(orgID)),
 		amoxtliindex.Eq("scope", string(scope)),
+		// Les souvenirs sémantiques ne portent aucune métadonnée "kind" ;
+		// exclure toute valeur présente écarte les épisodes
+		// (episode_store.go) dès l'index, sans quoi ils consommeraient le
+		// quota de résultats avant d'être écartés par resolveResults.
+		amoxtliindex.NotExists("kind"),
 	}
 	if scopeID != "" {
 		conditions = append(conditions, amoxtliindex.Eq("scope_id", string(scopeID)))

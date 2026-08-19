@@ -418,3 +418,105 @@ func TestCompactor_ExtractionFailureDoesNotFailCompaction(t *testing.T) {
 		t.Errorf("faits mémorisés = %d, attendu 0", len(store.remembered))
 	}
 }
+
+// recordingEpisodeStore capture les épisodes enregistrés.
+type recordingEpisodeStore struct {
+	mu       sync.Mutex
+	err      error
+	recorded []memory.NewEpisode
+}
+
+func (s *recordingEpisodeStore) RecordEpisode(ctx context.Context, ep memory.NewEpisode) (memory.Episode, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return memory.Episode{}, s.err
+	}
+	s.recorded = append(s.recorded, ep)
+	return memory.Episode{ID: "ep-1", Content: ep.Content}, nil
+}
+
+func (s *recordingEpisodeStore) SearchEpisodes(ctx context.Context, query memory.EpisodeQuery) ([]memory.Episode, error) {
+	return nil, nil
+}
+
+var _ memory.EpisodeStore = &recordingEpisodeStore{}
+
+// Le fragment condensé doit être conservé VERBATIM, étiqueté par nom
+// affiché — jamais par identifiant interne : le contenu d'un épisode est
+// restitué tel quel au modèle par search_conversation_history.
+func TestCompactor_RecordsEpisodeVerbatim(t *testing.T) {
+	db := openTestDB(t)
+	conv := testConversation("conv-1", "chan-1")
+	seedConversation(t, db, conv, 5)
+
+	client := &fakeSummarizerClient{summary: "résumé"}
+	store := &recordingEpisodeStore{}
+
+	compactor := conversation.NewCompactor(db, client, 2, 0, nil, nil).
+		WithClock(func() time.Time { return time.Date(2026, 8, 18, 10, 0, 0, 0, time.UTC) }).
+		WithEpisodeStore(store, func(principalID model.PrincipalID) string {
+			if principalID == "alice" {
+				return "Alice Petit"
+			}
+			return ""
+		})
+
+	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
+
+	if err := compactor.CompactIfNeeded(context.Background(), identity, conv); err != nil {
+		t.Fatalf("CompactIfNeeded: %v", err)
+	}
+
+	store.mu.Lock()
+	recorded := store.recorded
+	store.mu.Unlock()
+
+	if len(recorded) != 1 {
+		t.Fatalf("épisodes enregistrés = %d, attendu 1", len(recorded))
+	}
+
+	ep := recorded[0]
+	if !strings.Contains(ep.Content, "Alice Petit: message numéro 0") {
+		t.Errorf("contenu inattendu: %q", ep.Content)
+	}
+	if strings.Contains(ep.Content, "alice") {
+		t.Errorf("l'identifiant interne du principal fuit dans l'épisode: %q", ep.Content)
+	}
+	if !strings.Contains(ep.Content, "[2026-08-18 09:00]") {
+		t.Errorf("horodatage absent: %q", ep.Content)
+	}
+	if ep.Scope != conv.Scope || ep.ScopeID != conv.ScopeID || ep.OrgID != conv.OrgID {
+		t.Errorf("portée = %s/%s/%s, attendu celle de la conversation", ep.OrgID, ep.Scope, ep.ScopeID)
+	}
+	if ep.ConversationID != conv.ID {
+		t.Errorf("conversation = %q, attendu %q", ep.ConversationID, conv.ID)
+	}
+	if ep.From.IsZero() || ep.To.IsZero() {
+		t.Errorf("bornes temporelles absentes: from=%v to=%v", ep.From, ep.To)
+	}
+}
+
+// Un échec d'enregistrement d'épisode ne fait pas échouer la compaction :
+// le résumé est déjà persisté, l'épisode de cette vague est simplement
+// perdu.
+func TestCompactor_EpisodeFailureDoesNotFailCompaction(t *testing.T) {
+	db := openTestDB(t)
+	conv := testConversation("conv-1", "chan-1")
+	seedConversation(t, db, conv, 5)
+
+	client := &fakeSummarizerClient{summary: "résumé"}
+	store := &recordingEpisodeStore{err: context.DeadlineExceeded}
+
+	compactor := conversation.NewCompactor(db, client, 2, 0, nil, nil).
+		WithClock(func() time.Time { return time.Date(2026, 8, 18, 10, 0, 0, 0, time.UTC) }).
+		WithEpisodeStore(store, nil)
+
+	if err := compactor.CompactIfNeeded(context.Background(), model.ExecutionIdentity{}, conv); err != nil {
+		t.Fatalf("CompactIfNeeded aurait dû réussir malgré l'échec de l'épisode: %v", err)
+	}
+
+	if _, found := getSummary(t, db, conv.ID); !found {
+		t.Fatal("le résumé aurait dû être persisté")
+	}
+}

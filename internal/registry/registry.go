@@ -28,6 +28,7 @@ import (
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/memory"
+	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/reminder"
@@ -334,6 +335,24 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 				// sans extraction, mais l'écart avec la configuration doit se
 				// voir dans les journaux.
 				logger.Warn("conversation: extract_facts activé sans système de mémoire configuré, extraction désactivée")
+			}
+		}
+
+		if cfg.Conversation.Compaction.RecordEpisodes {
+			if memStore != nil {
+				// Les épisodes sont restitués au modèle par la recherche
+				// d'historique : les répliques y sont étiquetées par nom
+				// affiché, jamais par identifiant interne.
+				compactor = compactor.WithEpisodeStore(memStore, func(principalID model.PrincipalID) string {
+					for _, p := range cfg.Identities.Principals {
+						if p.ID == string(principalID) {
+							return p.DisplayName
+						}
+					}
+					return ""
+				})
+			} else {
+				logger.Warn("conversation: record_episodes activé sans système de mémoire configuré, mémoire épisodique désactivée")
 			}
 		}
 

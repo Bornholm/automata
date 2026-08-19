@@ -232,6 +232,8 @@ func buildMemoryTools(cfg *config.Config, store *memory.AmoxtliStore, metrics *o
 		Search:     true,
 		Remember:   true,
 		Forget:     true,
+		Episodes:   store,
+		History:    true,
 		MaxResults: 5,
 		Metrics:    metrics,
 	}

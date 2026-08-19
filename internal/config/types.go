@@ -289,6 +289,12 @@ type Compaction struct {
 	// (Amoxtli), dans la portée de la conversation. Requiert Enabled et un
 	// système de mémoire configuré.
 	ExtractFacts bool `yaml:"extract_facts"`
+	// RecordEpisodes conserve, à chaque compaction, le fragment condensé
+	// VERBATIM dans la mémoire épisodique (Amoxtli), dans la portée de la
+	// conversation — retrouvable ensuite par l'outil
+	// search_conversation_history. Requiert Enabled et un système de
+	// mémoire configuré.
+	RecordEpisodes bool `yaml:"record_episodes"`
 	// MaxFacts borne le nombre de faits mémorisés par compaction. 0
 	// applique le défaut (5).
 	MaxFacts int `yaml:"max_facts"`
@@ -456,6 +462,10 @@ type AgentMemory struct {
 	Search   bool `yaml:"search"`
 	Remember bool `yaml:"remember"`
 	Forget   bool `yaml:"forget"`
+	// History expose search_conversation_history : la recherche dans les
+	// fragments verbatim conservés par la mémoire épisodique
+	// (conversation.compaction.record_episodes).
+	History bool `yaml:"history"`
 }
 
 // AgentLimits décrit les limites d'exécution d'un agent.

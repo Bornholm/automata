@@ -215,6 +215,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 		agentMemoryTools.Search = memoryTools.Search && agentCfg.Memory.Search
 		agentMemoryTools.Remember = memoryTools.Remember && agentCfg.Memory.Remember
 		agentMemoryTools.Forget = memoryTools.Forget && agentCfg.Memory.Forget
+		agentMemoryTools.History = memoryTools.History && agentCfg.Memory.History
 
 		agentReminderTools := ReminderTools{}
 		if agentCfg.Reminders {

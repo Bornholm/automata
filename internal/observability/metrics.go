@@ -46,6 +46,7 @@ type Metrics struct {
 	scheduledTasksRun        atomic.Int64
 	conversationsCompacted   atomic.Int64
 	memoriesExtracted        atomic.Int64
+	episodesRecorded         atomic.Int64
 	memoriesConsolidated     atomic.Int64
 	deliveryErrors           atomic.Int64
 	toolResultsTruncated     atomic.Int64
@@ -324,6 +325,16 @@ func (m *Metrics) AddMemoriesExtracted(n int) {
 	m.memoriesExtracted.Add(int64(n))
 }
 
+// IncEpisodeRecorded incrémente le compteur d'épisodes de conversation
+// mémorisés verbatim lors des compactions d'historique
+// (internal/conversation.Compactor).
+func (m *Metrics) IncEpisodeRecorded() {
+	if m == nil {
+		return
+	}
+	m.episodesRecorded.Add(1)
+}
+
 // AddMemoriesConsolidated incrémente de n le compteur de souvenirs
 // supprimés (fusionnés ou oubliés) par la réorganisation périodique de la
 // mémoire (internal/consolidation).
@@ -411,6 +422,7 @@ func (m *Metrics) Snapshot() map[string]any {
 		"scheduled_tasks_run":         m.scheduledTasksRun.Load(),
 		"conversations_compacted":     m.conversationsCompacted.Load(),
 		"memories_extracted":          m.memoriesExtracted.Load(),
+		"episodes_recorded":           m.episodesRecorded.Load(),
 		"memories_consolidated":       m.memoriesConsolidated.Load(),
 		"delivery_errors":             m.deliveryErrors.Load(),
 		"tool_results_truncated":      m.toolResultsTruncated.Load(),
