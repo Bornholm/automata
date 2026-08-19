@@ -387,6 +387,37 @@ Rien n'oblige tous les agents à partager un client. Donner un modèle rapide et
 bon marché à un spécialiste qui ne fait que reformuler, et un modèle plus
 capable à l'orchestrateur, est un réglage courant.
 
+### extra_fields
+
+```yaml
+llm_clients:
+  main:
+    extra_fields:
+      usage:
+        include: true
+```
+
+Ces champs sont injectés tels quels dans le corps de chaque requête du
+client. Rien n'est validé : les passerelles compatibles OpenAI acceptent des
+paramètres que l'API d'origine ne connaît pas, et un champ inconnu du
+fournisseur fera échouer l'appel.
+
+Le cas qui compte est comptable. **OpenRouter ne rapporte le coût réel d'un
+appel que si la requête porte `usage: {include: true}`.** Sans lui, Automata
+retombe sur son estimation par jetons alors que le fournisseur connaît le
+chiffre exact — et l'écart n'est pas cosmétique : mesuré sur
+`deepseek-v4-flash`, la même conversation coûtait 0,00033 $ réels contre
+0,005 $ estimés, soit quinze fois trop. Une organisation facturée sur cette
+base paierait quinze fois le prix.
+
+Les traces d'usage distinguent les deux : `cost_reported = 1` pour un montant
+rapporté par le fournisseur, `0` pour une estimation. L'écran de tarification
+signale d'ailleurs les appels sans coût rapporté, la marge affichée étant
+optimiste d'autant.
+
+Ce réglage ne concerne que les clients `provider: openai` pointés sur une
+passerelle. Le provider `openrouter` natif demande déjà le coût de lui-même.
+
 ### vision
 
 ```yaml

@@ -76,8 +76,8 @@ github.com/blevesearch/zapx/v16 v16.2.2 h1:MifKJVRTEhMTgSlle2bDRTb39BGc9jXFRLPZc
 github.com/blevesearch/zapx/v16 v16.2.2/go.mod h1:B9Pk4G1CqtErgQV9DyCSA9Lb7WZe4olYfGw7fVDZ4sk=
 github.com/bornholm/amoxtli v0.16.0 h1:gmQ2O9uCYSYIVc38MQw0u3dB64iGS6ztBwsBDD12T+c=
 github.com/bornholm/amoxtli v0.16.0/go.mod h1:N4nYlxH0DeGjz3ds7WW0WL2HmITAw0aBTgFs7F4c5ZI=
-github.com/bornholm/genai v0.35.0 h1:jsNRhEwPtLYMjWwsSIdqdg+Zx3tyB1BgE4tFmDiUW8U=
-github.com/bornholm/genai v0.35.0/go.mod h1:ajuzZJvHAhy2SOsjxVNI1WUZaYKvGfabRE9UnLWirr0=
+github.com/bornholm/genai v0.35.1-0.20260819222821-78153b0335b4 h1:9zmnHZX/dgXmC+BXWkrdfafen0SsZI//bTfK6o/LbKE=
+github.com/bornholm/genai v0.35.1-0.20260819222821-78153b0335b4/go.mod h1:ajuzZJvHAhy2SOsjxVNI1WUZaYKvGfabRE9UnLWirr0=
 github.com/bornholm/go-courier v0.2.2-0.20260819222002-f997d6e6e648 h1:k/lfGbzW2GFWqorhVx5Q6pYHNtcaq+iYz8MNmvqLkb0=
 github.com/bornholm/go-courier v0.2.2-0.20260819222002-f997d6e6e648/go.mod h1:ZnsWOOAjZL1hS0STz2UH3KDWWTzCvj/LtT/WAF/7Xaw=
 github.com/bornholm/go-x v0.0.0-20260127104343-c6737ea35324 h1:urrNBFQGXI3uvAivANnjEBdZVMDfmWn/okKIwDDqJ/w=

@@ -486,6 +486,12 @@ type LLMClient struct {
 	// d'accompagner les délégations, où un spécialiste multimodal peut les
 	// voir.
 	Vision *bool `yaml:"vision"`
+	// ExtraFields ajoute des paramètres bruts au corps de chaque requête.
+	// Les passerelles compatibles OpenAI en acceptent que l'API d'origine
+	// ignore — « usage: {include: true} » chez OpenRouter, qui commande le
+	// report du coût réel de l'appel. Rien n'est validé ici : le contenu
+	// part tel quel au fournisseur.
+	ExtraFields map[string]any `yaml:"extra_fields"`
 }
 
 // SupportsVision indique si le client accepte les images en entrée (true

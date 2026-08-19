@@ -341,7 +341,7 @@ func BuildLLMClient(ctx context.Context, cfg config.LLMClient) (llm.Client, erro
 	// Le décorateur d'usage est le plus externe : il enregistre la réponse
 	// effectivement obtenue, après retry — une trace par appel réussi, pas
 	// une par tentative (voir internal/usage).
-	return usage.WrapClient(wrapResilience(withReasoning(client, reasoning)), cfg.Provider, cfg.Model), nil
+	return usage.WrapClient(wrapResilience(withExtraFields(withReasoning(client, reasoning), cfg.ExtraFields)), cfg.Provider, cfg.Model), nil
 }
 
 // BuildEmbeddingsClient construit un llm.Client GenAI limité aux
