@@ -18,6 +18,9 @@ type pricing struct {
 	DefaultAllowance int64
 	EURPerUSD        float64
 	Packs            []persistence.CreditPack
+	// Tarifs de repli appliqués aux modèles absents de la grille.
+	DefaultInput  float64
+	DefaultOutput float64
 }
 
 // defaultEURPerUSD sert d'ordre de grandeur pour comparer des recettes en
@@ -32,11 +35,15 @@ func (s *Server) pricing(ctx context.Context, q persistence.Querier) (pricing, e
 		WelcomeCredits:   500,
 		DefaultAllowance: 0,
 		EURPerUSD:        defaultEURPerUSD,
+		DefaultInput:     persistence.FallbackInputPrice,
+		DefaultOutput:    persistence.FallbackOutputPrice,
 	}
 
 	for key, target := range map[string]*float64{
-		persistence.SettingUSDPerCredit: &p.USDPerCredit,
-		persistence.SettingEURPerUSD:    &p.EURPerUSD,
+		persistence.SettingUSDPerCredit:       &p.USDPerCredit,
+		persistence.SettingEURPerUSD:          &p.EURPerUSD,
+		persistence.SettingDefaultInputPrice:  &p.DefaultInput,
+		persistence.SettingDefaultOutputPrice: &p.DefaultOutput,
 	} {
 		value, found, err := s.pricingRepo.GetSetting(ctx, q, key)
 		if err != nil {

@@ -1115,6 +1115,25 @@ coût — la marge est optimiste d'autant. La conversion des dollars en euros
 utilise un taux configurable ; c'est un ordre de grandeur, pas une
 conversion comptable.
 
+**Repli tarifaire.** Tous les fournisseurs ne rapportent pas le coût de
+leurs appels. Sans filet, un tel appel serait enregistré à zéro et
+décompté zéro crédit : la consommation partirait en fuite. Le coût est
+donc estimé à l'enregistrement, à partir des tokens et d'une grille
+tarifaire par modèle (dollars par million de tokens), réglable dans
+l'écran de tarification. Une entrée partielle couvre une famille entière
+(`deepseek/`), et les modèles absents de la grille retombent sur des
+tarifs de repli volontairement supérieurs aux modèles économiques : une
+surestimation se voit et se corrige, une sous-estimation disparaît.
+L'estimation n'est jamais présentée comme une mesure — `cost_reported`
+reste faux, et les écrans distinguent les deux.
+
+Pour les traces déjà enregistrées à zéro avant la mise en place de la
+grille :
+
+```
+automata usage reprice -config config.yaml
+```
+
 L'écran de consommation croise les traces d'usage selon les dimensions
 voulues (organisation, membre, agent, modèle, nature, fournisseur, jour,
 mois), sur la période choisie, et s'exporte en CSV avec les mêmes filtres.

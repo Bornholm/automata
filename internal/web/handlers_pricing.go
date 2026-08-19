@@ -55,6 +55,27 @@ func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
 			page.Margin.Ratio = "aucune recette sur la période"
 		}
 
+		prices, err := s.modelPrices.List(r.Context(), tx)
+		if err != nil {
+			return err
+		}
+		for _, price := range prices {
+			page.ModelPrices = append(page.ModelPrices, view.ModelPriceRow{
+				Model:  price.Model,
+				Input:  trimFloat(price.InputPerMillion),
+				Output: trimFloat(price.OutputPerMillion),
+			})
+		}
+		page.DefaultInput = trimFloat(p.DefaultInput)
+		page.DefaultOutput = trimFloat(p.DefaultOutput)
+
+		if m.Calls > 0 {
+			estimated := m.Calls - m.ReportedCalls
+			page.EstimatedShare = fmt.Sprintf("%d appel(s) sur %d estimés faute de coût rapporté", estimated, m.Calls)
+		} else {
+			page.EstimatedShare = "aucun appel sur la période"
+		}
+
 		for _, pack := range p.Packs {
 			row := view.PricingPack{
 				ID:         pack.ID,
@@ -163,10 +184,12 @@ func (s *Server) handlePricingSettings(w http.ResponseWriter, r *http.Request) {
 
 	ok := s.withTx(w, r, func(tx *sql.Tx) error {
 		for key, raw := range map[string]string{
-			persistence.SettingUSDPerCredit:     r.PostFormValue("usd_per_credit"),
-			persistence.SettingEURPerUSD:        r.PostFormValue("eur_per_usd"),
-			persistence.SettingWelcomeCredits:   r.PostFormValue("welcome_credits"),
-			persistence.SettingDefaultAllowance: r.PostFormValue("default_allowance"),
+			persistence.SettingUSDPerCredit:       r.PostFormValue("usd_per_credit"),
+			persistence.SettingEURPerUSD:          r.PostFormValue("eur_per_usd"),
+			persistence.SettingWelcomeCredits:     r.PostFormValue("welcome_credits"),
+			persistence.SettingDefaultAllowance:   r.PostFormValue("default_allowance"),
+			persistence.SettingDefaultInputPrice:  r.PostFormValue("default_input"),
+			persistence.SettingDefaultOutputPrice: r.PostFormValue("default_output"),
 		} {
 			value := strings.TrimSpace(strings.Replace(raw, ",", ".", 1))
 			if value == "" {
@@ -190,4 +213,54 @@ func (s *Server) handlePricingSettings(w http.ResponseWriter, r *http.Request) {
 
 	s.logger.InfoContext(r.Context(), "web: réglages de tarification enregistrés")
 	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
+}
+
+// handleModelPriceUpsert enregistre le tarif de repli d'un modèle.
+func (s *Server) handleModelPriceUpsert(w http.ResponseWriter, r *http.Request) {
+	model := strings.TrimSpace(r.PostFormValue("model"))
+	input, errInput := parseRate(r.PostFormValue("input"))
+	output, errOutput := parseRate(r.PostFormValue("output"))
+
+	if model == "" || errInput != nil || errOutput != nil || input < 0 || output < 0 {
+		http.Redirect(w, r, "/admin/pricing", http.StatusFound)
+		return
+	}
+
+	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+		return s.modelPrices.Upsert(r.Context(), tx, persistence.ModelPrice{
+			Model:            model,
+			InputPerMillion:  input,
+			OutputPerMillion: output,
+			UpdatedAt:        s.now(),
+		})
+	})
+	if !ok {
+		return
+	}
+
+	s.logger.InfoContext(r.Context(), "web: tarif de modèle enregistré", "model", model)
+	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
+}
+
+// handleModelPriceDelete retire le tarif d'un modèle.
+func (s *Server) handleModelPriceDelete(w http.ResponseWriter, r *http.Request) {
+	model := strings.TrimSpace(r.PostFormValue("model"))
+	if model == "" {
+		http.Redirect(w, r, "/admin/pricing", http.StatusFound)
+		return
+	}
+
+	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+		return s.modelPrices.Delete(r.Context(), tx, model)
+	})
+	if !ok {
+		return
+	}
+
+	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
+}
+
+// parseRate lit un tarif saisi, virgule décimale acceptée.
+func parseRate(raw string) (float64, error) {
+	return strconv.ParseFloat(strings.TrimSpace(strings.Replace(raw, ",", ".", 1)), 64)
 }

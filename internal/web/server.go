@@ -62,6 +62,7 @@ type Server struct {
 	usage        *persistence.UsageRecordRepository
 	platforms    *persistence.PlatformRepository
 	pricingRepo  *persistence.PricingRepository
+	modelPrices  *persistence.ModelPriceRepository
 	bindings     *persistence.ChannelBindingRepository
 }
 
@@ -99,6 +100,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 		usage:        persistence.NewUsageRecordRepository(),
 		platforms:    persistence.NewPlatformRepository(),
 		pricingRepo:  persistence.NewPricingRepository(),
+		modelPrices:  persistence.NewModelPriceRepository(),
 		bindings:     persistence.NewChannelBindingRepository(),
 	}
 
@@ -158,6 +160,8 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /admin/pricing/packs/delete", admin(s.handlePricingPackDelete))
 	mux.HandleFunc("POST /admin/pricing/packs/feature", admin(s.handlePricingPackFeature))
 	mux.HandleFunc("POST /admin/pricing/settings", admin(s.handlePricingSettings))
+	mux.HandleFunc("POST /admin/pricing/models", admin(s.handleModelPriceUpsert))
+	mux.HandleFunc("POST /admin/pricing/models/delete", admin(s.handleModelPriceDelete))
 	mux.HandleFunc("GET /admin/usage", admin(s.handleUsage))
 	mux.HandleFunc("GET /admin/usage.csv", admin(s.handleUsageCSV))
 

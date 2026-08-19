@@ -166,3 +166,51 @@ func (r *UsageRecordRepository) AggregateUsage(ctx context.Context, q Querier, f
 
 	return aggregates, nil
 }
+
+// UnpricedRecord est une trace enregistrée sans coût exploitable : le
+// fournisseur n'a rien rapporté et aucune estimation n'a été appliquée.
+type UnpricedRecord struct {
+	ID               int64
+	Model            string
+	PromptTokens     int64
+	CompletionTokens int64
+}
+
+// ListUnpriced retourne les traces à zéro qui portent pourtant des tokens
+// — celles qui échapperaient à la facturation.
+func (r *UsageRecordRepository) ListUnpriced(ctx context.Context, q Querier) ([]UnpricedRecord, error) {
+	rows, err := q.QueryContext(ctx, `SELECT id, model, prompt_tokens, completion_tokens
+		FROM usage_records
+		WHERE cost_reported = 0 AND cost_amount = 0 AND (prompt_tokens > 0 OR completion_tokens > 0)`)
+	if err != nil {
+		return nil, fmt.Errorf("liste des traces sans coût: %w", err)
+	}
+	defer rows.Close()
+
+	var records []UnpricedRecord
+	for rows.Next() {
+		var record UnpricedRecord
+		if err := rows.Scan(&record.ID, &record.Model, &record.PromptTokens, &record.CompletionTokens); err != nil {
+			return nil, fmt.Errorf("lecture d'une trace sans coût: %w", err)
+		}
+		records = append(records, record)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("parcours des traces sans coût: %w", err)
+	}
+
+	return records, nil
+}
+
+// SetEstimatedCost inscrit un coût estimé sur une trace. cost_reported
+// reste à zéro : une estimation ne se fait jamais passer pour une mesure.
+func (r *UsageRecordRepository) SetEstimatedCost(ctx context.Context, q Querier, id int64, cost float64) error {
+	_, err := q.ExecContext(ctx, `UPDATE usage_records
+		SET cost_amount = ?, cost_currency = 'USD'
+		WHERE id = ? AND cost_reported = 0`, cost, id)
+	if err != nil {
+		return fmt.Errorf("estimation du coût de la trace %d: %w", id, err)
+	}
+
+	return nil
+}

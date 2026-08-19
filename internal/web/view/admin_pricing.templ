@@ -49,6 +49,21 @@ type PricingPage struct {
 	EURPerUSD        string
 	WelcomeCredits   int64
 	DefaultAllowance int64
+
+	// Grille tarifaire de repli : elle empêche qu'un appel non facturé par
+	// le fournisseur soit décompté zéro crédit.
+	ModelPrices   []ModelPriceRow
+	DefaultInput  string
+	DefaultOutput string
+	// EstimatedShare décrit la part d'appels estimés sur la période.
+	EstimatedShare string
+}
+
+// ModelPriceRow est une ligne de la grille tarifaire.
+type ModelPriceRow struct {
+	Model  string
+	Input  string
+	Output string
 }
 
 templ marginFigure(label string, value string, valueClass string, hint string) {
@@ -178,6 +193,70 @@ templ AdminPricing(page PricingPage) {
 						<button type="submit" class="h-[38px] rounded-lg bg-brand text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
 					</div>
 				</form>
+			</div>
+			<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
+				<div class="flex items-center gap-4 border-b border-line-2 px-5 py-3.5">
+					<div class="text-[15px] font-semibold text-ink">Tarifs de repli par modèle</div>
+					<div class="text-[13px] text-text-4">{ page.EstimatedShare }</div>
+				</div>
+				<div class="px-5 py-3 text-[13px] leading-normal text-text-3">
+					Quand un fournisseur ne rapporte pas le coût d'un appel, il est estimé depuis ses tokens avec ces tarifs, en dollars par million. Sans eux, l'appel serait décompté zéro crédit — et la consommation partirait en fuite. Un nom partiel couvre une famille entière : <span class="font-mono">deepseek/</span> vaut pour tous ses modèles.
+				</div>
+				if len(page.ModelPrices) > 0 {
+					<div class="grid grid-cols-[2fr_1fr_1fr_auto] gap-4 border-y border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
+						<div>Modèle</div>
+						<div class="text-right">Entrée / M</div>
+						<div class="text-right">Sortie / M</div>
+						<div></div>
+					</div>
+					for _, price := range page.ModelPrices {
+						<div class="grid grid-cols-[2fr_1fr_1fr_auto] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0">
+							<div class="truncate font-mono text-sm text-text">{ price.Model }</div>
+							<div class="text-right font-mono text-sm text-text tabular-nums">{ price.Input }</div>
+							<div class="text-right font-mono text-sm text-text tabular-nums">{ price.Output }</div>
+							<form method="post" action="/admin/pricing/models/delete">
+								<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+								<input type="hidden" name="model" value={ price.Model }/>
+								<button type="submit" class="text-[13px] font-medium text-crit">Retirer</button>
+							</form>
+						</div>
+					}
+				}
+				<form method="post" action="/admin/pricing/models" class="flex flex-wrap items-end gap-3 border-t border-line-2 bg-panel px-5 py-4">
+					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+					<label class="block min-w-0 flex-1">
+						<span class="mb-1.5 block text-[13px] font-medium text-text-2">Modèle ou famille</span>
+						<input type="text" name="model" required placeholder="deepseek/ ou openai/gpt-5" class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+					</label>
+					<label class="block">
+						<span class="mb-1.5 block text-[13px] font-medium text-text-2">Entrée ($/M)</span>
+						<input type="text" name="input" required placeholder="0.14" class="h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+					</label>
+					<label class="block">
+						<span class="mb-1.5 block text-[13px] font-medium text-text-2">Sortie ($/M)</span>
+						<input type="text" name="output" required placeholder="0.28" class="h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+					</label>
+					<button type="submit" class="h-[38px] rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer le tarif</button>
+				</form>
+				<div class="flex flex-wrap items-end gap-3 border-t border-line-3 px-5 py-4">
+					<div class="min-w-0 flex-1 text-[13px] leading-normal text-text-3">Tarifs appliqués aux modèles absents de la grille. Ils sont volontairement supérieurs aux modèles économiques : une surestimation se voit et se corrige, une sous-estimation disparaît.</div>
+					<form method="post" action="/admin/pricing/settings" class="flex items-end gap-3">
+						<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+						<input type="hidden" name="usd_per_credit" value={ page.USDPerCredit }/>
+						<input type="hidden" name="eur_per_usd" value={ page.EURPerUSD }/>
+						<input type="hidden" name="welcome_credits" value={ FormatPlainInt(page.WelcomeCredits) }/>
+						<input type="hidden" name="default_allowance" value={ FormatPlainInt(page.DefaultAllowance) }/>
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Repli entrée ($/M)</span>
+							<input type="text" name="default_input" value={ page.DefaultInput } class="h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+						</label>
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Repli sortie ($/M)</span>
+							<input type="text" name="default_output" value={ page.DefaultOutput } class="h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+						</label>
+						<button type="submit" class="h-[38px] rounded-lg border border-line px-4 text-sm font-medium text-text hover:bg-white">Enregistrer</button>
+					</form>
+				</div>
 			</div>
 		</div>
 	}

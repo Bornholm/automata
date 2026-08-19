@@ -356,6 +356,52 @@ func newMemoryReindexCommand(logger *slog.Logger) *cobra.Command {
 	return cmd
 }
 
+// newUsageRepriceCommand construit "usage reprice" : elle estime
+// rétroactivement le coût des appels que le fournisseur n'a pas facturés,
+// à partir de la grille tarifaire. Sans elle, ces appels resteraient à
+// zéro et échapperaient définitivement à la facturation.
+func newUsageRepriceCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                "reprice",
+		Short:              "Estime le coût des appels enregistrés sans coût rapporté",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fs := flag.NewFlagSet("reprice", flag.ContinueOnError)
+			fs.SetOutput(cmd.ErrOrStderr())
+
+			configPath := fs.String("config", "", "chemin du fichier de configuration YAML (requis)")
+
+			if err := fs.Parse(args); err != nil {
+				return errSilent
+			}
+
+			if *configPath == "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "le drapeau -config est requis")
+				return errSilent
+			}
+
+			cfg, err := config.Load(*configPath)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "configuration invalide:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
+
+			if err := registry.UsageReprice(cmd.Context(), cfg, cmd.OutOrStdout()); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "estimation échouée:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 // newWebCommand construit la commande "web" et ses sous-commandes
 // "hash-password" (hachage bcrypt du mot de passe opérateur) et
 // "bootstrap" (import des tenants de la configuration vers la base).
@@ -460,6 +506,7 @@ func newUsageCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newUsageReportCommand())
+	cmd.AddCommand(newUsageRepriceCommand())
 
 	return cmd
 }
