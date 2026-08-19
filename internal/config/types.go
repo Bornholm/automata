@@ -428,6 +428,12 @@ type SystemPrompt struct {
 	File    string `yaml:"file"`
 	Inline  string `yaml:"inline"`
 	Content string `yaml:"-"`
+	// OrgOverrides remplace la personnalité de l'agent pour les canaux
+	// d'une organisation donnée (clé : organizations[].id). Seule la
+	// personnalité change : les règles invariantes, les capacités et les
+	// règles d'honnêteté restent celles de l'agent. Un override ne porte
+	// jamais ses propres org_overrides (refusé à la validation).
+	OrgOverrides map[string]SystemPrompt `yaml:"org_overrides"`
 }
 
 // AgentMemory décrit les capacités mémoire accordées à un agent.

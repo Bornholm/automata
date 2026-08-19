@@ -531,6 +531,27 @@ sur douze annoncées serait pire que tout refuser.
 nécessaires : huit appels tenant chacun sous le plafond unitaire dépassent
 largement le contexte prévu. Toute réduction est signalée au modèle.
 
+### system_prompt.org_overrides
+
+```yaml
+agents:
+  main:
+    system_prompt:
+      file: ../prompts/main.md
+      org_overrides:
+        work:
+          file: ../prompts/work-main.md
+```
+
+Un agent partagé entre plusieurs organisations peut porter une personnalité
+par organisation : la variante est choisie à chaque requête selon
+l'organisation du canal. Seule la personnalité change — les règles
+invariantes, la section des capacités et les règles d'honnêteté sont
+recomposées à l'identique dans chaque variante, aucune organisation ne peut
+en être exemptée. Une organisation sans surcharge utilise le prompt par
+défaut de l'agent. Les surcharges imbriquées sont refusées au chargement,
+ainsi qu'une clé ne désignant aucune organisation déclarée.
+
 ## mcp_servers
 
 ```yaml

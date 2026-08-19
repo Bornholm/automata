@@ -46,6 +46,7 @@ var ErrMaxDelegationsReached = errors.New("agent: plafond de délégations attei
 type OrchestratorAgent struct {
 	client                 llm.ChatCompletionClient
 	systemPrompt           string
+	orgPrompts             map[string]string
 	agentName              string
 	specialists            map[string]delegation.Specialist
 	specialistDescriptions map[string]string
@@ -90,7 +91,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	tools = append(tools, a.reminderTools.buildReminderTools(req.Identity)...)
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
-	messages := buildChatMessages(a.systemPrompt, a.agentName, req)
+	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {
@@ -132,6 +133,16 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 // spécialistes délégués.
 func (a *OrchestratorAgent) collectedMedia(loopResult toolLoopResult, mediaCollector *mediaCollector) []media.Media {
 	return append(append([]media.Media(nil), loopResult.Attachments...), mediaCollector.take()...)
+}
+
+// WithOrgSystemPrompts remplace le prompt système par organisation : la clé
+// est un organizations[].id, la valeur un prompt complet déjà composé (voir
+// BuildOrgSystemPrompts). Le prompt du constructeur reste le défaut pour
+// toute organisation absente de la map. Retourne a pour permettre le
+// chaînage.
+func (a *OrchestratorAgent) WithOrgSystemPrompts(prompts map[string]string) *OrchestratorAgent {
+	a.orgPrompts = prompts
+	return a
 }
 
 // WithMaxActionsPerTurn plafonne le nombre d'actions que ce tour peut

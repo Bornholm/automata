@@ -83,6 +83,39 @@ func BuildSystemPrompt(agentName string, agentCfg config.Agent) string {
 	return strings.TrimSpace(b.String())
 }
 
+// BuildOrgSystemPrompts construit les variantes du prompt système par
+// organisation, à partir des org_overrides du prompt de l'agent. Seule la
+// personnalité configurée change : les règles invariantes, la section des
+// capacités et les règles d'honnêteté sont recomposées à l'identique —
+// aucune organisation ne peut donc en être exemptée par configuration.
+// Retourne nil si l'agent n'a aucune surcharge.
+func BuildOrgSystemPrompts(agentName string, agentCfg config.Agent) map[string]string {
+	if len(agentCfg.SystemPrompt.OrgOverrides) == 0 {
+		return nil
+	}
+
+	prompts := make(map[string]string, len(agentCfg.SystemPrompt.OrgOverrides))
+
+	for orgID, override := range agentCfg.SystemPrompt.OrgOverrides {
+		overridden := agentCfg
+		overridden.SystemPrompt = override
+		prompts[orgID] = BuildSystemPrompt(agentName, overridden)
+	}
+
+	return prompts
+}
+
+// resolveSystemPrompt choisit le prompt système d'une requête : la variante
+// de l'organisation de l'identité si elle existe, le prompt par défaut de
+// l'agent sinon.
+func resolveSystemPrompt(defaultPrompt string, orgPrompts map[string]string, orgID model.OrgID) string {
+	if prompt, ok := orgPrompts[string(orgID)]; ok {
+		return prompt
+	}
+
+	return defaultPrompt
+}
+
 // honestyRules interdit à l'agent d'annoncer des actions futures : il
 // n'existe qu'au sein du tour de conversation courant, et « je regarde ça et
 // je te redis » est donc structurellement un mensonge — rien ne s'exécute

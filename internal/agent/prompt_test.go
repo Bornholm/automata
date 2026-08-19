@@ -153,3 +153,42 @@ func TestBuildSystemPrompt_ContainsHonestyRules(t *testing.T) {
 		}
 	}
 }
+
+// Une surcharge de prompt par organisation ne remplace que la personnalité :
+// les règles invariantes, les capacités et les règles d'honnêteté sont
+// recomposées à l'identique. Aucune organisation ne doit pouvoir en être
+// exemptée par configuration.
+func TestBuildOrgSystemPrompts_KeepsHardcodedRules(t *testing.T) {
+	agentCfg := testAgentConfigs()["main"]
+	agentCfg.SystemPrompt.OrgOverrides = map[string]config.SystemPrompt{
+		"work": {Content: "You are the assistant of the engineering team."},
+	}
+
+	prompts := agent.BuildOrgSystemPrompts("main", agentCfg)
+
+	workPrompt, ok := prompts["work"]
+	if !ok {
+		t.Fatalf("prompts = %v, attendu une variante pour l'organisation work", prompts)
+	}
+
+	if !strings.Contains(workPrompt, "assistant of the engineering team") {
+		t.Error("la variante doit porter la personnalité surchargée")
+	}
+	if strings.Contains(workPrompt, "assistant généraliste du foyer") {
+		t.Error("la variante ne doit pas contenir la personnalité par défaut")
+	}
+	if !strings.Contains(workPrompt, agent.InvariantRules) {
+		t.Error("la variante doit conserver les règles invariantes")
+	}
+	if !strings.Contains(workPrompt, "## Limits and honesty") {
+		t.Error("la variante doit conserver les règles d'honnêteté codées en dur")
+	}
+}
+
+// Sans surcharge déclarée, BuildOrgSystemPrompts retourne nil : les agents
+// retombent alors systématiquement sur leur prompt par défaut.
+func TestBuildOrgSystemPrompts_NilWithoutOverrides(t *testing.T) {
+	if got := agent.BuildOrgSystemPrompts("main", testAgentConfigs()["main"]); got != nil {
+		t.Errorf("BuildOrgSystemPrompts = %v, attendu nil", got)
+	}
+}

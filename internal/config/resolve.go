@@ -39,23 +39,34 @@ func resolvePaths(cfg *Config, baseDir string) {
 // l'existence et la lisibilité du fichier.
 func loadSystemPrompts(cfg *Config, baseDir string) {
 	for name, agent := range cfg.Agents {
-		sp := agent.SystemPrompt
+		sp := loadSystemPrompt(agent.SystemPrompt, baseDir)
 
-		switch {
-		case sp.File != "" && sp.Inline == "":
-			resolved := resolvePath(baseDir, sp.File)
-			sp.File = resolved
-
-			if content, err := os.ReadFile(resolved); err == nil {
-				sp.Content = string(content)
-			}
-		case sp.File == "" && sp.Inline != "":
-			sp.Content = sp.Inline
-		case sp.File != "" && sp.Inline != "":
-			sp.File = resolvePath(baseDir, sp.File)
+		for orgID, override := range sp.OrgOverrides {
+			sp.OrgOverrides[orgID] = loadSystemPrompt(override, baseDir)
 		}
 
 		agent.SystemPrompt = sp
 		cfg.Agents[name] = agent
 	}
+}
+
+// loadSystemPrompt résout et charge une source de prompt (fichier ou
+// inline) sans toucher à ses éventuels org_overrides, traités par
+// l'appelant.
+func loadSystemPrompt(sp SystemPrompt, baseDir string) SystemPrompt {
+	switch {
+	case sp.File != "" && sp.Inline == "":
+		resolved := resolvePath(baseDir, sp.File)
+		sp.File = resolved
+
+		if content, err := os.ReadFile(resolved); err == nil {
+			sp.Content = string(content)
+		}
+	case sp.File == "" && sp.Inline != "":
+		sp.Content = sp.Inline
+	case sp.File != "" && sp.Inline != "":
+		sp.File = resolvePath(baseDir, sp.File)
+	}
+
+	return sp
 }

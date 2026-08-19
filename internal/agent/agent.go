@@ -100,6 +100,7 @@ var ErrEmptyReply = errors.New("agent: réponse du modèle vide")
 type GenAIAgent struct {
 	client       llm.ChatCompletionStreamingClient
 	systemPrompt string
+	orgPrompts   map[string]string
 	agentName    string
 }
 
@@ -181,7 +182,17 @@ func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 // requête (PLAN.md §7.2, §7.3) : le contexte n'est jamais mélangé au prompt
 // statique construit une fois pour toutes à l'enregistrement de l'agent.
 func (a *GenAIAgent) buildMessages(req Request) []llm.Message {
-	return buildChatMessages(a.systemPrompt, a.agentName, req)
+	return buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, req)
+}
+
+// WithOrgSystemPrompts remplace le prompt système par organisation : la clé
+// est un organizations[].id, la valeur un prompt complet déjà composé (voir
+// BuildOrgSystemPrompts). Le prompt du constructeur reste le défaut pour
+// toute organisation absente de la map. Retourne a pour permettre le
+// chaînage.
+func (a *GenAIAgent) WithOrgSystemPrompts(prompts map[string]string) *GenAIAgent {
+	a.orgPrompts = prompts
+	return a
 }
 
 // buildChatMessages transforme req en messages GenAI, partagé par toutes les

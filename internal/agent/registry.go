@@ -88,6 +88,9 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 	agents := make(map[string]Agent, len(cfg.Agents))
 	clients := make(map[string]llm.Client, len(cfg.Agents))
 	prompts := make(map[string]string, len(cfg.Agents))
+	// orgPrompts porte, par agent, ses variantes de prompt par organisation
+	// (system_prompt.org_overrides) ; nil pour un agent sans surcharge.
+	orgPrompts := make(map[string]map[string]string, len(cfg.Agents))
 
 	for name, agentCfg := range cfg.Agents {
 		llmClientCfg, ok := cfg.LLMClients[agentCfg.Client]
@@ -101,13 +104,15 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 		}
 
 		systemPrompt := BuildSystemPrompt(name, agentCfg)
+		orgPrompts[name] = BuildOrgSystemPrompts(name, agentCfg)
 
 		// name et agentCfg sont capturés par valeur à chaque itération de
 		// boucle (variables déclarées dans le corps du for range), donc
 		// chaque GenAIAgent obtient bien sa propre chaîne systemPrompt et
 		// son propre client : aucune contamination croisée possible entre
 		// agents.
-		agents[name] = NewGenAIAgent(client, systemPrompt, name)
+		agents[name] = NewGenAIAgent(client, systemPrompt, name).
+			WithOrgSystemPrompts(orgPrompts[name])
 		clients[name] = client
 		prompts[name] = systemPrompt
 	}
@@ -159,6 +164,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			)
 
 			agents[name] = specialist.
+				WithOrgSystemPrompts(orgPrompts[name]).
 				WithExtraTools(extraTools...).
 				WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes())).
 				WithLogger(logger)
@@ -199,6 +205,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 		}
 
 		orchestrator := NewOrchestratorAgent(clients[name], prompts[name], name, specialists, agentCfg.Limits.MaxSequentialToolCalls).
+			WithOrgSystemPrompts(orgPrompts[name]).
 			WithSpecialistDescriptions(specialistDescriptions)
 
 		agentMemoryTools := memoryTools

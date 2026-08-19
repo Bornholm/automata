@@ -224,6 +224,7 @@ func validateAgents(cfg *Config) []error {
 		}
 
 		errs = append(errs, validateSystemPrompt(prefix, agent.SystemPrompt)...)
+		errs = append(errs, validateSystemPromptOverrides(cfg, prefix, agent.SystemPrompt)...)
 
 		for _, delegate := range agent.Delegates {
 			target, ok := cfg.Agents[delegate]
@@ -309,6 +310,30 @@ func validateSystemPrompt(prefix string, sp SystemPrompt) []error {
 		} else if info.IsDir() {
 			errs = append(errs, fmt.Errorf("%s.system_prompt.file: %q est un répertoire", prefix, sp.File))
 		}
+	}
+
+	return errs
+}
+
+// validateSystemPromptOverrides vérifie les surcharges de prompt par
+// organisation : organisation déclarée, source valide, pas d'imbrication —
+// une surcharge de surcharge n'aurait aucun canal pour la sélectionner.
+func validateSystemPromptOverrides(cfg *Config, prefix string, sp SystemPrompt) []error {
+	var errs []error
+
+	for _, orgID := range sortedKeys(sp.OrgOverrides) {
+		override := sp.OrgOverrides[orgID]
+		overridePrefix := fmt.Sprintf("%s.system_prompt.org_overrides.%s", prefix, orgID)
+
+		if !organizationExists(cfg, orgID) {
+			errs = append(errs, fmt.Errorf("%s: organisation inconnue %q", overridePrefix, orgID))
+		}
+
+		if len(override.OrgOverrides) > 0 {
+			errs = append(errs, fmt.Errorf("%s: org_overrides imbriqués interdits", overridePrefix))
+		}
+
+		errs = append(errs, validateSystemPrompt(overridePrefix, override)...)
 	}
 
 	return errs

@@ -668,3 +668,44 @@ func TestOrchestrator_SpecialistDescriptionReachesTool(t *testing.T) {
 		t.Errorf("description de delegate_to_todo = %q, contaminée par celle d'un autre spécialiste", todo)
 	}
 }
+
+// Le prompt système se choisit par requête, selon l'organisation du canal :
+// le même agent sert la famille et l'équipe professionnelle, et chacune doit
+// voir sa propre personnalité — jamais celle de l'autre.
+func TestOrchestrator_UsesOrganizationSystemPrompt(t *testing.T) {
+	var systemSeen string
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, m := range opts.Messages {
+				if m.Role() == llm.RoleSystem {
+					systemSeen = m.Content()
+				}
+			}
+			return scriptedFinalResponse("ok"), nil
+		},
+	}
+
+	a := agent.NewOrchestratorAgent(client, "family prompt", "main", map[string]delegation.Specialist{}, 5).
+		WithOrgSystemPrompts(map[string]string{"work": "team prompt"})
+
+	for _, test := range []struct {
+		orgID    model.OrgID
+		expected string
+	}{
+		{orgID: "work", expected: "team prompt"},
+		{orgID: "home", expected: "family prompt"},
+	} {
+		_, err := a.Execute(context.Background(), agent.Request{
+			Identity: model.ExecutionIdentity{PrincipalID: "alice", OrgID: test.orgID},
+			Input:    "salut",
+		})
+		if err != nil {
+			t.Fatalf("Execute(%s): %v", test.orgID, err)
+		}
+
+		if !strings.HasPrefix(systemSeen, test.expected) {
+			t.Errorf("org %s : le message system commence par %q, attendu %q", test.orgID, systemSeen[:min(40, len(systemSeen))], test.expected)
+		}
+	}
+}

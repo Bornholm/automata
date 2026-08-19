@@ -49,6 +49,7 @@ var urlPattern = regexp.MustCompile(`https?://\S+`)
 type MCPToolAgent struct {
 	client                 llm.ChatCompletionClient
 	systemPrompt           string
+	orgPrompts             map[string]string
 	agentName              string
 	cfg                    *config.Config
 	mcpManager             *mcp.Manager
@@ -141,7 +142,7 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
-	messages := buildChatMessages(a.systemPrompt, a.agentName, req)
+	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {
@@ -164,6 +165,16 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 		ProposedActions: collector.take(),
 		Attachments:     append(append([]media.Media(nil), loopResult.Attachments...), mediaCollector.take()...),
 	}, nil
+}
+
+// WithOrgSystemPrompts remplace le prompt système par organisation : la clé
+// est un organizations[].id, la valeur un prompt complet déjà composé (voir
+// BuildOrgSystemPrompts). Le prompt du constructeur reste le défaut pour
+// toute organisation absente de la map. Retourne a pour permettre le
+// chaînage.
+func (a *MCPToolAgent) WithOrgSystemPrompts(prompts map[string]string) *MCPToolAgent {
+	a.orgPrompts = prompts
+	return a
 }
 
 // WithMaxToolContextBytes borne le cumul des résultats d'outils réinjectés
