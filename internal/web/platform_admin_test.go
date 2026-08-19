@@ -79,3 +79,57 @@ func TestPlatformStatusChip_CoversEveryState(t *testing.T) {
 		}
 	}
 }
+
+// Les noms de champs doivent correspondre exactement à ceux des structs de
+// configuration : un nom approchant produit un compte qui refuse de
+// démarrer, et l'erreur n'apparaît que dans les journaux.
+func TestPlatformFields_MatchProviderConfigNames(t *testing.T) {
+	expected := map[string][]string{
+		"whatsapp": {"session_path"},
+		"signal":   {"account", "address"},
+		"rocket":   {"server_url", "username", "password"},
+		"discord":  {"token"},
+		"mail": {
+			"imap.address", "imap.username", "imap.password",
+			"smtp.address", "smtp.issuer", "smtp.username", "smtp.password",
+		},
+	}
+
+	for providerType, names := range expected {
+		fields := platformFields(providerType)
+		if len(fields) != len(names) {
+			t.Errorf("%s: %d champ(s), attendu %d", providerType, len(fields), len(names))
+			continue
+		}
+		for i, field := range fields {
+			if field.Name != names[i] {
+				t.Errorf("%s: champ %d nommé %q, attendu %q", providerType, i, field.Name, names[i])
+			}
+		}
+	}
+
+	if platformFields("inconnu") != nil {
+		t.Error("un type inconnu ne doit proposer aucun champ")
+	}
+}
+
+// Les secrets ne doivent jamais être proposés en clair à la saisie.
+func TestPlatformFields_MarkSecrets(t *testing.T) {
+	for providerType, secrets := range map[string][]string{
+		"rocket":  {"password"},
+		"discord": {"token"},
+		"mail":    {"imap.password", "smtp.password"},
+	} {
+		masked := map[string]bool{}
+		for _, field := range platformFields(providerType) {
+			if field.Secret {
+				masked[field.Name] = true
+			}
+		}
+		for _, name := range secrets {
+			if !masked[name] {
+				t.Errorf("%s: le champ %q doit être masqué à la saisie", providerType, name)
+			}
+		}
+	}
+}

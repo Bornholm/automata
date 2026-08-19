@@ -333,6 +333,10 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 		webServer := web.NewServer(cfg, db, mailSender, logger).
 			WithPlatformManager(platforms).
+			WithPlatformValidator(func(providerType string, providerConfig map[string]any) error {
+				_, err := buildManagedProvider("", providerType, providerConfig, nil)
+				return err
+			}).
 			WithPrivacy(privacyService)
 
 		wg.Add(1)

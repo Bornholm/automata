@@ -58,6 +58,8 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 		page.Error = "Tous les champs requis doivent être renseignés."
 	case "type":
 		page.Error = "Ce type de compte n'est pas supporté."
+	case "invalide":
+		page.Error = "Cette configuration ne permet pas de joindre le service : vérifiez l'adresse et les identifiants."
 	}
 
 	// Cartes de plateformes : les comptes enregistrés, avec leur état réel

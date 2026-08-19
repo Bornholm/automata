@@ -37,6 +37,11 @@ type platformField struct {
 	Required    bool
 }
 
+// platformFields décrit les champs attendus par type de compte. Les noms
+// sont EXACTEMENT ceux des structs de configuration
+// (internal/config/courier_providers.go) : ce sont eux que le
+// constructeur de fournisseur décodera, un nom approchant ne produit rien
+// d'autre qu'un compte qui refuse de démarrer.
 func platformFields(providerType string) []platformField {
 	switch providerType {
 	case "whatsapp":
@@ -46,13 +51,13 @@ func platformFields(providerType string) []platformField {
 	case "signal":
 		return []platformField{
 			{Name: "account", Label: "Numéro du compte", Placeholder: "+33612345678", Required: true},
-			{Name: "address", Label: "Adresse du démon signal-cli", Placeholder: "http://127.0.0.1:8080"},
+			{Name: "address", Label: "Adresse du démon signal-cli", Placeholder: "127.0.0.1:8080"},
 		}
 	case "rocket":
 		return []platformField{
-			{Name: "base_url", Label: "Adresse du serveur", Placeholder: "https://chat.exemple.fr", Required: true},
-			{Name: "user_id", Label: "Identifiant du bot", Placeholder: "automata", Required: true},
-			{Name: "token", Label: "Jeton d'accès personnel", Secret: true, Required: true},
+			{Name: "server_url", Label: "Adresse du serveur", Placeholder: "https://chat.exemple.fr", Required: true},
+			{Name: "username", Label: "Identifiant du bot", Placeholder: "automata", Required: true},
+			{Name: "password", Label: "Mot de passe du bot", Secret: true, Required: true},
 		}
 	case "discord":
 		return []platformField{
@@ -123,6 +128,18 @@ func (s *Server) handlePlatformCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, ok := lookupConfig(config, field.Name); !ok {
 			http.Redirect(w, r, "/admin/platforms?error=champs&type="+providerType, http.StatusFound)
+			return
+		}
+	}
+
+	// La configuration doit produire un fournisseur : la vérifier ici évite
+	// d'enregistrer un compte qui échouerait indéfiniment au démarrage.
+	if s.validatePlatform != nil {
+		if err := s.validatePlatform(providerType, config); err != nil {
+			s.logger.WarnContext(r.Context(), "web: configuration de compte refusée",
+				"platform_id", id, "type", providerType, "error", err)
+			http.Redirect(w, r, "/admin/platforms?pairing="+pairingModeFor(providerType)+
+				"&platform="+providerType+"&error=invalide", http.StatusFound)
 			return
 		}
 	}
@@ -272,3 +289,12 @@ func sinceLabel(since time.Time) string {
 
 // itoa évite strconv dans les handlers.
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// pairingModeFor retrouve la variante du gabarit d'appairage d'un type de
+// compte, pour rouvrir le formulaire là où l'utilisateur l'a laissé.
+func pairingModeFor(providerType string) string {
+	if providerType == "whatsapp" || providerType == "signal" {
+		return "qr"
+	}
+	return "credentials"
+}

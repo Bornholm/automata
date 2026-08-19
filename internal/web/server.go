@@ -51,6 +51,11 @@ type Server struct {
 	// platformManager, s'il est renseigné, porte l'état réel des comptes
 	// de messagerie et applique leurs changements à chaud (pilier 2).
 	platformManager PlatformManager
+	// validatePlatform vérifie qu'une configuration de compte produit bien
+	// un fournisseur, avant de l'enregistrer : sans ce contrôle, un champ
+	// mal nommé donne un compte qui ne démarrera jamais, et l'erreur
+	// n'apparaît que dans les journaux.
+	validatePlatform func(providerType string, config map[string]any) error
 	// privacy sert l'export et la suppression des données personnelles ;
 	// nil désactive l'écran de confidentialité.
 	privacy PrivacyService
@@ -202,6 +207,13 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 // mais aucun état de connexion.
 func (s *Server) WithPlatformManager(manager PlatformManager) *Server {
 	s.platformManager = manager
+	return s
+}
+
+// WithPlatformValidator branche la vérification des configurations de
+// comptes de messagerie.
+func (s *Server) WithPlatformValidator(validate func(providerType string, config map[string]any) error) *Server {
+	s.validatePlatform = validate
 	return s
 }
 
