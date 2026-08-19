@@ -2,6 +2,7 @@ package web
 
 import (
 	"crypto/subtle"
+	"github.com/bornholm/automata/internal/weblink"
 	"net/http"
 )
 
@@ -17,7 +18,7 @@ func ensureCSRFCookie(w http.ResponseWriter, r *http.Request) (string, error) {
 		return cookie.Value, nil
 	}
 
-	token, err := randomCrockford(26)
+	token, err := weblink.RandomCrockford(26)
 	if err != nil {
 		return "", err
 	}

@@ -56,6 +56,7 @@ type OrchestratorAgent struct {
 	maxToolContextBytes    int64
 	memoryTools            MemoryTools
 	reminderTools          ReminderTools
+	profileTools           ProfileTools
 	metrics                *observability.Metrics
 	logger                 *slog.Logger
 }
@@ -92,6 +93,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	tools := a.buildDelegationTools(req.Identity, req.Attachments, collector, mediaCollector)
 	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity, collector)...)
 	tools = append(tools, a.reminderTools.buildReminderTools(req.Identity)...)
+	tools = append(tools, a.profileTools.buildProfileTools(req.Identity)...)
 	// L'introspection capture les outils du tour APRÈS leur assemblage :
 	// son instantané reflète exactement ce que ce tour offre, permissions
 	// comprises.
@@ -305,6 +307,14 @@ func (a *OrchestratorAgent) WithMemoryTools(tools MemoryTools) *OrchestratorAgen
 // permettre le chaînage à la construction, comme WithMemoryTools.
 func (a *OrchestratorAgent) WithReminderTools(tools ReminderTools) *OrchestratorAgent {
 	a.reminderTools = tools
+	return a
+}
+
+// WithProfileTools attache tools à a : l'outil open_profile_link est
+// exposé au modèle dès le prochain Execute. Même contrat que
+// WithMemoryTools et WithReminderTools — la valeur zéro le désactive.
+func (a *OrchestratorAgent) WithProfileTools(tools ProfileTools) *OrchestratorAgent {
+	a.profileTools = tools
 	return a
 }
 

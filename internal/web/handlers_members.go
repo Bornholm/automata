@@ -10,6 +10,7 @@ import (
 
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/view"
+	"github.com/bornholm/automata/internal/weblink"
 )
 
 func (s *Server) handleMemberNewForm(w http.ResponseWriter, r *http.Request) {
@@ -49,7 +50,7 @@ func (s *Server) handleMemberCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := s.now()
-	rawID, err := randomCrockford(10)
+	rawID, err := weblink.RandomCrockford(10)
 	if err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
@@ -80,12 +81,12 @@ func (s *Server) handleMemberCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) generateMemberToken(w http.ResponseWriter, r *http.Request, memberID string) {
 	now := s.now()
 
-	clear, hash, display, err := NewLinkToken()
+	clear, hash, display, err := weblink.NewLinkToken()
 	if err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
-	rawID, err := randomCrockford(10)
+	rawID, err := weblink.RandomCrockford(10)
 	if err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
@@ -326,7 +327,7 @@ func (s *Server) handleMemberProfileLink(w http.ResponseWriter, r *http.Request)
 	memberID := r.PathValue("id")
 	now := s.now()
 
-	id, secretHash, urlPath, err := NewProfileLink()
+	id, secretHash, urlPath, err := weblink.NewProfileLink()
 	if err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return

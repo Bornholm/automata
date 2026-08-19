@@ -29,6 +29,11 @@ type Resolver struct {
 	// principalIndex associe l'identifiant de principal au principal
 	// configuré.
 	principalIndex map[string]config.Principal
+
+	// dynamic, s'il est renseigné, résout les tenants enregistrés en base
+	// (socle SaaS) quand la configuration ne connaît pas l'origine ou le
+	// canal. Voir dynamic.go et WithDynamicSource.
+	dynamic DynamicSource
 }
 
 // NewResolver construit un Resolver et ses index à partir de cfg. cfg doit
@@ -82,13 +87,20 @@ func channelKey(provider, channelID string) string {
 // d'identité se limite à établir qui parle, sur quel canal, avec quelle
 // portée — indépendamment du contenu du message.
 func (r *Resolver) ResolveMessage(ctx context.Context, provider, externalUserID, channelID string) (model.ExecutionIdentity, model.Conversation, error) {
-	principalID, ok := r.originIndex[originKey(provider, externalUserID)]
-	if !ok {
-		return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf("identity: origine %s/%s: %w", provider, externalUserID, apperr.ErrUnknownOrigin)
+	principalID, okOrigin := r.originIndex[originKey(provider, externalUserID)]
+	ch, okChannel := r.channelIndex[channelKey(provider, channelID)]
+
+	// La configuration reste prioritaire : elle décrit les tenants
+	// historiques, avec leurs rôles et leurs portées explicites. La base
+	// (socle SaaS) prend le relais pour tout ce qu'elle ne connaît pas.
+	if (!okOrigin || !okChannel) && r.dynamic != nil {
+		return r.resolveDynamic(ctx, provider, externalUserID, channelID)
 	}
 
-	ch, ok := r.channelIndex[channelKey(provider, channelID)]
-	if !ok {
+	if !okOrigin {
+		return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf("identity: origine %s/%s: %w", provider, externalUserID, apperr.ErrUnknownOrigin)
+	}
+	if !okChannel {
 		return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf("identity: canal %s/%s: %w", provider, channelID, apperr.ErrUnknownChannel)
 	}
 

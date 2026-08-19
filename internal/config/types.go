@@ -462,6 +462,9 @@ type Agent struct {
 	// effective de chaque appel reste vérifiée par principal via les
 	// permissions reminder.<scope>.<action> (identities.roles).
 	Reminders bool `yaml:"reminders"`
+	// ProfileLink expose open_profile_link : l'agent peut ouvrir à son
+	// interlocuteur un lien temporaire vers sa page de profil (socle SaaS).
+	ProfileLink bool `yaml:"profile_link"`
 	// ImageGeneration donne à ce spécialiste l'outil generate_image, adossé
 	// au client de génération d'images désigné. L'image produite est jointe
 	// à la réponse et remonte jusqu'au canal. Spécialiste seulement, comme

@@ -52,7 +52,7 @@ type Registry struct {
 // deux passes sont nécessaires : un OrchestratorAgent a besoin que ses
 // délégués existent déjà dans le registre pour les envelopper.
 func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error) {
-	return NewRegistryWithMemory(cfg, MemoryTools{}, ReminderTools{}, mcpManager, nil, nil)
+	return NewRegistryWithMemory(cfg, MemoryTools{}, ReminderTools{}, ProfileTools{}, mcpManager, nil, nil)
 }
 
 // NewRegistryWithMemory se comporte comme NewRegistry, mais attache
@@ -85,7 +85,7 @@ func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error)
 // logger, s'il n'est pas nil, active l'introspection des tours sur chaque
 // agent construit (voir OrchestratorAgent.WithLogger) : outils exposés,
 // appels d'outils et délégations, durées — jamais les contenus.
-func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminderTools ReminderTools, mcpManager *mcp.Manager, metrics *observability.Metrics, logger *slog.Logger) (*Registry, error) {
+func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminderTools ReminderTools, profileTools ProfileTools, mcpManager *mcp.Manager, metrics *observability.Metrics, logger *slog.Logger) (*Registry, error) {
 	agents := make(map[string]Agent, len(cfg.Agents))
 	clients := make(map[string]llm.Client, len(cfg.Agents))
 	prompts := make(map[string]string, len(cfg.Agents))
@@ -230,9 +230,15 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			agentReminderTools.Tasks = reminderTools.Tasks && agentCfg.ScheduledTasks
 		}
 
+		// L'outil de profil suit le même schéma : capacité globale de
+		// l'instance recroisée avec le drapeau de chaque agent.
+		agentProfileTools := profileTools
+		agentProfileTools.Enabled = profileTools.Enabled && agentCfg.ProfileLink
+
 		agents[name] = orchestrator.
 			WithMemoryTools(agentMemoryTools).
 			WithReminderTools(agentReminderTools).
+			WithProfileTools(agentProfileTools).
 			WithMaxActionsPerTurn(agentCfg.Limits.MaxActionsPerTurn).
 			WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes())).
 			WithMetrics(metrics).

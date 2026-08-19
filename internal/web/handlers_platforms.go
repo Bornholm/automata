@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/bornholm/automata/internal/web/view"
+	"github.com/bornholm/automata/internal/weblink"
 )
 
 // handlePlatforms — ADM-05.
@@ -78,7 +79,7 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 				Kind:        "Groupe",
 				OrgName:     s.orgDisplayName(r.Context(), tx, token.OrgID),
 				Chip:        view.Chip{Label: "En attente de liaison", Tone: "warn"},
-				TokenPrefix: TokenPrefix(token.ID),
+				TokenPrefix: weblink.TokenPrefix(token.ID),
 				RowTone:     "warn",
 			})
 			page.PendingCnt++

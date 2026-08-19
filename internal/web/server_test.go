@@ -17,6 +17,7 @@ import (
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/view"
+	"github.com/bornholm/automata/internal/weblink"
 )
 
 const testPassword = "mot-de-passe-de-test"
@@ -323,7 +324,7 @@ func TestMemberToken_RegenerationRevokesPrevious(t *testing.T) {
 func createProfileLink(t *testing.T, s *Server, memberID string, expiresIn time.Duration) string {
 	t.Helper()
 
-	id, secretHash, urlPath, err := NewProfileLink()
+	id, secretHash, urlPath, err := weblink.NewProfileLink()
 	if err != nil {
 		t.Fatalf("NewProfileLink: %v", err)
 	}

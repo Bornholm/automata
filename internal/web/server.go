@@ -16,6 +16,7 @@ import (
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/view"
+	"github.com/bornholm/automata/internal/weblink"
 )
 
 //go:embed assets
@@ -220,7 +221,7 @@ func newRevealStash() *revealStash {
 const revealTTL = 2 * time.Minute
 
 func (s *revealStash) put(value revealValue, now time.Time) (key string, err error) {
-	key, err = randomCrockford(16)
+	key, err = weblink.RandomCrockford(16)
 	if err != nil {
 		return "", err
 	}

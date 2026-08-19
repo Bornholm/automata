@@ -76,10 +76,16 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	// et lu par les décorateurs de clients LLM au moment de chaque appel.
 	ctx = usage.ContextWithRecorder(ctx, newDBUsageRecorder(db, logger, metrics))
 
+	// Tenants enregistrés en ligne (socle SaaS) : résolution d'identité de
+	// repli, rôles des membres et génération de liens de profil. La
+	// configuration reste prioritaire partout.
+	tenants := newTenantSource(db, cfg.Web.BaseURL)
+
 	resolver, err := identity.NewResolver(cfg)
 	if err != nil {
 		return fmt.Errorf("registry: construction du résolveur d'identité: %w", err)
 	}
+	resolver = resolver.WithDynamicSource(tenants)
 
 	providers, err := buildCourierProviders(cfg)
 	if err != nil {
@@ -99,7 +105,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		}
 	}()
 
-	authorizer := authorization.NewAuthorizer(cfg)
+	authorizer := authorization.NewAuthorizer(cfg).WithMemberRoles(tenants)
 
 	actionOpts := []action.Option{action.WithAuditEvents(persistence.NewAuditEventRepository()), action.WithLogger(logger), action.WithMetrics(metrics)}
 	if memRes.store != nil {
@@ -121,7 +127,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		logger.ErrorContext(ctx, "registry: échec de la récupération des plans d'actions interrompus", "error", err)
 	}
 
-	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, metrics, logger)
+	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, metrics, logger)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
@@ -132,7 +138,11 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	for name, provider := range providers {
 		pipeline := ingress.NewPipeline(name, provider, resolver, db, handler, logger, metrics).
-			WithCoalesceWindow(cfg.Courier.EffectiveCoalesceWindow())
+			WithCoalesceWindow(cfg.Courier.EffectiveCoalesceWindow()).
+			// Un inconnu porteur d'un jeton valide se rattache lui-même
+			// (socle SaaS) : sans serveur web configuré, aucun jeton n'a pu
+			// être émis, la liaison reste donc inutile.
+			WithLinking(cfg.Web.Enabled)
 
 		wg.Add(1)
 		go func(name string, pipeline *ingress.Pipeline) {
@@ -269,8 +279,16 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 // réutilisé tel quel par internal/scheduler pour exécuter les tâches
 // planifiées (PLAN.md §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
 	memoryTools := buildMemoryTools(cfg, memStore, metrics)
+
+	// Outil open_profile_link : disponible dès que le serveur web est
+	// configuré (sans base_url, aucun lien n'est composable).
+	profileTools := agent.ProfileTools{Metrics: metrics}
+	if cfg.Web.Enabled && cfg.Web.BaseURL != "" {
+		profileTools.Generator = tenants
+		profileTools.Enabled = true
+	}
 
 	// Les outils de rappels partagent la base applicative et l'Authorizer de
 	// l'instance ; agent.NewRegistryWithMemory ne les attache qu'aux agents
@@ -286,7 +304,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		Tasks: true,
 	}
 
-	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, mcpManager, metrics, logger)
+	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, profileTools, mcpManager, metrics, logger)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
 	}
@@ -302,7 +320,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	// impossible, là où une consigne de prompt ne ferait que la rendre moins
 	// probable ; et cela ferme du même coup la boucle d'une tâche qui se
 	// reprogrammerait indéfiniment.
-	taskAgents, err := agent.NewRegistryWithMemory(cfg, memoryTools, agent.ReminderTools{}, mcpManager, metrics, logger)
+	taskAgents, err := agent.NewRegistryWithMemory(cfg, memoryTools, agent.ReminderTools{}, profileTools, mcpManager, metrics, logger)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("construction du registre d'agents des tâches planifiées: %w", err)
 	}

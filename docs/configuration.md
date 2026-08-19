@@ -1038,6 +1038,28 @@ l'ingress arrive dans un lot ultérieur), canaux et plateformes, et les
 pages de profil ouvertes par **lien temporaire à usage unique** (15
 minutes, `/p/<id>.<secret>`).
 
+Depuis le lot B, le serveur web ne travaille plus seul : un expéditeur
+inconnu dont le message porte un jeton `atm_…` valide se rattache
+lui-même — le membre pré-créé prend son identité de messagerie, son canal
+privé (ou le groupe, pour un jeton de groupe) est lié à l'organisation, et
+l'assistant répond par un mot de bienvenue rédigé par l'application, jamais
+par le modèle. Les tenants ainsi enregistrés sont ensuite résolus depuis la
+base : la configuration YAML reste prioritaire, la base prend le relais pour
+ce qu'elle ne connaît pas. Les membres en ligne n'ont pas de rôle
+configurable ; leurs permissions découlent de leur rôle produit
+(`member`, `owner`, `readonly` — voir `identity.DynamicRolePermissions`).
+
+Les agents déclarant `profile_link: true` exposent l'outil
+`open_profile_link` : l'assistant ouvre lui-même à son interlocuteur un lien
+temporaire vers sa page de profil, ce qui évite tout mot de passe côté
+utilisateur final.
+
+```yaml
+agents:
+  main:
+    profile_link: true
+```
+
 Sous-commandes associées :
 
 ```

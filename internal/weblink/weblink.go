@@ -1,7 +1,9 @@
-// Package web sert l'interface d'administration (desktop) et les pages de
-// profil (mobile, ouvertes par lien temporaire) du socle SaaS — maquettes
-// P1. Voir docs/configuration.md, section web.
-package web
+// Package weblink porte la cryptographie légère des jetons de liaison et
+// des liens de profil du socle SaaS : génération aléatoire, hachage,
+// formes d'affichage. Séparé du serveur web (internal/web) parce que
+// l'ingress (consommation des jetons) et le registry (génération de liens
+// par l'agent) en ont besoin sans dépendre du serveur.
+package weblink
 
 import (
 	"crypto/rand"
@@ -15,15 +17,15 @@ import (
 // jetons se transmettent à voix haute ou se recopient sans ambiguïté.
 const crockford = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 
-// linkTokenPrefix identifie un jeton de liaison Automata dans un message
-// (« atm_… ») — le préfixe que l'ingress recherchera au lot B.
-const linkTokenPrefix = "atm_"
+// LinkTokenPrefix identifie un jeton de liaison Automata dans un message
+// (« atm_… ») — le préfixe recherché par l'ingress.
+const LinkTokenPrefix = "atm_"
 
-// randomCrockford retourne n caractères aléatoires de l'alphabet.
-func randomCrockford(n int) (string, error) {
+// RandomCrockford retourne n caractères aléatoires de l'alphabet.
+func RandomCrockford(n int) (string, error) {
 	raw := make([]byte, n)
 	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("web: lecture d'aléa: %w", err)
+		return "", fmt.Errorf("weblink: lecture d'aléa: %w", err)
 	}
 
 	var b strings.Builder
@@ -39,14 +41,14 @@ func randomCrockford(n int) (string, error) {
 // stockée) et sa forme d'affichage en quatre blocs de quatre
 // (« atm_XXXX · XXXX · XXXX · XXXX », annotation ADM-04).
 func NewLinkToken() (clear, hash, display string, err error) {
-	body, err := randomCrockford(16)
+	body, err := RandomCrockford(16)
 	if err != nil {
 		return "", "", "", err
 	}
 
-	clear = linkTokenPrefix + body
+	clear = LinkTokenPrefix + body
 	hash = HashToken(clear)
-	display = linkTokenPrefix + body[0:4] + " · " + body[4:8] + " · " + body[8:12] + " · " + body[12:16]
+	display = LinkTokenPrefix + body[0:4] + " · " + body[4:8] + " · " + body[8:12] + " · " + body[12:16]
 
 	return clear, hash, display, nil
 }
@@ -61,11 +63,11 @@ func HashToken(clear string) string {
 // la ligne profile_links), le secret dont seul le hachage est stocké, et
 // le segment d'URL « <id>.<secret> » à composer avec web.base_url.
 func NewProfileLink() (id, secretHash, urlPath string, err error) {
-	id, err = randomCrockford(6)
+	id, err = RandomCrockford(6)
 	if err != nil {
 		return "", "", "", err
 	}
-	secret, err := randomCrockford(20)
+	secret, err := RandomCrockford(20)
 	if err != nil {
 		return "", "", "", err
 	}

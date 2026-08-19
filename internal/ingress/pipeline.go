@@ -128,6 +128,10 @@ type Pipeline struct {
 	logger            *slog.Logger
 	metrics           *observability.Metrics
 	coalesceWindow    time.Duration
+
+	// linking active la liaison par jeton d'un expéditeur inconnu (socle
+	// SaaS, voir linking.go et WithLinking).
+	linking bool
 }
 
 // NewPipeline construit un Pipeline. handler ne doit jamais être nil ; en
@@ -352,6 +356,26 @@ func (p *Pipeline) processBatch(ctx context.Context, self courier.User, msgs []c
 	execIdentity, conversation, err := p.resolver.ResolveMessage(ctx, p.providerName, externalUserID, channelID)
 	if err != nil {
 		if errors.Is(err, apperr.ErrUnknownOrigin) || errors.Is(err, apperr.ErrUnknownChannel) || errors.Is(err, apperr.ErrUnauthorized) {
+			// Avant d'ignorer un inconnu : son message porte peut-être un
+			// jeton de liaison (socle SaaS, voir linking.go). Le
+			// rattachement effectué, le message courant sert uniquement à
+			// le déclencher — le tour suivant sera résolu normalement.
+			linkLogCtx := []any{"provider", p.providerName, "channel_id", channelID}
+			if result, attempted, linkErr := p.tryLink(ctx, first, externalUserID, channelID, linkLogCtx); attempted {
+				if linkErr != nil {
+					p.logger.ErrorContext(ctx, "ingress: échec de la liaison par jeton", append(linkLogCtx, "error", linkErr)...)
+				}
+				if result.Reply != "" && ctx.Err() == nil {
+					p.send(ctx, courier.NewMessage(
+						courier.RandomMessageID(),
+						first.Channel(),
+						self,
+						courier.WithMessageMainPart(result.Reply),
+					), linkLogCtx)
+				}
+				return
+			}
+
 			p.metrics.IncUnknownOrigin()
 
 			// Ce log est la seule source des identifiants à déclarer dans

@@ -151,3 +151,21 @@ func (r *LinkTokenRepository) FindPendingByHash(ctx context.Context, q Querier, 
 
 	return t, true, nil
 }
+
+// MarkUsed consomme le jeton : pending → used, atomique. Retourne false si
+// le jeton avait déjà été consommé ou révoqué entre-temps.
+func (r *LinkTokenRepository) MarkUsed(ctx context.Context, q Querier, id string, at time.Time) (bool, error) {
+	res, err := q.ExecContext(ctx, `UPDATE link_tokens SET status = ?, used_at = ?
+		WHERE id = ? AND status = ?`,
+		LinkTokenStatusUsed, formatTenantTime(at), id, LinkTokenStatusPending)
+	if err != nil {
+		return false, fmt.Errorf("consommation du jeton %q: %w", id, err)
+	}
+
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("consommation du jeton %q: %w", id, err)
+	}
+
+	return n > 0, nil
+}

@@ -29,6 +29,10 @@ type AuthorizationRequest struct {
 // une opération donnée, dans une portée cible donnée.
 type Authorizer struct {
 	cfg *config.Config
+
+	// members, s'il est renseigné, donne le rôle web des membres
+	// enregistrés en base (voir WithMemberRoles).
+	members MemberRoleSource
 }
 
 // NewAuthorizer construit un Authorizer à partir de la configuration
@@ -61,7 +65,7 @@ func (a *Authorizer) Authorize(ctx context.Context, req AuthorizationRequest) er
 		return fmt.Errorf("authorization: portée de la permission %q incohérente avec la portée cible %q: %w", req.Permission, req.TargetScope, apperr.ErrUnauthorized)
 	}
 
-	permissions, err := identity.EffectivePermissions(a.cfg, req.Identity.OrgID, req.Identity.PrincipalID)
+	permissions, err := a.effectivePermissions(ctx, req.Identity)
 	if err != nil {
 		return fmt.Errorf("authorization: résolution des permissions effectives: %w", err)
 	}
@@ -75,6 +79,47 @@ func (a *Authorizer) Authorize(ctx context.Context, req AuthorizationRequest) er
 	}
 
 	return nil
+}
+
+// MemberRoleSource retourne le rôle web d'un membre enregistré en base
+// (socle SaaS). Implémentée dans internal/registry ; nil dans les
+// configurations purement YAML.
+type MemberRoleSource interface {
+	MemberRole(ctx context.Context, orgID, memberID string) (role string, found bool, err error)
+}
+
+// WithMemberRoles attache la source des rôles des membres enregistrés en
+// ligne. Sans elle, seuls les principals de la configuration ont des
+// droits — le comportement historique.
+func (a *Authorizer) WithMemberRoles(source MemberRoleSource) *Authorizer {
+	a.members = source
+	return a
+}
+
+// effectivePermissions résout les permissions du principal : la
+// configuration d'abord (rôles déclarés, source de vérité historique),
+// puis les rôles web des membres enregistrés en base. Un membre rattaché
+// en ligne n'a pas de rôle configurable : son jeu de permissions découle
+// de son rôle produit (voir identity.DynamicRolePermissions).
+func (a *Authorizer) effectivePermissions(ctx context.Context, execIdentity model.ExecutionIdentity) (map[string]struct{}, error) {
+	permissions, cfgErr := identity.EffectivePermissions(a.cfg, execIdentity.OrgID, execIdentity.PrincipalID)
+	if cfgErr == nil {
+		return permissions, nil
+	}
+
+	if a.members == nil {
+		return nil, cfgErr
+	}
+
+	role, found, err := a.members.MemberRole(ctx, string(execIdentity.OrgID), string(execIdentity.PrincipalID))
+	if err != nil {
+		return nil, fmt.Errorf("recherche du rôle du membre %q: %w", execIdentity.PrincipalID, err)
+	}
+	if !found {
+		return nil, cfgErr
+	}
+
+	return identity.DynamicRolePermissions(role), nil
 }
 
 type permissionParts struct {

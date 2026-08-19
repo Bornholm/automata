@@ -12,6 +12,7 @@ import (
 
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/view"
+	"github.com/bornholm/automata/internal/weblink"
 )
 
 // orgSubtitle décrit les canaux configurés d'une organisation
@@ -214,7 +215,7 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if ownerName != "" {
-			memberID, err := randomCrockford(10)
+			memberID, err := weblink.RandomCrockford(10)
 			if err != nil {
 				return err
 			}
@@ -515,14 +516,14 @@ func (s *Server) handleOrgGroupToken(w http.ResponseWriter, r *http.Request) {
 func (s *Server) createGroupToken(w http.ResponseWriter, r *http.Request, orgID, redirectBase string) {
 	now := s.now()
 
-	clear, hash, display, err := NewLinkToken()
+	clear, hash, display, err := weblink.NewLinkToken()
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "web: génération d'un jeton de groupe", "error", err)
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
 
-	tokenID, err := randomCrockford(10)
+	tokenID, err := weblink.RandomCrockford(10)
 	if err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return

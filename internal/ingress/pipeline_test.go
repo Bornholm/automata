@@ -182,6 +182,22 @@ func newTestPipeline(t *testing.T, handler ingress.Handler) (*ingress.Pipeline, 
 func newTestPipelineWithLogger(t *testing.T, handler ingress.Handler, logger *slog.Logger) (*ingress.Pipeline, *readyProvider) {
 	t.Helper()
 
+	pipeline, provider, _ := newTestPipelineWithDB2(t, handler, logger)
+
+	return pipeline, provider
+}
+
+// newTestPipelineWithDB construit un pipeline de test et expose sa base,
+// pour les tests qui vérifient les écritures (liaison par jeton).
+func newTestPipelineWithDB(t *testing.T, handler ingress.Handler) (*ingress.Pipeline, *readyProvider, *persistence.DB) {
+	t.Helper()
+
+	return newTestPipelineWithDB2(t, handler, testLogger())
+}
+
+func newTestPipelineWithDB2(t *testing.T, handler ingress.Handler, logger *slog.Logger) (*ingress.Pipeline, *readyProvider, *persistence.DB) {
+	t.Helper()
+
 	resolver, err := identity.NewResolver(testConfig())
 	if err != nil {
 		t.Fatalf("identity.NewResolver: %v", err)
@@ -192,6 +208,9 @@ func newTestPipelineWithLogger(t *testing.T, handler ingress.Handler, logger *sl
 		memory.WithChannels(
 			courier.NewChannel("private-chan", courier.ChannelKindDirect, "Alice"),
 			courier.NewChannel("group-chan", courier.ChannelKindGroup, "Groupe"),
+			// Canaux des tests de liaison par jeton (linking_integration_test.go).
+			courier.NewChannel("camille-ext", courier.ChannelKindDirect, "Camille Roux"),
+			courier.NewChannel("atelier-group", courier.ChannelKindGroup, "Atelier"),
 		),
 	)
 	t.Cleanup(func() { _ = provider.Close() })
@@ -200,7 +219,7 @@ func newTestPipelineWithLogger(t *testing.T, handler ingress.Handler, logger *sl
 
 	pipeline := ingress.NewPipeline(testProviderName, provider, resolver, db, handler, logger, nil)
 
-	return pipeline, provider
+	return pipeline, provider, db
 }
 
 // runPipeline démarre pipeline.Run dans une goroutine et retourne une

@@ -149,3 +149,21 @@ func (r *MemberRepository) Update(ctx context.Context, q Querier, m Member) erro
 
 	return nil
 }
+
+// FindByExternalUser retourne le membre lié à une identité de messagerie
+// (point d'entrée de la résolution d'identité dynamique, lot B).
+func (r *MemberRepository) FindByExternalUser(ctx context.Context, q Querier, provider, externalUserID string) (Member, bool, error) {
+	row := q.QueryRowContext(ctx, `SELECT `+memberColumns+` FROM members
+		WHERE provider = ? AND external_user_id = ? AND linked_at != '' LIMIT 1`,
+		provider, externalUserID)
+
+	m, err := scanMember(row.Scan)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Member{}, false, nil
+		}
+		return Member{}, false, fmt.Errorf("recherche d'un membre par identité de messagerie: %w", err)
+	}
+
+	return m, true, nil
+}

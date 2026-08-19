@@ -52,6 +52,7 @@ type Metrics struct {
 	memoriesConsolidated     atomic.Int64
 	deliveryErrors           atomic.Int64
 	toolResultsTruncated     atomic.Int64
+	profileLinks             atomic.Int64
 	usageRecords             atomic.Int64
 	usageRecordFailures      atomic.Int64
 
@@ -339,6 +340,15 @@ func (m *Metrics) IncEpisodeRecorded() {
 	m.episodesRecorded.Add(1)
 }
 
+// IncProfileLink incrémente le compteur de liens de profil ouverts par
+// l'agent à la demande d'un utilisateur (outil open_profile_link).
+func (m *Metrics) IncProfileLink() {
+	if m == nil {
+		return
+	}
+	m.profileLinks.Add(1)
+}
+
 // IncUsageRecord incrémente le compteur de traces d'usage d'inférence
 // enregistrées (internal/usage, refacturation par organisation).
 func (m *Metrics) IncUsageRecord() {
@@ -469,6 +479,7 @@ func (m *Metrics) Snapshot() map[string]any {
 		"memory_insights":             m.memoryInsights.Load(),
 		"memories_consolidated":       m.memoriesConsolidated.Load(),
 		"delivery_errors":             m.deliveryErrors.Load(),
+		"profile_links":               m.profileLinks.Load(),
 		"usage_records":               m.usageRecords.Load(),
 		"usage_record_failures":       m.usageRecordFailures.Load(),
 		"tool_results_truncated":      m.toolResultsTruncated.Load(),

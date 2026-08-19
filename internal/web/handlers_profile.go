@@ -13,6 +13,7 @@ import (
 
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/view"
+	"github.com/bornholm/automata/internal/weblink"
 )
 
 // resolveProfile valide l'accès à une page de profil : consomme le lien à
@@ -24,7 +25,7 @@ func (s *Server) resolveProfile(w http.ResponseWriter, r *http.Request) (persist
 	now := s.now()
 	segment := r.PathValue("link")
 
-	linkID, secret, wellFormed := SplitProfileLink(segment)
+	linkID, secret, wellFormed := weblink.SplitProfileLink(segment)
 	if !wellFormed {
 		s.render(w, r, http.StatusNotFound, view.ProfileLinkState(view.LinkStatePage{State: "expired"}))
 		return persistence.Member{}, 0, false
@@ -58,7 +59,7 @@ func (s *Server) resolveProfile(w http.ResponseWriter, r *http.Request) (persist
 	}
 
 	switch {
-	case !linkFound || HashToken(secret) != link.TokenHash:
+	case !linkFound || weblink.HashToken(secret) != link.TokenHash:
 		// Lien inconnu ou secret faux : même réponse qu'un lien périmé —
 		// aucune information sur l'existence du lien.
 		s.render(w, r, http.StatusNotFound, view.ProfileLinkState(view.LinkStatePage{State: "expired"}))
