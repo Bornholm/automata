@@ -223,7 +223,14 @@ func formatMemoryList(memories []memory.Memory) string {
 		if len(excerpt) > excerptLimit {
 			excerpt = excerpt[:excerptLimit] + "…"
 		}
-		fmt.Fprintf(&b, "%d. [id: %s] %s\n", i+1, m.ID, excerpt)
+		// La date d'enregistrement accompagne chaque souvenir : sans elle,
+		// le modèle ne peut pas arbitrer entre deux faits contradictoires ni
+		// juger qu'une information est probablement périmée.
+		if m.CreatedAt.IsZero() {
+			fmt.Fprintf(&b, "%d. [id: %s] %s\n", i+1, m.ID, excerpt)
+		} else {
+			fmt.Fprintf(&b, "%d. [id: %s, recorded %s] %s\n", i+1, m.ID, m.CreatedAt.Format("2006-01-02"), excerpt)
+		}
 	}
 
 	return b.String()

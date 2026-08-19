@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bornholm/genai/llm"
 
@@ -58,6 +59,16 @@ func (f *fakeMemoryStore) seed(id, content string, orgID model.OrgID, scope mode
 		scope   model.Scope
 		scopeID model.ScopeID
 	}{orgID, scope, scopeID}
+}
+
+// seedAt complète seed en fixant la date d'enregistrement du souvenir.
+func (f *fakeMemoryStore) seedAt(id, content string, orgID model.OrgID, scope model.Scope, scopeID model.ScopeID, createdAt time.Time) {
+	f.seed(id, content, orgID, scope, scopeID)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	m := f.memories[id]
+	m.CreatedAt = createdAt
+	f.memories[id] = m
 }
 
 func (f *fakeMemoryStore) Remember(ctx context.Context, mem memory.NewMemory) (memory.Memory, error) {
@@ -267,6 +278,27 @@ func TestSearchMemory_PrivateConversationCoversPersonalAndOrgOnly(t *testing.T) 
 	}
 	if strings.Contains(text, "m-group") {
 		t.Errorf("fuite: résultat de groupe présent dans une conversation privée: %q", text)
+	}
+}
+
+// La date d'enregistrement doit accompagner chaque résultat : sans elle, le
+// modèle ne peut ni départager deux faits contradictoires ni suspecter une
+// information périmée.
+func TestSearchMemory_ResultsCarryTheirRecordingDate(t *testing.T) {
+	store := newFakeMemoryStore()
+	store.seedAt("m-dated", "note personnelle datée", "home", model.ScopePersonal, "alice",
+		time.Date(2026, 3, 14, 8, 0, 0, 0, time.UTC))
+
+	tools := agent.MemoryTools{
+		Store:      store,
+		Authorizer: authorization.NewAuthorizer(memoryTestConfig()),
+		Search:     true,
+	}
+
+	text := executeMemoryTool(t, tools, privateIdentity("alice"), "search_memory", map[string]any{"query": "note"})
+
+	if !strings.Contains(text, "recorded 2026-03-14") {
+		t.Errorf("date d'enregistrement absente du résultat: %q", text)
 	}
 }
 
