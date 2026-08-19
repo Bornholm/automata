@@ -76,6 +76,29 @@ func reminderStatus(t *testing.T, db *persistence.DB, id persistence.ReminderID)
 	return status
 }
 
+func reminderRow(t *testing.T, db *persistence.DB, id persistence.ReminderID) persistence.Reminder {
+	t.Helper()
+
+	repo := persistence.NewReminderRepository()
+	var rem persistence.Reminder
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		r, found, err := repo.FindByID(context.Background(), tx, id)
+		if err != nil {
+			return err
+		}
+		if !found {
+			t.Fatalf("rappel %q introuvable", id)
+		}
+		rem = r
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+
+	return rem
+}
+
 func baseReminder(id, provider, fireAt string) persistence.Reminder {
 	return persistence.Reminder{
 		ID:             persistence.ReminderID(id),
@@ -319,9 +342,12 @@ func TestDispatcher_ScheduledTaskDeliversAgentReply(t *testing.T) {
 	}
 }
 
-// Une tâche dont l'exécution échoue n'envoie rien et ne réarme pas sa
-// récurrence : un échec quotidien silencieux serait pire qu'un arrêt visible.
-func TestDispatcher_ScheduledTaskFailureDoesNotDeliver(t *testing.T) {
+// Une tâche dont l'exécution échoue n'envoie rien, mais n'est plus classée
+// failed d'office : la panne de réseau du 2026-08-19 au matin a tué le
+// bulletin quotidien alors que le réseau revenait une heure après. La
+// tentative est reprogrammée tant que le déclenchement suivant n'est pas
+// atteint.
+func TestDispatcher_ScheduledTaskFailureIsRetriedLater(t *testing.T) {
 	db := testDB(t)
 	provider := memory.NewProvider(memory.WithChannels(courier.NewChannel("chan-alice", courier.ChannelKindDirect, "Alice")))
 	t.Cleanup(func() { _ = provider.Close() })
@@ -343,8 +369,142 @@ func TestDispatcher_ScheduledTaskFailureDoesNotDeliver(t *testing.T) {
 	if len(provider.Sent()) != 0 {
 		t.Errorf("messages envoyés = %d, attendu 0 : rien ne doit partir quand le travail a échoué", len(provider.Sent()))
 	}
+
+	rem := reminderRow(t, db, "task")
+	if rem.Status != persistence.ReminderStatusPending {
+		t.Fatalf("statut = %q, attendu pending : un échec transitoire ne tue plus la série", rem.Status)
+	}
+	if rem.Attempts != 1 {
+		t.Errorf("attempts = %d, attendu 1", rem.Attempts)
+	}
+	// Première tentative : 5 minutes après l'échec (12:00 + 5 min), pas au
+	// tick suivant — retenter toutes les 30 s ferait travailler l'agent en
+	// boucle sur une panne durable.
+	if rem.FireAt != "2026-08-17T12:05:00Z" {
+		t.Errorf("fire_at = %q, attendu 2026-08-17T12:05:00Z", rem.FireAt)
+	}
+}
+
+// L'occurrence manquée d'une entrée récurrente n'est rattrapée que si le
+// déclenchement suivant n'est pas encore passé. Au-delà, elle est sautée
+// sans livraison et la série repart sur la prochaine occurrence future : un
+// bulletin d'avant-hier délivré aujourd'hui n'a plus de valeur.
+func TestDispatcher_StaleRecurringOccurrenceIsSkipped(t *testing.T) {
+	db := testDB(t)
+	provider := memory.NewProvider(memory.WithChannels(courier.NewChannel("chan-alice", courier.ChannelKindDirect, "Alice")))
+	t.Cleanup(func() { _ = provider.Close() })
+
+	// Échéance du 15 août, quotidienne : les occurrences des 16 et 17 sont
+	// aussi passées à l'heure du test (17 août 12:00 UTC).
+	task := baseTask("task", "memory", "2026-08-15T06:00:00Z")
+	task.Recurrence = "0 8 * * *"
+	task.Timezone = "Europe/Paris"
+	task.Attempts = 3
+	insertReminder(t, db, task)
+
+	runner := &stubRunner{reply: "bulletin"}
+	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+		WithTaskRunner(runner).
+		WithClock(func() time.Time { return dispatcherTestNow })
+
+	if err := d.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	if len(runner.tasks) != 0 {
+		t.Errorf("tâches exécutées = %d, attendu 0 : une occurrence périmée ne fait pas travailler l'agent", len(runner.tasks))
+	}
+	if len(provider.Sent()) != 0 {
+		t.Errorf("messages envoyés = %d, attendu 0", len(provider.Sent()))
+	}
+
+	rem := reminderRow(t, db, "task")
+	if rem.Status != persistence.ReminderStatusPending {
+		t.Fatalf("statut = %q, attendu pending : la série continue", rem.Status)
+	}
+	// Prochaine occurrence STRICTEMENT future : le 18 août 8h Paris (6h UTC).
+	if rem.FireAt != "2026-08-18T06:00:00Z" {
+		t.Errorf("fire_at = %q, attendu 2026-08-18T06:00:00Z", rem.FireAt)
+	}
+	if rem.Attempts != 0 {
+		t.Errorf("attempts = %d, attendu 0 : nouveau cycle, compteur remis à zéro", rem.Attempts)
+	}
+}
+
+// Quand la tentative suivante tomberait après le déclenchement suivant,
+// l'occurrence est abandonnée mais la série est réarmée — elle ne meurt
+// plus sur un échec, contrairement à l'ancien classement failed.
+func TestDispatcher_RecurringFailureNearDeadlineRearmsTheSeries(t *testing.T) {
+	db := testDB(t)
+	provider := memory.NewProvider(memory.WithChannels(courier.NewChannel("chan-alice", courier.ChannelKindDirect, "Alice")))
+	t.Cleanup(func() { _ = provider.Close() })
+
+	// Prochaine occurrence à 12:05 UTC : la retentative (+5 min) tomberait
+	// pile dessus, la fenêtre de rattrapage est donc close.
+	task := baseTask("task", "memory", "2026-08-17T11:59:00Z")
+	task.Recurrence = "5 12 * * *"
+	task.Timezone = "UTC"
+	insertReminder(t, db, task)
+
+	runner := &stubRunner{err: context.DeadlineExceeded}
+	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+		WithTaskRunner(runner).
+		WithClock(func() time.Time { return dispatcherTestNow })
+
+	if err := d.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	rem := reminderRow(t, db, "task")
+	if rem.Status != persistence.ReminderStatusPending {
+		t.Fatalf("statut = %q, attendu pending", rem.Status)
+	}
+	if rem.FireAt != "2026-08-17T12:05:00Z" {
+		t.Errorf("fire_at = %q, attendu la prochaine occurrence 2026-08-17T12:05:00Z", rem.FireAt)
+	}
+	if rem.Attempts != 0 {
+		t.Errorf("attempts = %d, attendu 0", rem.Attempts)
+	}
+}
+
+// Une entrée à déclenchement unique n'a pas d'occurrence suivante pour
+// fermer sa fenêtre : elle est retentée, mais bornée en tentatives, puis
+// failed — un échec définitif doit rester visible.
+func TestDispatcher_OneShotFailureExhaustsAttemptsThenFails(t *testing.T) {
+	db := testDB(t)
+	provider := memory.NewProvider(memory.WithChannels(courier.NewChannel("chan-alice", courier.ChannelKindDirect, "Alice")))
+	t.Cleanup(func() { _ = provider.Close() })
+
+	task := baseTask("task", "memory", "2026-08-17T11:59:00Z")
+	task.Attempts = 6
+	insertReminder(t, db, task)
+
+	runner := &stubRunner{err: context.DeadlineExceeded}
+	d := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+		WithTaskRunner(runner).
+		WithClock(func() time.Time { return dispatcherTestNow })
+
+	// 7e tentative : encore reprogrammée.
+	if err := d.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
+	rem := reminderRow(t, db, "task")
+	if rem.Status != persistence.ReminderStatusPending || rem.Attempts != 7 {
+		t.Fatalf("après la 7e tentative : statut = %q, attempts = %d, attendu pending/7", rem.Status, rem.Attempts)
+	}
+
+	// 8e tentative : la dernière, l'entrée est classée failed.
+	late := reminder.NewDispatcher(db, map[string]courier.Provider{"memory": provider}, testLogger(), nil).
+		WithTaskRunner(runner).
+		WithClock(func() time.Time { return dispatcherTestNow.Add(2 * time.Hour) })
+
+	if err := late.Tick(context.Background()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+
 	if got := reminderStatus(t, db, "task"); got != persistence.ReminderStatusFailed {
-		t.Errorf("statut = %q, attendu failed", got)
+		t.Errorf("statut = %q, attendu failed après épuisement des tentatives", got)
 	}
 }
 

@@ -43,9 +43,9 @@ func (r *ReminderRepository) Insert(ctx context.Context, q Querier, rem Reminder
 	}
 
 	_, err := q.ExecContext(ctx, `
-		INSERT INTO reminders (id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, rem.ID, rem.OrgID, rem.PrincipalID, rem.ConversationID, rem.Provider, rem.ChannelID, rem.Message, rem.FireAt, rem.Status, rem.CreatedAt, rem.SentAt, rem.Recurrence, rem.Timezone, rem.Kind, rem.AgentID)
+		INSERT INTO reminders (id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id, attempts)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, rem.ID, rem.OrgID, rem.PrincipalID, rem.ConversationID, rem.Provider, rem.ChannelID, rem.Message, rem.FireAt, rem.Status, rem.CreatedAt, rem.SentAt, rem.Recurrence, rem.Timezone, rem.Kind, rem.AgentID, rem.Attempts)
 	if err != nil {
 		return fmt.Errorf("insertion du rappel %q: %w", rem.ID, err)
 	}
@@ -56,7 +56,7 @@ func (r *ReminderRepository) Insert(ctx context.Context, q Querier, rem Reminder
 // pas.
 func (r *ReminderRepository) FindByID(ctx context.Context, q Querier, id ReminderID) (Reminder, bool, error) {
 	row := q.QueryRowContext(ctx, `
-		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id
+		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id, attempts
 		FROM reminders
 		WHERE id = ?
 	`, id)
@@ -78,7 +78,7 @@ func (r *ReminderRepository) FindByID(ctx context.Context, q Querier, id Reminde
 // d'abord, bornés à limit.
 func (r *ReminderRepository) ListDue(ctx context.Context, q Querier, now string, limit int) ([]Reminder, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id
+		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id, attempts
 		FROM reminders
 		WHERE status = ? AND fire_at <= ?
 		ORDER BY fire_at ASC
@@ -102,7 +102,7 @@ func (r *ReminderRepository) ListDue(ctx context.Context, q Querier, now string,
 // cancel_scheduled_task — une confusion que rien ne rattraperait ensuite.
 func (r *ReminderRepository) ListPendingByConversation(ctx context.Context, q Querier, conversationID, kind string) ([]Reminder, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id
+		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id, attempts
 		FROM reminders
 		WHERE conversation_id = ? AND status = ? AND kind = ?
 		ORDER BY fire_at ASC
@@ -144,7 +144,7 @@ func (r *ReminderRepository) UpdateStatus(ctx context.Context, q Querier, id Rem
 func (r *ReminderRepository) RescheduleNext(ctx context.Context, q Querier, id ReminderID, nextFireAt string) (bool, error) {
 	res, err := q.ExecContext(ctx, `
 		UPDATE reminders
-		SET fire_at = ?, sent_at = NULL
+		SET fire_at = ?, sent_at = NULL, attempts = 0
 		WHERE id = ? AND status = ?
 	`, nextFireAt, id, ReminderStatusPending)
 	if err != nil {
@@ -159,9 +159,32 @@ func (r *ReminderRepository) RescheduleNext(ctx context.Context, q Querier, id R
 	return affected == 1, nil
 }
 
+// RetryLater reprogramme une tentative de livraison après un échec :
+// l'entrée reste pending, son échéance avance sur nextFireAt et son compteur
+// de tentatives est porté à attempts. ok vaut false si l'entrée n'est plus
+// pending (annulée pendant la livraison) — rien n'est alors écrasé, comme
+// pour RescheduleNext.
+func (r *ReminderRepository) RetryLater(ctx context.Context, q Querier, id ReminderID, nextFireAt string, attempts int) (bool, error) {
+	res, err := q.ExecContext(ctx, `
+		UPDATE reminders
+		SET fire_at = ?, attempts = ?
+		WHERE id = ? AND status = ?
+	`, nextFireAt, attempts, id, ReminderStatusPending)
+	if err != nil {
+		return false, fmt.Errorf("reprogrammation de la tentative du rappel %q: %w", id, err)
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("reprogrammation de la tentative du rappel %q: %w", id, err)
+	}
+
+	return affected == 1, nil
+}
+
 func scanReminder(row *sql.Row) (Reminder, error) {
 	var rem Reminder
-	err := row.Scan(&rem.ID, &rem.OrgID, &rem.PrincipalID, &rem.ConversationID, &rem.Provider, &rem.ChannelID, &rem.Message, &rem.FireAt, &rem.Status, &rem.CreatedAt, &rem.SentAt, &rem.Recurrence, &rem.Timezone, &rem.Kind, &rem.AgentID)
+	err := row.Scan(&rem.ID, &rem.OrgID, &rem.PrincipalID, &rem.ConversationID, &rem.Provider, &rem.ChannelID, &rem.Message, &rem.FireAt, &rem.Status, &rem.CreatedAt, &rem.SentAt, &rem.Recurrence, &rem.Timezone, &rem.Kind, &rem.AgentID, &rem.Attempts)
 	return rem, err
 }
 
@@ -169,7 +192,7 @@ func collectReminders(rows *sql.Rows) ([]Reminder, error) {
 	var reminders []Reminder
 	for rows.Next() {
 		var rem Reminder
-		if err := rows.Scan(&rem.ID, &rem.OrgID, &rem.PrincipalID, &rem.ConversationID, &rem.Provider, &rem.ChannelID, &rem.Message, &rem.FireAt, &rem.Status, &rem.CreatedAt, &rem.SentAt, &rem.Recurrence, &rem.Timezone, &rem.Kind, &rem.AgentID); err != nil {
+		if err := rows.Scan(&rem.ID, &rem.OrgID, &rem.PrincipalID, &rem.ConversationID, &rem.Provider, &rem.ChannelID, &rem.Message, &rem.FireAt, &rem.Status, &rem.CreatedAt, &rem.SentAt, &rem.Recurrence, &rem.Timezone, &rem.Kind, &rem.AgentID, &rem.Attempts); err != nil {
 			return nil, fmt.Errorf("lecture d'un rappel: %w", err)
 		}
 		reminders = append(reminders, rem)

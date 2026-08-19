@@ -190,6 +190,10 @@ type Reminder struct {
 	// Timezone est le fuseau IANA dans lequel Recurrence s'évalue ; vide
 	// pour un rappel à déclenchement unique.
 	Timezone string
+	// Attempts compte les tentatives de livraison infructueuses de
+	// l'échéance courante (voir migration 0008). Remis à zéro à chaque
+	// réarmement de récurrence.
+	Attempts int
 	// Kind distingue un rappel (ReminderKindMessage : Message est délivré
 	// tel quel) d'une tâche planifiée (ReminderKindTask : Message est une
 	// consigne donnée à AgentID, dont la réponse est délivrée).

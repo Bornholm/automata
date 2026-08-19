@@ -47,6 +47,28 @@ const (
 	sendTimeout        = 30 * time.Second
 )
 
+// Rattrapage des échéances manquées (machine éteinte, réseau coupé) : un
+// échec de livraison ne classe plus l'entrée failed d'office, sa tentative
+// suivante est reprogrammée avec un délai doublé à chaque échec. La fenêtre
+// de rattrapage suit la règle demandée par William : sans limite de temps
+// pour une entrée à déclenchement unique (mais bornée en tentatives), et
+// jusqu'au déclenchement suivant pour une récurrente — un bulletin du matin
+// rattrapé l'après-midi a de la valeur, le même bulletin délivré après
+// celui du lendemain n'en a plus.
+const (
+	// retryBaseDelay espace les tentatives : le premier échec retente 5
+	// minutes plus tard, puis 10, 20… jusqu'à retryMaxDelay. Une panne de
+	// réseau dure rarement moins ; retenter à chaque tick (30 s) ferait
+	// jusqu'à 2 880 exécutions d'agent par jour sur une tâche cassée.
+	retryBaseDelay = 5 * time.Minute
+	retryMaxDelay  = 1 * time.Hour
+	// oneShotMaxAttempts borne les tentatives d'une entrée à déclenchement
+	// unique, qui n'a pas d'occurrence suivante pour fermer sa fenêtre de
+	// rattrapage : sans plafond, une tâche durablement cassée serait
+	// retentée pour toujours. 8 tentatives couvrent environ 4 h de panne.
+	oneShotMaxAttempts = 8
+)
+
 // Dispatcher délivre les rappels échus. Il est mono-instance, comme tout le
 // processus (voir docs/security-model.md §4, pas de verrouillage
 // inter-processus).
@@ -162,16 +184,45 @@ func (d *Dispatcher) deliver(ctx context.Context, rem persistence.Reminder) {
 		"fire_at", rem.FireAt,
 	}
 
+	// Occurrence périmée d'une entrée récurrente : le déclenchement suivant
+	// est déjà passé, la livraison de rattrapage n'a plus de valeur (elle
+	// arriverait après — ou à la place — de l'occurrence courante). La
+	// série continue sur la prochaine occurrence future, sans livraison.
+	if rem.Recurrence != "" {
+		if deadline, ok := d.occurrenceDeadline(rem); ok && !d.now().Before(deadline) {
+			d.logger.InfoContext(ctx, "reminder: occurrence manquée périmée, sautée",
+				append(logCtx, "deadline", deadline.UTC().Format(time.RFC3339), "attempts", rem.Attempts)...)
+
+			if next, ok := d.nextOccurrence(ctx, rem, logCtx); ok {
+				d.reschedule(ctx, rem, next, logCtx)
+			} else {
+				d.markFinal(ctx, rem, persistence.ReminderStatusFailed, nil, logCtx)
+			}
+			return
+		}
+	}
+
 	provider, ok := d.senders[rem.Provider]
 	if !ok {
+		// Erreur de configuration, pas une panne transitoire : retenter ne
+		// changerait rien tant que la configuration n'a pas changé.
 		d.logger.ErrorContext(ctx, "reminder: fournisseur courier introuvable, rappel classé failed", logCtx...)
+		d.markFinal(ctx, rem, persistence.ReminderStatusFailed, nil, logCtx)
+		return
+	}
+
+	// Même statut qu'un fournisseur introuvable : un exécuteur absent est un
+	// défaut de câblage, attendre ne le fera pas apparaître. body garde son
+	// propre garde-fou nil pour ne jamais paniquer.
+	if rem.Kind == persistence.ReminderKindTask && d.runner == nil {
+		d.logger.ErrorContext(ctx, "reminder: tâche planifiée sans exécuteur câblé, classée failed", logCtx...)
 		d.markFinal(ctx, rem, persistence.ReminderStatusFailed, nil, logCtx)
 		return
 	}
 
 	body, ok := d.body(ctx, rem, logCtx)
 	if !ok {
-		d.markFinal(ctx, rem, persistence.ReminderStatusFailed, nil, logCtx)
+		d.retryOrGiveUp(ctx, rem, logCtx)
 		return
 	}
 
@@ -184,8 +235,8 @@ func (d *Dispatcher) deliver(ctx context.Context, rem persistence.Reminder) {
 
 	if err := d.send(ctx, provider, outgoing); err != nil {
 		d.metrics.IncDeliveryError()
-		d.logger.ErrorContext(ctx, "reminder: échec de l'envoi, rappel classé failed", append(logCtx, "error", err)...)
-		d.markFinal(ctx, rem, persistence.ReminderStatusFailed, nil, logCtx)
+		d.logger.ErrorContext(ctx, "reminder: échec de l'envoi", append(logCtx, "error", err)...)
+		d.retryOrGiveUp(ctx, rem, logCtx)
 		return
 	}
 
@@ -215,17 +266,17 @@ func (d *Dispatcher) deliver(ctx context.Context, rem persistence.Reminder) {
 // body construit le texte à envoyer. Un rappel délivre son message tel
 // quel ; une tâche fait travailler son agent et délivre sa réponse.
 //
-// ok vaut false quand la tâche n'a pas pu être exécutée : l'entrée est alors
-// classée failed. Une tâche qui échoue ne réarme donc pas sa récurrence —
-// un bulletin quotidien qui échoue une fois s'arrête, ce qui se voit et se
-// corrige, plutôt que d'échouer en silence tous les matins.
+// ok vaut false quand la tâche n'a pas pu être exécutée : l'entrée part
+// alors en reprogrammation de tentative (voir retryOrGiveUp) — une panne de
+// réseau au mauvais moment ne doit plus tuer une série récurrente, comme le
+// faisait l'ancien classement failed immédiat.
 func (d *Dispatcher) body(ctx context.Context, rem persistence.Reminder, logCtx []any) (string, bool) {
 	if rem.Kind != persistence.ReminderKindTask {
 		return "⏰ Rappel : " + rem.Message, true
 	}
 
 	if d.runner == nil {
-		d.logger.ErrorContext(ctx, "reminder: tâche planifiée sans exécuteur câblé, classée failed", logCtx...)
+		d.logger.ErrorContext(ctx, "reminder: tâche planifiée sans exécuteur câblé", logCtx...)
 		return "", false
 	}
 
@@ -237,7 +288,7 @@ func (d *Dispatcher) body(ctx context.Context, rem persistence.Reminder, logCtx 
 
 	reply = strings.TrimSpace(reply)
 	if reply == "" {
-		d.logger.ErrorContext(ctx, "reminder: tâche planifiée sans réponse, classée failed", logCtx...)
+		d.logger.ErrorContext(ctx, "reminder: tâche planifiée sans réponse", logCtx...)
 		return "", false
 	}
 
@@ -272,6 +323,93 @@ func (d *Dispatcher) nextOccurrence(ctx context.Context, rem persistence.Reminde
 	}
 
 	return next.UTC().Format(time.RFC3339), true
+}
+
+// occurrenceDeadline retourne la fin de la fenêtre de rattrapage de
+// l'occurrence courante d'une entrée récurrente : le déclenchement SUIVANT
+// son échéance stockée. ok vaut false si l'expression stockée est
+// inexploitable — l'appelant retombe alors sur le traitement normal, qui la
+// journalisera via nextOccurrence.
+func (d *Dispatcher) occurrenceDeadline(rem persistence.Reminder) (time.Time, bool) {
+	schedule, err := cron.ParseStandard(rem.Recurrence)
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	fireAt, err := time.Parse(time.RFC3339, rem.FireAt)
+	if err != nil {
+		return time.Time{}, false
+	}
+
+	loc := time.Local
+	if rem.Timezone != "" {
+		if l, err := time.LoadLocation(rem.Timezone); err == nil {
+			loc = l
+		}
+	}
+
+	next := schedule.Next(fireAt.In(loc))
+	if next.IsZero() {
+		return time.Time{}, false
+	}
+
+	return next, true
+}
+
+// retryOrGiveUp reprogramme une tentative après un échec de livraison, ou
+// renonce quand la fenêtre de rattrapage se ferme.
+//
+// Récurrent : tentatives espacées d'un délai doublé à chaque échec, jusqu'au
+// déclenchement suivant ; l'occurrence est alors abandonnée et la série
+// réarmée — elle ne meurt plus sur un échec, contrairement à l'ancien
+// comportement. Déclenchement unique : mêmes délais, borné à
+// oneShotMaxAttempts tentatives, puis failed (un échec définitif doit
+// rester visible).
+func (d *Dispatcher) retryOrGiveUp(ctx context.Context, rem persistence.Reminder, logCtx []any) {
+	attempts := rem.Attempts + 1
+
+	delay := retryBaseDelay << (attempts - 1)
+	if delay > retryMaxDelay || delay <= 0 {
+		delay = retryMaxDelay
+	}
+
+	nextTry := d.now().Add(delay)
+
+	if rem.Recurrence != "" {
+		if deadline, ok := d.occurrenceDeadline(rem); ok && !nextTry.Before(deadline) {
+			d.logger.WarnContext(ctx, "reminder: occurrence abandonnée, série réarmée",
+				append(logCtx, "attempts", attempts, "deadline", deadline.UTC().Format(time.RFC3339))...)
+
+			if next, ok := d.nextOccurrence(ctx, rem, logCtx); ok {
+				d.reschedule(ctx, rem, next, logCtx)
+			} else {
+				d.markFinal(ctx, rem, persistence.ReminderStatusFailed, nil, logCtx)
+			}
+			return
+		}
+	} else if attempts >= oneShotMaxAttempts {
+		d.logger.ErrorContext(ctx, "reminder: tentatives épuisées, rappel classé failed",
+			append(logCtx, "attempts", attempts)...)
+		d.markFinal(ctx, rem, persistence.ReminderStatusFailed, nil, logCtx)
+		return
+	}
+
+	d.logger.WarnContext(ctx, "reminder: tentative reprogrammée",
+		append(logCtx, "attempts", attempts, "next_try", nextTry.UTC().Format(time.RFC3339))...)
+
+	err := d.db.WithTx(ctx, func(tx *sql.Tx) error {
+		ok, err := d.repo.RetryLater(ctx, tx, rem.ID, nextTry.UTC().Format(time.RFC3339), attempts)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			d.logger.WarnContext(ctx, "reminder: reprogrammation ignorée (rappel plus en pending)", logCtx...)
+		}
+		return nil
+	})
+	if err != nil {
+		d.logger.ErrorContext(ctx, "reminder: échec de la reprogrammation de tentative", append(logCtx, "error", err)...)
+	}
 }
 
 // reschedule avance l'échéance d'un rappel récurrent. Si le rappel n'est
