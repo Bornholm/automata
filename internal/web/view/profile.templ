@@ -20,7 +20,11 @@ templ profileNav(linkID string, active string) {
 		} else {
 			<a href={ templ.SafeURL("/p/" + linkID + "/credits") } class="text-sm font-medium text-brand">Crédits</a>
 		}
-		<span class="text-sm font-medium text-text-5" title="Bientôt">Ma consommation</span>
+		if active == "usage" {
+			<span class="text-sm font-semibold text-ink">Ma consommation</span>
+		} else {
+			<a href={ templ.SafeURL("/p/" + linkID + "/usage") } class="text-sm font-medium text-brand">Ma consommation</a>
+		}
 		if active == "privacy" {
 			<span class="text-sm font-semibold text-ink">Confidentialité</span>
 		} else {
@@ -414,5 +418,83 @@ templ ProfileLinkState(page LinkStatePage) {
 				</div>
 				<div class="text-sm text-text-4">Vous pouvez fermer cette page.</div>
 		}
+	}
+}
+
+// --- PRO-03 — Ma consommation ---
+
+type UsageMonth struct {
+	Label   string
+	Credits int64
+	Pct     int
+	Current bool
+}
+
+type ProfileUsagePage struct {
+	LinkID string
+	Header ProfileHeader
+
+	// Summary énonce l'usage du mois en langage humain, avant tout chiffre.
+	Summary string
+	Split   []UsageSplit
+	Months  []UsageMonth
+	// Shared prévient quand les chiffres couvrent toute l'organisation.
+	Shared bool
+}
+
+templ ProfileUsage(page ProfileUsagePage) {
+	@ProfileLayout("Ma consommation — Automata", page.Header) {
+		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Ma consommation</h1>
+		<p class="mt-2 text-[15px] leading-normal text-text-3">{ page.Summary }</p>
+		if len(page.Split) > 0 {
+			<div class="mt-6">
+				@Eyebrow("Ce mois-ci, en gros", "text-text-4")
+			</div>
+			<div class="mt-3.5 flex flex-col gap-3">
+				for _, split := range page.Split {
+					<div>
+						<div class="mb-1.5 flex justify-between">
+							<span class="text-[15px] leading-tight text-text">{ split.Label }</span>
+							<span class="font-mono text-sm leading-tight text-text-3">{ FormatCredits(split.Credits) }</span>
+						</div>
+						<div class="h-[7px] w-full overflow-hidden rounded-full bg-track">
+							<div class={ "h-full rounded-full", usageSplitClass(split.Shade) } style={ templ.SafeCSS("width:" + itoa(split.Pct) + "%") }></div>
+						</div>
+					</div>
+				}
+			</div>
+		}
+		if len(page.Months) > 0 {
+			<div class="mt-6">
+				@Eyebrow("Mois par mois", "text-text-4")
+			</div>
+			<div class="mt-3.5 flex flex-col gap-2.5">
+				for _, month := range page.Months {
+					<div>
+						<div class="mb-1 flex justify-between">
+							if month.Current {
+								<span class="text-[15px] font-medium text-ink">{ month.Label }</span>
+							} else {
+								<span class="text-[15px] text-text-2">{ month.Label }</span>
+							}
+							<span class="font-mono text-sm text-text-3">{ FormatCredits(month.Credits) }</span>
+						</div>
+						<div class="h-1.5 w-full overflow-hidden rounded-full bg-track">
+							if month.Current {
+								<div class="h-full rounded-full bg-brand" style={ templ.SafeCSS("width:" + itoa(month.Pct) + "%") }></div>
+							} else {
+								<div class="h-full rounded-full bg-brand-line" style={ templ.SafeCSS("width:" + itoa(month.Pct) + "%") }></div>
+							}
+						</div>
+					</div>
+				}
+			</div>
+		}
+		if page.Shared {
+			<div class="mt-6 rounded-[11px] bg-panel p-3.5 text-sm leading-normal text-text-3">
+				Ces chiffres couvrent toute votre organisation, pas seulement vous : les crédits sont partagés.
+			</div>
+		}
+		@profileNav(page.LinkID, "usage")
 	}
 }

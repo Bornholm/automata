@@ -1190,6 +1190,12 @@ est idempotent — l'identifiant de session est unique en base, un
 événement rejoué ne crédite jamais deux fois. Sans ces secrets, les
 boutons d'achat restent visibles mais inertes.
 
+**Ma consommation.** La page « Ma consommation » du profil montre l'usage
+du mois en catégories parlantes (conversations, recherches, images, notes
+vocales) et son évolution sur six mois, en crédits — le mot « token »
+n'y apparaît jamais. Les chiffres couvrent l'organisation entière, ce que
+la page dit explicitement : les crédits sont partagés.
+
 **Confidentialité (RGPD).** La page de profil « Confidentialité » liste ce
 qu'Automata conserve d'une personne, et ouvre deux droits : télécharger
 ses données (JSON lisible, en français) et les faire effacer. La

@@ -186,6 +186,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /p/{link}/email", s.handleProfileEmail)
 	mux.HandleFunc("POST /p/{link}/email/verify", s.handleProfileEmailVerify)
 	mux.HandleFunc("POST /p/{link}/checkout", s.handleCheckout)
+	mux.HandleFunc("GET /p/{link}/usage", s.handleProfileUsage)
 	mux.HandleFunc("GET /p/{link}/privacy", s.handleProfilePrivacy)
 	mux.HandleFunc("GET /p/{link}/privacy/export", s.handleProfileExport)
 	mux.HandleFunc("POST /p/{link}/privacy/delete", s.handleProfileDelete)
