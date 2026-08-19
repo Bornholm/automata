@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/model"
 )
 
 // AgentSpecialist adapte un Agent existant (typiquement un GenAIAgent
@@ -81,4 +82,19 @@ func buildDelegationInput(req delegation.Request) string {
 	return strings.TrimSpace(b.String())
 }
 
-var _ delegation.Specialist = &AgentSpecialist{}
+// ReportCapabilities implémente delegation.CapabilityReporter en relayant
+// vers l'agent sous-jacent s'il sait rapporter ses capacités. Un agent qui
+// ne le sait pas est rapporté disponible sans liste d'outils : sa
+// description statique de configuration reste la seule information.
+func (s *AgentSpecialist) ReportCapabilities(ctx context.Context, identity model.ExecutionIdentity) delegation.CapabilityReport {
+	if reporter, ok := s.agent.(delegation.CapabilityReporter); ok {
+		return reporter.ReportCapabilities(ctx, identity)
+	}
+
+	return delegation.CapabilityReport{Available: true}
+}
+
+var (
+	_ delegation.Specialist         = &AgentSpecialist{}
+	_ delegation.CapabilityReporter = &AgentSpecialist{}
+)

@@ -709,3 +709,69 @@ func TestOrchestrator_UsesOrganizationSystemPrompt(t *testing.T) {
 		}
 	}
 }
+
+// fakeReportingSpecialist simule un spécialiste sachant rapporter ses
+// capacités du moment, disponible ou non.
+type fakeReportingSpecialist struct {
+	report delegation.CapabilityReport
+}
+
+func (f *fakeReportingSpecialist) Execute(ctx context.Context, req delegation.Request) (delegation.Result, error) {
+	return delegation.Result{Summary: "ok"}, nil
+}
+
+func (f *fakeReportingSpecialist) ReportCapabilities(ctx context.Context, identity model.ExecutionIdentity) delegation.CapabilityReport {
+	return f.report
+}
+
+// describe_capabilities restitue l'état RÉEL du moment : les outils du tour
+// et le statut vivant de chaque spécialiste — dont l'indisponibilité, qui
+// est précisément ce que l'introspection doit révéler.
+func TestOrchestrator_DescribeCapabilitiesReportsLiveStatus(t *testing.T) {
+	var toolResultSeen string
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("call-1", "describe_capabilities", `{}`)), nil
+			}
+			for _, m := range opts.Messages {
+				if m.Role() == llm.RoleTool {
+					toolResultSeen = m.Content()
+				}
+			}
+			return scriptedFinalResponse("Voilà ce que je sais faire."), nil
+		},
+	}
+
+	specialists := map[string]delegation.Specialist{
+		"research": &fakeReportingSpecialist{report: delegation.CapabilityReport{Available: true, Tools: []string{"web_search", "web_url_read"}}},
+		"imagine":  &fakeReportingSpecialist{report: delegation.CapabilityReport{Available: false, Detail: "one of its services is currently unreachable"}},
+	}
+
+	a := agent.NewOrchestratorAgent(client, "system", "main", specialists, 5).
+		WithSpecialistDescriptions(map[string]string{"research": "searches the web", "imagine": "generates images"})
+
+	_, err := a.Execute(context.Background(), agent.Request{
+		Identity: model.ExecutionIdentity{PrincipalID: "alice", OrgID: "home"},
+		Input:    "que sais-tu faire ?",
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	for _, expected := range []string{
+		"delegate_to_research",
+		"web_search, web_url_read",
+		"UNAVAILABLE right now",
+		"one of its services is currently unreachable",
+	} {
+		if !strings.Contains(toolResultSeen, expected) {
+			t.Errorf("le rapport ne contient pas %q\nrapport:\n%s", expected, toolResultSeen)
+		}
+	}
+
+	if strings.Contains(toolResultSeen, "- describe_capabilities") {
+		t.Error("le rapport ne doit pas décrire l'outil d'introspection lui-même")
+	}
+}

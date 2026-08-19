@@ -118,6 +118,29 @@ type Result struct {
 	Attachments []media.Media
 }
 
+// CapabilityReport décrit ce qu'un spécialiste sait réellement faire à
+// l'instant de l'appel : ses outils effectivement joignables, ou la raison
+// courte de son indisponibilité. Detail est destiné au modèle et s'écrit en
+// anglais, sans détail technique sensible (AGENTS.md).
+type CapabilityReport struct {
+	// Available vaut false quand le spécialiste ne peut pas travailler en
+	// ce moment (serveur MCP injoignable, par exemple).
+	Available bool
+	// Tools liste les noms des outils actuellement disponibles.
+	Tools []string
+	// Detail complète le rapport : raison d'une indisponibilité, ou nature
+	// des capacités quand elles ne s'expriment pas en noms d'outils.
+	Detail string
+}
+
+// CapabilityReporter est implémenté par les spécialistes capables de
+// rapporter leurs capacités du moment. Interface optionnelle : un
+// spécialiste qui ne l'implémente pas est simplement décrit par sa
+// description statique de configuration.
+type CapabilityReporter interface {
+	ReportCapabilities(ctx context.Context, identity model.ExecutionIdentity) CapabilityReport
+}
+
 // Specialist exécute une délégation. Une implémentation typique adapte un
 // internal/agent.Agent existant (voir internal/agent.AgentSpecialist) mais
 // rien n'impose que ce soit le cas : un spécialiste factice de test peut

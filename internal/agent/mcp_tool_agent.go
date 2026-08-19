@@ -8,12 +8,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bornholm/genai/llm"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/media"
+	"github.com/bornholm/automata/internal/model"
 )
 
 // ErrMaxToolCallsReached est retournée par MCPToolAgent.Execute lorsque le
@@ -165,6 +168,53 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 		ProposedActions: collector.take(),
 		Attachments:     append(append([]media.Media(nil), loopResult.Attachments...), mediaCollector.take()...),
 	}, nil
+}
+
+// mcpProbeTimeout borne l'interrogation de CHAQUE serveur MCP par
+// ReportCapabilities : l'introspection répond à « que sais-tu faire là,
+// maintenant ? », elle doit rester rapide même quand un serveur est mort —
+// c'est précisément ce cas qu'elle sert à révéler.
+const mcpProbeTimeout = 5 * time.Second
+
+// ReportCapabilities implémente delegation.CapabilityReporter : il
+// interroge réellement chaque serveur MCP de l'agent à l'instant de
+// l'appel, plutôt que de recopier la configuration — un serveur déclaré
+// mais injoignable est exactement ce que l'introspection doit révéler.
+func (a *MCPToolAgent) ReportCapabilities(ctx context.Context, identity model.ExecutionIdentity) delegation.CapabilityReport {
+	report := delegation.CapabilityReport{Available: true}
+
+	sessionKey := mcp.SessionKey(identity.ConversationID)
+
+	for _, serverName := range a.mcpServerNames {
+		probeCtx, cancel := context.WithTimeout(ctx, mcpProbeTimeout)
+		serverTools, err := a.mcpManager.GetToolsFor(probeCtx, sessionKey, identity.PrincipalID, serverName, a.mcpLimits)
+		cancel()
+
+		if err != nil {
+			// Le détail technique reste dans les journaux ; le modèle ne
+			// reçoit qu'un constat court, sans URL ni configuration.
+			if a.logger != nil {
+				a.logger.WarnContext(ctx, "agent: serveur mcp injoignable pendant l'introspection",
+					"agent", a.agentName, "server", serverName, "error", err)
+			}
+
+			report.Available = false
+			report.Detail = "one of its services is currently unreachable"
+			continue
+		}
+
+		for _, tool := range serverTools {
+			report.Tools = append(report.Tools, tool.Name())
+		}
+	}
+
+	for _, tool := range a.extraTools {
+		report.Tools = append(report.Tools, tool.Name())
+	}
+
+	sort.Strings(report.Tools)
+
+	return report
 }
 
 // WithOrgSystemPrompts remplace le prompt système par organisation : la clé
