@@ -94,6 +94,80 @@ func (n *orgNotifier) NotifyLowBalance(ctx context.Context, orgID string, balanc
 	return nil
 }
 
+// NotifyPurchase implémente web.PurchaseNotifier : il confirme un achat
+// de crédits à la personne qui l'a réglé, dans sa conversation privée.
+// Comme l'alerte de solde, le texte est rédigé par l'application : une
+// confirmation de paiement doit être exacte, et elle part sans qu'aucun
+// humain n'ait écrit.
+func (n *orgNotifier) NotifyPurchase(ctx context.Context, memberID string, credits, balance int64) error {
+	var member persistence.Member
+
+	err := n.db.WithTx(ctx, func(tx *sql.Tx) error {
+		var (
+			found bool
+			err   error
+		)
+		member, found, err = n.members.FindByID(ctx, tx, memberID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("membre %q introuvable", memberID)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("recherche de l'acheteur: %w", err)
+	}
+
+	// Un membre non rattaché n'a pas de conversation privée : sa
+	// confirmation reste sur l'écran de retour de paiement.
+	if !member.Linked() {
+		return fmt.Errorf("membre %q sans conversation privée", memberID)
+	}
+
+	providerName := n.resolveProviderName(member.Provider)
+	provider, ok := n.senders.Get(providerName)
+	if !ok {
+		return fmt.Errorf("compte de messagerie %q indisponible", providerName)
+	}
+
+	message := fmt.Sprintf(
+		"Paiement confirmé : %d crédits ont été ajoutés. Votre solde est de %d crédits.",
+		credits, balance)
+
+	outgoing := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannelRef(courier.ChannelID(member.ExternalUserID)),
+		courier.NewUser("automata", "Automata"),
+		courier.WithMessageMainPart(message),
+	)
+
+	if err := provider.Send(ctx, outgoing); err != nil {
+		return fmt.Errorf("envoi de la confirmation d'achat: %w", err)
+	}
+
+	return nil
+}
+
+// resolveProviderName traduit un type de plateforme en nom de compte de
+// messagerie : les canaux nomment le compte, les membres retiennent
+// parfois le type.
+func (n *orgNotifier) resolveProviderName(provider string) string {
+	if provider == "" {
+		return ""
+	}
+	if _, ok := n.cfg.Courier.Providers[provider]; ok {
+		return provider
+	}
+	for name, candidate := range n.cfg.Courier.Providers {
+		if candidate.Type == provider {
+			return name
+		}
+	}
+	return provider
+}
+
 // destination désigne où envoyer l'alerte : la conversation privée du
 // responsable si l'organisation en a un, sinon son premier canal connu.
 type destination struct {
@@ -160,16 +234,7 @@ func (n *orgNotifier) destination(ctx context.Context, orgID string) (destinatio
 
 	// Le nom du compte de messagerie et le type de provider ne coïncident
 	// pas forcément : les canaux de la configuration nomment le compte.
-	if target.provider != "" {
-		if _, ok := n.cfg.Courier.Providers[target.provider]; !ok {
-			for name, provider := range n.cfg.Courier.Providers {
-				if provider.Type == target.provider {
-					target.provider = name
-					break
-				}
-			}
-		}
-	}
+	target.provider = n.resolveProviderName(target.provider)
 
 	return target, memberID, nil
 }

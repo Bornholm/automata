@@ -76,7 +76,7 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	base := strings.TrimSuffix(s.cfg.Web.BaseURL, "/") + "/p/" + returnPath + "/credits"
-	sessionURL, err := s.stripe.checkoutSession(r.Context(), member.OrgID, pack.Credits, pack.PriceEUR,
+	sessionURL, err := s.stripe.checkoutSession(r.Context(), member.OrgID, member.ID, pack.Credits, pack.PriceEUR,
 		base+"?paid=1", base+"?canceled=1")
 	if err != nil {
 		s.logger.ErrorContext(r.Context(), "web: création de session de paiement",
@@ -167,9 +167,36 @@ func (s *Server) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	if credited {
 		s.logger.InfoContext(r.Context(), "web: paiement crédité",
 			"org_id", orgID, "credits", credits, "session_id", event.Data.Object.ID)
+		s.confirmPurchase(r, event.Data.Object.Metadata.MemberID, orgID, credits)
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+// confirmPurchase annonce l'achat dans la conversation privée de
+// l'acheteur. Un échec d'envoi n'est jamais remonté à Stripe : le
+// paiement est encaissé et les crédits sont inscrits, rejouer
+// l'événement pour un message manqué ne réparerait rien.
+func (s *Server) confirmPurchase(r *http.Request, memberID, orgID string, credits int64) {
+	if s.purchases == nil || memberID == "" {
+		return
+	}
+
+	var balance int64
+	if err := s.db.WithTx(r.Context(), func(tx *sql.Tx) error {
+		var err error
+		balance, err = s.wallet.Balance(r.Context(), tx, orgID)
+		return err
+	}); err != nil {
+		s.logger.ErrorContext(r.Context(), "web: solde indisponible pour la confirmation d'achat",
+			"org_id", orgID, "error", err)
+		return
+	}
+
+	if err := s.purchases.NotifyPurchase(r.Context(), memberID, credits, balance); err != nil {
+		s.logger.WarnContext(r.Context(), "web: confirmation d'achat non remise",
+			"org_id", orgID, "member_id", memberID, "error", err)
+	}
 }
 
 // isUniqueViolation reconnaît une violation de contrainte d'unicité

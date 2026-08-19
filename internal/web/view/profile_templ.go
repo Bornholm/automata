@@ -499,7 +499,7 @@ type CreditPack struct {
 	Index    int
 	Credits  int64
 	Duration string // « Environ un mois »
-	PriceEUR string // « 35 € »
+	PriceEUR string // « 35 € HT »
 	Featured bool
 	// FeaturedLabel : « Le plus choisi » / « Votre habitude ».
 	FeaturedLabel string
@@ -773,7 +773,7 @@ func payButton(page CreditsPage, label string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</button></form><div class=\"mt-2 text-center text-[13px] leading-normal text-text-4\">Paiement traité par Stripe. Vos crédits sont ajoutés dès la confirmation.</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 61, "</button></form><div class=\"mt-2 text-center text-[13px] leading-normal text-text-4\">Prix hors taxes : la TVA applicable s'ajoute au moment du paiement. Paiement traité par Stripe, vos crédits sont ajoutés dès la confirmation.</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

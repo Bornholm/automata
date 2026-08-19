@@ -139,7 +139,7 @@ type CreditPack struct {
 	Index    int
 	Credits  int64
 	Duration string // « Environ un mois »
-	PriceEUR string // « 35 € »
+	PriceEUR string // « 35 € HT »
 	Featured bool
 	// FeaturedLabel : « Le plus choisi » / « Votre habitude ».
 	FeaturedLabel string
@@ -226,7 +226,7 @@ templ payButton(page CreditsPage, label string) {
 			<input type="hidden" name="pack" value={ itoa(page.FeaturedIndex) }/>
 			<button type="submit" class="mt-3.5 h-12 w-full rounded-[10px] bg-brand text-base font-semibold text-white hover:bg-brand-strong">{ label }</button>
 		</form>
-		<div class="mt-2 text-center text-[13px] leading-normal text-text-4">Paiement traité par Stripe. Vos crédits sont ajoutés dès la confirmation.</div>
+		<div class="mt-2 text-center text-[13px] leading-normal text-text-4">Prix hors taxes : la TVA applicable s'ajoute au moment du paiement. Paiement traité par Stripe, vos crédits sont ajoutés dès la confirmation.</div>
 	} else {
 		<span class="mt-3.5 flex h-12 w-full cursor-not-allowed items-center justify-center rounded-[10px] bg-brand/40 text-base font-semibold text-white" title="Paiement en ligne non configuré">{ label }</span>
 		<div class="mt-2 text-center text-[13px] leading-normal text-text-4">Le paiement en ligne n'est pas encore ouvert. Vos crédits peuvent être ajoutés par l'exploitant du service.</div>

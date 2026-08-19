@@ -52,7 +52,7 @@ func newStripeClient(secretKey, taxCode string) *stripeClient {
 // retourne l'URL vers laquelle rediriger le navigateur. Le prix est passé
 // en ligne (price_data) : les packs vivent dans la configuration
 // d'Automata, pas dans un catalogue Stripe à tenir en double.
-func (c *stripeClient) checkoutSession(ctx context.Context, orgID string, credits int64, priceEUR float64, successURL, cancelURL string) (string, error) {
+func (c *stripeClient) checkoutSession(ctx context.Context, orgID, memberID string, credits int64, priceEUR float64, successURL, cancelURL string) (string, error) {
 	form := url.Values{}
 	form.Set("mode", "payment")
 	form.Set("success_url", successURL)
@@ -67,6 +67,9 @@ func (c *stripeClient) checkoutSession(ctx context.Context, orgID string, credit
 	// Les métadonnées reviennent dans l'événement : c'est ce qui permet de
 	// créditer le bon portefeuille sans faire confiance au navigateur.
 	form.Set("metadata[org_id]", orgID)
+	// Le membre revient avec l'événement : c'est lui qui a payé, c'est à
+	// lui que part la confirmation, sur sa conversation privée.
+	form.Set("metadata[member_id]", memberID)
 	form.Set("metadata[credits]", strconv.FormatInt(credits, 10))
 	// Le prix accompagne les crédits : sans lui, l'achat entrerait au
 	// portefeuille sans recette en face, et la marge de l'instance se
@@ -125,6 +128,7 @@ type stripeEvent struct {
 			PaymentStatus string `json:"payment_status"`
 			Metadata      struct {
 				OrgID    string `json:"org_id"`
+				MemberID string `json:"member_id"`
 				Credits  string `json:"credits"`
 				PriceEUR string `json:"price_eur"`
 			} `json:"metadata"`

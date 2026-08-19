@@ -333,6 +333,10 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 		webServer := web.NewServer(cfg, db, mailSender, logger).
 			WithPlatformManager(platforms).
+			// Un paiement se confirme là où il a été décidé : dans la
+			// conversation, pas seulement sur l'écran de retour que le
+			// client a peut-être déjà fermé.
+			WithPurchaseNotifier(newOrgNotifier(db, cfg, platforms, tenants, logger)).
 			WithPlatformValidator(func(providerType string, providerConfig map[string]any) error {
 				_, err := buildManagedProvider("", providerType, providerConfig, nil)
 				return err

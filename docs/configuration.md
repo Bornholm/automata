@@ -1205,6 +1205,16 @@ fournis par voie électronique — ce que vend Automata. Un régime
 particulier (logiciel professionnel en abonnement, par exemple) se règle
 ici, mais le choix du code relève du comptable, pas du logiciel.
 
+Les prix des offres sont hors taxes : Stripe ajoute la TVA applicable au
+moment du paiement, et la page de crédits l'annonce (« 35 € HT »). La
+recette inscrite au portefeuille est le prix hors taxes — la marge se
+calcule donc sur ce qui revient réellement à l'exploitant.
+
+Un achat réglé est confirmé dans la conversation privée de l'acheteur :
+le message part du service, jamais du modèle, et n'est envoyé qu'une fois
+même si Stripe rejoue l'événement. Un membre non rattaché à une
+messagerie n'en reçoit pas — sa confirmation reste sur l'écran de retour.
+
 Le retour de paiement ne vise jamais le lien de profil d'origine : celui-ci
 est à usage unique et déjà consommé au moment où Stripe renvoie le client.
 Un lien de retour neuf, valable une heure, est émis à l'ouverture de la

@@ -59,9 +59,12 @@ type Server struct {
 	// privacy sert l'export et la suppression des données personnelles ;
 	// nil désactive l'écran de confidentialité.
 	privacy PrivacyService
-	limiter *loginLimiter
-	reveals *revealStash
-	codes   *codeStore
+	// purchases, s'il est renseigné, confirme les achats dans la
+	// conversation privée de l'acheteur.
+	purchases PurchaseNotifier
+	limiter   *loginLimiter
+	reveals   *revealStash
+	codes     *codeStore
 
 	orgs         *persistence.OrganizationRepository
 	members      *persistence.MemberRepository
@@ -214,6 +217,20 @@ func (s *Server) WithPlatformManager(manager PlatformManager) *Server {
 // comptes de messagerie.
 func (s *Server) WithPlatformValidator(validate func(providerType string, config map[string]any) error) *Server {
 	s.validatePlatform = validate
+	return s
+}
+
+// PurchaseNotifier porte la confirmation d'un achat jusqu'à la
+// conversation privée de l'acheteur. Le serveur web ne connaît pas les
+// plateformes de messagerie : l'envoi est implémenté par le registre.
+type PurchaseNotifier interface {
+	NotifyPurchase(ctx context.Context, memberID string, credits, balance int64) error
+}
+
+// WithPurchaseNotifier branche la confirmation conversationnelle des
+// achats : sans lui, un paiement crédite le portefeuille en silence.
+func (s *Server) WithPurchaseNotifier(notifier PurchaseNotifier) *Server {
+	s.purchases = notifier
 	return s
 }
 

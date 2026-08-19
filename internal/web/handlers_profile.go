@@ -362,7 +362,11 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 				Index:    i,
 				Credits:  pack.Credits,
 				Duration: view.HumanPackDuration(pack.Credits, rate),
-				PriceEUR: formatEuros(pack.PriceEUR),
+				// Les prix des offres sont hors taxes : Stripe ajoute la
+				// TVA applicable au moment du paiement, et un prix
+				// annoncé plus bas que le prix débité se découvrirait à
+				// la première facture.
+				PriceEUR: formatEuros(pack.PriceEUR) + " HT",
 				Featured: pack.Featured,
 			}
 			if pack.Featured {

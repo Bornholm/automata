@@ -98,7 +98,7 @@ func TestCheckoutSession_SendsTaxCode(t *testing.T) {
 	client := newStripeClient("sk_test", "txcd_10103000")
 	client.baseURL = server.URL
 
-	checkoutURL, err := client.checkoutSession(context.Background(), "acme", 4400, 35, "https://exemple/ok", "https://exemple/ko")
+	checkoutURL, err := client.checkoutSession(context.Background(), "acme", "cam", 4400, 35, "https://exemple/ok", "https://exemple/ko")
 	if err != nil {
 		t.Fatalf("création de session: %v", err)
 	}
@@ -119,6 +119,10 @@ func TestCheckoutSession_SendsTaxCode(t *testing.T) {
 	// webhook pourra inscrire au portefeuille.
 	if got := form.Get("metadata[price_eur]"); got != "35" {
 		t.Errorf("prix transmis = %q, attendu 35", got)
+	}
+	// Sans le membre, la confirmation d'achat ne saurait à qui parler.
+	if got := form.Get("metadata[member_id]"); got != "cam" {
+		t.Errorf("membre transmis = %q, attendu cam", got)
 	}
 }
 
@@ -187,5 +191,78 @@ func TestCheckout_ReturnLinkSurvivesTheOriginalLink(t *testing.T) {
 	}
 	if page := body(t, returned); strings.Contains(page, "déjà servi") {
 		t.Error("le retour de paiement affiche « ce lien a déjà servi »")
+	}
+}
+
+// notifierEspion enregistre les confirmations d'achat demandées.
+type notifierEspion struct {
+	memberID       string
+	credits, solde int64
+	appels         int
+	err            error
+}
+
+func (n *notifierEspion) NotifyPurchase(_ context.Context, memberID string, credits, balance int64) error {
+	n.memberID, n.credits, n.solde = memberID, credits, balance
+	n.appels++
+	return n.err
+}
+
+// TestStripeWebhook_ConfirmsPurchaseToBuyer : l'écran de retour peut être
+// fermé, le paiement fait sur un autre appareil, ou la banque prendre son
+// temps. La confirmation part donc là où la conversation a lieu, et une
+// seule fois — un événement rejoué ne doit pas la répéter.
+func TestStripeWebhook_ConfirmsPurchaseToBuyer(t *testing.T) {
+	server, ts, _ := testServer(t)
+	server.cfg.Web.Stripe.WebhookSecret = testWebhookSecret
+	server.stripe = newStripeClient("sk_test", "")
+
+	espion := &notifierEspion{}
+	server.WithPurchaseNotifier(espion)
+
+	seedOrg(t, server, persistence.Organization{ID: "org-a", DisplayName: "Org A"}, 500)
+	seedMember(t, server, persistence.Member{ID: "cam", OrgID: "org-a", DisplayName: "Camille", Role: "member"})
+
+	payload := `{"type":"checkout.session.completed","data":{"object":{"id":"cs_test_9",` +
+		`"payment_status":"paid","metadata":{"org_id":"org-a","member_id":"cam","credits":"1000","price_eur":"9"}}}}`
+
+	envoyer := func() int {
+		req, err := http.NewRequest(http.MethodPost, ts.URL+"/stripe/webhook", strings.NewReader(payload))
+		if err != nil {
+			t.Fatalf("requête webhook: %v", err)
+		}
+		req.Header.Set("Stripe-Signature", signedHeader(payload, time.Now(), testWebhookSecret))
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST webhook: %v", err)
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	if code := envoyer(); code != http.StatusOK {
+		t.Fatalf("webhook en %d, attendu 200", code)
+	}
+
+	if espion.appels != 1 {
+		t.Fatalf("%d confirmation(s) envoyée(s), attendu 1", espion.appels)
+	}
+	if espion.memberID != "cam" {
+		t.Errorf("confirmation envoyée à %q, attendu cam", espion.memberID)
+	}
+	if espion.credits != 1000 {
+		t.Errorf("crédits annoncés = %d, attendu 1000", espion.credits)
+	}
+	// Le solde annoncé est celui d'après l'achat : 500 offerts + 1000
+	// achetés.
+	if espion.solde != 1500 {
+		t.Errorf("solde annoncé = %d, attendu 1500", espion.solde)
+	}
+
+	if code := envoyer(); code != http.StatusOK {
+		t.Fatalf("rejeu du webhook en %d, attendu 200", code)
+	}
+	if espion.appels != 1 {
+		t.Errorf("l'événement rejoué a renvoyé une confirmation (%d appels)", espion.appels)
 	}
 }
