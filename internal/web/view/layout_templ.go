@@ -24,7 +24,7 @@ type NavItem struct {
 // AdminNav retourne la navigation d'administration avec la section active.
 func AdminNav(active string) []NavItem {
 	return []NavItem{
-		{Label: "Tableau de bord", Planned: true},
+		{Label: "Tableau de bord", Href: "/admin/dashboard", Active: active == "dashboard"},
 		{Label: "Organisations", Href: "/admin/orgs", Active: active == "orgs"},
 		{Label: "Canaux et plateformes", Href: "/admin/platforms", Active: active == "platforms"},
 		{Label: "Consommation", Href: "/admin/usage", Active: active == "usage"},

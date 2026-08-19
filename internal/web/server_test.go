@@ -111,8 +111,10 @@ func login(t *testing.T, ts *httptest.Server, client *http.Client) {
 		t.Fatalf("POST login: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.Request.URL.Path != "/admin/orgs" {
-		t.Fatalf("connexion attendue vers /admin/orgs, arrivé sur %s", resp.Request.URL.Path)
+	// La connexion mène au tableau de bord : c'est l'écran de supervision
+	// quotidienne (ADM-01).
+	if resp.Request.URL.Path != "/admin/dashboard" {
+		t.Fatalf("connexion attendue vers /admin/dashboard, arrivé sur %s", resp.Request.URL.Path)
 	}
 }
 

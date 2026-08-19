@@ -1,0 +1,275 @@
+package web
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"net/http"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/view"
+)
+
+// deliveryLookback borne la fenêtre des échecs de livraison remontés : un
+// incident d'il y a trois semaines n'appelle plus d'action.
+const deliveryLookback = 7 * 24 * time.Hour
+
+// handleDashboard — ADM-01.
+func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	now := s.now()
+	monthFrom, monthTo := monthBounds(now)
+
+	page := view.DashboardPage{
+		Platforms: s.sidebarPlatforms(),
+		CSRFToken: s.csrfToken(w, r),
+		Period:    strings.ToLower(view.FormatMonth(now)) + " " + fmt.Sprintf("%d", now.Year()),
+	}
+
+	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+		orgs, err := s.orgs.List(r.Context(), tx, "")
+		if err != nil {
+			return err
+		}
+		balances, err := s.wallet.Balances(r.Context(), tx)
+		if err != nil {
+			return err
+		}
+		monthUsage, err := s.orgUsageCredits(r.Context(), tx, monthFrom, monthTo)
+		if err != nil {
+			return err
+		}
+
+		// Repères : ce qu'on veut savoir sans cliquer.
+		connected, total := s.platformCounts(r.Context(), tx)
+		platformTone := ""
+		if connected < total {
+			platformTone = "warn"
+		}
+
+		var totalUsage int64
+		for _, credits := range monthUsage {
+			totalUsage += credits
+		}
+
+		pricingSettings, err := s.pricing(r.Context(), tx)
+		if err != nil {
+			return err
+		}
+		m, err := s.computeMargin(r.Context(), tx, pricingSettings, monthFrom, monthTo)
+		if err != nil {
+			return err
+		}
+
+		marginTone := "ok"
+		if m.MarginEUR < 0 {
+			marginTone = "crit"
+		}
+
+		page.Figures = []view.DashboardFigure{
+			{Label: "Organisations", Value: fmt.Sprintf("%d", len(orgs)), Hint: countActiveMembers(r.Context(), tx, s)},
+			{Label: "Comptes de messagerie", Value: fmt.Sprintf("%d/%d", connected, total), Hint: "connectés", Tone: platformTone},
+			{Label: "Consommation", Value: view.FormatCredits(totalUsage), Hint: fmt.Sprintf("%.2f $ mesurés", m.CostUSD)},
+			{Label: "Marge estimée", Value: formatEuros(m.MarginEUR), Hint: m.Ratio(), Tone: marginTone},
+		}
+
+		// Organisations à surveiller : solde faible ou épuisé.
+		for _, org := range orgs {
+			lastCredit, err := s.wallet.LastCredit(r.Context(), tx, org.ID)
+			if err != nil {
+				return err
+			}
+			state := computeWalletState(org, balances[org.ID], lastCredit, monthUsage[org.ID])
+
+			switch state.State {
+			case "empty":
+				page.Alerts = append(page.Alerts, view.DashboardAlert{
+					Kind:   "wallet",
+					Title:  org.DisplayName + " est à court de crédits",
+					Detail: "Le service est en pause pour cette organisation : elle reçoit un message d'explication et un lien de recharge.",
+					Tone:   "crit",
+					Href:   "/admin/orgs/" + org.ID,
+				})
+			case "low":
+				page.Alerts = append(page.Alerts, view.DashboardAlert{
+					Kind:   "wallet",
+					Title:  org.DisplayName + " approche de la fin de ses crédits",
+					Detail: fmt.Sprintf("Il lui reste %s.", view.FormatCredits(state.Balance)),
+					Tone:   "warn",
+					Href:   "/admin/orgs/" + org.ID,
+				})
+			}
+		}
+
+		// Comptes de messagerie en défaut.
+		if s.platformManager != nil {
+			accounts, err := s.platforms.List(r.Context(), tx)
+			if err != nil {
+				return err
+			}
+			statuses := s.platformManager.Statuses()
+
+			for _, account := range accounts {
+				if !account.Enabled {
+					continue
+				}
+				status := statuses[account.ID]
+				switch status.State {
+				case "failed":
+					page.Alerts = append(page.Alerts, view.DashboardAlert{
+						Kind:   "platform",
+						Title:  platformTypeLabel(account.Type) + " ne répond plus",
+						Detail: firstNonEmpty(status.Err, "Le pipeline s'est arrêté sur une erreur."),
+						Tone:   "crit",
+						Href:   "/admin/platforms",
+					})
+				case "pairing":
+					page.Alerts = append(page.Alerts, view.DashboardAlert{
+						Kind:   "platform",
+						Title:  platformTypeLabel(account.Type) + " attend son appairage",
+						Detail: "Un QR code est affiché sur l'écran des plateformes ; il se renouvelle tout seul.",
+						Tone:   "warn",
+						Href:   "/admin/platforms",
+					})
+				}
+			}
+		}
+
+		// Échecs de livraison récents : un rappel qui n'est pas parti est
+		// invisible du client comme de l'exploitant sans cette remontée.
+		if failures, err := s.recentDeliveryFailures(r.Context(), tx, now.Add(-deliveryLookback)); err != nil {
+			return err
+		} else if failures > 0 {
+			page.Alerts = append(page.Alerts, view.DashboardAlert{
+				Kind:   "delivery",
+				Title:  fmt.Sprintf("%d livraison(s) en échec cette semaine", failures),
+				Detail: "Des messages planifiés ou des rappels n'ont pas pu être remis à leur destinataire.",
+				Tone:   "warn",
+			})
+		}
+
+		// Consommation non facturable : elle fausse la refacturation.
+		if unattributed := monthUsage[""]; unattributed > 0 {
+			page.Alerts = append(page.Alerts, view.DashboardAlert{
+				Kind:   "usage",
+				Title:  view.FormatCredits(unattributed) + " consommés sans organisation",
+				Detail: "Cette consommation ne sera refacturée à personne : elle vient d'appels dont l'attribution a échoué.",
+				Tone:   "warn",
+				Href:   "/admin/usage?by=agent&by=model",
+			})
+		}
+
+		// Classement de consommation.
+		var maxCredits int64
+		type orgUsage struct {
+			id, name string
+			credits  int64
+		}
+		var ranked []orgUsage
+		for _, org := range orgs {
+			credits := monthUsage[org.ID]
+			if credits <= 0 {
+				continue
+			}
+			if credits > maxCredits {
+				maxCredits = credits
+			}
+			ranked = append(ranked, orgUsage{org.ID, org.DisplayName, credits})
+		}
+		sort.Slice(ranked, func(i, j int) bool { return ranked[i].credits > ranked[j].credits })
+
+		for i, row := range ranked {
+			if i >= 6 {
+				break
+			}
+			page.TopOrgs = append(page.TopOrgs, view.DashboardOrgUsage{
+				ID:      row.id,
+				Name:    row.name,
+				Credits: row.credits,
+				Pct:     view.GaugePercent(row.credits, maxCredits),
+			})
+		}
+
+		return nil
+	})
+	if !ok {
+		return
+	}
+
+	s.render(w, r, http.StatusOK, view.AdminDashboard(page))
+}
+
+// platformCounts compte les comptes actifs et ceux qui répondent.
+func (s *Server) platformCounts(ctx context.Context, q persistence.Querier) (connected, total int) {
+	accounts, err := s.platforms.List(ctx, q)
+	if err != nil {
+		return 0, 0
+	}
+
+	var statuses map[string]platformStatus
+	if s.platformManager != nil {
+		statuses = map[string]platformStatus{}
+		for id, status := range s.platformManager.Statuses() {
+			statuses[id] = platformStatus{State: string(status.State)}
+		}
+	}
+
+	for _, account := range accounts {
+		if !account.Enabled {
+			continue
+		}
+		total++
+		if statuses[account.ID].State == "running" {
+			connected++
+		}
+	}
+
+	return connected, total
+}
+
+// platformStatus réduit l'état d'un compte à ce dont le tableau de bord a
+// besoin.
+type platformStatus struct{ State string }
+
+// recentDeliveryFailures compte les échecs de livraison depuis since.
+func (s *Server) recentDeliveryFailures(ctx context.Context, q persistence.Querier, since time.Time) (int, error) {
+	row := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM delivery_attempts
+		WHERE status = 'failed' AND created_at >= ?`, since.UTC().Format(time.RFC3339))
+
+	var failures int
+	if err := row.Scan(&failures); err != nil {
+		return 0, fmt.Errorf("comptage des échecs de livraison: %w", err)
+	}
+
+	return failures, nil
+}
+
+// countActiveMembers décrit le nombre de membres rattachés.
+func countActiveMembers(ctx context.Context, q persistence.Querier, s *Server) string {
+	counts, err := s.members.CountByOrg(ctx, q)
+	if err != nil {
+		return ""
+	}
+
+	var total int64
+	for _, count := range counts {
+		total += count
+	}
+
+	if total <= 1 {
+		return fmt.Sprintf("%d membre", total)
+	}
+	return fmt.Sprintf("%d membres", total)
+}
+
+// firstNonEmpty retourne la première chaîne non vide.
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
+}

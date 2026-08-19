@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -152,4 +153,13 @@ func (s *Server) computeMargin(ctx context.Context, q persistence.Querier, p pri
 	m.MarginEUR = m.SoldEUR - m.CostEUR
 
 	return m, nil
+}
+
+// Ratio décrit la marge en proportion des recettes, ou dit qu'il n'y en a
+// pas eu — un pourcentage calculé sur zéro recette n'a aucun sens.
+func (m margin) Ratio() string {
+	if m.SoldEUR <= 0 {
+		return "aucune recette"
+	}
+	return fmt.Sprintf("%.0f %% des recettes", m.MarginEUR/m.SoldEUR*100)
 }

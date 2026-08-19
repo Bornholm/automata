@@ -135,17 +135,18 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServerFS(assets)))
 
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/admin/orgs", http.StatusFound)
+		http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
 	})
 
 	mux.HandleFunc("GET /admin/login", s.handleLoginForm)
 	mux.HandleFunc("POST /admin/login", s.handleLogin)
 	mux.HandleFunc("POST /admin/logout", s.handleLogout)
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/admin/orgs", http.StatusFound)
+		http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
 	})
 
 	admin := func(h http.HandlerFunc) http.HandlerFunc { return s.requireAdmin(h) }
+	mux.HandleFunc("GET /admin/dashboard", admin(s.handleDashboard))
 	mux.HandleFunc("GET /admin/orgs", admin(s.handleOrgs))
 	mux.HandleFunc("GET /admin/orgs/new", admin(s.handleOrgNewForm))
 	mux.HandleFunc("POST /admin/orgs", admin(s.handleOrgCreate))

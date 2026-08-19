@@ -99,7 +99,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	setSessionCookie(w, adminCookieName, s.signer.sign(sessionPayload("admin", email, expires)), expires)
 	s.logger.InfoContext(r.Context(), "web: connexion opérateur réussie")
 
-	http.Redirect(w, r, "/admin/orgs", http.StatusFound)
+	http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
