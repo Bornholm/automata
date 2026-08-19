@@ -33,6 +33,7 @@ import (
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/reminder"
 	"github.com/bornholm/automata/internal/scheduler"
+	"github.com/bornholm/automata/internal/usage"
 )
 
 // mainAgentName est l'identifiant conventionnel de l'agent généraliste dans
@@ -67,6 +68,12 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			logger.ErrorContext(ctx, "registry: échec de la fermeture de la persistance", "error", err)
 		}
 	}()
+
+	// La comptabilité d'usage (internal/usage) voyage par le contexte : le
+	// recorder attaché ici est hérité par tous les contextes dérivés —
+	// pipelines ingress, scheduler, dispatcher de rappels, consolidateur —
+	// et lu par les décorateurs de clients LLM au moment de chaque appel.
+	ctx = usage.ContextWithRecorder(ctx, newDBUsageRecorder(db, logger, metrics))
 
 	resolver, err := identity.NewResolver(cfg)
 	if err != nil {

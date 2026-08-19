@@ -16,6 +16,7 @@ import (
 	"github.com/bornholm/genai/llm/provider/openrouter"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/usage"
 )
 
 // imageGenerationTimeout borne un appel de génération : les modèles d'image
@@ -67,7 +68,10 @@ func BuildImageGenerationClient(ctx context.Context, cfg config.ImageClient) (ll
 		return nil, fmt.Errorf("le provider %q ne fournit pas de génération d'images", cfg.Provider)
 	}
 
-	return generator, nil
+	// Comptabilité d'usage : les providers d'images ne rapportent pas de
+	// coût facturé, mais l'appel et ses tokens éventuels sont enregistrés
+	// (voir internal/usage).
+	return usage.WrapImageClient(generator, cfg.Provider, cfg.Model), nil
 }
 
 // newGenerateImageTool expose generate_image à un spécialiste. L'image

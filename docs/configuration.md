@@ -1004,6 +1004,50 @@ contraire toutes leurs occurrences réelles, parce que la journée en compte
 légitimement une de plus. Une heure hors de cette plage évite d'avoir à y
 penser.
 
+## Comptabilité d'usage
+
+Aucune clé de configuration : dès que le stockage applicatif est présent
+(`storage.application`), chaque appel d'inférence réussi (complétion,
+transcription, génération d'image) laisse une trace comptable dans la table
+`usage_records` — organisation, principal, conversation, composant
+(`agent`, `compaction`, `consolidation`, `transcription`), agent, provider,
+modèle, volumes de tokens et, quand le provider le rapporte, le coût
+réellement facturé (OpenRouter le fait, en USD). Aucun contenu n'est jamais
+stocké : uniquement des identifiants, des comptes et des montants, dans
+l'optique d'une refacturation de l'accès par organisation/utilisateur.
+
+Règles d'attribution :
+
+- un tour interactif est facturé au principal qui l'a déclenché ; un appel
+  fait par un spécialiste délégué est attribué au spécialiste (colonne
+  `agent`), pas à l'orchestrateur ;
+- les tâches de fond (compaction, consolidation) sont facturées à
+  l'organisation, avec `principal_id` vide ;
+- un appel non attribuable est enregistré orphelin (champs vides) plutôt
+  qu'ignoré.
+
+Limites connues : les embeddings de l'index sémantique (`sqlitevec`) ne
+sont pas comptabilisés — leurs appels partent de l'indexation asynchrone
+d'amoxtli, hors de tout contexte de requête — et les providers autres
+qu'OpenRouter ne rapportent pas de coût : seuls leurs tokens sont
+enregistrés (`cost_reported = 0`), la colonne `appels sans coût` du rapport
+signale ces trous.
+
+Consultation :
+
+```
+automata usage report -config config.yaml \
+    -from 2026-08-01 -to 2026-09-01 \
+    -group-by org,principal
+```
+
+Par défaut : le mois civil courant, agrégé par `org`. Dimensions
+acceptées : `org`, `principal`, `conversation`, `component`, `agent`,
+`kind`, `provider`, `model`, `day`, `month`. Les compteurs `usage_records`
+et `usage_record_failures` de l'export `/metrics` suivent l'enregistrement
+lui-même (un compteur d'échecs qui monte signale des coûts perdus pour la
+comptabilité).
+
 ## Ordre de vérification au démarrage
 
 Pour situer une erreur, voici l'ordre réel des opérations :

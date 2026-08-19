@@ -18,6 +18,7 @@ import (
 	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/observability"
+	"github.com/bornholm/automata/internal/usage"
 )
 
 // Registry construit et détient un Agent isolé pour chaque agent déclaré
@@ -330,7 +331,10 @@ func BuildLLMClient(ctx context.Context, cfg config.LLMClient) (llm.Client, erro
 		return nil, fmt.Errorf("client llm (provider %q): %w", cfg.Provider, err)
 	}
 
-	return wrapResilience(withReasoning(client, reasoning)), nil
+	// Le décorateur d'usage est le plus externe : il enregistre la réponse
+	// effectivement obtenue, après retry — une trace par appel réussi, pas
+	// une par tentative (voir internal/usage).
+	return usage.WrapClient(wrapResilience(withReasoning(client, reasoning)), cfg.Provider, cfg.Model), nil
 }
 
 // BuildEmbeddingsClient construit un llm.Client GenAI limité aux
@@ -398,6 +402,6 @@ func BuildTranscriptionClient(ctx context.Context, cfg config.LLMClient) (llm.Tr
 
 	// Même résilience que la complétion de chat : retry.Client et
 	// circuitbreaker.Client implémentent llm.Client entier, Transcription
-	// comprise.
-	return wrapResilience(client), nil
+	// comprise. Même comptabilité d'usage que la complétion, aussi.
+	return usage.WrapClient(wrapResilience(client), cfg.Provider, cfg.Model), nil
 }

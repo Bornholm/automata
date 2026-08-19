@@ -24,6 +24,7 @@ import (
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/usage"
 )
 
 // defaultHistoryLimit borne le nombre de messages passés rechargés comme
@@ -154,7 +155,17 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		voiceNote, found := audio.FindAudio(msg)
 		if found {
 			transcriptionStart := time.Now()
-			transcribed, err := audio.ExtractText(ctx, h.audioCfg, h.transcriber, voiceNote)
+			// Comptabilité d'usage : la transcription est attribuée au
+			// principal qui a envoyé la note vocale. Contexte local à
+			// l'appel : le tour d'agent qui suit porte sa propre
+			// attribution (voir internal/agent.withUsageAttribution).
+			transcriptionCtx := usage.ContextWithAttribution(ctx, usage.Attribution{
+				OrgID:          string(identity.OrgID),
+				PrincipalID:    string(identity.PrincipalID),
+				ConversationID: string(identity.ConversationID),
+				Component:      usage.ComponentTranscription,
+			})
+			transcribed, err := audio.ExtractText(transcriptionCtx, h.audioCfg, h.transcriber, voiceNote)
 			h.metrics.ObserveTranscriptionLatency(time.Since(transcriptionStart))
 			if err != nil {
 				return "", nil, fmt.Errorf("conversation: transcription de la note vocale: %w", explainAudioFailure(err))

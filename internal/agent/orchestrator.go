@@ -84,6 +84,8 @@ func NewOrchestratorAgent(client llm.ChatCompletionClient, systemPrompt, agentNa
 // boucle elle-même est factorisée dans runToolLoop (toolloop.go), partagée
 // avec MCPToolAgent (Phase 12) : voir son commentaire de package.
 func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, error) {
+	ctx = withUsageAttribution(ctx, req.Identity, a.agentName)
+
 	collector := newProposalCollector()
 	mediaCollector := newMediaCollector()
 

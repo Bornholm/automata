@@ -106,6 +106,8 @@ func NewMCPToolAgent(client llm.ChatCompletionClient, systemPrompt, agentName st
 // toute façon rien à ce choix ; un spécialiste multi-serveurs futur pourra
 // nuancer ce comportement si un besoin réel apparaît.
 func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error) {
+	ctx = withUsageAttribution(ctx, req.Identity, a.agentName)
+
 	sessionKey := mcp.SessionKey(req.Conversation.ID)
 
 	// Les outils d'écriture peuvent produire des actions à confirmer plutôt

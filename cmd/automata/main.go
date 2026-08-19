@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/registry"
 )
 
@@ -85,6 +86,7 @@ func newRootCommand(logger *slog.Logger) *cobra.Command {
 	root.AddCommand(newHealthcheckCommand())
 	root.AddCommand(newMemoryCommand(logger))
 	root.AddCommand(newAdminCommand())
+	root.AddCommand(newUsageCommand())
 
 	return root
 }
@@ -343,6 +345,92 @@ func newMemoryReindexCommand(logger *slog.Logger) *cobra.Command {
 			}
 
 			fmt.Fprintln(cmd.OutOrStdout(), "réindexation terminée avec succès")
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+// newUsageCommand construit la commande "usage" et sa sous-commande
+// "report" : agrégation des traces comptables d'inférence (internal/usage)
+// pour la refacturation par organisation/utilisateur.
+func newUsageCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "usage",
+		Short: "Comptabilité de l'usage d'inférence LLM",
+	}
+
+	cmd.AddCommand(newUsageReportCommand())
+
+	return cmd
+}
+
+// newUsageReportCommand construit la sous-commande "usage report" : lecture
+// seule, agrégation SQL sur la période demandée. Par défaut, le mois civil
+// courant, agrégé par organisation.
+func newUsageReportCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                "report",
+		Short:              "Agrège les coûts et tokens d'inférence par organisation, utilisateur, agent ou modèle",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fs := flag.NewFlagSet("report", flag.ContinueOnError)
+			fs.SetOutput(cmd.ErrOrStderr())
+
+			configPath := fs.String("config", "", "chemin du fichier de configuration YAML (requis)")
+			fromFlag := fs.String("from", "", "début de période (AAAA-MM-JJ, défaut: premier jour du mois courant)")
+			toFlag := fs.String("to", "", "fin de période, exclue (AAAA-MM-JJ, défaut: demain)")
+			groupByFlag := fs.String("group-by", "org", "dimensions d'agrégation, séparées par des virgules: "+strings.Join(persistence.UsageGroupKeys(), ", "))
+
+			if err := fs.Parse(args); err != nil {
+				return errSilent
+			}
+
+			if *configPath == "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "le drapeau -config est requis")
+				return errSilent
+			}
+
+			cfg, err := config.Load(*configPath)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "configuration invalide:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
+
+			now := time.Now().UTC()
+			from := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+			if *fromFlag != "" {
+				from, err = time.Parse("2006-01-02", *fromFlag)
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "date -from invalide (attendu AAAA-MM-JJ): %v\n", err)
+					return errSilent
+				}
+			}
+
+			to := now.AddDate(0, 0, 1).Truncate(24 * time.Hour)
+			if *toFlag != "" {
+				to, err = time.Parse("2006-01-02", *toFlag)
+				if err != nil {
+					fmt.Fprintf(cmd.ErrOrStderr(), "date -to invalide (attendu AAAA-MM-JJ): %v\n", err)
+					return errSilent
+				}
+			}
+
+			groupBy := strings.Split(*groupByFlag, ",")
+			for i := range groupBy {
+				groupBy[i] = strings.TrimSpace(groupBy[i])
+			}
+
+			if err := registry.UsageReport(cmd.Context(), cfg, from, to, groupBy, cmd.OutOrStdout()); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "rapport d'usage échoué:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
 
 			return nil
 		},

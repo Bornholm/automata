@@ -52,6 +52,8 @@ type Metrics struct {
 	memoriesConsolidated     atomic.Int64
 	deliveryErrors           atomic.Int64
 	toolResultsTruncated     atomic.Int64
+	usageRecords             atomic.Int64
+	usageRecordFailures      atomic.Int64
 
 	transcriptionLatency latencyStat
 	agentLatency         latencyStat
@@ -337,6 +339,25 @@ func (m *Metrics) IncEpisodeRecorded() {
 	m.episodesRecorded.Add(1)
 }
 
+// IncUsageRecord incrémente le compteur de traces d'usage d'inférence
+// enregistrées (internal/usage, refacturation par organisation).
+func (m *Metrics) IncUsageRecord() {
+	if m == nil {
+		return
+	}
+	m.usageRecords.Add(1)
+}
+
+// IncUsageRecordFailure incrémente le compteur d'échecs d'enregistrement de
+// traces d'usage : un compteur qui monte signale des coûts d'inférence
+// perdus pour la comptabilité (l'échec ne fait jamais échouer le tour).
+func (m *Metrics) IncUsageRecordFailure() {
+	if m == nil {
+		return
+	}
+	m.usageRecordFailures.Add(1)
+}
+
 // IncMemoryRecall incrémente le compteur de tours enrichis par le rappel
 // automatique de souvenirs (memory.recall, internal/agent.MemoryTools).
 func (m *Metrics) IncMemoryRecall() {
@@ -448,6 +469,8 @@ func (m *Metrics) Snapshot() map[string]any {
 		"memory_insights":             m.memoryInsights.Load(),
 		"memories_consolidated":       m.memoriesConsolidated.Load(),
 		"delivery_errors":             m.deliveryErrors.Load(),
+		"usage_records":               m.usageRecords.Load(),
+		"usage_record_failures":       m.usageRecordFailures.Load(),
 		"tool_results_truncated":      m.toolResultsTruncated.Load(),
 		"transcription_latency":       m.transcriptionLatency.snapshot(),
 		"agent_latency":               m.agentLatency.snapshot(),

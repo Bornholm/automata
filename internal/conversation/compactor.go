@@ -15,6 +15,7 @@ import (
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/usage"
 )
 
 // defaultMaxSummaryChars borne le résumé persisté quand la configuration ne
@@ -153,6 +154,15 @@ func (c *Compactor) WithEpisodeStore(store memory.EpisodeStore, speakerName func
 // principal du tour courant est enregistré comme auteur — le même contrat
 // que l'outil conversationnel remember (internal/agent, writeScope).
 func (c *Compactor) CompactIfNeeded(ctx context.Context, identity model.ExecutionIdentity, conv model.Conversation) error {
+	// Comptabilité d'usage : la compaction est une tâche de fond facturée à
+	// l'organisation de la conversation, pas au principal dont le message a
+	// déclenché le seuil (PrincipalID vide, voir internal/usage.Record).
+	ctx = usage.ContextWithAttribution(ctx, usage.Attribution{
+		OrgID:          string(conv.OrgID),
+		ConversationID: string(conv.ID),
+		Component:      usage.ComponentCompaction,
+	})
+
 	conversationID := conv.ID
 
 	var (

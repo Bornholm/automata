@@ -29,6 +29,7 @@ import (
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/usage"
 )
 
 // taskName identifie cette tâche dans la table maintenance_runs.
@@ -300,6 +301,13 @@ func (c *Consolidator) Consolidate(ctx context.Context) error {
 // l'applique. Retourne le nombre de souvenirs supprimés (fusionnés ou
 // oubliés).
 func (c *Consolidator) consolidateScope(ctx context.Context, key scopeKey, group []memory.Memory) (int, error) {
+	// Comptabilité d'usage : la consolidation nocturne est facturée à
+	// l'organisation de la portée traitée (PrincipalID vide, tâche de fond).
+	ctx = usage.ContextWithAttribution(ctx, usage.Attribution{
+		OrgID:     key.orgID,
+		Component: usage.ComponentConsolidation,
+	})
+
 	var b strings.Builder
 	for _, mem := range group {
 		fmt.Fprintf(&b, "- id: %s (créé le %s)\n  %s\n", mem.ID, mem.CreatedAt.Format("2006-01-02"), strings.ReplaceAll(mem.Content, "\n", "\n  "))

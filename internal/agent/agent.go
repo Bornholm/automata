@@ -131,6 +131,8 @@ func NewGenAIAgent(client llm.ChatCompletionStreamingClient, systemPrompt string
 // qui borne ctx pour tout appel passant par le pipeline d'ingress — PLAN.md
 // Phase 19, point 8).
 func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
+	ctx = withUsageAttribution(ctx, req.Identity, a.agentName)
+
 	messages := a.buildMessages(req)
 
 	chunks, err := a.client.ChatCompletionStream(ctx, llm.WithMessages(messages...))

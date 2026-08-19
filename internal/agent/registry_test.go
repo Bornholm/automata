@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/bornholm/genai/llm"
 	"github.com/bornholm/genai/llm/circuitbreaker"
 
 	"github.com/bornholm/automata/internal/agent"
@@ -156,11 +157,18 @@ func TestBuildLLMClient_WrapsResilienceMiddlewares(t *testing.T) {
 		t.Fatalf("BuildLLMClient: %v", err)
 	}
 
-	// Le circuit breaker est le middleware le plus externe (il enveloppe le
-	// retry, voir wrapResilience) : sans lui, un 429 ou un 5xx transitoire du
-	// fournisseur ferait échouer le tour entier.
-	if _, ok := client.(*circuitbreaker.Client); !ok {
-		t.Errorf("client construit de type %T, attendu *circuitbreaker.Client (résilience non câblée)", client)
+	// Le décorateur de comptabilité d'usage est le plus externe (une trace
+	// par appel réussi, après retry, voir internal/usage) ; juste en
+	// dessous, le circuit breaker enveloppe le retry (voir wrapResilience) :
+	// sans lui, un 429 ou un 5xx transitoire du fournisseur ferait échouer
+	// le tour entier.
+	unwrapper, ok := client.(interface{ Unwrap() llm.Client })
+	if !ok {
+		t.Fatalf("client construit de type %T, attendu le décorateur d'usage (comptabilité non câblée)", client)
+	}
+	inner := unwrapper.Unwrap()
+	if _, ok := inner.(*circuitbreaker.Client); !ok {
+		t.Errorf("client enveloppé de type %T, attendu *circuitbreaker.Client (résilience non câblée)", inner)
 	}
 }
 
