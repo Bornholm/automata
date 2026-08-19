@@ -100,6 +100,11 @@ type WalletEntry struct {
 	Label     string
 	Amount    int64
 	CreatedAt time.Time
+	// ExternalRef identifie l'origine externe du mouvement (session de
+	// paiement Stripe) : unique en base, elle garantit qu'un paiement
+	// rejoué n'est jamais crédité deux fois. Vide pour les mouvements
+	// internes (usage, allocation, geste commercial).
+	ExternalRef string
 }
 
 // États d'un lien de profil (profile_links.status) : usage unique à

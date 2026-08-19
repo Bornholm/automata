@@ -292,9 +292,20 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 	monthFrom, monthTo := monthBounds(now)
 
 	page := view.CreditsPage{
-		LinkID:    r.PathValue("link"),
-		Header:    s.profileHeader(r, member, minutes),
-		CSRFToken: s.csrfToken(w, r),
+		LinkID:        r.PathValue("link"),
+		Header:        s.profileHeader(r, member, minutes),
+		CSRFToken:     s.csrfToken(w, r),
+		StripeEnabled: s.stripe != nil,
+	}
+
+	switch {
+	case r.URL.Query().Get("paid") == "1":
+		page.Notice = "Merci ! Votre paiement est confirmé. Vos crédits arrivent dans quelques secondes — rafraîchissez si le solde n'a pas encore bougé."
+		page.NoticeTone = "ok"
+	case r.URL.Query().Get("canceled") == "1":
+		page.Notice = "Paiement annulé : rien n'a été débité."
+	case r.URL.Query().Get("payment_error") == "1":
+		page.Notice = "Nous n'avons pas pu ouvrir la page de paiement. Réessayez dans un instant."
 	}
 
 	txOK := s.withTx(w, r, func(tx *sql.Tx) error {
@@ -341,8 +352,9 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Packs configurés, durée estimée au rythme courant.
-		for _, pack := range s.cfg.Web.Credits.Packs {
+		for i, pack := range s.cfg.Web.Credits.Packs {
 			row := view.CreditPack{
+				Index:    i,
 				Credits:  pack.Credits,
 				Duration: view.HumanPackDuration(pack.Credits, rate),
 				PriceEUR: formatEuros(pack.PriceEUR),
@@ -351,11 +363,13 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 			if pack.Featured {
 				row.FeaturedLabel = "Le plus choisi"
 				page.FeaturedPrice = row.PriceEUR
+				page.FeaturedIndex = i
 			}
 			page.Packs = append(page.Packs, row)
 		}
 		if page.FeaturedPrice == "" && len(page.Packs) > 0 {
 			page.FeaturedPrice = page.Packs[0].PriceEUR
+			page.FeaturedIndex = page.Packs[0].Index
 		}
 
 		// Historique des trois derniers mois.

@@ -53,6 +53,8 @@ type Metrics struct {
 	deliveryErrors           atomic.Int64
 	toolResultsTruncated     atomic.Int64
 	profileLinks             atomic.Int64
+	walletDebits             atomic.Int64
+	servicePauses            atomic.Int64
 	usageRecords             atomic.Int64
 	usageRecordFailures      atomic.Int64
 
@@ -340,6 +342,24 @@ func (m *Metrics) IncEpisodeRecorded() {
 	m.episodesRecorded.Add(1)
 }
 
+// AddWalletDebits ajoute n mouvements de débit de crédits au compteur
+// (internal/billing).
+func (m *Metrics) AddWalletDebits(n int) {
+	if m == nil || n <= 0 {
+		return
+	}
+	m.walletDebits.Add(int64(n))
+}
+
+// IncServicePause incrémente le compteur de tours refusés faute de crédits
+// (organisation en pause).
+func (m *Metrics) IncServicePause() {
+	if m == nil {
+		return
+	}
+	m.servicePauses.Add(1)
+}
+
 // IncProfileLink incrémente le compteur de liens de profil ouverts par
 // l'agent à la demande d'un utilisateur (outil open_profile_link).
 func (m *Metrics) IncProfileLink() {
@@ -480,6 +500,8 @@ func (m *Metrics) Snapshot() map[string]any {
 		"memories_consolidated":       m.memoriesConsolidated.Load(),
 		"delivery_errors":             m.deliveryErrors.Load(),
 		"profile_links":               m.profileLinks.Load(),
+		"wallet_debits":               m.walletDebits.Load(),
+		"service_pauses":              m.servicePauses.Load(),
 		"usage_records":               m.usageRecords.Load(),
 		"usage_record_failures":       m.usageRecordFailures.Load(),
 		"tool_results_truncated":      m.toolResultsTruncated.Load(),

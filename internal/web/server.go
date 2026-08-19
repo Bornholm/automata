@@ -43,6 +43,7 @@ type Server struct {
 	signer signer
 	mail   MailSender
 
+	stripe  *stripeClient
 	limiter *loginLimiter
 	reveals *revealStash
 	codes   *codeStore
@@ -79,6 +80,10 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 		wallet:       persistence.NewWalletRepository(),
 		profileLinks: persistence.NewProfileLinkRepository(),
 		usage:        persistence.NewUsageRecordRepository(),
+	}
+
+	if cfg.Web.Stripe.Enabled() {
+		s.stripe = newStripeClient(cfg.Web.Stripe.SecretKey)
 	}
 
 	mux := http.NewServeMux()
@@ -124,6 +129,8 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("GET /p/{link}/credits", s.handleProfileCredits)
 	mux.HandleFunc("POST /p/{link}/email", s.handleProfileEmail)
 	mux.HandleFunc("POST /p/{link}/email/verify", s.handleProfileEmailVerify)
+	mux.HandleFunc("POST /p/{link}/checkout", s.handleCheckout)
+	mux.HandleFunc("POST /stripe/webhook", s.handleStripeWebhook)
 
 	s.httpServer = &http.Server{Addr: cfg.Web.Addr, Handler: mux}
 

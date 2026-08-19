@@ -120,6 +120,24 @@ type Web struct {
 	// Optionnel : sans lui, la vérification est proposée mais désactivée.
 	MailProvider string     `yaml:"mail_provider"`
 	Credits      WebCredits `yaml:"credits"`
+	Stripe       WebStripe  `yaml:"stripe"`
+}
+
+// WebStripe configure le paiement des packs de crédits. Vide : les boutons
+// d'achat restent affichés mais inertes (« prochainement »), le portefeuille
+// ne se recharge alors que par geste commercial ou allocation.
+type WebStripe struct {
+	// SecretKey est la clé secrète du compte (sk_…), jamais exposée aux
+	// pages : elle ne sert qu'aux appels serveur vers l'API Stripe.
+	SecretKey string `yaml:"secret_key"`
+	// WebhookSecret (whsec_…) vérifie la signature des événements reçus :
+	// sans elle, n'importe qui pourrait créditer un portefeuille.
+	WebhookSecret string `yaml:"webhook_secret"`
+}
+
+// Enabled indique si le paiement en ligne est configuré.
+func (s WebStripe) Enabled() bool {
+	return s.SecretKey != "" && s.WebhookSecret != ""
 }
 
 // WebAdmin décrit le compte opérateur de l'interface d'administration.

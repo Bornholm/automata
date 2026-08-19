@@ -66,6 +66,12 @@ type Handler struct {
 	// metrics peut être nil (PLAN.md Phase 20, registre de métriques
 	// désactivé) : toutes ses méthodes sont alors no-op.
 	metrics *observability.Metrics
+	// wallet, profileLinks et pauseNotices ne sont renseignés que si la
+	// facturation est active (voir WithBilling, pause.go) : sans eux,
+	// aucune conversation n'est jamais interrompue faute de crédits.
+	wallet       *persistence.WalletRepository
+	profileLinks ProfileLinkGenerator
+	pauseNotices *pauseNoticeTracker
 	// summaries et compactor gouvernent la compaction de l'historique
 	// (conversation.compaction dans la configuration). compactor nil =
 	// désactivée : les messages au-delà de la fenêtre sortent simplement du
@@ -133,6 +139,12 @@ func (h *Handler) WithAttachments(cfg media.Config) *Handler {
 
 // Handle implémente ingress.Handler.
 func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, conv model.Conversation, msg courier.Message) (string, []media.Media, error) {
+	// Solde épuisé : on répond sans consulter le modèle — poursuivre
+	// creuserait une dette que le client n'a pas acceptée.
+	if reply, paused := h.pausedReply(ctx, identity); paused {
+		return reply, nil, nil
+	}
+
 	text, err := courier.GetMessageMainContent(ctx, msg)
 	if err != nil {
 		// Un message composé uniquement d'une pièce jointe (ex. une note

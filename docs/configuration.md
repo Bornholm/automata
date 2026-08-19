@@ -1060,6 +1060,45 @@ agents:
     profile_link: true
 ```
 
+### Facturation
+
+Dès que le serveur web est activé, la consommation mesurée
+(`usage_records`) est convertie en débits de crédits toutes les dix
+minutes (`internal/billing`) et inscrite au portefeuille de chaque
+organisation, avec un libellé lisible par le client (« Usage —
+conversations », « Usage — génération d'images », « Usage — recherche »,
+« Usage — notes vocales »). Le premier passage ne fait que poser la borne
+temporelle : activer la facturation ne débite jamais rétroactivement. Une
+organisation absente des tables SaaS n'est facturée à personne.
+
+Les organisations offertes sont remises à niveau une fois par mois civil :
+le solde est complété jusqu'à l'allocation, jamais cumulé d'un mois sur
+l'autre.
+
+À solde épuisé, le service se met en pause : la conversation reçoit une
+explication et un lien de recharge, sans appel au modèle, au plus une fois
+par heure et par conversation. Une organisation sans aucun mouvement de
+portefeuille (instance non facturée) n'est jamais mise en pause.
+
+Le paiement en ligne s'active en renseignant les deux secrets Stripe —
+l'un sans l'autre est refusé au chargement (une session de paiement dont
+le résultat ne pourrait pas être crédité ferait payer un client pour
+rien) :
+
+```yaml
+web:
+  stripe:
+    secret_key: ${STRIPE_SECRET_KEY}       # sk_…
+    webhook_secret: ${STRIPE_WEBHOOK_SECRET} # whsec_…
+```
+
+Le point de réception des événements est `POST /stripe/webhook` (à
+exposer publiquement, contrairement au reste de l'interface) : la
+signature est vérifiée avec une tolérance de cinq minutes, et le crédit
+est idempotent — l'identifiant de session est unique en base, un
+événement rejoué ne crédite jamais deux fois. Sans ces secrets, les
+boutons d'achat restent visibles mais inertes.
+
 Sous-commandes associées :
 
 ```

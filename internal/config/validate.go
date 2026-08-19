@@ -196,6 +196,12 @@ func validateWeb(cfg *Config) []error {
 			errs = append(errs, fmt.Errorf("web.credits.packs[%d].price_eur: doit être strictement positif", i))
 		}
 	}
+	// Les deux secrets Stripe vont de pair : une clé sans secret de webhook
+	// crée des sessions de paiement dont aucun résultat ne pourra être
+	// crédité — un client paierait sans rien recevoir.
+	if (cfg.Web.Stripe.SecretKey == "") != (cfg.Web.Stripe.WebhookSecret == "") {
+		errs = append(errs, fmt.Errorf("web.stripe: secret_key et webhook_secret doivent être renseignés ensemble"))
+	}
 	if cfg.Web.Credits.USDPerCredit < 0 {
 		errs = append(errs, fmt.Errorf("web.credits.usd_per_credit: ne peut pas être négatif"))
 	}

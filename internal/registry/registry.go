@@ -20,6 +20,7 @@ import (
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/authorization"
+	"github.com/bornholm/automata/internal/billing"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/consolidation"
 	"github.com/bornholm/automata/internal/conversation"
@@ -209,6 +210,22 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		}
 	}
 
+	// Facturation : conversion de la consommation en débits de crédits et
+	// allocations mensuelles des organisations offertes (internal/billing).
+	// Sans serveur web configuré, aucun portefeuille n'existe : inutile.
+	if cfg.Web.Enabled {
+		debiter := billing.New(db, cfg, logger, metrics)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			if err := debiter.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.ErrorContext(ctx, "registry: facturation arrêtée en erreur", "error", err)
+			}
+		}()
+	}
+
 	// La persistance est ouverte et les pipelines ingress/scheduler viennent
 	// d'être démarrés (goroutines lancées ci-dessus) : le service peut
 	// désormais répondre "prêt" (PLAN.md Phase 20, readiness). Les pipelines
@@ -361,6 +378,13 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 			MaxHistory:    cfg.Attachments.MaxHistory,
 			MaxReply:      cfg.Attachments.MaxReply,
 		})
+
+	// Pause du service à solde épuisé (internal/conversation/pause.go) :
+	// activée avec le serveur web, qui est ce qui donne un portefeuille aux
+	// organisations et un moyen de le recharger.
+	if cfg.Web.Enabled {
+		handler = handler.WithBilling(tenants)
+	}
 
 	if cfg.Conversation.Compaction.Enabled {
 		// Le client référencé est validé par config.Validate ; BuildLLMClient

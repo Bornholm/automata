@@ -20,8 +20,8 @@ func NewWalletRepository() *WalletRepository {
 // laissé à SQLite).
 func (r *WalletRepository) Insert(ctx context.Context, q Querier, e WalletEntry) error {
 	_, err := q.ExecContext(ctx, `INSERT INTO wallet_entries
-		(org_id, kind, label, amount, created_at) VALUES (?, ?, ?, ?, ?)`,
-		e.OrgID, e.Kind, e.Label, e.Amount, formatTenantTime(e.CreatedAt))
+		(org_id, kind, label, amount, created_at, external_ref) VALUES (?, ?, ?, ?, ?, ?)`,
+		e.OrgID, e.Kind, e.Label, e.Amount, formatTenantTime(e.CreatedAt), e.ExternalRef)
 	if err != nil {
 		return fmt.Errorf("insertion d'un mouvement de portefeuille (%s): %w", e.OrgID, err)
 	}
@@ -69,7 +69,7 @@ func (r *WalletRepository) Balances(ctx context.Context, q Querier) (map[string]
 // List retourne les mouvements de l'organisation, les plus récents
 // d'abord, bornés à limit (<= 0 : tous).
 func (r *WalletRepository) List(ctx context.Context, q Querier, orgID string, limit int) ([]WalletEntry, error) {
-	query := `SELECT id, org_id, kind, label, amount, created_at FROM wallet_entries
+	query := `SELECT id, org_id, kind, label, amount, created_at, external_ref FROM wallet_entries
 		WHERE org_id = ? ORDER BY created_at DESC, id DESC`
 	args := []any{orgID}
 	if limit > 0 {
@@ -87,7 +87,7 @@ func (r *WalletRepository) List(ctx context.Context, q Querier, orgID string, li
 	for rows.Next() {
 		var e WalletEntry
 		var createdAt string
-		if err := rows.Scan(&e.ID, &e.OrgID, &e.Kind, &e.Label, &e.Amount, &createdAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.OrgID, &e.Kind, &e.Label, &e.Amount, &createdAt, &e.ExternalRef); err != nil {
 			return nil, fmt.Errorf("lecture d'un mouvement: %w", err)
 		}
 		if e.CreatedAt, err = parseTenantTime(createdAt); err != nil {
