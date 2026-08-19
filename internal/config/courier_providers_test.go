@@ -46,6 +46,26 @@ func TestValidateCourierProviders(t *testing.T) {
 			}),
 			"smtp",
 		},
+		{
+			"rest valide",
+			courierConfig("rest", map[string]any{
+				"address": "127.0.0.1:8095",
+				"users":   []any{map[string]any{"token": "t", "id": "testeur"}},
+			}),
+			"",
+		},
+		// Un compte REST sans jeton exposerait les conversations à qui
+		// trouve le port : la configuration est refusée au chargement.
+		{"rest sans identité", courierConfig("rest", map[string]any{"address": "127.0.0.1:8095"}), "users"},
+		{
+			"rest sans jeton",
+			courierConfig("rest", map[string]any{
+				"address": "127.0.0.1:8095",
+				"users":   []any{map[string]any{"id": "testeur"}},
+			}),
+			"token",
+		},
+		{"rest sans adresse", courierConfig("rest", map[string]any{"users": []any{map[string]any{"token": "t", "id": "u"}}}), "address"},
 		{"type inconnu", courierConfig("pigeon", nil), "non supporté"},
 		{"type absent", courierConfig("", nil), "type: requis"},
 	}

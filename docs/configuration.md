@@ -141,6 +141,44 @@ courier:
         issuer: assistant@example.test
         username: ${MAIL_USERNAME}
         password: ${MAIL_PASSWORD}
+
+    # Une API HTTP JSON au lieu d'une messagerie : les messages entrants
+    # sont postés, les sortants lus en flux d'événements. C'est le compte
+    # des essais de bout en bout — conversation, rattachement par jeton,
+    # confirmation d'achat — sans dépendre d'un téléphone.
+    rest:
+      type: rest
+      address: 127.0.0.1:8095
+      users:
+        - token: ${REST_TOKEN_TESTEUR}
+          id: testeur
+          display_name: Testeur
+      cors_origins: []          # facultatif
+```
+
+Le compte `rest` n'a pas d'appairage : une identité vaut un jeton porteur,
+et sans jeton l'API refuse tout — un port ouvert donnerait sinon accès aux
+conversations. L'adresse doit rester locale ou derrière un proxy
+authentifiant, et les jetons sont des secrets : ils passent par `env`.
+
+```
+POST /channels/{canal}/messages          message entrant (multipart, champ « message »)
+GET  /channels/{canal}/events            réponses d'Automata (SSE)
+GET  /healthz                            sonde de vie
+```
+
+Un canal dont l'identifiant commence par `group-` est traité comme un
+groupe, les autres comme une conversation privée : les deux régimes de
+mémoire et de permissions s'éprouvent donc dans le même compte. Envoyer un
+premier message :
+
+```bash
+curl -H "Authorization: Bearer $REST_TOKEN_TESTEUR" \
+  -F 'message={"content":"bonjour"}' \
+  http://127.0.0.1:8095/channels/testeur/messages
+
+curl -N -H "Authorization: Bearer $REST_TOKEN_TESTEUR" \
+  http://127.0.0.1:8095/channels/testeur/events
 ```
 
 Identifiants de canaux (`channels[].channel_id`), par plateforme : WhatsApp

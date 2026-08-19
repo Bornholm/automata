@@ -9,7 +9,7 @@ import (
 
 // SupportedCourierProviders énumère, pour les messages d'erreur, les types
 // acceptés de courier.providers.<nom>.type.
-const SupportedCourierProviders = `"whatsapp", "signal", "discord", "rocket", "mail"`
+const SupportedCourierProviders = `"whatsapp", "signal", "discord", "rocket", "mail", "rest"`
 
 // Les structs suivantes typent les champs libres (Extra) de chaque type de
 // fournisseur courier. Elles servent deux fois : à la validation au
@@ -152,6 +152,23 @@ func validateCourierProviders(cfg *Config) []error {
 			if interval := c.IMAP.CheckInterval.Duration(); interval < 0 || (interval > 0 && interval < time.Second) {
 				fail("imap.check_interval", "doit valoir au moins 1s")
 			}
+		case "rest":
+			var c RestProviderConfig
+			if err := cp.DecodeExtra(&c); err != nil {
+				fail("", err.Error())
+				continue
+			}
+			if c.Address == "" {
+				fail("address", "requis (adresse d'écoute de l'API)")
+			}
+			if len(c.Users) == 0 {
+				fail("users", "au moins une identité requise : sans jeton, l'API refuse tout")
+			}
+			for i, user := range c.Users {
+				if user.Token == "" || user.ID == "" {
+					fail(fmt.Sprintf("users[%d]", i), "token et id requis")
+				}
+			}
 		case "":
 			errs = append(errs, fmt.Errorf("%s.type: requis (types: %s)", prefix, SupportedCourierProviders))
 		default:
@@ -160,4 +177,36 @@ func validateCourierProviders(cfg *Config) []error {
 	}
 
 	return errs
+}
+
+// RestProviderConfig configure un fournisseur REST : une API HTTP JSON où
+// les messages entrants sont postés et les sortants lus en flux
+// d'événements. Aucune messagerie réelle derrière — c'est le compte des
+// tests de bout en bout, celui qui permet d'éprouver une conversation, un
+// rattachement par jeton ou une confirmation d'achat sans dépendre de
+// WhatsApp ni d'un téléphone.
+type RestProviderConfig struct {
+	// Address est l'adresse d'écoute de l'API (ex. « 127.0.0.1:8095 »).
+	// À garder locale ou derrière un proxy : elle porte des
+	// conversations.
+	Address string `yaml:"address"`
+	// Users associe un jeton porteur à une identité. Sans jeton, l'API
+	// refuse tout : exposer des conversations à qui passe serait un
+	// mauvais marché. Les jetons sont des secrets, donc à passer par
+	// `env`.
+	Users []RestProviderUser `yaml:"users"`
+	// CORSOrigins autorise un client web local. Vide = aucun en-tête
+	// CORS.
+	CORSOrigins []string `yaml:"cors_origins"`
+}
+
+// RestProviderUser est une identité de l'API REST.
+type RestProviderUser struct {
+	// Token est le jeton porteur présenté en « Authorization: Bearer ».
+	Token string `yaml:"token"`
+	// ID est l'identifiant d'expéditeur vu par Automata : c'est lui que
+	// l'on retrouve dans les origines et les rattachements.
+	ID string `yaml:"id"`
+	// DisplayName est le nom affiché ; vide, l'identifiant fait office.
+	DisplayName string `yaml:"display_name"`
 }

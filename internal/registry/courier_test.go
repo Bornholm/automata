@@ -18,6 +18,10 @@ func TestBuildCourierProviders(t *testing.T) {
 		"signal":   {Type: "signal", Extra: map[string]any{"account": "+33612345678", "address": "tcp://127.0.0.1:7583"}},
 		"discord":  {Type: "discord", Extra: map[string]any{"token": "jeton"}},
 		"rocket":   {Type: "rocket", Extra: map[string]any{"server_url": "https://chat.example.test", "username": "bot", "password": "p"}},
+		"rest": {Type: "rest", Extra: map[string]any{
+			"address": "127.0.0.1:0",
+			"users":   []any{map[string]any{"token": "jeton", "id": "testeur", "display_name": "Testeur"}},
+		}},
 		"mail": {Type: "mail", Extra: map[string]any{
 			"imap": map[string]any{"address": "imap.example.test:993", "username": "u", "password": "p", "check_interval": "2m", "folders": []any{"INBOX"}},
 			"smtp": map[string]any{"address": "smtp.example.test:587", "issuer": "bot@example.test", "username": "u", "password": "p"},

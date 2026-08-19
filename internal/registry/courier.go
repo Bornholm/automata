@@ -3,10 +3,12 @@ package registry
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/bornholm/go-courier"
 	"github.com/bornholm/go-courier/provider/discord"
 	"github.com/bornholm/go-courier/provider/mail"
+	"github.com/bornholm/go-courier/provider/rest"
 	"github.com/bornholm/go-courier/provider/rocket"
 	"github.com/bornholm/go-courier/provider/signal"
 	"github.com/bornholm/go-courier/provider/whatsapp"
@@ -118,6 +120,56 @@ func buildCourierProvider(cp config.CourierProvider) (courier.Provider, error) {
 		}
 
 		return mail.NewProvider(opts...), nil
+
+	case "rest":
+		var c config.RestProviderConfig
+		if err := cp.DecodeExtra(&c); err != nil {
+			return nil, err
+		}
+		if c.Address == "" {
+			return nil, fmt.Errorf("champ address requis et non vide")
+		}
+		if len(c.Users) == 0 {
+			return nil, fmt.Errorf("champ users requis : au moins une identité avec son jeton")
+		}
+
+		tokens := make(map[string]courier.User, len(c.Users))
+		for _, user := range c.Users {
+			if user.Token == "" || user.ID == "" {
+				return nil, fmt.Errorf("chaque entrée de users demande token et id")
+			}
+			displayName := user.DisplayName
+			if displayName == "" {
+				displayName = user.ID
+			}
+			tokens[user.Token] = courier.NewUser(courier.UserID(user.ID), displayName)
+		}
+
+		opts := []rest.OptionFunc{
+			rest.WithAddress(c.Address),
+			rest.WithTokens(tokens),
+			// L'identité sous laquelle Automata parle : c'est elle que
+			// la règle de mention des groupes compare aux mentions
+			// reçues.
+			rest.WithSelf(courier.NewUser("automata", "Automata")),
+			// Un canal dont l'identifiant commence par « group- » est
+			// traité comme un groupe : c'est ce qui permet d'éprouver
+			// dans le même compte une conversation privée et une
+			// conversation de groupe, qui ne suivent pas les mêmes
+			// règles de mémoire ni de permissions.
+			rest.WithChannelResolver(func(channelID courier.ChannelID) courier.Channel {
+				kind := courier.ChannelKindDirect
+				if strings.HasPrefix(string(channelID), "group-") {
+					kind = courier.ChannelKindGroup
+				}
+				return courier.NewChannel(channelID, kind, string(channelID))
+			}),
+		}
+		if len(c.CORSOrigins) > 0 {
+			opts = append(opts, rest.WithCORSOrigins(c.CORSOrigins...))
+		}
+
+		return rest.NewProvider(opts...), nil
 
 	default:
 		return nil, fmt.Errorf("type %q non supporté (types: %s)", cp.Type, config.SupportedCourierProviders)

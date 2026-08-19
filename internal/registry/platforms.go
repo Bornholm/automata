@@ -129,7 +129,7 @@ func buildManagedProvider(id, providerType string, raw map[string]any, qrHandler
 
 		return whatsapp.NewProvider(opts...), nil
 
-	case "signal", "rocket", "discord", "mail":
+	case "signal", "rocket", "discord", "mail", "rest":
 		// Ces fournisseurs partagent le décodage de la configuration
 		// statique : on réutilise le constructeur historique, seul le
 		// chemin d'accès à la configuration change.
