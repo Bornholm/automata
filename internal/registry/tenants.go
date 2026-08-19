@@ -25,6 +25,7 @@ type tenantSource struct {
 	baseURL string
 
 	orgs         *persistence.OrganizationRepository
+	orgSettings  *persistence.OrgSettingsRepository
 	members      *persistence.MemberRepository
 	bindings     *persistence.ChannelBindingRepository
 	profileLinks *persistence.ProfileLinkRepository
@@ -37,6 +38,7 @@ func newTenantSource(db *persistence.DB, baseURL string) *tenantSource {
 		db:           db,
 		baseURL:      baseURL,
 		orgs:         persistence.NewOrganizationRepository(),
+		orgSettings:  persistence.NewOrgSettingsRepository(),
 		members:      persistence.NewMemberRepository(),
 		bindings:     persistence.NewChannelBindingRepository(),
 		profileLinks: persistence.NewProfileLinkRepository(),
@@ -176,8 +178,31 @@ func (s *tenantSource) GenerateProfileLink(ctx context.Context, orgID, principal
 	return strings.TrimSuffix(s.baseURL, "/") + "/p/" + urlPath, true, nil
 }
 
+// CustomizationFor implémente agent.OrgCustomizer : la personnalisation
+// est lue à chaque tour, pour qu'un changement dans l'administration
+// s'applique à la conversation suivante sans redémarrage.
+func (s *tenantSource) CustomizationFor(ctx context.Context, orgID string) (agent.OrgCustomization, error) {
+	var settings persistence.OrgSettings
+
+	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
+		var err error
+		settings, _, err = s.orgSettings.Get(ctx, tx, orgID)
+		return err
+	})
+	if err != nil {
+		return agent.OrgCustomization{}, err
+	}
+
+	return agent.OrgCustomization{
+		PromptExtra:    settings.PromptExtra,
+		DisabledAgents: settings.DisabledAgents,
+		MaxToolCalls:   settings.MaxToolCalls,
+	}, nil
+}
+
 var (
 	_ identity.DynamicSource         = &tenantSource{}
+	_ agent.OrgCustomizer            = &tenantSource{}
 	_ authorization.MemberRoleSource = &tenantSource{}
 	_ agent.ProfileLinkGenerator     = &tenantSource{}
 )

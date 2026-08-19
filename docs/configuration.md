@@ -1082,6 +1082,28 @@ requis, arrêtée, déconnectée — et, pour un compte WhatsApp non encore lié
 imprimé dans les journaux du worker). Cela repose sur l'option
 `whatsapp.WithQRHandler` de go-courier.
 
+### Personnalisation par organisation
+
+L'onglet « Personnalisation » d'une organisation règle ce qui distingue un
+forfait d'un autre, sans toucher au fichier de configuration ni redémarrer
+le service :
+
+- une **consigne ajoutée** au prompt de l'assistant — après les règles de
+  l'instance, jamais à leur place : une organisation précise le ton ou le
+  contexte, elle ne s'accorde aucun droit ;
+- les **spécialistes disponibles** : en retirer un le rend invisible de
+  l'assistant pour cette organisation, qui ne pourra plus lui déléguer ;
+- un **plafond d'appels d'outils** par tour, qui ne peut qu'abaisser celui
+  de l'agent.
+
+Ces réglages sont relus à chaque tour de conversation. Une lecture en
+échec donne un tour aux réglages par défaut, jamais un tour raté.
+
+L'écran **Paramètres d'instance** montre en lecture ce qui tourne
+réellement — agents, modèles, serveurs d'outils, services de fond — sans
+jamais afficher une clé d'API. La configuration technique reste dans le
+fichier YAML : la modifier demande de l'éditer puis de redémarrer.
+
 ### Facturation
 
 Dès que le serveur web est activé, la consommation mesurée

@@ -57,8 +57,11 @@ type OrchestratorAgent struct {
 	memoryTools            MemoryTools
 	reminderTools          ReminderTools
 	profileTools           ProfileTools
-	metrics                *observability.Metrics
-	logger                 *slog.Logger
+	// customization, s'il est renseigné, adapte le tour à l'organisation
+	// (prompt additionnel, spécialistes retirés, plafond d'outils).
+	customization OrgCustomizer
+	metrics       *observability.Metrics
+	logger        *slog.Logger
 }
 
 // NewOrchestratorAgent construit un OrchestratorAgent. specialists associe
@@ -90,7 +93,16 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	collector := newProposalCollector()
 	mediaCollector := newMediaCollector()
 
+	// Personnalisation de l'organisation : elle retire des spécialistes,
+	// ajoute une consigne et resserre le plafond d'outils. Elle ne peut
+	// jamais accorder ce que la configuration n'a pas prévu — seulement
+	// restreindre ou préciser.
+	custom := a.orgCustomization(ctx, req.Identity)
+
 	tools := a.buildDelegationTools(req.Identity, req.Attachments, collector, mediaCollector)
+	if len(custom.DisabledAgents) > 0 {
+		tools = filterDelegationTools(tools, custom.DisabledAgents)
+	}
 	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity, collector)...)
 	tools = append(tools, a.reminderTools.buildReminderTools(req.Identity)...)
 	tools = append(tools, a.profileTools.buildProfileTools(req.Identity)...)
@@ -106,11 +118,19 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	// tour en échec.
 	recallNote := a.memoryTools.recallNote(ctx, req.Identity, req.Input)
 
-	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, recallNote, req)
+	systemPrompt := resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID)
+	if custom.PromptExtra != "" {
+		systemPrompt += "\n\n---\n\n" + custom.PromptExtra
+	}
+
+	messages := buildChatMessages(systemPrompt, a.agentName, a.textOnly, recallNote, req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {
 		maxIterations = 1
+	}
+	if custom.MaxToolCalls > 0 && custom.MaxToolCalls < maxIterations {
+		maxIterations = custom.MaxToolCalls
 	}
 
 	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxDelegationsReached, a.logger, a.agentName)
@@ -308,6 +328,33 @@ func (a *OrchestratorAgent) WithMemoryTools(tools MemoryTools) *OrchestratorAgen
 func (a *OrchestratorAgent) WithReminderTools(tools ReminderTools) *OrchestratorAgent {
 	a.reminderTools = tools
 	return a
+}
+
+// WithOrgCustomizer attache la personnalisation par organisation. Sans
+// elle, tous les tours suivent la configuration de l'instance.
+func (a *OrchestratorAgent) WithOrgCustomizer(customizer OrgCustomizer) *OrchestratorAgent {
+	a.customization = customizer
+	return a
+}
+
+// orgCustomization lit la personnalisation applicable au tour. Jamais
+// bloquant : une lecture en échec donne un tour standard, pas un tour
+// raté.
+func (a *OrchestratorAgent) orgCustomization(ctx context.Context, identity model.ExecutionIdentity) OrgCustomization {
+	if a.customization == nil {
+		return OrgCustomization{}
+	}
+
+	custom, err := a.customization.CustomizationFor(ctx, string(identity.OrgID))
+	if err != nil {
+		if a.logger != nil {
+			a.logger.WarnContext(ctx, "agent: personnalisation d'organisation illisible, réglages par défaut",
+				"agent", a.agentName, "org_id", identity.OrgID, "error", err)
+		}
+		return OrgCustomization{}
+	}
+
+	return custom
 }
 
 // WithProfileTools attache tools à a : l'outil open_profile_link est

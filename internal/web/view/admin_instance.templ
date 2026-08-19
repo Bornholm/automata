@@ -1,0 +1,79 @@
+package view
+
+// ADM-07 — Paramètres d'instance : ce qui tourne réellement, sans avoir à
+// ouvrir un terminal. En lecture : la configuration technique (clients
+// LLM, agents, serveurs d'outils) vit encore dans le fichier YAML, et
+// prétendre l'éditer ici donnerait l'illusion d'un pouvoir qu'on n'a pas.
+// Ce qui est modifiable l'est ailleurs, et l'écran le dit.
+
+type InstanceSection struct {
+	Title  string
+	Detail string
+	Rows   []InstanceRow
+	// Href renvoie vers l'écran qui permet d'agir, quand il existe.
+	Href      string
+	HrefLabel string
+}
+
+type InstanceRow struct {
+	Name  string
+	Value string
+	Hint  string
+	// Chip qualifie l'entrée (« actif », « désactivé »).
+	Chip *Chip
+}
+
+type InstancePage struct {
+	Platforms []SidebarPlatform
+	CSRFToken string
+
+	Version  string
+	Sections []InstanceSection
+}
+
+templ AdminInstance(page InstancePage) {
+	@AdminLayout("Paramètres d'instance — Automata Admin", "instance", page.Platforms, page.CSRFToken) {
+		<header class="border-b border-line-2 bg-white px-7 py-5.5">
+			<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Paramètres d'instance</h1>
+			<div class="mt-0.5 text-sm text-text-3">La configuration effective de ce service — { page.Version }</div>
+		</header>
+		<div class="flex flex-col gap-5 p-7">
+			<div class="rounded-[11px] border border-brand-line bg-brand-wash-2 px-5 py-4 text-sm leading-normal text-brand-deep">
+				Ces réglages viennent du fichier de configuration et ne se modifient pas ici : les changer demande d'éditer le fichier puis de redémarrer le service. Ce qui se règle en ligne — comptes de messagerie, tarification, personnalisation des organisations — a son propre écran.
+			</div>
+			for _, section := range page.Sections {
+				<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
+					<div class="flex items-center gap-4 border-b border-line-2 px-5 py-3.5">
+						<div>
+							<div class="text-[15px] font-semibold text-ink">{ section.Title }</div>
+							if section.Detail != "" {
+								<div class="mt-0.5 text-[13px] text-text-4">{ section.Detail }</div>
+							}
+						</div>
+						if section.Href != "" {
+							<a href={ templ.SafeURL(section.Href) } class="ml-auto shrink-0 text-[13px] font-medium text-brand">{ section.HrefLabel }</a>
+						}
+					</div>
+					if len(section.Rows) == 0 {
+						<div class="px-5 py-6 text-center text-sm text-text-4">Rien de déclaré.</div>
+					} else {
+						for _, row := range section.Rows {
+							<div class="flex items-baseline gap-4 border-b border-line-3 px-5 py-3 last:border-b-0">
+								<div class="w-[220px] shrink-0 font-mono text-sm text-text">{ row.Name }</div>
+								<div class="min-w-0 flex-1">
+									<div class="text-sm text-text-2">{ row.Value }</div>
+									if row.Hint != "" {
+										<div class="mt-0.5 text-[13px] leading-snug text-text-4">{ row.Hint }</div>
+									}
+								</div>
+								if row.Chip != nil {
+									@StatusChip(*row.Chip)
+								}
+							</div>
+						}
+					}
+				</div>
+			}
+		</div>
+	}
+}

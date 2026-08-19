@@ -398,7 +398,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		Tasks: true,
 	}
 
-	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, profileTools, mcpManager, metrics, logger)
+	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, profileTools, tenants, mcpManager, metrics, logger)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
 	}
@@ -414,7 +414,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	// impossible, là où une consigne de prompt ne ferait que la rendre moins
 	// probable ; et cela ferme du même coup la boucle d'une tâche qui se
 	// reprogrammerait indéfiniment.
-	taskAgents, err := agent.NewRegistryWithMemory(cfg, memoryTools, agent.ReminderTools{}, profileTools, mcpManager, metrics, logger)
+	taskAgents, err := agent.NewRegistryWithMemory(cfg, memoryTools, agent.ReminderTools{}, profileTools, tenants, mcpManager, metrics, logger)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("construction du registre d'agents des tâches planifiées: %w", err)
 	}

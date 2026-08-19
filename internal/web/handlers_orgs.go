@@ -6,10 +6,12 @@ import (
 	"encoding/csv"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/view"
 	"github.com/bornholm/automata/internal/weblink"
@@ -243,7 +245,7 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	tab := r.URL.Query().Get("tab")
-	if tab != "members" && tab != "channels" {
+	if tab != "members" && tab != "channels" && tab != "customization" {
 		tab = "credits"
 	}
 	now := s.now()
@@ -354,6 +356,27 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 				Email: member.Email,
 			})
 		}
+
+		// Personnalisation : les spécialistes déclarés dans l'instance,
+		// cochés selon ce que l'organisation conserve.
+		settings, _, err := s.orgSettings.Get(r.Context(), tx, orgID)
+		if err != nil {
+			return err
+		}
+		page.PromptExtra = settings.PromptExtra
+		page.MaxToolCalls = settings.MaxToolCalls
+
+		for name, agentCfg := range s.cfg.Agents {
+			if agentCfg.Type == config.AgentTypeOrchestrator {
+				continue
+			}
+			page.Specialists = append(page.Specialists, view.SpecialistToggle{
+				Name:        name,
+				Description: agentCfg.Description,
+				Enabled:     !settings.AgentDisabled(name),
+			})
+		}
+		sort.Slice(page.Specialists, func(i, j int) bool { return page.Specialists[i].Name < page.Specialists[j].Name })
 
 		for _, ch := range s.cfg.Channels {
 			if ch.OrgID != orgID {
@@ -614,4 +637,52 @@ func (s *Server) handleOrgWalletCSV(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writer.Flush()
+}
+
+// handleOrgCustomization enregistre la personnalisation d'une
+// organisation : consigne ajoutée, spécialistes conservés, plafond
+// d'outils.
+func (s *Server) handleOrgCustomization(w http.ResponseWriter, r *http.Request) {
+	orgID := r.PathValue("id")
+
+	// Les cases cochées disent ce qui reste : ce qui est retiré est le
+	// complément, calculé sur les spécialistes réellement déclarés.
+	kept := map[string]struct{}{}
+	for _, name := range r.PostForm["agent"] {
+		kept[name] = struct{}{}
+	}
+
+	var disabled []string
+	for name, agentCfg := range s.cfg.Agents {
+		if agentCfg.Type == config.AgentTypeOrchestrator {
+			continue
+		}
+		if _, ok := kept[name]; !ok {
+			disabled = append(disabled, name)
+		}
+	}
+	sort.Strings(disabled)
+
+	maxToolCalls, _ := strconv.Atoi(r.PostFormValue("max_tool_calls"))
+	if maxToolCalls < 0 {
+		maxToolCalls = 0
+	}
+
+	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+		return s.orgSettings.Upsert(r.Context(), tx, persistence.OrgSettings{
+			OrgID:          orgID,
+			PromptExtra:    strings.TrimSpace(r.PostFormValue("prompt_extra")),
+			DisabledAgents: disabled,
+			MaxToolCalls:   maxToolCalls,
+			UpdatedAt:      s.now(),
+		})
+	})
+	if !ok {
+		return
+	}
+
+	s.logger.InfoContext(r.Context(), "web: personnalisation d'organisation enregistrée",
+		"org_id", orgID, "disabled_agents", len(disabled), "max_tool_calls", maxToolCalls)
+
+	http.Redirect(w, r, "/admin/orgs/"+orgID+"?tab=customization&saved=1", http.StatusFound)
 }

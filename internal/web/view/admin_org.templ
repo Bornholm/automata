@@ -69,6 +69,19 @@ type OrgPage struct {
 	// Onglets Membres / Canaux.
 	Members  []MemberRow
 	Channels []OrgChannelRow
+
+	// Onglet Personnalisation.
+	PromptExtra  string
+	MaxToolCalls int
+	Specialists  []SpecialistToggle
+}
+
+// SpecialistToggle est un spécialiste que l'organisation peut avoir ou
+// non — c'est ce qui distingue un forfait d'un autre.
+type SpecialistToggle struct {
+	Name        string
+	Description string
+	Enabled     bool
 }
 
 // balanceHintClass colore l'indication de solde selon l'état : une
@@ -135,7 +148,7 @@ templ AdminOrg(page OrgPage) {
 				@orgTab(page, "members", "Membres")
 				@orgTab(page, "channels", "Canaux")
 				@orgTab(page, "credits", "Crédits")
-				<span class="flex items-center gap-1.5 px-0.5 pb-3 text-sm font-medium text-text-3" title="Prochain lot">Personnalisation <span class="rounded bg-panel-2 px-1 py-0.5 font-mono text-[9px] font-bold text-text-4">P2</span></span>
+				@orgTab(page, "customization", "Personnalisation")
 			</div>
 		</header>
 		<div class="p-7">
@@ -152,6 +165,8 @@ templ AdminOrg(page OrgPage) {
 					@orgMembersTab(page)
 				case "channels":
 					@orgChannelsTab(page)
+				case "customization":
+					@orgCustomizationTab(page)
 				default:
 					@orgCreditsTab(page)
 			}
@@ -339,4 +354,48 @@ templ grantDialog(page OrgPage) {
 			</div>
 		</form>
 	</dialog>
+}
+
+templ orgCustomizationTab(page OrgPage) {
+	<form method="post" action={ templ.SafeURL("/admin/orgs/" + page.ID + "/customization") } class="flex max-w-[760px] flex-col gap-4.5">
+		<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+		<div class="rounded-[11px] border border-line-2 bg-white p-5.5">
+			<div class="text-[15px] font-semibold text-ink">Consigne propre à cette organisation</div>
+			<div class="mt-1 text-sm leading-normal text-text-3">
+				Ajoutée au prompt de l'assistant, après les règles de l'instance. Elle précise le ton, le contexte ou le vocabulaire — elle ne lève jamais une règle ni n'accorde un droit.
+			</div>
+			<textarea name="prompt_extra" rows="5" placeholder="Cette organisation est un cabinet d'architectes ; utilise leur vocabulaire métier et reste sobre."
+				class="mt-3.5 w-full rounded-lg border border-line px-3.5 py-3 text-sm leading-normal text-text outline-none placeholder:text-text-5 focus:border-brand">{ page.PromptExtra }</textarea>
+		</div>
+		<div class="rounded-[11px] border border-line-2 bg-white p-5.5">
+			<div class="text-[15px] font-semibold text-ink">Spécialistes disponibles</div>
+			<div class="mt-1 text-sm leading-normal text-text-3">Retirer un spécialiste le rend invisible de l'assistant pour cette organisation : il ne pourra plus lui déléguer.</div>
+			if len(page.Specialists) == 0 {
+				<div class="mt-3.5 text-sm text-text-4">Aucun spécialiste déclaré dans cette instance.</div>
+			} else {
+				<div class="mt-3.5 flex flex-col gap-2.5">
+					for _, specialist := range page.Specialists {
+						<label class="flex cursor-pointer items-start gap-3 rounded-[9px] border border-line-2 px-4 py-3">
+							<input type="checkbox" name="agent" value={ specialist.Name } checked?={ specialist.Enabled } class="mt-0.5"/>
+							<div class="min-w-0">
+								<div class="font-mono text-sm text-text">{ specialist.Name }</div>
+								if specialist.Description != "" {
+									<div class="mt-0.5 text-[13px] leading-snug text-text-4">{ specialist.Description }</div>
+								}
+							</div>
+						</label>
+					}
+				</div>
+			}
+		</div>
+		<div class="rounded-[11px] border border-line-2 bg-white p-5.5">
+			<div class="text-[15px] font-semibold text-ink">Plafond d'appels d'outils par tour</div>
+			<div class="mt-1 text-sm leading-normal text-text-3">Resserre ce que l'assistant peut enchaîner avant de répondre. Zéro laisse le réglage de l'instance ; une valeur ne peut que l'abaisser.</div>
+			<input type="number" name="max_tool_calls" min="0" value={ FormatPlainInt(int64(page.MaxToolCalls)) }
+				class="mt-3.5 h-[38px] w-[120px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+		</div>
+		<div class="flex justify-end">
+			<button type="submit" class="h-[38px] rounded-lg bg-brand px-5 text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
+		</div>
+	</form>
 }

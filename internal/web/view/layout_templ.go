@@ -29,7 +29,7 @@ func AdminNav(active string) []NavItem {
 		{Label: "Canaux et plateformes", Href: "/admin/platforms", Active: active == "platforms"},
 		{Label: "Consommation", Href: "/admin/usage", Active: active == "usage"},
 		{Label: "Tarification", Href: "/admin/pricing", Active: active == "pricing"},
-		{Label: "Paramètres d'instance", Planned: true},
+		{Label: "Paramètres d'instance", Href: "/admin/instance", Active: active == "instance"},
 	}
 }
 

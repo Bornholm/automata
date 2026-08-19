@@ -65,6 +65,7 @@ type Server struct {
 	profileLinks *persistence.ProfileLinkRepository
 	usage        *persistence.UsageRecordRepository
 	platforms    *persistence.PlatformRepository
+	orgSettings  *persistence.OrgSettingsRepository
 	pricingRepo  *persistence.PricingRepository
 	modelPrices  *persistence.ModelPriceRepository
 	bindings     *persistence.ChannelBindingRepository
@@ -110,6 +111,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 		profileLinks: persistence.NewProfileLinkRepository(),
 		usage:        persistence.NewUsageRecordRepository(),
 		platforms:    persistence.NewPlatformRepository(),
+		orgSettings:  persistence.NewOrgSettingsRepository(),
 		pricingRepo:  persistence.NewPricingRepository(),
 		modelPrices:  persistence.NewModelPriceRepository(),
 		bindings:     persistence.NewChannelBindingRepository(),
@@ -155,6 +157,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /admin/orgs/{id}/grant", admin(s.handleOrgGrant))
 	mux.HandleFunc("POST /admin/orgs/{id}/offered", admin(s.handleOrgOffered))
 	mux.HandleFunc("POST /admin/orgs/{id}/group-token", admin(s.handleOrgGroupToken))
+	mux.HandleFunc("POST /admin/orgs/{id}/customization", admin(s.handleOrgCustomization))
 	mux.HandleFunc("GET /admin/orgs/{id}/members/new", admin(s.handleMemberNewForm))
 	mux.HandleFunc("POST /admin/orgs/{id}/members", admin(s.handleMemberCreate))
 	mux.HandleFunc("GET /admin/members/{id}", admin(s.handleMember))
@@ -174,6 +177,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /admin/pricing/settings", admin(s.handlePricingSettings))
 	mux.HandleFunc("POST /admin/pricing/models", admin(s.handleModelPriceUpsert))
 	mux.HandleFunc("POST /admin/pricing/models/delete", admin(s.handleModelPriceDelete))
+	mux.HandleFunc("GET /admin/instance", admin(s.handleInstance))
 	mux.HandleFunc("GET /admin/usage", admin(s.handleUsage))
 	mux.HandleFunc("GET /admin/usage.csv", admin(s.handleUsageCSV))
 
