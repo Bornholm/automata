@@ -340,6 +340,21 @@ type LLMClient struct {
 	// Reasoning règle le budget de réflexion des modèles qui en ont un.
 	// Absente, la valeur par défaut du modèle s'applique.
 	Reasoning *LLMReasoning `yaml:"reasoning"`
+	// Vision déclare si le modèle accepte les images en entrée. Absente, la
+	// valeur vaut true (comportement historique). À false, les agents
+	// utilisant ce client n'envoient JAMAIS de pièce jointe au modèle : un
+	// fournisseur texte-seul rejette la requête ENTIÈRE dès qu'un message
+	// en contient une (« no endpoints found that support image input »), et
+	// la panne emporterait tout le tour. Les pièces jointes continuent
+	// d'accompagner les délégations, où un spécialiste multimodal peut les
+	// voir.
+	Vision *bool `yaml:"vision"`
+}
+
+// SupportsVision indique si le client accepte les images en entrée (true
+// par défaut).
+func (c LLMClient) SupportsVision() bool {
+	return c.Vision == nil || *c.Vision
 }
 
 // LLMReasoning règle la réflexion d'un modèle « reasoning ».

@@ -47,6 +47,7 @@ type OrchestratorAgent struct {
 	client                 llm.ChatCompletionClient
 	systemPrompt           string
 	orgPrompts             map[string]string
+	textOnly               bool
 	agentName              string
 	specialists            map[string]delegation.Specialist
 	specialistDescriptions map[string]string
@@ -95,7 +96,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	tools = append(tools, newDescribeCapabilitiesTool(tools, a.specialists, a.specialistDescriptions, req.Identity))
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
-	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, req)
+	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {
@@ -137,6 +138,15 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 // spécialistes délégués.
 func (a *OrchestratorAgent) collectedMedia(loopResult toolLoopResult, mediaCollector *mediaCollector) []media.Media {
 	return append(append([]media.Media(nil), loopResult.Attachments...), mediaCollector.take()...)
+}
+
+// WithVision déclare si le modèle du client accepte les images en entrée.
+// À false, aucune pièce jointe ne part vers le modèle — les délégations,
+// elles, continuent de les transporter. Retourne a pour permettre le
+// chaînage.
+func (a *OrchestratorAgent) WithVision(enabled bool) *OrchestratorAgent {
+	a.textOnly = !enabled
+	return a
 }
 
 // WithOrgSystemPrompts remplace le prompt système par organisation : la clé

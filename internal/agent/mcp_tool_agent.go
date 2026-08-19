@@ -53,6 +53,7 @@ type MCPToolAgent struct {
 	client                 llm.ChatCompletionClient
 	systemPrompt           string
 	orgPrompts             map[string]string
+	textOnly               bool
 	agentName              string
 	cfg                    *config.Config
 	mcpManager             *mcp.Manager
@@ -145,7 +146,7 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
-	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, req)
+	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {
@@ -215,6 +216,15 @@ func (a *MCPToolAgent) ReportCapabilities(ctx context.Context, identity model.Ex
 	sort.Strings(report.Tools)
 
 	return report
+}
+
+// WithVision déclare si le modèle du client accepte les images en entrée.
+// À false, aucune pièce jointe ne part vers le modèle — les délégations,
+// elles, continuent de les transporter. Retourne a pour permettre le
+// chaînage.
+func (a *MCPToolAgent) WithVision(enabled bool) *MCPToolAgent {
+	a.textOnly = !enabled
+	return a
 }
 
 // WithOrgSystemPrompts remplace le prompt système par organisation : la clé

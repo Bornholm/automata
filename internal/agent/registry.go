@@ -112,7 +112,8 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 		// son propre client : aucune contamination croisée possible entre
 		// agents.
 		agents[name] = NewGenAIAgent(client, systemPrompt, name).
-			WithOrgSystemPrompts(orgPrompts[name])
+			WithOrgSystemPrompts(orgPrompts[name]).
+			WithVision(llmClientCfg.SupportsVision())
 		clients[name] = client
 		prompts[name] = systemPrompt
 	}
@@ -165,6 +166,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 
 			agents[name] = specialist.
 				WithOrgSystemPrompts(orgPrompts[name]).
+				WithVision(cfg.LLMClients[agentCfg.Client].SupportsVision()).
 				WithExtraTools(extraTools...).
 				WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes())).
 				WithLogger(logger)
@@ -206,6 +208,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 
 		orchestrator := NewOrchestratorAgent(clients[name], prompts[name], name, specialists, agentCfg.Limits.MaxSequentialToolCalls).
 			WithOrgSystemPrompts(orgPrompts[name]).
+			WithVision(cfg.LLMClients[agentCfg.Client].SupportsVision()).
 			WithSpecialistDescriptions(specialistDescriptions)
 
 		agentMemoryTools := memoryTools

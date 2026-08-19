@@ -102,6 +102,10 @@ type GenAIAgent struct {
 	systemPrompt string
 	orgPrompts   map[string]string
 	agentName    string
+	// textOnly indique que le modèle refuse les images en entrée
+	// (llm_clients.<nom>.vision: false) : buildChatMessages n'envoie alors
+	// aucune pièce jointe et signale leur présence en texte.
+	textOnly bool
 }
 
 // NewGenAIAgent construit un GenAIAgent utilisant client pour les
@@ -182,7 +186,15 @@ func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 // requête (PLAN.md §7.2, §7.3) : le contexte n'est jamais mélangé au prompt
 // statique construit une fois pour toutes à l'enregistrement de l'agent.
 func (a *GenAIAgent) buildMessages(req Request) []llm.Message {
-	return buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, req)
+	return buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, req)
+}
+
+// WithVision déclare si le modèle du client accepte les images en entrée.
+// À false, aucune pièce jointe ne part vers le modèle. Retourne a pour
+// permettre le chaînage.
+func (a *GenAIAgent) WithVision(enabled bool) *GenAIAgent {
+	a.textOnly = !enabled
+	return a
 }
 
 // WithOrgSystemPrompts remplace le prompt système par organisation : la clé
@@ -203,7 +215,12 @@ func (a *GenAIAgent) WithOrgSystemPrompts(prompts map[string]string) *GenAIAgent
 // Les pièces jointes sont portées par les seuls messages "user" : les
 // fournisseurs refusent la requête entière si un message system ou assistant
 // en contient (voir la validation par provider dans genai).
-func buildChatMessages(systemPrompt, agentName string, req Request) []llm.Message {
+// textOnly retire toute pièce jointe des messages : un fournisseur
+// texte-seul rejette la requête entière dès qu'un message en contient une.
+// Celles du tour courant sont signalées en texte pour que le modèle sache
+// qu'elles existent — et qu'il délègue à un spécialiste qui les voit au
+// lieu d'en deviner le contenu.
+func buildChatMessages(systemPrompt, agentName string, textOnly bool, req Request) []llm.Message {
 	messages := make([]llm.Message, 0, len(req.History)+2)
 
 	systemMessage := systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, agentName, time.Now())
@@ -220,6 +237,11 @@ func buildChatMessages(systemPrompt, agentName string, req Request) []llm.Messag
 	for _, m := range req.History {
 		role := genaiRole(m.Role)
 
+		if textOnly {
+			messages = append(messages, llm.NewMessage(role, m.Content))
+			continue
+		}
+
 		attachments, _ := media.ToLLMAll(m.Attachments)
 		if role != llm.RoleUser || len(attachments) == 0 {
 			messages = append(messages, llm.NewMessage(role, m.Content))
@@ -227,6 +249,15 @@ func buildChatMessages(systemPrompt, agentName string, req Request) []llm.Messag
 		}
 
 		messages = append(messages, llm.NewMessageWithAttachments(role, m.Content, attachments...))
+	}
+
+	if textOnly {
+		input := req.Input
+		if len(req.Attachments) > 0 {
+			input += attachmentNotice(req.Attachments)
+		}
+		messages = append(messages, llm.NewMessage(llm.RoleUser, input))
+		return messages
 	}
 
 	attachments, _ := media.ToLLMAll(req.Attachments)
@@ -237,6 +268,21 @@ func buildChatMessages(systemPrompt, agentName string, req Request) []llm.Messag
 	}
 
 	return messages
+}
+
+// attachmentNotice décrit en texte les pièces jointes qu'un modèle
+// texte-seul ne recevra pas : types MIME uniquement, jamais le contenu.
+// En anglais : ce texte part vers le modèle (AGENTS.md).
+func attachmentNotice(attachments []media.Media) string {
+	types := make([]string, 0, len(attachments))
+	for _, m := range attachments {
+		types = append(types, m.MimeType)
+	}
+
+	return fmt.Sprintf(
+		"\n\n[%d attachment(s) received (%s). You cannot view them yourself: delegate to a specialist that can see images, passing along the user's question. Never guess their content.]",
+		len(attachments), strings.Join(types, ", "),
+	)
 }
 
 // genaiRole traduit un rôle applicatif ("user"/"assistant") vers le type

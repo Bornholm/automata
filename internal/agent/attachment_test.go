@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/bornholm/genai/llm"
@@ -10,6 +11,7 @@ import (
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/delegation"
 	"github.com/bornholm/automata/internal/media"
+	"github.com/bornholm/automata/internal/model"
 )
 
 func testImage(data string) media.Media {
@@ -193,5 +195,67 @@ func TestOrchestratorAgent_SpecialistMediaReturnedToUser(t *testing.T) {
 	}
 	if string(result.Attachments[0].Data) != "graphique" {
 		t.Errorf("média altéré: %q", result.Attachments[0].Data)
+	}
+}
+
+// Un modèle texte-seul (llm_clients.<nom>.vision: false) ne reçoit JAMAIS de
+// pièce jointe — un fournisseur texte-seul rejette la requête entière dès
+// qu'un message en contient — mais il est prévenu en texte de leur
+// existence, et la délégation continue de les transporter vers un
+// spécialiste qui les voit.
+func TestOrchestratorAgent_TextOnlyModelNeverReceivesAttachments(t *testing.T) {
+	var received []media.Media
+
+	vision := &fakeSpecialist{
+		executeFunc: func(ctx context.Context, req delegation.Request) (delegation.Result, error) {
+			received = req.Attachments
+			return delegation.Result{Summary: "a poster for a concert on Friday"}, nil
+		},
+	}
+
+	var modelAttachments int
+	var inputSeen string
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, m := range opts.Messages {
+				modelAttachments += len(m.Attachments())
+				if m.Role() == llm.RoleUser {
+					inputSeen = m.Content()
+				}
+			}
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("call-1", "delegate_to_vision", `{"goal":"describe the attached image"}`)), nil
+			}
+			return scriptedFinalResponse("C'est une affiche de concert vendredi."), nil
+		},
+	}
+
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"vision": vision}, 5).
+		WithVision(false)
+
+	history := []agent.Message{
+		{Role: "user", Content: "Regarde", Attachments: []media.Media{testImage("image du tour 1")}},
+		{Role: "assistant", Content: "Vu !"},
+	}
+
+	_, err := a.Execute(context.Background(), agent.Request{
+		Identity:    model.ExecutionIdentity{PrincipalID: "alice", OrgID: "home"},
+		History:     history,
+		Input:       "Et celle-ci ?",
+		Attachments: []media.Media{testImage("octets png")},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if modelAttachments != 0 {
+		t.Errorf("le modèle a reçu %d pièce(s) jointe(s), attendu 0 (historique compris)", modelAttachments)
+	}
+	if !strings.Contains(inputSeen, "1 attachment(s) received (image/png)") {
+		t.Errorf("le message user ne signale pas la pièce jointe : %q", inputSeen)
+	}
+	if len(received) != 1 || string(received[0].Data) != "octets png" {
+		t.Errorf("le spécialiste a reçu %v, attendu la pièce jointe du tour", received)
 	}
 }

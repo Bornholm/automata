@@ -349,6 +349,21 @@ Rien n'oblige tous les agents à partager un client. Donner un modèle rapide et
 bon marché à un spécialiste qui ne fait que reformuler, et un modèle plus
 capable à l'orchestrateur, est un réglage courant.
 
+### vision
+
+```yaml
+llm_clients:
+  main:
+    vision: false
+```
+
+Déclare si le modèle accepte les images en entrée (true par défaut). À
+`false`, les agents utilisant ce client n'envoient jamais de pièce jointe au
+modèle — un fournisseur texte-seul rejette la requête entière dès qu'un
+message en contient une — et le message utilisateur est annoté en texte pour
+que l'agent délègue à un spécialiste multimodal. Les pièces jointes
+accompagnent toujours les délégations, quel que soit ce réglage.
+
 ## image_clients
 
 ```yaml
