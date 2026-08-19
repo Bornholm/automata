@@ -47,6 +47,7 @@ type Metrics struct {
 	conversationsCompacted   atomic.Int64
 	memoriesExtracted        atomic.Int64
 	episodesRecorded         atomic.Int64
+	memoryRecalls            atomic.Int64
 	memoriesConsolidated     atomic.Int64
 	deliveryErrors           atomic.Int64
 	toolResultsTruncated     atomic.Int64
@@ -335,6 +336,15 @@ func (m *Metrics) IncEpisodeRecorded() {
 	m.episodesRecorded.Add(1)
 }
 
+// IncMemoryRecall incrémente le compteur de tours enrichis par le rappel
+// automatique de souvenirs (memory.recall, internal/agent.MemoryTools).
+func (m *Metrics) IncMemoryRecall() {
+	if m == nil {
+		return
+	}
+	m.memoryRecalls.Add(1)
+}
+
 // AddMemoriesConsolidated incrémente de n le compteur de souvenirs
 // supprimés (fusionnés ou oubliés) par la réorganisation périodique de la
 // mémoire (internal/consolidation).
@@ -423,6 +433,7 @@ func (m *Metrics) Snapshot() map[string]any {
 		"conversations_compacted":     m.conversationsCompacted.Load(),
 		"memories_extracted":          m.memoriesExtracted.Load(),
 		"episodes_recorded":           m.episodesRecorded.Load(),
+		"memory_recalls":              m.memoryRecalls.Load(),
 		"memories_consolidated":       m.memoriesConsolidated.Load(),
 		"delivery_errors":             m.deliveryErrors.Load(),
 		"tool_results_truncated":      m.toolResultsTruncated.Load(),

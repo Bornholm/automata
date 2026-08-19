@@ -466,6 +466,10 @@ type AgentMemory struct {
 	// fragments verbatim conservés par la mémoire épisodique
 	// (conversation.compaction.record_episodes).
 	History bool `yaml:"history"`
+	// Recall active le rappel automatique : à chaque tour, les souvenirs
+	// les plus pertinents pour le message entrant sont injectés dans le
+	// contexte, sans attendre un appel explicite à search_memory.
+	Recall bool `yaml:"recall"`
 }
 
 // AgentLimits décrit les limites d'exécution d'un agent.

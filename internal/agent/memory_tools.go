@@ -32,6 +32,15 @@ type MemoryTools struct {
 	Episodes memory.EpisodeStore
 	// History expose l'outil search_conversation_history.
 	History bool
+	// Recall active le rappel automatique : à chaque tour, une recherche
+	// mémoire sur le message entrant injecte les souvenirs les plus
+	// pertinents dans le message système, sans attendre que le modèle pense
+	// à appeler search_memory. L'outil reste disponible pour une recherche
+	// dirigée.
+	Recall bool
+	// RecallMax borne le nombre de souvenirs injectés par tour. Une valeur
+	// <= 0 retombe sur 3.
+	RecallMax int
 	// MaxResults borne le nombre de mémoires retournées par une recherche
 	// (search_memory ou la liste de candidats de forget_memory). Une valeur
 	// <= 0 retombe sur 5.
@@ -272,6 +281,70 @@ func (t MemoryTools) newSearchMemoryTool(identity model.ExecutionIdentity) llm.T
 			return llm.NewToolResult(formatMemoryList(results)), nil
 		},
 	)
+}
+
+// recallQueryLimit borne la taille du texte de requête du rappel
+// automatique : un message très long dilue la recherche plus qu'il ne la
+// sert.
+const recallQueryLimit = 500
+
+// recallExcerptLimit borne chaque souvenir injecté : le rappel se paie à
+// chaque tour, banalités comprises, il doit rester léger.
+const recallExcerptLimit = 300
+
+// recallNote construit la section de rappel automatique du message système :
+// les souvenirs les plus pertinents pour input, dans les portées lisibles
+// par identity. Retourne "" si le rappel est désactivé, sans requête
+// exploitable, ou en échec — le rappel n'est JAMAIS bloquant, et une portée
+// non autorisée est ignorée comme pour search_memory.
+func (t MemoryTools) recallNote(ctx context.Context, identity model.ExecutionIdentity, input string) string {
+	if !t.Recall || !t.enabled() {
+		return ""
+	}
+
+	query := strings.TrimSpace(input)
+	if query == "" {
+		// Exécution planifiée ou tour sans texte : rien à chercher.
+		return ""
+	}
+	if runes := []rune(query); len(runes) > recallQueryLimit {
+		query = string(runes[:recallQueryLimit])
+	}
+
+	results, err := t.searchAuthorizedScopes(ctx, identity, readScopes(identity), "read", query)
+	if err != nil {
+		return ""
+	}
+
+	limit := t.RecallMax
+	if limit <= 0 {
+		limit = 3
+	}
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	if len(results) == 0 {
+		return ""
+	}
+
+	t.Metrics.IncMemoryRecall()
+
+	var b strings.Builder
+	b.WriteString("## Possibly relevant memories\n\n")
+	b.WriteString("Retrieved automatically from your persistent memory based on the incoming message. They may be irrelevant: judge for yourself, and use search_memory for anything deeper.\n\n")
+	for _, m := range results {
+		excerpt := m.Content
+		if runes := []rune(excerpt); len(runes) > recallExcerptLimit {
+			excerpt = string(runes[:recallExcerptLimit]) + "…"
+		}
+		if m.CreatedAt.IsZero() {
+			fmt.Fprintf(&b, "- %s\n", excerpt)
+		} else {
+			fmt.Fprintf(&b, "- (recorded %s) %s\n", m.CreatedAt.Format("2006-01-02"), excerpt)
+		}
+	}
+
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // newSearchHistoryTool construit l'outil "search_conversation_history".

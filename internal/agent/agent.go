@@ -186,7 +186,7 @@ func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 // requête (PLAN.md §7.2, §7.3) : le contexte n'est jamais mélangé au prompt
 // statique construit une fois pour toutes à l'enregistrement de l'agent.
 func (a *GenAIAgent) buildMessages(req Request) []llm.Message {
-	return buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, req)
+	return buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, "", req)
 }
 
 // WithVision déclare si le modèle du client accepte les images en entrée.
@@ -220,7 +220,7 @@ func (a *GenAIAgent) WithOrgSystemPrompts(prompts map[string]string) *GenAIAgent
 // Celles du tour courant sont signalées en texte pour que le modèle sache
 // qu'elles existent — et qu'il délègue à un spécialiste qui les voit au
 // lieu d'en deviner le contenu.
-func buildChatMessages(systemPrompt, agentName string, textOnly bool, req Request) []llm.Message {
+func buildChatMessages(systemPrompt, agentName string, textOnly bool, recallNote string, req Request) []llm.Message {
 	messages := make([]llm.Message, 0, len(req.History)+2)
 
 	systemMessage := systemPrompt + "\n\n---\n\n" + BuildContextBlock(req.Identity, req.Conversation.DisplayName, agentName, time.Now())
@@ -230,6 +230,14 @@ func buildChatMessages(systemPrompt, agentName string, textOnly bool, req Reques
 			"Les messages ci-dessous ne remontent pas au début de la conversation : " +
 			"ce résumé, généré automatiquement, condense les échanges plus anciens.\n\n" +
 			req.Summary
+	}
+
+	// Rappel automatique (memory.recall) : souvenirs jugés pertinents pour
+	// le message entrant, récupérés par l'orchestrateur AVANT l'appel —
+	// jamais construit ici, buildChatMessages ne décide d'aucun accès
+	// mémoire.
+	if recallNote != "" {
+		systemMessage += "\n\n---\n\n" + recallNote
 	}
 
 	messages = append(messages, llm.NewMessage(llm.RoleSystem, systemMessage))

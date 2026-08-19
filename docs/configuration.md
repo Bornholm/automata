@@ -396,7 +396,7 @@ Détaillé dans [agents.md](agents.md). Résumé des champs :
 | `client` | Entrée de `llm_clients` |
 | `system_prompt.file` ou `.inline` | Personnalité et mission. Exactement une des deux |
 | `delegates` | Noms des spécialistes joignables. Orchestrateur seulement |
-| `memory` | Drapeaux `search`, `remember`, `forget`, `history` |
+| `memory` | Drapeaux `search`, `remember`, `forget`, `history`, `recall` |
 | `reminders` | Expose les outils de rappels ponctuels. Orchestrateur seulement |
 | `scheduled_tasks` | Expose les outils de tâches planifiées (l'agent travaille à l'échéance). Orchestrateur seulement |
 | `mcp_servers` | Serveurs MCP autorisés. Spécialiste seulement |
@@ -830,6 +830,15 @@ le résumé et les faits extraits n'ont pas retenu le détail d'une discussion
 passée, l'agent peut retrouver ce qui a réellement été dit. Aucun appel LLM
 supplémentaire : le fragment est enregistré tel quel. Le compteur
 `episodes_recorded` de `/metrics` le mesure.
+
+Le drapeau `memory.recall` d'un agent active le rappel automatique : à
+chaque tour, une recherche mémoire sur le message entrant injecte jusqu'à
+trois souvenirs pertinents (datés) dans le contexte, sans attendre que le
+modèle pense à appeler `search_memory` — c'est ce qui fait qu'un assistant
+« se souvient tout seul ». Le coût est une recherche par tour (plus un
+appel HyDE si `memory.retrieval.profile` vaut `balanced`) ; jamais
+bloquant, portées lisibles uniquement. Le compteur `memory_recalls` de
+`/metrics` le mesure.
 
 ## identities
 

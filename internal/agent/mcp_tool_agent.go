@@ -146,7 +146,7 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
-	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, req)
+	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, "", req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {

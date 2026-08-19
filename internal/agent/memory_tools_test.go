@@ -631,3 +631,86 @@ func TestSearchConversationHistory_UnauthorizedGetsNothing(t *testing.T) {
 		t.Errorf("réponse inattendue: %q", text)
 	}
 }
+
+// executeWithSystemCapture exécute un OrchestratorAgent équipé de tools et
+// retourne le message système reçu par le modèle.
+func executeWithSystemCapture(t *testing.T, tools agent.MemoryTools, identity model.ExecutionIdentity, input string) string {
+	t.Helper()
+
+	var systemSeen string
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, m := range opts.Messages {
+				if m.Role() == llm.RoleSystem {
+					systemSeen = m.Content()
+				}
+			}
+			return scriptedFinalResponse("ok"), nil
+		},
+	}
+
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{}, 5).WithMemoryTools(tools)
+
+	if _, err := a.Execute(context.Background(), agent.Request{Identity: identity, Input: input}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	return systemSeen
+}
+
+// Le rappel automatique injecte les souvenirs pertinents dans le message
+// système, datés, sans attendre un appel à search_memory — et uniquement
+// depuis les portées lisibles par l'identité courante.
+func TestOrchestratorAgent_RecallInjectsRelevantMemories(t *testing.T) {
+	store := newFakeMemoryStore()
+	store.seedAt("m-1", "Alice préfère le café le matin", "home", model.ScopePersonal, "alice",
+		time.Date(2026, 5, 2, 8, 0, 0, 0, time.UTC))
+	store.seed("m-group", "le café du groupe est réservé", "home", model.ScopeGroup, "main-group")
+
+	tools := agent.MemoryTools{
+		Store:      store,
+		Authorizer: authorization.NewAuthorizer(memoryTestConfig()),
+		Recall:     true,
+	}
+
+	system := executeWithSystemCapture(t, tools, privateIdentity("alice"), "café")
+
+	if !strings.Contains(system, "Possibly relevant memories") {
+		t.Fatalf("section de rappel absente du message système: %q", system)
+	}
+	if !strings.Contains(system, "Alice préfère le café le matin") {
+		t.Errorf("souvenir pertinent absent: %q", system)
+	}
+	if !strings.Contains(system, "recorded 2026-05-02") {
+		t.Errorf("date du souvenir absente: %q", system)
+	}
+	if strings.Contains(system, "le café du groupe est réservé") {
+		t.Errorf("fuite d'un souvenir de groupe dans une conversation privée: %q", system)
+	}
+}
+
+// Sans le drapeau recall, aucun souvenir n'est injecté même si la mémoire
+// en contient de pertinents ; et un tour sans texte (exécution planifiée)
+// ne déclenche aucun rappel.
+func TestOrchestratorAgent_RecallDisabledOrEmptyInputInjectsNothing(t *testing.T) {
+	store := newFakeMemoryStore()
+	store.seed("m-1", "souvenir pertinent café", "home", model.ScopePersonal, "alice")
+
+	disabled := agent.MemoryTools{
+		Store:      store,
+		Authorizer: authorization.NewAuthorizer(memoryTestConfig()),
+		Recall:     false,
+	}
+	if system := executeWithSystemCapture(t, disabled, privateIdentity("alice"), "café"); strings.Contains(system, "Possibly relevant memories") {
+		t.Errorf("rappel injecté alors que le drapeau est désactivé: %q", system)
+	}
+
+	enabled := agent.MemoryTools{
+		Store:      store,
+		Authorizer: authorization.NewAuthorizer(memoryTestConfig()),
+		Recall:     true,
+	}
+	if system := executeWithSystemCapture(t, enabled, privateIdentity("alice"), "   "); strings.Contains(system, "Possibly relevant memories") {
+		t.Errorf("rappel injecté sans texte de requête: %q", system)
+	}
+}

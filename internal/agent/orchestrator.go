@@ -96,7 +96,13 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	tools = append(tools, newDescribeCapabilitiesTool(tools, a.specialists, a.specialistDescriptions, req.Identity))
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
-	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, req)
+	// Rappel automatique de souvenirs (memory.recall) : recherche mémoire
+	// sur le message entrant, injectée dans le message système. Jamais
+	// bloquant : une mémoire indisponible donne un tour sans rappel, pas un
+	// tour en échec.
+	recallNote := a.memoryTools.recallNote(ctx, req.Identity, req.Input)
+
+	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, recallNote, req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {
