@@ -147,6 +147,136 @@ type toolLoopResult struct {
 // ErrMaxDelegationsReached, ErrMaxToolCallsReached) pour que
 // errors.Is continue de distinguer les deux origines côté appelant.
 //
+// forceAnswerInstruction est injecté dans l'historique lorsque la boucle
+// d'outils se clôt sans réponse finale (plafond d'appels atteint, ou modèle
+// muet). Plutôt que d'interdire les outils au niveau du protocole
+// (ToolChoiceNone) — ce que certains modèles traduisent en balisage d'appel
+// d'outil au format texte qui fuite dans la réponse — on demande d'abord
+// explicitement au modèle de conclure avec ce qu'il a. Mécanisme et
+// formulation repris d'edecan (internal/infra/llm/agent.go) : la
+// formulation est délibérément restrictive, car « réponds avec ce que tu
+// as » est, sur une demande précise, une incitation directe à combler le
+// manque en fabriquant une réponse plausible — d'autant plus que le plafond
+// est atteint précisément quand les outils n'ont pas trouvé. L'aveu d'échec
+// est donc présenté comme la conclusion attendue, pas comme un repli.
+const forceAnswerInstruction = `You have reached the limit of available tool calls. Do not call any further tool. Conclude now from the tool results and information already available in this conversation. State no fact that does not appear in what you have: do not fill gaps, do not reconstruct, and do not infer what the tools did not return. If what you were asked for is not there, answer that you did not find it and state what you searched for — that is a valid answer, and preferable to a plausible but unverifiable one. An unsuccessful search does not prove that what is sought does not exist: never conclude that something does not exist. Write your reply now, addressed directly to the user: this is your final turn, and what you write is shown to them as-is. Never return an empty reply — even "I did not find X, here is what I found instead" is a useful answer.`
+
+// Étiquettes des tentatives de conclusion, journalisées pour distinguer en
+// production quel repli a fini par produire une réponse.
+const (
+	attemptTextualInstruction = "consigne textuelle"
+	attemptToolsForbidden     = "outils interdits"
+	attemptReasoningDisabled  = "raisonnement désactivé"
+)
+
+// conclusionAttempt associe une variante d'options de complétion à son
+// étiquette de journal.
+type conclusionAttempt struct {
+	label string
+	opts  []llm.ChatCompletionOptionFunc
+}
+
+// conclusionAttempts construit les variantes de la complétion de conclusion,
+// dans l'ordre du cas nominal (repris d'edecan) :
+//
+//  1. consigne textuelle seule : le cas le plus fréquent — interdire les
+//     outils au niveau du protocole dès ce stade ferait fuiter du balisage
+//     d'appel d'outil dans le texte chez certains modèles ;
+//  2. outils interdits : le modèle a ignoré la consigne et redemandé un
+//     outil — il n'est pas muet, il n'a pas essayé de répondre ;
+//  3. raisonnement désactivé : le modèle a rédigé sa réponse dans son canal
+//     de raisonnement et laissé le contenu vide. Lui retirer ce canal est
+//     alors le seul moyen d'obtenir du texte.
+//
+// Chaque variante coûte une complétion : orderConclusionFallbacks replace en
+// tête des variantes restantes celle que le symptôme désigne.
+func conclusionAttempts(messages []llm.Message, tools []llm.Tool) []conclusionAttempt {
+	base := []llm.ChatCompletionOptionFunc{
+		llm.WithMessages(messages...),
+		llm.WithTools(tools...),
+	}
+	with := func(extra ...llm.ChatCompletionOptionFunc) []llm.ChatCompletionOptionFunc {
+		opts := make([]llm.ChatCompletionOptionFunc, 0, len(base)+len(extra))
+		opts = append(opts, base...)
+		return append(opts, extra...)
+	}
+
+	disabled := false
+	return []conclusionAttempt{
+		{attemptTextualInstruction, with(llm.WithToolChoice(llm.ToolChoiceAuto))},
+		{attemptToolsForbidden, with(llm.WithToolChoice(llm.ToolChoiceNone))},
+		// WithReasoning par appel garde le dernier mot sur le réglage du
+		// client (voir reasoningClient.ChatCompletion).
+		{attemptReasoningDisabled, with(llm.WithToolChoice(llm.ToolChoiceNone), llm.WithReasoning(&llm.ReasoningOptions{Enabled: &disabled}))},
+	}
+}
+
+// orderConclusionFallbacks remonte en tête des variantes restantes celle que
+// le symptôme désigne : un appel d'outil trahit un refus de conclure, une
+// réponse vide sans appel d'outil trahit un canal de raisonnement qui a
+// absorbé la réponse. Les autres variantes restent tentées ensuite.
+func orderConclusionFallbacks(rest []conclusionAttempt, lastHadToolCalls bool) {
+	want := attemptReasoningDisabled
+	if lastHadToolCalls {
+		want = attemptToolsForbidden
+	}
+	for i := range rest {
+		if rest[i].label == want {
+			rest[0], rest[i] = rest[i], rest[0]
+			return
+		}
+	}
+}
+
+// concludeToolLoop tente d'obtenir une réponse finale après la clôture de la
+// boucle sans réponse : la matière déjà rapportée par les outils est le coût
+// déjà payé du tour, la jeter serait le pire résultat possible. Une consigne
+// de conclusion est injectée dans l'historique, puis chaque variante de
+// complétion est tentée jusqu'à obtenir un texte non vide. fallbackErr est
+// retournée telle quelle si aucune variante n'aboutit, préservant le contrat
+// historique des appelants (ErrMaxToolCallsReached, ErrMaxDelegationsReached,
+// ErrEmptyReply).
+func concludeToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages []llm.Message, tools []llm.Tool, closeReason string, fallbackErr error, iterations, totalCalls int, toolResults []string, attachments []media.Media, logger *slog.Logger, agentName string, lastHadToolCalls bool) (toolLoopResult, error) {
+	if logger != nil {
+		logger.WarnContext(ctx, "agent: boucle d'outils close sans réponse, consigne de conclusion injectée",
+			"agent", agentName, "reason", closeReason, "iterations", iterations, "tool_calls", totalCalls)
+	}
+
+	messages = append(messages, llm.NewMessage(llm.RoleUser, forceAnswerInstruction))
+
+	attempts := conclusionAttempts(messages, tools)
+	orderConclusionFallbacks(attempts[1:], lastHadToolCalls)
+
+	for len(attempts) > 0 {
+		attempt := attempts[0]
+		attempts = attempts[1:]
+
+		resp, err := client.ChatCompletion(ctx, attempt.opts...)
+		if err != nil {
+			return toolLoopResult{}, fmt.Errorf("agent: conclusion après clôture de la boucle (%s, %s): %w", closeReason, attempt.label, err)
+		}
+
+		lastHadToolCalls = len(resp.ToolCalls()) > 0
+		if !lastHadToolCalls {
+			raw := ""
+			if msg := resp.Message(); msg != nil {
+				raw = msg.Content()
+			}
+			if text := cleanReply(raw); text != "" {
+				if logger != nil {
+					logger.InfoContext(ctx, "agent: tour conclu après clôture de la boucle",
+						"agent", agentName, "attempt", attempt.label, "reason", closeReason, "reply_bytes", len(text))
+				}
+				return toolLoopResult{Text: text, ToolResults: toolResults, Attachments: attachments}, nil
+			}
+		}
+
+		orderConclusionFallbacks(attempts, lastHadToolCalls)
+	}
+
+	return toolLoopResult{}, fallbackErr
+}
+
 // maxContextBytes borne le cumul des résultats d'outils réinjectés dans la
 // conversation au fil du tour (PLAN.md §9.4, "budget total des résultats",
 // agents.<nom>.limits.max_tool_context_bytes) ; <= 0 le laisse illimité. Ce
@@ -211,7 +341,8 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 						"raw_bytes", len(raw), "cleaned_bytes", len(text))
 				}
 
-				return toolLoopResult{}, ErrEmptyReply
+				return concludeToolLoop(ctx, client, messages, tools, "réponse vide du modèle", ErrEmptyReply,
+					iteration+1, totalCalls, toolResults, attachments, logger, agentName, false)
 			}
 
 			if logger != nil {
@@ -272,7 +403,8 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 		}
 	}
 
-	return toolLoopResult{}, maxReachedErr
+	return concludeToolLoop(ctx, client, messages, tools, "plafond d'appels d'outils atteint", maxReachedErr,
+		maxIterations, totalCalls, toolResults, attachments, logger, agentName, true)
 }
 
 // applyContextBudget réduit content pour tenir dans ce qu'il reste de

@@ -573,8 +573,12 @@ func TestOrchestratorAgent_MaxDelegationsReached(t *testing.T) {
 		t.Fatalf("erreur ErrMaxDelegationsReached attendue, obtenu: %v", err)
 	}
 
-	if client.callCount() != maxSequentialToolCalls {
-		t.Fatalf("nombre d'appels de complétion attendu %d, obtenu %d", maxSequentialToolCalls, client.callCount())
+	// 3 tours de boucle + 3 tentatives de conclusion (le modèle simulé
+	// redemande un outil à chacune) : l'erreur ne tombe qu'après épuisement
+	// des replis, jamais avant d'avoir tenté de sauver le tour.
+	const conclusionAttempts = 3
+	if client.callCount() != maxSequentialToolCalls+conclusionAttempts {
+		t.Fatalf("nombre d'appels de complétion attendu %d, obtenu %d", maxSequentialToolCalls+conclusionAttempts, client.callCount())
 	}
 }
 
@@ -773,5 +777,114 @@ func TestOrchestrator_DescribeCapabilitiesReportsLiveStatus(t *testing.T) {
 
 	if strings.Contains(toolResultSeen, "- describe_capabilities") {
 		t.Error("le rapport ne doit pas décrire l'outil d'introspection lui-même")
+	}
+}
+
+// Quand le plafond tombe, la matière déjà récoltée ne doit pas être jetée :
+// une consigne de conclusion est injectée et le modèle répond avec ce qu'il
+// a. Le tour réussit — l'erreur de plafond est le dernier recours, pas la
+// première réponse.
+func TestOrchestratorAgent_CapForcesConclusionInsteadOfFailing(t *testing.T) {
+	agenda := &fakeSpecialist{
+		executeFunc: func(ctx context.Context, req delegation.Request) (delegation.Result, error) {
+			return delegation.Result{Summary: "réunion à 10h"}, nil
+		},
+	}
+
+	const maxSequentialToolCalls = 2
+
+	var conclusionMessages []llm.Message
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn < maxSequentialToolCalls {
+				return scriptedToolCallResponse(llm.NewToolCall(fmt.Sprintf("call-%d", turn), "delegate_to_agenda", `{"goal":"encore"}`)), nil
+			}
+			conclusionMessages = opts.Messages
+			return scriptedFinalResponse("D'après ce que j'ai trouvé : réunion à 10h."), nil
+		},
+	}
+
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"agenda": agenda}, maxSequentialToolCalls)
+
+	res, err := a.Execute(context.Background(), agent.Request{Input: "Mon planning ?"})
+	if err != nil {
+		t.Fatalf("Execute aurait dû réussir par la conclusion forcée: %v", err)
+	}
+	if res.Reply != "D'après ce que j'ai trouvé : réunion à 10h." {
+		t.Errorf("reply = %q", res.Reply)
+	}
+
+	// La consigne de conclusion doit être le dernier message utilisateur
+	// envoyé au modèle, et l'historique doit conserver les résultats
+	// d'outils déjà obtenus.
+	var sawInstruction, sawToolResult bool
+	for _, m := range conclusionMessages {
+		if m.Role() == llm.RoleUser && strings.Contains(m.Content(), "Do not call any further tool") {
+			sawInstruction = true
+		}
+		if m.Role() == llm.RoleTool {
+			sawToolResult = true
+		}
+	}
+	if !sawInstruction {
+		t.Error("la consigne de conclusion n'a pas été injectée dans l'historique")
+	}
+	if !sawToolResult {
+		t.Error("les résultats d'outils déjà obtenus doivent rester dans l'historique de conclusion")
+	}
+}
+
+// Si le modèle ignore la consigne textuelle et redemande un outil, le repli
+// suivant interdit les outils au niveau du protocole (ToolChoiceNone) — et
+// c'est cette variante qui sauve le tour.
+func TestOrchestratorAgent_ConclusionFallsBackToToolChoiceNone(t *testing.T) {
+	agenda := &fakeSpecialist{
+		executeFunc: func(ctx context.Context, req delegation.Request) (delegation.Result, error) {
+			return delegation.Result{Summary: "ok"}, nil
+		},
+	}
+
+	const maxSequentialToolCalls = 2
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if opts.ToolChoice == llm.ToolChoiceNone {
+				return scriptedFinalResponse("Voici ma synthèse."), nil
+			}
+			return scriptedToolCallResponse(llm.NewToolCall(fmt.Sprintf("call-%d", turn), "delegate_to_agenda", `{"goal":"encore"}`)), nil
+		},
+	}
+
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{"agenda": agenda}, maxSequentialToolCalls)
+
+	res, err := a.Execute(context.Background(), agent.Request{Input: "Boucle"})
+	if err != nil {
+		t.Fatalf("Execute aurait dû réussir par le repli ToolChoiceNone: %v", err)
+	}
+	if res.Reply != "Voici ma synthèse." {
+		t.Errorf("reply = %q", res.Reply)
+	}
+}
+
+// Une réponse vide du modèle (aucun appel d'outil, aucun texte) passe aussi
+// par la conclusion forcée avant de remonter ErrEmptyReply.
+func TestOrchestratorAgent_EmptyReplyGetsConclusionSecondChance(t *testing.T) {
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedFinalResponse(""), nil
+			}
+			return scriptedFinalResponse("Réponse rattrapée."), nil
+		},
+	}
+
+	a := agent.NewOrchestratorAgent(client, "system", "main", map[string]delegation.Specialist{}, 5)
+
+	res, err := a.Execute(context.Background(), agent.Request{Input: "Salut"})
+	if err != nil {
+		t.Fatalf("Execute aurait dû être rattrapé par la conclusion: %v", err)
+	}
+	if res.Reply != "Réponse rattrapée." {
+		t.Errorf("reply = %q", res.Reply)
 	}
 }
