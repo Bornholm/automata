@@ -1097,6 +1097,17 @@ Les organisations offertes sont remises à niveau une fois par mois civil :
 le solde est complété jusqu'à l'allocation, jamais cumulé d'un mois sur
 l'autre.
 
+**Avant la coupure**, l'organisation est prévenue dans sa conversation
+dès que son solde passe sous 15 % de son dernier apport : un message
+rédigé par l'application — jamais par le modèle, une alerte de solde doit
+être exacte — accompagné d'un lien de recharge si le destinataire est
+identifié. L'alerte part une seule fois par descente ; une recharge
+réarme le mécanisme. Les organisations offertes n'en reçoivent pas :
+elles n'ont rien à recharger. Le destinataire est le responsable de
+l'organisation quand il y en a un, sinon un membre rattaché, sinon un
+canal de l'organisation (et le lien de profil est alors omis : il ouvre
+un compte, il n'a rien à faire dans un groupe).
+
 À solde épuisé, le service se met en pause : la conversation reçoit une
 explication et un lien de recharge, sans appel au modèle, au plus une fois
 par heure et par conversation. Une organisation sans aucun mouvement de

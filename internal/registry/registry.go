@@ -239,7 +239,11 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	// allocations mensuelles des organisations offertes (internal/billing).
 	// Sans serveur web configuré, aucun portefeuille n'existe : inutile.
 	if cfg.Web.Enabled {
-		debiter := billing.New(db, cfg, logger, metrics)
+		debiter := billing.New(db, cfg, logger, metrics).
+			// L'organisation est prévenue dans sa conversation avant la
+			// coupure : découvrir l'arrêt du service est bien pire que
+			// recevoir un avertissement.
+			WithNotifier(newOrgNotifier(db, cfg, platforms, tenants, logger))
 
 		wg.Add(1)
 		go func() {

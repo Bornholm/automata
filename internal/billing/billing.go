@@ -50,6 +50,8 @@ type Debiter struct {
 	// passage : l'écran de tarification doit pouvoir l'ajuster sans
 	// redémarrage.
 	rate float64
+	// notifier prévient les organisations dont les crédits s'épuisent.
+	notifier Notifier
 
 	runs    *persistence.MaintenanceRunRepository
 	pricing *persistence.PricingRepository
@@ -107,13 +109,19 @@ func (d *Debiter) Run(ctx context.Context) error {
 	}
 }
 
-// Tick enchaîne un débit et, si le mois a tourné, les allocations.
+// Tick enchaîne un débit, les allocations du mois, puis les alertes de
+// solde bas — dans cet ordre : prévenir sur un solde qui n'a pas encore
+// été débité donnerait un chiffre faux.
 func (d *Debiter) Tick(ctx context.Context) error {
 	if err := d.Debit(ctx); err != nil {
 		return err
 	}
 
-	return d.ApplyAllowances(ctx)
+	if err := d.ApplyAllowances(ctx); err != nil {
+		return err
+	}
+
+	return d.notifyLowBalances(ctx)
 }
 
 // Debit convertit en crédits la consommation enregistrée depuis le dernier

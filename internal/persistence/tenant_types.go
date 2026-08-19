@@ -19,8 +19,11 @@ type Organization struct {
 	// allocation mensuelle de crédits non cumulative au lieu d'achats.
 	Offered          bool
 	MonthlyAllowance int64
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// LowBalanceNotifiedAt date la dernière alerte de solde bas envoyée
+	// dans la conversation ; zéro = jamais prévenue.
+	LowBalanceNotifiedAt time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 // Rôles d'un membre au sein de son organisation (members.role).

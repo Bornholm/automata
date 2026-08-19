@@ -54,9 +54,10 @@ func (r *OrganizationRepository) Insert(ctx context.Context, q Querier, org Orga
 	}
 
 	_, err := q.ExecContext(ctx, verb+` INTO organizations
-		(id, display_name, offered, monthly_allowance, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
+		(id, display_name, offered, monthly_allowance, low_balance_notified_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		org.ID, org.DisplayName, offered, org.MonthlyAllowance,
+		formatTenantTime(org.LowBalanceNotifiedAt),
 		formatTenantTime(org.CreatedAt), formatTenantTime(org.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("insertion de l'organisation %q: %w", org.ID, err)
@@ -73,9 +74,11 @@ func (r *OrganizationRepository) Update(ctx context.Context, q Querier, org Orga
 	}
 
 	res, err := q.ExecContext(ctx, `UPDATE organizations
-		SET display_name = ?, offered = ?, monthly_allowance = ?, updated_at = ?
+		SET display_name = ?, offered = ?, monthly_allowance = ?,
+			low_balance_notified_at = ?, updated_at = ?
 		WHERE id = ?`,
-		org.DisplayName, offered, org.MonthlyAllowance, formatTenantTime(org.UpdatedAt), org.ID)
+		org.DisplayName, offered, org.MonthlyAllowance,
+		formatTenantTime(org.LowBalanceNotifiedAt), formatTenantTime(org.UpdatedAt), org.ID)
 	if err != nil {
 		return fmt.Errorf("mise à jour de l'organisation %q: %w", org.ID, err)
 	}
@@ -86,21 +89,24 @@ func (r *OrganizationRepository) Update(ctx context.Context, q Querier, org Orga
 	return nil
 }
 
-const organizationColumns = `id, display_name, offered, monthly_allowance, created_at, updated_at`
+const organizationColumns = `id, display_name, offered, monthly_allowance, low_balance_notified_at, created_at, updated_at`
 
 func scanOrganization(scan func(...any) error) (Organization, error) {
 	var (
-		org                  Organization
-		offered              int
-		createdAt, updatedAt string
+		org                              Organization
+		offered                          int
+		notifiedAt, createdAt, updatedAt string
 	)
-	if err := scan(&org.ID, &org.DisplayName, &offered, &org.MonthlyAllowance, &createdAt, &updatedAt); err != nil {
+	if err := scan(&org.ID, &org.DisplayName, &offered, &org.MonthlyAllowance, &notifiedAt, &createdAt, &updatedAt); err != nil {
 		return Organization{}, err
 	}
 
 	org.Offered = offered != 0
 
 	var err error
+	if org.LowBalanceNotifiedAt, err = parseTenantTime(notifiedAt); err != nil {
+		return Organization{}, err
+	}
 	if org.CreatedAt, err = parseTenantTime(createdAt); err != nil {
 		return Organization{}, err
 	}
