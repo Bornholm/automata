@@ -562,6 +562,7 @@ type MCPTools struct {
 type Memory struct {
 	Store         MemoryStore         `yaml:"store"`
 	Indexes       []MemoryIndex       `yaml:"indexes"`
+	Retrieval     MemoryRetrieval     `yaml:"retrieval"`
 	Policies      MemoryPolicies      `yaml:"policies"`
 	Consolidation MemoryConsolidation `yaml:"consolidation"`
 }
@@ -591,12 +592,30 @@ type MemoryStore struct {
 	Path   string `yaml:"path"`
 }
 
-// MemoryIndex décrit un index de recherche mémoire.
+// MemoryIndex décrit un index de recherche mémoire. Type vaut "bleve"
+// (plein texte) ou "sqlitevec" (sémantique, vecteurs) ; la recherche
+// hybride s'obtient en déclarant les deux, pondérés par Weight.
 type MemoryIndex struct {
 	ID     string  `yaml:"id"`
 	Type   string  `yaml:"type"`
 	Path   string  `yaml:"path"`
 	Weight float64 `yaml:"weight"`
+	// Client référence l'entrée de llm_clients fournissant les embeddings.
+	// Requis pour le type "sqlitevec", ignoré sinon. Le modèle utilisé est
+	// celui du client référencé (ex: mistral-embed).
+	Client string `yaml:"client"`
+}
+
+// MemoryRetrieval décrit le comportement de la recherche mémoire.
+type MemoryRetrieval struct {
+	// Profile choisit le compromis coût/qualité de la recherche, calqué sur
+	// les profils amoxtli : "fast" (défaut, aucun appel LLM à la recherche)
+	// ou "balanced" (HyDE : un appel de complétion par requête distincte,
+	// meilleure recherche sémantique).
+	Profile string `yaml:"profile"`
+	// Client référence l'entrée de llm_clients utilisée par l'étape HyDE.
+	// Requis lorsque Profile vaut "balanced". Un modèle économique suffit.
+	Client string `yaml:"client"`
 }
 
 // MemoryPolicies décrit les règles de propagation entre portées mémoire.

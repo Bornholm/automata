@@ -8,6 +8,7 @@ import (
 
 	"github.com/bornholm/amoxtli"
 	amoxtlibleve "github.com/bornholm/amoxtli/index/bleve"
+	sqlitevecIndex "github.com/bornholm/amoxtli/index/sqlitevec"
 	amoxtligorm "github.com/bornholm/amoxtli/ingest/gorm"
 
 	"github.com/bornholm/automata/internal/agent"
@@ -107,8 +108,42 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 			}
 
 			indexers = append(indexers, amoxtli.Indexer{ID: idxCfg.ID, Index: bleveIdx, Weight: weight})
+		case "sqlitevec":
+			if dir := filepath.Dir(idxCfg.Path); dir != "" && dir != "." {
+				// 0o700 : même raisonnement que pour l'index bleve.
+				if err := os.MkdirAll(dir, 0o700); err != nil {
+					return res, fmt.Errorf("registry: mémoire: création du répertoire %q: %w", dir, err)
+				}
+			}
+
+			// Le client est garanti présent par config.Validate ; son modèle
+			// (ex: mistral-embed) est celui utilisé pour les embeddings.
+			clientCfg := cfg.LLMClients[idxCfg.Client]
+			embeddings, err := agent.BuildEmbeddingsClient(ctx, clientCfg)
+			if err != nil {
+				return res, fmt.Errorf("registry: mémoire: client d'embeddings de memory.indexes[%q]: %w", idxCfg.ID, err)
+			}
+
+			// Installe l'extension sqlite-vec (WASM) avant toute ouverture,
+			// comme le fait le runtime amoxtli lui-même.
+			sqlitevecIndex.EnsureVecWASM()
+
+			vecIdx, err := sqlitevecIndex.NewIndexAtPath(idxCfg.Path, embeddings,
+				sqlitevecIndex.WithEmbeddingsModel(clientCfg.Model),
+			)
+			if err != nil {
+				return res, fmt.Errorf("registry: mémoire: ouverture de l'index sqlitevec %q (memory.indexes[%q]): %w", idxCfg.Path, idxCfg.ID, err)
+			}
+			res.closers = append(res.closers, vecIdx.Close)
+
+			weight := idxCfg.Weight
+			if weight == 0 {
+				weight = 1
+			}
+
+			indexers = append(indexers, amoxtli.Indexer{ID: idxCfg.ID, Index: vecIdx, Weight: weight})
 		default:
-			return res, fmt.Errorf("registry: mémoire: type d'index %q (memory.indexes[%q]) non supporté (seul \"bleve\" l'est en V1)", idxCfg.Type, idxCfg.ID)
+			return res, fmt.Errorf("registry: mémoire: type d'index %q (memory.indexes[%q]) non supporté (types: \"bleve\", \"sqlitevec\")", idxCfg.Type, idxCfg.ID)
 		}
 	}
 
@@ -116,12 +151,30 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 		return res, fmt.Errorf("registry: mémoire: au moins un index (memory.indexes) est requis")
 	}
 
-	codex, err := amoxtli.New(ctx,
+	codexOpts := []amoxtli.Option{
 		amoxtli.WithStore(store),
 		amoxtli.WithIndexers(indexers...),
-		amoxtli.WithDisableHyDE(),
-		amoxtli.WithDisableJudge(),
-	)
+	}
+
+	// Profils de recherche, calqués sur ceux du runtime amoxtli : "fast"
+	// (défaut) coupe HyDE et Judge — aucun appel LLM à la recherche ;
+	// "balanced" garde HyDE (un appel de complétion par requête distincte)
+	// et coupe le Judge.
+	switch cfg.Memory.Retrieval.Profile {
+	case "", "fast":
+		codexOpts = append(codexOpts, amoxtli.WithDisableHyDE(), amoxtli.WithDisableJudge())
+	case "balanced":
+		// Le client est garanti présent par config.Validate.
+		hydeClient, err := agent.BuildLLMClient(ctx, cfg.LLMClients[cfg.Memory.Retrieval.Client])
+		if err != nil {
+			return res, fmt.Errorf("registry: mémoire: client HyDE (memory.retrieval.client): %w", err)
+		}
+		codexOpts = append(codexOpts, amoxtli.WithDisableJudge(), amoxtli.WithLLMClient(hydeClient))
+	default:
+		return res, fmt.Errorf("registry: mémoire: profil de recherche %q non supporté (profils: \"fast\", \"balanced\")", cfg.Memory.Retrieval.Profile)
+	}
+
+	codex, err := amoxtli.New(ctx, codexOpts...)
 	if err != nil {
 		return res, fmt.Errorf("registry: mémoire: construction du codex amoxtli: %w", err)
 	}

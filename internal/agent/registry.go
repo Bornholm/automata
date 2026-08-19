@@ -331,6 +331,40 @@ func BuildLLMClient(ctx context.Context, cfg config.LLMClient) (llm.Client, erro
 	return wrapResilience(withReasoning(client, reasoning)), nil
 }
 
+// BuildEmbeddingsClient construit un llm.Client GenAI limité aux
+// embeddings, à partir d'un config.LLMClient applicatif (ex: provider
+// "mistral", model "mistral-embed"). Retourne un llm.Client complet plutôt
+// qu'un llm.EmbeddingsClient car l'index sémantique amoxtli
+// (index/sqlitevec.NewIndexAtPath) attend cette interface — seule la
+// méthode Embeddings est effectivement câblée.
+func BuildEmbeddingsClient(ctx context.Context, cfg config.LLMClient) (llm.Client, error) {
+	common := provider.CommonOptions{
+		Model:   cfg.Model,
+		BaseURL: cfg.BaseURL,
+		APIKey:  cfg.APIKey,
+	}
+
+	var optFunc provider.OptionFunc
+
+	switch cfg.Provider {
+	case "openai":
+		optFunc = provider.WithEmbeddings(openai.Name, openai.Options{CommonOptions: common})
+	case "mistral":
+		optFunc = provider.WithEmbeddings(mistral.Name, mistral.Options{CommonOptions: common})
+	case "openrouter":
+		optFunc = provider.WithEmbeddings(openrouter.Name, openrouter.Options{CommonOptions: common})
+	default:
+		return nil, fmt.Errorf("provider d'embeddings %q non supporté", cfg.Provider)
+	}
+
+	client, err := provider.Create(ctx, optFunc)
+	if err != nil {
+		return nil, fmt.Errorf("création du client d'embeddings (provider %q): %w", cfg.Provider, err)
+	}
+
+	return client, nil
+}
+
 // BuildTranscriptionClient construit un llm.TranscriptionClient GenAI à
 // partir d'un config.LLMClient applicatif, pour le traitement audio (PLAN.md
 // §3.4, Phase 9). Mêmes providers supportés que BuildLLMClient (openai,

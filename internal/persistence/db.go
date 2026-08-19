@@ -12,6 +12,13 @@ import (
 	"path/filepath"
 
 	sqlitedriver "github.com/ncruces/go-sqlite3/driver"
+	// Embarque le binaire SQLite WASM : requis par go-sqlite3 v0.23.x
+	// (épinglé par compatibilité avec l'index sémantique d'amoxtli, voir
+	// go.mod), sans quoi toute ouverture échoue avec « no SQLite binary
+	// embed/set/loaded ». L'index sqlitevec remplace ensuite ce binaire par
+	// sa variante vec0 (EnsureVecWASM), un sur-ensemble qui sert tout aussi
+	// bien la persistance applicative.
+	_ "github.com/ncruces/go-sqlite3/embed"
 
 	"github.com/bornholm/automata/internal/config"
 )

@@ -828,6 +828,31 @@ func validateMemory(cfg *Config) []error {
 		} else {
 			seen[idx.ID] = true
 		}
+
+		switch idx.Type {
+		case "", "bleve":
+		case "sqlitevec":
+			if idx.Client == "" {
+				errs = append(errs, fmt.Errorf("%s.client: requis pour le type \"sqlitevec\" (client d'embeddings)", prefix))
+			} else if _, ok := cfg.LLMClients[idx.Client]; !ok {
+				errs = append(errs, fmt.Errorf("%s.client: client llm %q introuvable dans llm_clients", prefix, idx.Client))
+			}
+		default:
+			errs = append(errs, fmt.Errorf("%s.type: %q non supporté (types: \"bleve\", \"sqlitevec\")", prefix, idx.Type))
+		}
+	}
+
+	retrieval := cfg.Memory.Retrieval
+	switch retrieval.Profile {
+	case "", "fast":
+	case "balanced":
+		if retrieval.Client == "" {
+			errs = append(errs, fmt.Errorf("memory.retrieval.client: requis lorsque memory.retrieval.profile vaut \"balanced\" (étape HyDE)"))
+		} else if _, ok := cfg.LLMClients[retrieval.Client]; !ok {
+			errs = append(errs, fmt.Errorf("memory.retrieval.client: client llm %q introuvable dans llm_clients", retrieval.Client))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("memory.retrieval.profile: %q non supporté (profils: \"fast\", \"balanced\")", retrieval.Profile))
 	}
 
 	consolidation := cfg.Memory.Consolidation
