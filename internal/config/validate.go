@@ -52,6 +52,7 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateCourierProviders(cfg)...)
 	errs = append(errs, validateConversation(cfg)...)
 	errs = append(errs, validateStorage(cfg)...)
+	errs = append(errs, validatePlugins(cfg)...)
 
 	return joinErrors(errs)
 }
@@ -1051,4 +1052,29 @@ func validateStorage(cfg *Config) []error {
 	}
 
 	return nil
+}
+
+// validatePlugins vérifie la section plugins. Le client LLM des
+// sous-agents est exigé dès l'activation : sans lui, un plugin déclarant
+// un sous-agent échouerait au premier tour, bien après le déploiement.
+func validatePlugins(cfg *Config) []error {
+	if !cfg.Plugins.Enabled {
+		return nil
+	}
+
+	var errs []error
+
+	if cfg.Plugins.Dir == "" {
+		errs = append(errs, fmt.Errorf("plugins.dir: requis quand plugins.enabled est vrai"))
+	}
+	if cfg.Plugins.Client == "" {
+		errs = append(errs, fmt.Errorf("plugins.client: requis quand plugins.enabled est vrai"))
+	} else if _, ok := cfg.LLMClients[cfg.Plugins.Client]; !ok {
+		errs = append(errs, fmt.Errorf("plugins.client: client llm %q inconnu (llm_clients)", cfg.Plugins.Client))
+	}
+	if cfg.Plugins.RestartCooldown.Duration() < 0 {
+		errs = append(errs, fmt.Errorf("plugins.restart_cooldown: doit être positif"))
+	}
+
+	return errs
 }

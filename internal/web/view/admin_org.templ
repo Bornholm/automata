@@ -66,6 +66,9 @@ type OrgPage struct {
 	FlashToken    *TokenPanelData // jeton de groupe fraîchement généré, sinon nil
 	Flash         string
 
+	// Onglet Plugins.
+	PluginRows []PluginActivationRow
+
 	// Onglets Membres / Canaux.
 	Members  []MemberRow
 	Channels []OrgChannelRow
@@ -148,6 +151,7 @@ templ AdminOrg(page OrgPage) {
 				@orgTab(page, "channels", "Canaux")
 				@orgTab(page, "credits", "Crédits")
 				@orgTab(page, "customization", "Personnalisation")
+				@orgTab(page, "plugins", "Plugins")
 			</div>
 		</header>
 		<div class="p-7">
@@ -166,6 +170,8 @@ templ AdminOrg(page OrgPage) {
 					@orgChannelsTab(page)
 				case "customization":
 					@orgCustomizationTab(page)
+				case "plugins":
+					@OrgPluginsTab(page.ID, page.PluginRows, page.CSRFToken, page.Flash != "")
 				default:
 					@orgCreditsTab(page)
 			}

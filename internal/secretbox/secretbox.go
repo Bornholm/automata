@@ -39,6 +39,13 @@ func New(secret string) (*Box, error) {
 	return newBox(secret, derivationInfo)
 }
 
+// NewPlugins dérive la Box des secrets et configurations de plugins :
+// contexte HKDF distinct, un secret de plateforme ne peut jamais
+// déchiffrer un secret de plugin, ni l'inverse.
+func NewPlugins(secret string) (*Box, error) {
+	return newBox(secret, "automata/plugins/v1")
+}
+
 // newBox dérive une Box du secret fourni, pour l'usage nommé par info :
 // deux usages ne partagent jamais la même clé, même issus du même secret.
 func newBox(secret, info string) (*Box, error) {

@@ -1,0 +1,142 @@
+package view
+
+// ADM-09 — Plugins : les extensions chargées par l'instance, leur état et
+// les organisations qui les utilisent. L'activation par organisation se
+// fait sur la fiche de l'organisation (onglet Plugins) : c'est là que
+// vivent les autres décisions par organisation.
+
+type PluginRow struct {
+	Name        string
+	Version     string
+	Description string
+	Running     bool
+	HasUI       bool
+	HasTriggers bool
+	HasSubAgent bool
+	ActiveOrgs  []string
+}
+
+type PluginsPage struct {
+	Platforms []SidebarPlatform
+	CSRFToken string
+
+	Plugins []PluginRow
+}
+
+templ AdminPlugins(page PluginsPage) {
+	@AdminLayout("Plugins — Automata Admin", "plugins", page.Platforms, page.CSRFToken) {
+		<header class="border-b border-line-2 bg-white px-7 py-5.5">
+			<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Plugins</h1>
+			<div class="mt-0.5 text-sm text-text-3">Les extensions chargées par cette instance</div>
+		</header>
+		<div class="flex flex-col gap-5 p-7">
+			if len(page.Plugins) == 0 {
+				<div class="rounded-[11px] border border-line-2 bg-white px-5 py-10 text-center text-sm text-text-4">
+					Aucun plugin chargé. Les binaires déposés dans le répertoire configuré (plugins.dir) sont découverts au démarrage du service.
+				</div>
+			}
+			for _, p := range page.Plugins {
+				<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
+					<div class="flex items-center gap-4 border-b border-line-2 px-5 py-3.5">
+						<div class="min-w-0">
+							<div class="flex items-center gap-2.5">
+								<span class="font-mono text-[15px] font-semibold text-ink">{ p.Name }</span>
+								<span class="font-mono text-[12px] text-text-4">{ p.Version }</span>
+								if p.Running {
+									@StatusChip(Chip{Label: "En marche", Tone: "ok"})
+								} else {
+									@StatusChip(Chip{Label: "Arrêté", Tone: "crit"})
+								}
+							</div>
+							if p.Description != "" {
+								<div class="mt-0.5 text-[13px] leading-snug text-text-4">{ p.Description }</div>
+							}
+						</div>
+						<form method="post" action={ templ.SafeURL("/admin/plugins/" + p.Name + "/restart") } class="ml-auto shrink-0">
+							<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+							<button type="submit" class="h-8 rounded-lg border border-line bg-white px-3 text-[13px] font-medium text-text hover:bg-bg">Redémarrer</button>
+						</form>
+					</div>
+					<div class="flex flex-wrap items-baseline gap-x-6 gap-y-1.5 px-5 py-3">
+						<div class="text-[13px] text-text-3">
+							Capacités :
+							if p.HasSubAgent {
+								<span class="text-text">sous-agent</span>
+							}
+							if p.HasTriggers {
+								<span class="text-text">· déclencheurs</span>
+							}
+							if p.HasUI {
+								<span class="text-text">· interface</span>
+							}
+							if !p.HasSubAgent && !p.HasTriggers && !p.HasUI {
+								<span class="text-text-4">aucune déclarée</span>
+							}
+						</div>
+						<div class="text-[13px] text-text-3">
+							if len(p.ActiveOrgs) == 0 {
+								Actif pour : <span class="text-text-4">aucune organisation</span>
+							} else {
+								Actif pour :
+								for i, org := range p.ActiveOrgs {
+									if i > 0 {
+										<span>,</span>
+									}
+									<span class="text-text">{ org }</span>
+								}
+							}
+						</div>
+					</div>
+				</div>
+			}
+		</div>
+	}
+}
+
+// PluginActivationRow est une ligne de l'onglet Plugins de la fiche
+// organisation.
+type PluginActivationRow struct {
+	Name        string
+	Description string
+	Running     bool
+	Enabled     bool
+}
+
+// OrgPluginsTab rend l'onglet d'activation des plugins d'une organisation.
+templ OrgPluginsTab(orgID string, rows []PluginActivationRow, csrfToken string, saved bool) {
+	<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
+		<div class="border-b border-line-2 px-5 py-3.5">
+			<div class="text-[15px] font-semibold text-ink">Plugins</div>
+			<div class="mt-0.5 text-[13px] text-text-4">Les extensions accessibles aux membres de cette organisation. Activer un plugin expose son sous-agent, ses déclencheurs et son interface de profil.</div>
+		</div>
+		if len(rows) == 0 {
+			<div class="px-5 py-6 text-center text-sm text-text-4">Aucun plugin chargé par l'instance.</div>
+		} else {
+			<form method="post" action={ templ.SafeURL("/admin/orgs/" + orgID + "/plugins") }>
+				<input type="hidden" name="csrf_token" value={ csrfToken }/>
+				for _, row := range rows {
+					<label class="flex items-center gap-3.5 border-b border-line-3 px-5 py-3 last:border-b-0">
+						<input type="checkbox" name="plugins" value={ row.Name } checked?={ row.Enabled } class="h-4 w-4 accent-brand"/>
+						<div class="min-w-0 flex-1">
+							<div class="flex items-center gap-2">
+								<span class="font-mono text-sm font-medium text-text">{ row.Name }</span>
+								if !row.Running {
+									@StatusChip(Chip{Label: "Arrêté", Tone: "warn"})
+								}
+							</div>
+							if row.Description != "" {
+								<div class="mt-0.5 text-[13px] leading-snug text-text-4">{ row.Description }</div>
+							}
+						</div>
+					</label>
+				}
+				<div class="flex items-center gap-3 px-5 py-3.5">
+					<button type="submit" class="h-9 rounded-lg bg-brand px-3.5 text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
+					if saved {
+						<span class="text-[13px] font-medium text-ok-deep">Enregistré.</span>
+					}
+				</div>
+			</form>
+		}
+	</div>
+}

@@ -90,6 +90,7 @@ type Config struct {
 	Observability Observability          `yaml:"observability"`
 	Web           Web                    `yaml:"web"`
 	Backup        Backup                 `yaml:"backup"`
+	Plugins       Plugins                `yaml:"plugins"`
 }
 
 // Backup décrit les sauvegardes périodiques des bases SQLite. Désactivées
@@ -322,6 +323,71 @@ func (c *Config) PrincipalInOrganization(principalID, orgID string) bool {
 }
 
 // Storage décrit le stockage applicatif.
+// Plugins configure le système de plugins : des binaires découverts dans
+// un répertoire, lancés en sous-processus (hashicorp/go-plugin) et
+// dialogués en gRPC. Un plugin peut fournir un sous-agent délégué, des
+// déclencheurs extérieurs et sa propre interface, activés PAR ORGANISATION
+// depuis l'administration.
+type Plugins struct {
+	Enabled bool `yaml:"enabled"`
+	// Dir est le répertoire des binaires de plugins, résolu relativement
+	// au fichier de configuration. Tout fichier exécutable y est chargé :
+	// le répertoire doit rester sous le contrôle exclusif de l'exploitant.
+	Dir string `yaml:"dir"`
+	// Client est la clé de llm_clients qui sert les sous-agents de
+	// plugins. Passer par un client de l'instance conserve la
+	// comptabilité d'usage et le débit de crédits.
+	Client string `yaml:"client"`
+	// RestartCooldown est le délai minimal entre deux redémarrages d'un
+	// même plugin après incident. Vide : 30s. Il évite qu'un plugin qui
+	// meurt en boucle (OOM) consomme la machine.
+	RestartCooldown Duration `yaml:"restart_cooldown"`
+	// MemLimit est transmis en GOMEMLIMIT aux sous-processus. Vide :
+	// aucune limite.
+	MemLimit string `yaml:"mem_limit"`
+	// Triggers borne les déclenchements extérieurs.
+	Triggers PluginTriggers `yaml:"triggers"`
+}
+
+// PluginTriggers borne les déclenchements : un plugin extérieur peut
+// recevoir des rafales (une boîte mail inondée), et chaque déclenchement
+// coûte un tour de modèle.
+type PluginTriggers struct {
+	// MaxPerMinute est le plafond de déclenchements par (plugin,
+	// organisation). Vide : 6. Au-delà, les événements sont abandonnés et
+	// comptés, jamais mis en file sans borne.
+	MaxPerMinute int `yaml:"max_per_minute"`
+	// MaxConcurrent est le nombre d'exécutions de sous-agents simultanées
+	// tous plugins confondus. Vide : 2.
+	MaxConcurrent int `yaml:"max_concurrent"`
+}
+
+// EffectiveRestartCooldown retourne le délai de redémarrage, défaut
+// compris.
+func (p Plugins) EffectiveRestartCooldown() time.Duration {
+	if d := p.RestartCooldown.Duration(); d > 0 {
+		return d
+	}
+	return 30 * time.Second
+}
+
+// EffectiveMaxPerMinute retourne le plafond par minute, défaut compris.
+func (t PluginTriggers) EffectiveMaxPerMinute() int {
+	if t.MaxPerMinute > 0 {
+		return t.MaxPerMinute
+	}
+	return 6
+}
+
+// EffectiveMaxConcurrent retourne le plafond de concurrence, défaut
+// compris.
+func (t PluginTriggers) EffectiveMaxConcurrent() int {
+	if t.MaxConcurrent > 0 {
+		return t.MaxConcurrent
+	}
+	return 2
+}
+
 type Storage struct {
 	Application StorageApplication `yaml:"application"`
 	// EncryptionKey active le chiffrement au repos des contenus

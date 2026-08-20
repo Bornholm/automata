@@ -65,3 +65,38 @@ func TestValidateWeb_RejectsInvalidPack(t *testing.T) {
 	assertHasError(t, validateWeb(cfg), "web.credits.packs[0].credits")
 	assertHasError(t, validateWeb(cfg), "web.credits.packs[0].price_eur")
 }
+
+// La section plugins est refusée incomplète dès l'activation : un client
+// LLM manquant ne doit pas se découvrir au premier tour d'un sous-agent.
+func TestValidatePlugins(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			Plugins:    Plugins{Enabled: true, Dir: "./plugins", Client: "main"},
+			LLMClients: map[string]LLMClient{"main": {Provider: "openai", Model: "m", APIKey: "k", BaseURL: "u"}},
+		}
+	}
+
+	if errs := validatePlugins(base()); len(errs) != 0 {
+		t.Fatalf("configuration valide refusée: %v", errs)
+	}
+
+	cfg := base()
+	cfg.Plugins.Client = "inconnu"
+	if errs := validatePlugins(cfg); len(errs) == 0 {
+		t.Error("client llm inconnu accepté")
+	}
+
+	cfg = base()
+	cfg.Plugins.Dir = ""
+	if errs := validatePlugins(cfg); len(errs) == 0 {
+		t.Error("répertoire manquant accepté")
+	}
+
+	cfg = base()
+	cfg.Plugins.Enabled = false
+	cfg.Plugins.Dir = ""
+	cfg.Plugins.Client = ""
+	if errs := validatePlugins(cfg); len(errs) != 0 {
+		t.Errorf("section désactivée refusée: %v", errs)
+	}
+}

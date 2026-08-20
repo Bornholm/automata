@@ -59,6 +59,9 @@ type Server struct {
 	// privacy sert l'export et la suppression des données personnelles ;
 	// nil désactive l'écran de confidentialité.
 	privacy PrivacyService
+	// pluginManager, s'il est renseigné, porte l'état des plugins et le
+	// redémarrage manuel.
+	pluginManager PluginManager
 	// purchases, s'il est renseigné, confirme les achats dans la
 	// conversation privée de l'acheteur.
 	purchases PurchaseNotifier
@@ -66,17 +69,18 @@ type Server struct {
 	reveals   *revealStash
 	codes     *codeStore
 
-	orgs         *persistence.OrganizationRepository
-	members      *persistence.MemberRepository
-	linkTokens   *persistence.LinkTokenRepository
-	wallet       *persistence.WalletRepository
-	profileLinks *persistence.ProfileLinkRepository
-	usage        *persistence.UsageRecordRepository
-	platforms    *persistence.PlatformRepository
-	orgSettings  *persistence.OrgSettingsRepository
-	pricingRepo  *persistence.PricingRepository
-	modelPrices  *persistence.ModelPriceRepository
-	bindings     *persistence.ChannelBindingRepository
+	orgs              *persistence.OrganizationRepository
+	members           *persistence.MemberRepository
+	linkTokens        *persistence.LinkTokenRepository
+	wallet            *persistence.WalletRepository
+	profileLinks      *persistence.ProfileLinkRepository
+	usage             *persistence.UsageRecordRepository
+	platforms         *persistence.PlatformRepository
+	orgSettings       *persistence.OrgSettingsRepository
+	pluginActivations *persistence.PluginActivationRepository
+	pricingRepo       *persistence.PricingRepository
+	modelPrices       *persistence.ModelPriceRepository
+	bindings          *persistence.ChannelBindingRepository
 }
 
 // PlatformManager est la vue qu'a le serveur web du gestionnaire de
@@ -112,17 +116,18 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 		reveals: newRevealStash(),
 		codes:   newCodeStore(),
 
-		orgs:         persistence.NewOrganizationRepository(),
-		members:      persistence.NewMemberRepository(),
-		linkTokens:   persistence.NewLinkTokenRepository(),
-		wallet:       persistence.NewWalletRepository(),
-		profileLinks: persistence.NewProfileLinkRepository(),
-		usage:        persistence.NewUsageRecordRepository(),
-		platforms:    persistence.NewPlatformRepository(),
-		orgSettings:  persistence.NewOrgSettingsRepository(),
-		pricingRepo:  persistence.NewPricingRepository(),
-		modelPrices:  persistence.NewModelPriceRepository(),
-		bindings:     persistence.NewChannelBindingRepository(),
+		orgs:              persistence.NewOrganizationRepository(),
+		members:           persistence.NewMemberRepository(),
+		linkTokens:        persistence.NewLinkTokenRepository(),
+		wallet:            persistence.NewWalletRepository(),
+		profileLinks:      persistence.NewProfileLinkRepository(),
+		usage:             persistence.NewUsageRecordRepository(),
+		platforms:         persistence.NewPlatformRepository(),
+		orgSettings:       persistence.NewOrgSettingsRepository(),
+		pricingRepo:       persistence.NewPricingRepository(),
+		modelPrices:       persistence.NewModelPriceRepository(),
+		bindings:          persistence.NewChannelBindingRepository(),
+		pluginActivations: persistence.NewPluginActivationRepository(),
 	}
 
 	// La clé de chiffrement des secrets dérive du secret de session : la
@@ -185,6 +190,9 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /admin/pricing/settings", admin(s.handlePricingSettings))
 	mux.HandleFunc("POST /admin/pricing/models", admin(s.handleModelPriceUpsert))
 	mux.HandleFunc("POST /admin/pricing/models/delete", admin(s.handleModelPriceDelete))
+	mux.HandleFunc("GET /admin/plugins", admin(s.handlePlugins))
+	mux.HandleFunc("POST /admin/plugins/{name}/restart", admin(s.handlePluginRestart))
+	mux.HandleFunc("POST /admin/orgs/{id}/plugins", admin(s.handleOrgPlugins))
 	mux.HandleFunc("GET /admin/instance", admin(s.handleInstance))
 	mux.HandleFunc("GET /admin/usage", admin(s.handleUsage))
 	mux.HandleFunc("GET /admin/usage.csv", admin(s.handleUsageCSV))
@@ -202,6 +210,14 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 
 	s.httpServer = &http.Server{Addr: cfg.Web.Addr, Handler: mux}
 
+	return s
+}
+
+// WithPluginManager branche le gestionnaire de plugins : sans lui,
+// l'écran des plugins affiche une liste vide et l'activation par
+// organisation est masquée.
+func (s *Server) WithPluginManager(manager PluginManager) *Server {
+	s.pluginManager = manager
 	return s
 }
 

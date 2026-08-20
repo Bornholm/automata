@@ -18,10 +18,15 @@ race:
 # Fichiers locaux, non versionnés, produits par `automata config init`.
 CONFIG_FILE ?= config/config.yaml
 CONFIG_ENV  ?= config/config.env
+# Exportés : modd.conf ne reçoit pas les variables de make autrement, et son
+# daemon lancerait la configuration par défaut au lieu de celle demandée.
+export CONFIG_FILE
+export CONFIG_ENV
 
 # Développement à chaud : modd surveille les sources, la configuration locale et
 # ses secrets, recompile puis relance le worker.
 watch: check-config tools/modd/bin/modd
+	rm -f watch.log
 	tools/modd/bin/modd
 
 watch-build:

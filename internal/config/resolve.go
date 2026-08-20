@@ -19,6 +19,7 @@ func resolvePath(baseDir, p string) string {
 // configuration par rapport au répertoire du fichier de configuration.
 func resolvePaths(cfg *Config, baseDir string) {
 	cfg.Storage.Application.Path = resolvePath(baseDir, cfg.Storage.Application.Path)
+	cfg.Plugins.Dir = resolvePath(baseDir, cfg.Plugins.Dir)
 	cfg.Memory.Store.Path = resolvePath(baseDir, cfg.Memory.Store.Path)
 
 	for i := range cfg.Memory.Indexes {

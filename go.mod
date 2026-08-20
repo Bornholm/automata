@@ -54,6 +54,7 @@ require (
 	github.com/emersion/go-imap/v2 v2.0.0-beta.6 // indirect
 	github.com/emersion/go-message v0.18.1 // indirect
 	github.com/emersion/go-sasl v0.0.0-20231106173351-e73c9f7bad43 // indirect
+	github.com/fatih/color v1.18.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
@@ -62,6 +63,9 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/gopackage/ddp v0.0.6 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
+	github.com/hashicorp/go-hclog v1.6.3 // indirect
+	github.com/hashicorp/go-plugin v1.7.0 // indirect
+	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.10.0 // indirect
@@ -76,6 +80,7 @@ require (
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/ncruces/go-sqlite3/gormlite v0.20.3 // indirect
 	github.com/odvcencio/gotreesitter v0.38.0 // indirect
+	github.com/oklog/run v1.1.0 // indirect
 	github.com/openai/openai-go v0.1.0-beta.10 // indirect
 	github.com/revrost/go-openrouter v1.6.0 // indirect
 	github.com/tetratelabs/wazero v1.11.0 // indirect
@@ -97,6 +102,8 @@ require (
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260311181403-84a4fc48630c // indirect
+	google.golang.org/grpc v1.79.2 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df // indirect
 	gopkg.in/yaml.v2 v2.3.0 // indirect
@@ -106,6 +113,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
+	github.com/bornholm/automata/pkg/pluginsdk v0.0.0
 	github.com/bornholm/genai v0.35.1-0.20260820072909-f37d5e79f45d
 	github.com/google/uuid v1.6.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
@@ -129,3 +137,5 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
+
+replace github.com/bornholm/automata/pkg/pluginsdk => ./pkg/pluginsdk

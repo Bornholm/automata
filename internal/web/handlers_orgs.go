@@ -245,7 +245,7 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	tab := r.URL.Query().Get("tab")
-	if tab != "members" && tab != "channels" && tab != "customization" {
+	if tab != "members" && tab != "channels" && tab != "customization" && tab != "plugins" {
 		tab = "credits"
 	}
 	now := s.now()
@@ -286,6 +286,12 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
+
+		pluginRows, err := s.pluginActivationRows(r, tx, orgID)
+		if err != nil {
+			return err
+		}
+		page.PluginRows = pluginRows
 
 		state := computeWalletState(org, balance, lastCredit, monthUsage)
 
@@ -413,6 +419,9 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Query().Get("granted") == "1" {
 		page.Flash = "Crédits ajoutés au portefeuille."
+	}
+	if r.URL.Query().Get("saved") == "1" && tab == "plugins" {
+		page.Flash = "Activation des plugins enregistrée."
 	}
 
 	s.render(w, r, http.StatusOK, view.AdminOrg(page))

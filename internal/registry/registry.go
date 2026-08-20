@@ -36,6 +36,7 @@ import (
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/platform"
+	"github.com/bornholm/automata/internal/plugin"
 	"github.com/bornholm/automata/internal/privacy"
 	"github.com/bornholm/automata/internal/reminder"
 	"github.com/bornholm/automata/internal/scheduler"
@@ -123,6 +124,29 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	}()
 
 	authorizer := authorization.NewAuthorizer(cfg).WithMemberRoles(tenants)
+
+	// Système de plugins : découverte et lancement des sous-processus.
+	// Un échec de chargement n'est jamais fatal pour l'instance — le
+	// plugin fautif est ignoré et visible en erreur dans l'administration.
+	var pluginManager *plugin.Manager
+	if cfg.Plugins.Enabled {
+		pluginBox, err := secretbox.NewPlugins(cfg.Web.SessionSecret)
+		if err != nil {
+			return fmt.Errorf("registry: dérivation de la clé des plugins: %w", err)
+		}
+
+		agentNames := make([]string, 0, len(cfg.Agents))
+		for name := range cfg.Agents {
+			agentNames = append(agentNames, name)
+		}
+
+		pluginHost := plugin.NewHostService(db, pluginBox)
+		pluginManager = plugin.NewManager(cfg.Plugins, pluginHost, agentNames)
+		if err := pluginManager.Start(ctx); err != nil {
+			logger.WarnContext(ctx, "registry: démarrage des plugins incomplet", "error", err)
+		}
+		defer pluginManager.Shutdown()
+	}
 
 	actionOpts := []action.Option{action.WithAuditEvents(persistence.NewAuditEventRepository()), action.WithLogger(logger), action.WithMetrics(metrics)}
 	if memRes.store != nil {
@@ -342,6 +366,9 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 				return err
 			}).
 			WithPrivacy(privacyService)
+		if pluginManager != nil {
+			webServer = webServer.WithPluginManager(pluginManager)
+		}
 
 		wg.Add(1)
 		go func() {

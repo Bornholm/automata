@@ -1,0 +1,195 @@
+syntax = "proto3";
+package automata.plugin.v1;
+option go_package = "github.com/bornholm/automata/pkg/pluginsdk/proto";
+
+// AutomataPlugin is the service every plugin binary implements. The host
+// discovers plugins in a directory, starts each one as a subprocess
+// (hashicorp/go-plugin) and drives it through these RPCs.
+service AutomataPlugin {
+  rpc Describe(DescribeRequest) returns (PluginDescriptor);
+  rpc Initialize(InitializeRequest) returns (InitializeResponse);
+  rpc ListTools(ListToolsInput) returns (ListToolsOutput);
+  rpc CallTool(CallToolInput) returns (CallToolOutput);
+  rpc WatchTriggers(WatchTriggersRequest) returns (stream TriggerEvent);
+}
+
+// AutomataHostService is served by the host over the gRPC broker. Note the
+// deliberate absence of any plugin_name field: the host binds each broker
+// connection to the plugin that established it, so a plugin can never read
+// or write another plugin's data, whatever it sends.
+service AutomataHostService {
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse);
+  rpc SaveConfig(SaveConfigRequest) returns (SaveConfigResponse);
+  rpc ListConfigs(ListConfigsRequest) returns (ListConfigsResponse);
+  rpc GetSecret(GetSecretRequest) returns (GetSecretResponse);
+  rpc SetSecret(SetSecretRequest) returns (SetSecretResponse);
+  rpc DeleteSecret(DeleteSecretRequest) returns (DeleteSecretResponse);
+  rpc Notify(NotifyRequest) returns (NotifyResponse);
+}
+
+message DescribeRequest {}
+
+message PluginDescriptor {
+  // name is the plugin's identity everywhere: activation, configs,
+  // secrets, executor keys. It must be unique across loaded plugins and
+  // must not collide with a configured agent name.
+  string name = 1;
+  string version = 2;
+  // description is shown in the admin UI; any language.
+  string description = 3;
+  // sub_agent, when set, mounts a delegated agent on the orchestrator.
+  SubAgentDescriptor sub_agent = 4;
+  // permission_domain is the first segment of the permission required for
+  // write tools: "email" yields "email.<scope>.write".
+  string permission_domain = 5;
+  // has_triggers tells the host to open WatchTriggers.
+  bool has_triggers = 6;
+}
+
+message SubAgentDescriptor {
+  // system_prompt and description are sent to the LLM: English only.
+  string system_prompt = 1;
+  string description = 2;
+  // max_sequential_tool_calls <= 0 keeps the host default.
+  int32 max_sequential_tool_calls = 3;
+}
+
+message InitializeRequest {
+  uint32 host_service_broker_id = 1;
+}
+
+message InitializeResponse {
+  // http_ui_port is 0 when the plugin has no embedded UI.
+  uint32 http_ui_port = 1;
+  // ui_auth_token must accompany every proxied UI request
+  // (X-Automata-UI-Token). It closes the loopback port to other local
+  // processes.
+  string ui_auth_token = 2;
+}
+
+// CallContext carries the identity of the turn. It is always built by the
+// host, never by the model and never by the plugin. member_id is a trusted
+// server-side identifier: it must never be echoed into any text destined
+// to the LLM.
+message CallContext {
+  string org_id = 1;
+  string member_id = 2;
+  string scope = 3;
+  string scope_id = 4;
+  // idempotency_key is non-empty only when the call executes a confirmed
+  // write action; replaying the same key must not repeat the side effect.
+  string idempotency_key = 5;
+}
+
+message ToolDescriptor {
+  string name = 1;
+  // description is sent to the LLM: English only.
+  string description = 2;
+  // input_schema_json is a JSON Schema for the tool arguments.
+  string input_schema_json = 3;
+  // read_only tools execute directly during the turn. Anything not marked
+  // read_only is treated as a write: it is never executed directly, only
+  // proposed for human confirmation. Absence of annotation means write.
+  bool read_only = 4;
+}
+
+message ListToolsInput {
+  // ctx lets the plugin tailor the tool set to the member's own settings
+  // (e.g. a mailbox configured read-only exposes no send tool at all).
+  CallContext ctx = 1;
+}
+message ListToolsOutput {
+  repeated ToolDescriptor tools = 1;
+}
+
+message CallToolInput {
+  CallContext ctx = 1;
+  string name = 2;
+  string arguments_json = 3;
+}
+message CallToolOutput {
+  string result_text = 1;
+  // is_error marks a business failure. The host relays it to the model as
+  // a plain-text error result; it never aborts the turn.
+  bool is_error = 2;
+}
+
+message WatchTriggersRequest {}
+
+// TriggerEvent asks the host to run the plugin's sub-agent for a member.
+// The event designates, it never decides: the host re-checks that the
+// plugin is active for org_id and that member_id belongs to that org.
+message TriggerEvent {
+  // id deduplicates redeliveries (the plugin re-emits after a reconnect).
+  string id = 1;
+  string org_id = 2;
+  string member_id = 3;
+  // kind names the event class, e.g. "email.received".
+  string kind = 4;
+  // agent_input is the instruction for the sub-agent: English only, and
+  // free of private content (bodies travel through read tools during the
+  // turn, not through the event).
+  string agent_input = 5;
+  int64 occurred_at_unix = 6;
+  // attributes must not carry private content: they may be logged.
+  map<string, string> attributes = 7;
+}
+
+// member_id == "" addresses the organization-level entry.
+message GetConfigRequest {
+  string org_id = 1;
+  string member_id = 2;
+}
+message GetConfigResponse {
+  string config_json = 1;
+  bool found = 2;
+}
+message SaveConfigRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string config_json = 3;
+}
+message SaveConfigResponse {}
+
+message ListConfigsRequest {}
+message ListConfigsResponse {
+  // Only entries of organizations where the plugin is currently active.
+  repeated ConfigEntry entries = 1;
+}
+message ConfigEntry {
+  string org_id = 1;
+  string member_id = 2;
+  string config_json = 3;
+}
+
+message GetSecretRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string key = 3;
+}
+message GetSecretResponse {
+  string value = 1;
+  bool found = 2;
+}
+message SetSecretRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string key = 3;
+  string value = 4;
+}
+message SetSecretResponse {}
+message DeleteSecretRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string key = 3;
+}
+message DeleteSecretResponse {}
+
+// Notify sends an application-authored message (no LLM involved) to the
+// member's private channel.
+message NotifyRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string text = 3;
+}
+message NotifyResponse {}

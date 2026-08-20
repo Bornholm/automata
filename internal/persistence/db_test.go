@@ -72,6 +72,9 @@ func TestOpenCreatesAllTables(t *testing.T) {
 		"platforms",
 		"credit_packs",
 		"settings",
+		"plugin_activations",
+		"plugin_configs",
+		"plugin_secrets",
 	}
 
 	for _, table := range expected {
