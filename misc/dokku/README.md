@@ -11,6 +11,37 @@ L'image embarque aussi les **services annexes** dont l'agent dépend :
 SearXNG et son serveur MCP, en boucle locale du conteneur. Aucun d'eux
 n'est exposé, et aucun n'a d'autre client qu'Automata.
 
+## Préparer la configuration
+
+```bash
+automata config init                 # écrit config/config.yaml et config/config.env
+```
+
+L'entretien demande, entre autres, d'activer l'interface web (répondre
+oui : elle porte l'administration, les profils, le webhook Stripe et les
+retours OAuth) et les plugins. Gardez les valeurs par défaut proposées
+pour un déploiement Dokku : données dans `/data`, plugins dans
+`/plugins`, écoute sur `0.0.0.0:5000`.
+
+Renseignez ensuite `config/config.env`. Trois valeurs se fabriquent :
+
+```bash
+openssl rand -base64 48 | tr -d '\n'   # WEB_SESSION_SECRET
+openssl rand -base64 48 | tr -d '\n'   # STORAGE_ENCRYPTION_KEY  (à sauvegarder À PART)
+automata web hash-password              # WEB_ADMIN_PASSWORD_HASH
+```
+
+`WEB_BASE_URL` est l'URL publique HTTPS de l'instance
+(`https://automata.exemple.fr`) : elle compose les liens de profil et sert
+d'adresse de retour aux paiements comme aux autorisations OAuth.
+
+Vérifiez avant de pousser quoi que ce soit :
+
+```bash
+set -a; . config/config.env; set +a
+automata config validate -config config/config.yaml
+```
+
 ## Préparation, dans l'ordre
 
 ```bash

@@ -171,6 +171,11 @@ type initAnswers struct {
 	LLMKeyVar   string
 	LLMBaseVar  string
 
+	Web        bool
+	WebAddr    string
+	Plugins    bool
+	PluginsDir string
+
 	Audio           bool
 	AudioModelVar   string
 	AudioKeyVar     string
@@ -305,6 +310,22 @@ func askOrganization(w *wizard, a *initAnswers) {
 
 	a.DataDir = w.ask("Répertoire des données (bases, index, session WhatsApp)", "/data")
 	a.PromptsDir = w.ask("Répertoire des prompts, relatif au fichier de configuration", "../prompts")
+
+	// L'interface web porte l'administration, les pages de profil, le
+	// webhook de paiement et les retours OAuth des plugins. Elle est
+	// indispensable au déploiement multi-organisations, superflue pour un
+	// assistant strictement personnel.
+	a.Web = w.askYesNo("Activer l'interface web (administration et pages de profil)", true)
+	if a.Web {
+		// 0.0.0.0 par défaut : derrière un proxy (Dokku, nginx), une
+		// écoute en boucle locale ne serait jamais atteinte.
+		a.WebAddr = w.ask("Adresse d'écoute de l'interface web", "0.0.0.0:5000")
+	}
+
+	a.Plugins = w.askYesNo("Activer les plugins (courriel, extensions)", true)
+	if a.Plugins {
+		a.PluginsDir = w.ask("Répertoire des binaires de plugins", "/plugins")
+	}
 }
 
 func askLLM(w *wizard, a *initAnswers) {
@@ -543,6 +564,17 @@ func (a *initAnswers) collectEnvVars() {
 	add(a.LLMBaseVar)
 	add(a.AudioModelVar)
 	add(a.AudioKeyVar)
+
+	// Le chiffrement des contenus est référencé par la section storage,
+	// écrite sans condition.
+	add("STORAGE_ENCRYPTION_KEY")
+
+	if a.Web {
+		add("WEB_BASE_URL")
+		add("WEB_SESSION_SECRET")
+		add("WEB_ADMIN_EMAIL")
+		add("WEB_ADMIN_PASSWORD_HASH")
+	}
 
 	for _, principal := range a.Principals {
 		add(principal.ExternalVar)

@@ -39,7 +39,14 @@ func setEnvFromExample(t *testing.T, envExample string) {
 		}
 
 		name = strings.TrimSpace(name)
-		t.Setenv(name, strings.ToLower(name)+"-de-test")
+		// Certaines valeurs sont soumises à une longueur minimale (secret
+		// de session, clé de chiffrement) : le remplissage évite d'avoir
+		// à connaître ici lesquelles.
+		value := strings.ToLower(name) + "-de-test"
+		for len(value) < 40 {
+			value += "x"
+		}
+		t.Setenv(name, value)
 	}
 
 	if err := scanner.Err(); err != nil {
@@ -57,6 +64,8 @@ func TestConfigInit_ProducesLoadableConfig(t *testing.T) {
 	input := scriptedAnswers(
 		// Organisation et emplacements.
 		"", "", "/data", "prompts",
+		// Interface web, puis plugins : activés, valeurs par défaut.
+		"o", "", "o", "",
 		// Modèle.
 		"openai",
 		// Fonctionnalités : audio, pièces jointes, observabilité.
@@ -128,6 +137,7 @@ func TestConfigInit_PerPrincipalMCPTokens(t *testing.T) {
 
 	input := scriptedAnswers(
 		"", "", "/data", "prompts",
+		"o", "", "o", "",
 		"openai",
 		"n", "n", "n",
 		"alice", "", "adult", "o",
@@ -190,6 +200,7 @@ func TestConfigInit_PerPrincipalMCPTokens(t *testing.T) {
 func TestConfigInit_SharedMCPTokenStaysOnServer(t *testing.T) {
 	input := scriptedAnswers(
 		"", "", "/data", "prompts",
+		"o", "", "o", "",
 		"openai",
 		"n", "n", "n",
 		"alice", "", "adult", "n",
@@ -217,7 +228,7 @@ func TestConfigInit_SharedMCPTokenStaysOnServer(t *testing.T) {
 // personne déclarée n'est pas écrite : elle ne répondrait à personne.
 func TestConfigInit_NoPrincipalIsRefused(t *testing.T) {
 	// L'entrée s'épuise avant la première question sur les personnes.
-	input := scriptedAnswers("", "", "/data", "prompts", "openai", "n", "n", "n")
+	input := scriptedAnswers("", "", "/data", "prompts", "o", "", "o", "", "openai", "n", "n", "n")
 
 	if _, _, err := runConfigInit(strings.NewReader(input), &strings.Builder{}); err == nil {
 		t.Fatal("une configuration sans principal devrait être refusée")

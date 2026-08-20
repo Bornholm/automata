@@ -31,6 +31,11 @@ organization:
   display_name: {{ .OrgDisplayName }}
 
 storage:
+  # Chiffrement au repos des contenus personnels : messages, résumés de
+  # conversation, rappels et pièces jointes. La clé se sauvegarde À PART :
+  # la perdre rend ces contenus définitivement illisibles, sauvegardes
+  # comprises. Retirer cette ligne écrit tout en clair.
+  encryption_key: ${STORAGE_ENCRYPTION_KEY}
   application:
     driver: sqlite
     path: {{ .DataDir }}/app.sqlite
@@ -47,7 +52,28 @@ courier:
       # premier démarrage. Il conserve la liaison d'appareil : le supprimer
       # oblige à scanner un nouveau QR code.
       session_path: {{ .DataDir }}/courier/whatsapp
-{{ if .Observability }}
+{{ if .Web }}
+web:
+  enabled: true
+  addr: {{ .WebAddr }}
+  # URL publique de l'instance : elle compose les liens de profil envoyés
+  # dans les conversations, et sert d'adresse de retour aux paiements
+  # comme aux autorisations OAuth des plugins. Elle doit être joignable
+  # depuis l'extérieur, en HTTPS hors développement local.
+  base_url: ${WEB_BASE_URL}
+  session_secret: ${WEB_SESSION_SECRET}
+  admin:
+    email: ${WEB_ADMIN_EMAIL}
+    # Empreinte bcrypt, produite par « automata web hash-password ».
+    password_hash: ${WEB_ADMIN_PASSWORD_HASH}
+{{ end }}{{ if .Plugins }}
+plugins:
+  enabled: true
+  dir: {{ .PluginsDir }}
+  # Client LLM servant les sous-agents fournis par les plugins : leurs
+  # appels passent par l'instance, donc dans sa comptabilité d'usage.
+  client: main
+{{ end }}{{ if .Observability }}
 observability:
   enabled: true
   addr: {{ .ObservabilityAt }}
