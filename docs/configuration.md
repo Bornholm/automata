@@ -1177,6 +1177,15 @@ ce qu'elle ne connaît pas. Les membres en ligne n'ont pas de rôle
 configurable ; leurs permissions découlent de leur rôle produit
 (`member`, `owner`, `readonly` — voir `identity.DynamicRolePermissions`).
 
+Les agents déclarant `reminders: true` exposent aussi
+`list_recent_activity` : le journal de ce qui a réellement été délivré ou
+exécuté dans la conversation — rappels envoyés ou en échec, tâches
+planifiées, plans d'actions confirmés. Il complète `list_reminders`, qui
+ne montre que ce qui reste à venir : sans lui, un assistant interrogé sur
+un rappel déjà reçu ne voyait qu'une liste vide et en concluait qu'il
+n'avait jamais rien programmé, contredisant l'utilisateur qui venait
+précisément de le recevoir.
+
 Les agents déclarant `profile_link: true` exposent l'outil
 `open_profile_link` : l'assistant ouvre lui-même à son interlocuteur un lien
 temporaire vers sa page de profil, ce qui évite tout mot de passe côté
