@@ -187,3 +187,40 @@ func (r *ActionPlanRepository) ListRecent(ctx context.Context, q Querier, limit 
 
 	return plans, nil
 }
+
+// ListRecentByConversation retourne les plans d'actions de la
+// conversation créés depuis since, quel que soit leur statut, du plus
+// récent au plus ancien. Sert au journal d'introspection de l'assistant
+// (voir internal/agent, list_recent_activity) : un plan confirmé ou
+// abandonné raconte ce qui s'est réellement passé.
+func (r *ActionPlanRepository) ListRecentByConversation(ctx context.Context, q Querier, conversationID model.ConversationID, since string, limit int) ([]ActionPlan, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	rows, err := q.QueryContext(ctx, `
+		SELECT id, org_id, conversation_id, created_by, scope, scope_id, status, expires_at, created_at, updated_at
+		FROM action_plans
+		WHERE conversation_id = ? AND created_at >= ?
+		ORDER BY created_at DESC
+		LIMIT ?
+	`, conversationID, since, limit)
+	if err != nil {
+		return nil, fmt.Errorf("historique des plans de la conversation %q: %w", conversationID, err)
+	}
+	defer rows.Close()
+
+	var plans []ActionPlan
+	for rows.Next() {
+		var p ActionPlan
+		if err := rows.Scan(&p.ID, &p.OrgID, &p.ConversationID, &p.CreatedBy, &p.Scope, &p.ScopeID, &p.Status, &p.ExpiresAt, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("lecture d'un plan de l'historique: %w", err)
+		}
+		plans = append(plans, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("parcours de l'historique des plans: %w", err)
+	}
+
+	return plans, nil
+}

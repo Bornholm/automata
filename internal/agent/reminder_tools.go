@@ -86,6 +86,10 @@ func (t ReminderTools) buildReminderTools(identity model.ExecutionIdentity) []ll
 		t.newCreateReminderTool(identity),
 		t.newListRemindersTool(identity),
 		t.newCancelReminderTool(identity),
+		// Introspection : ce qui a réellement été délivré ou exécuté.
+		// Elle accompagne les rappels parce qu'elle en relit le journal,
+		// et qu'un assistant sans rappels n'a rien à introspecter.
+		t.newRecentActivityTool(identity),
 	}
 
 	if t.Tasks {
@@ -170,11 +174,34 @@ func (t ReminderTools) newCreateReminderTool(identity model.ExecutionIdentity) l
 				Kind:           persistence.ReminderKindMessage,
 			}
 
+			// Dédoublonnage : un rappel identique déjà en attente est
+			// rendu tel quel plutôt que doublé. L'assistant qui
+			// reformule sa réponse au tour suivant (« et je te rappelle
+			// ce soir à 20h ») rappelle en réalité l'outil, et
+			// l'utilisateur recevait deux fois le même rappel.
+			var existing persistence.Reminder
+			duplicate := false
+
 			err := t.DB.WithTx(ctx, func(tx *sql.Tx) error {
+				var err error
+				existing, duplicate, err = t.Repo.FindPendingDuplicate(ctx, tx,
+					string(identity.ConversationID), persistence.ReminderKindMessage, rem.FireAt, message)
+				if err != nil {
+					return err
+				}
+				if duplicate {
+					return nil
+				}
 				return t.Repo.Insert(ctx, tx, rem)
 			})
 			if err != nil {
 				return llm.NewToolResult(fmt.Sprintf("could not create the reminder: %v", err)), nil
+			}
+
+			if duplicate {
+				return llm.NewToolResult(fmt.Sprintf(
+					"This reminder already exists, nothing was created: %s (id: %s). Tell the user it is already scheduled instead of announcing a new one.",
+					existing.FireAt, existing.ID)), nil
 			}
 
 			t.Metrics.IncReminderCreated()
@@ -191,7 +218,7 @@ func (t ReminderTools) newCreateReminderTool(identity model.ExecutionIdentity) l
 func (t ReminderTools) newListRemindersTool(identity model.ExecutionIdentity) llm.Tool {
 	return llm.NewFuncTool(
 		"list_reminders",
-		"List the pending reminders of the current conversation, with their id (for cancel_reminder) and due time.",
+		"List the reminders still ahead in the current conversation, with their id (for cancel_reminder) and due time. Delivered reminders are NOT listed here: use list_recent_activity for those.",
 		llm.NewJSONSchema(),
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			if _, err := t.authorize(ctx, identity, "reminder", "read"); err != nil {
@@ -209,7 +236,11 @@ func (t ReminderTools) newListRemindersTool(identity model.ExecutionIdentity) ll
 			}
 
 			if len(reminders) == 0 {
-				return llm.NewToolResult("No pending reminder in this conversation."), nil
+				// Formulation prudente : la liste ne contient que ce qui
+				// reste à venir. Un « aucun rappel » sec a déjà conduit
+				// l'assistant à affirmer n'avoir jamais rien programmé,
+				// alors que l'utilisateur venait de recevoir le rappel.
+				return llm.NewToolResult("No reminder is scheduled ahead in this conversation. This says nothing about reminders already delivered — use list_recent_activity to see what was sent."), nil
 			}
 
 			var b strings.Builder

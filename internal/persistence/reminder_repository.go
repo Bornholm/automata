@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/bornholm/automata/internal/secretbox"
 )
@@ -229,4 +230,73 @@ func (r *ReminderRepository) collectReminders(rows *sql.Rows) ([]Reminder, error
 		return nil, fmt.Errorf("parcours des rappels: %w", err)
 	}
 	return reminders, nil
+}
+
+// ListRecentByConversation retourne les rappels de la conversation dont
+// l'échéance tombe dans la fenêtre [since, now+horizon), quel que soit
+// leur statut, du plus récent au plus ancien.
+//
+// C'est la vue dont l'assistant a besoin pour se relire : ListPending ne
+// montre que ce qui reste à faire, et un rappel déjà envoyé en disparaît
+// — ce qui lui faisait conclure qu'il n'avait jamais rien programmé, en
+// contradiction avec ce que l'utilisateur venait de recevoir.
+func (r *ReminderRepository) ListRecentByConversation(ctx context.Context, q Querier, conversationID string, since string, limit int) ([]Reminder, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	rows, err := q.QueryContext(ctx, `
+		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id, attempts
+		FROM reminders
+		WHERE conversation_id = ? AND (fire_at >= ? OR status = ?)
+		ORDER BY fire_at DESC
+		LIMIT ?
+	`, conversationID, since, ReminderStatusPending, limit)
+	if err != nil {
+		return nil, fmt.Errorf("historique des rappels de la conversation %q: %w", conversationID, err)
+	}
+	defer rows.Close()
+
+	return r.collectReminders(rows)
+}
+
+// FindPendingDuplicate cherche un rappel en attente identique : même
+// conversation, même nature, même échéance et même texte. Il n'existe pas
+// de contrainte d'unicité en base — deux rappels identiques sont
+// légitimes s'ils sont voulus — mais l'assistant qui reformule sa réponse
+// au tour suivant en recrée un sans le vouloir.
+func (r *ReminderRepository) FindPendingDuplicate(ctx context.Context, q Querier, conversationID, kind, fireAt, message string) (Reminder, bool, error) {
+	rows, err := q.QueryContext(ctx, `
+		SELECT id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id, attempts
+		FROM reminders
+		WHERE conversation_id = ? AND kind = ? AND status = ? AND fire_at = ?
+		ORDER BY created_at ASC
+	`, conversationID, kind, ReminderStatusPending, fireAt)
+	if err != nil {
+		return Reminder{}, false, fmt.Errorf("recherche d'un rappel en double: %w", err)
+	}
+	defer rows.Close()
+
+	candidates, err := r.collectReminders(rows)
+	if err != nil {
+		return Reminder{}, false, err
+	}
+
+	// La comparaison se fait sur le texte DÉCHIFFRÉ, d'où ce filtrage en
+	// Go plutôt qu'en SQL : le chiffrement est probabiliste, deux
+	// scellements du même message ne se ressemblent pas.
+	for _, candidate := range candidates {
+		if sameReminderMessage(candidate.Message, message) {
+			return candidate, true, nil
+		}
+	}
+
+	return Reminder{}, false, nil
+}
+
+// sameReminderMessage compare deux textes de rappel en ignorant la casse
+// et les espaces de bord : « Pense à recommander des couches » et « pense
+// à recommander des couches  » sont le même rappel.
+func sameReminderMessage(a, b string) bool {
+	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }

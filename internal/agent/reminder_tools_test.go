@@ -302,3 +302,106 @@ func TestCreateReminder_RejectsInvalidRecurrence(t *testing.T) {
 		t.Errorf("rappels persistés = %d, attendu 0", len(rows))
 	}
 }
+
+// Reformuler n'est pas reprogrammer : un second appel identique dans un
+// tour suivant ne doit pas créer un deuxième rappel. Observé en
+// production — l'utilisateur a reçu deux fois le même rappel à 20h après
+// que l'assistant a répété « et je te rappelle ce soir à 20h ».
+func TestCreateReminder_DoesNotDuplicate(t *testing.T) {
+	tools, db := newReminderTools(t)
+	identity := privateIdentity("alice")
+
+	args := map[string]any{
+		"message": "Pense à recommander des couches pour Santi.",
+		"fire_at": "2026-08-17T20:00:00Z",
+	}
+
+	first := executeReminderTool(t, tools, identity, "create_reminder", args)
+	if !strings.Contains(first, "Reminder scheduled") {
+		t.Fatalf("première création inattendue: %q", first)
+	}
+
+	second := executeReminderTool(t, tools, identity, "create_reminder", args)
+	if !strings.Contains(second, "already exists") {
+		t.Errorf("le doublon n'a pas été reconnu: %q", second)
+	}
+
+	rows := listReminderRows(t, db, string(identity.ConversationID))
+	if len(rows) != 1 {
+		t.Fatalf("%d rappel(s) en base, attendu 1", len(rows))
+	}
+
+	// Une échéance différente reste une création légitime.
+	other := executeReminderTool(t, tools, identity, "create_reminder", map[string]any{
+		"message": "Pense à recommander des couches pour Santi.",
+		"fire_at": "2026-08-18T20:00:00Z",
+	})
+	if !strings.Contains(other, "Reminder scheduled") {
+		t.Errorf("un rappel à une autre heure a été refusé: %q", other)
+	}
+}
+
+// Un rappel délivré disparaît de list_reminders : la réponse doit le dire
+// plutôt que de laisser conclure que rien n'a jamais été programmé.
+func TestListReminders_EmptyAnswerMentionsDelivered(t *testing.T) {
+	tools, _ := newReminderTools(t)
+	identity := privateIdentity("alice")
+
+	out := executeReminderTool(t, tools, identity, "list_reminders", nil)
+	if !strings.Contains(out, "list_recent_activity") {
+		t.Errorf("la réponse vide n'oriente pas vers le journal: %q", out)
+	}
+	if strings.Contains(out, "No pending reminder in this conversation.") {
+		t.Errorf("formulation trompeuse conservée: %q", out)
+	}
+}
+
+// Le journal d'introspection montre ce qui a RÉELLEMENT été délivré :
+// c'est ce qui manquait à l'assistant pour ne pas contredire l'utilisateur
+// qui venait de recevoir son rappel.
+func TestRecentActivity_ShowsDeliveredReminders(t *testing.T) {
+	tools, db := newReminderTools(t)
+	identity := privateIdentity("alice")
+
+	if out := executeReminderTool(t, tools, identity, "list_recent_activity", nil); !strings.Contains(out, "Nothing recorded") {
+		t.Fatalf("journal initial inattendu: %q", out)
+	}
+
+	created := executeReminderTool(t, tools, identity, "create_reminder", map[string]any{
+		"message": "Pense à recommander des couches pour Santi.",
+		"fire_at": "2026-08-17T20:00:00Z",
+	})
+	if !strings.Contains(created, "Reminder scheduled") {
+		t.Fatalf("création: %q", created)
+	}
+
+	// Le dispatcher marque le rappel comme délivré.
+	rows := listReminderRows(t, db, string(identity.ConversationID))
+	if len(rows) != 1 {
+		t.Fatalf("%d rappel(s), attendu 1", len(rows))
+	}
+	sentAt := reminderTestNow.Add(10 * time.Hour).UTC().Format(time.RFC3339)
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		_, err := persistence.NewReminderRepository(nil).UpdateStatus(context.Background(), tx,
+			rows[0].ID, persistence.ReminderStatusPending, persistence.ReminderStatusSent, &sentAt)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("marquage envoyé: %v", err)
+	}
+
+	// list_reminders ne le voit plus…
+	pending := executeReminderTool(t, tools, identity, "list_reminders", nil)
+	if strings.Contains(pending, "couches") {
+		t.Errorf("un rappel délivré figure encore dans les rappels à venir: %q", pending)
+	}
+
+	// …mais le journal, si.
+	activity := executeReminderTool(t, tools, identity, "list_recent_activity", nil)
+	if !strings.Contains(activity, "DELIVERED") || !strings.Contains(activity, "couches") {
+		t.Errorf("le rappel délivré n'apparaît pas dans le journal: %q", activity)
+	}
+	if !strings.Contains(activity, string(rows[0].ID)) {
+		t.Errorf("le journal ne donne pas l'identifiant du rappel: %q", activity)
+	}
+}
