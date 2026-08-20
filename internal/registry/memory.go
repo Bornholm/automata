@@ -268,14 +268,18 @@ func MemoryReindex(ctx context.Context, logger interface {
 // nil (mémoire non configurée), retourne la valeur zéro d'agent.MemoryTools
 // : aucun outil mémoire n'est alors jamais exposé, quelle que soit la
 // configuration des agents.
-func buildMemoryTools(cfg *config.Config, store *memory.AmoxtliStore, metrics *observability.Metrics) agent.MemoryTools {
+// L'Authorizer est celui de l'instance, source des rôles en ligne
+// comprise : en reconstruire un ici perdrait les membres rattachés par
+// jeton, qui se verraient refuser la mémoire alors que les rappels — même
+// identité, autre outil — leur sont ouverts.
+func buildMemoryTools(cfg *config.Config, authorizer *authorization.Authorizer, store *memory.AmoxtliStore, metrics *observability.Metrics) agent.MemoryTools {
 	if store == nil {
 		return agent.MemoryTools{}
 	}
 
 	return agent.MemoryTools{
 		Store:      store,
-		Authorizer: authorization.NewAuthorizer(cfg),
+		Authorizer: authorizer,
 		Search:     true,
 		Remember:   true,
 		Forget:     true,
