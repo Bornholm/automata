@@ -5,7 +5,7 @@ go 1.26.5
 require (
 	github.com/Oudwins/tailwind-merge-go v0.2.3
 	github.com/a-h/templ v0.3.1020
-	github.com/bornholm/amoxtli v0.17.0
+	github.com/bornholm/amoxtli v0.17.2
 	github.com/bornholm/go-courier v0.2.2-0.20260819222002-f997d6e6e648
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/jsonschema-go v0.4.2

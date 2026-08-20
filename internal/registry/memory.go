@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -93,7 +94,14 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 	}
 	res.closers = append(res.closers, store.Close)
 
-	var indexers []amoxtli.Indexer
+	var (
+		indexers []amoxtli.Indexer
+		// indexRecreated signale qu'un index vient d'être reconstruit vide
+		// (première ouverture, ou changement de mapping à une montée de
+		// version). Sans réindexation, la recherche mémoire rendrait
+		// silencieusement zéro résultat sur tout le corpus.
+		indexRecreated bool
+	)
 	for _, idxCfg := range cfg.Memory.Indexes {
 		switch idxCfg.Type {
 		case "bleve":
@@ -111,6 +119,9 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 				return res, fmt.Errorf("registry: mémoire: ouverture de l'index bleve %q (memory.indexes[%q]): %w", idxCfg.Path, idxCfg.ID, err)
 			}
 			res.closers = append(res.closers, bleveIdx.Close)
+			if bleveIdx.Recreated() {
+				indexRecreated = true
+			}
 
 			weight := idxCfg.Weight
 			if weight == 0 {
@@ -189,6 +200,18 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 		return res, fmt.Errorf("registry: mémoire: construction du codex amoxtli: %w", err)
 	}
 	res.closers = append(res.closers, codex.Close)
+
+	if indexRecreated {
+		// Réindexation au démarrage, par le worker lui-même : lui seul
+		// détient les verrous de la base mémoire et de l'index, une
+		// commande externe resterait bloquée dessus. La tâche est
+		// asynchrone — le service répond pendant qu'elle avance.
+		if _, err := codex.Reindex(ctx); err != nil {
+			slog.ErrorContext(ctx, "registry: mémoire: réindexation après reconstruction de l'index échouée", "error", err)
+		} else {
+			slog.InfoContext(ctx, "registry: mémoire: index reconstruit, réindexation du corpus lancée")
+		}
+	}
 
 	amoxtliStore, err := memory.NewAmoxtliStore(ctx, codex, memoryCollectionLabel)
 	if err != nil {
