@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // La forme abrégée `organization:` et la liste `organizations:` doivent se
 // lire de la même façon : tout le code applicatif passe par
@@ -116,4 +119,69 @@ func TestValidateIdentities_RequiresExplicitOrgsWhenSeveralDeclared(t *testing.T
 	errs := validateIdentities(cfg)
 	assertHasError(t, errs, "identities.principals[0].orgs: requis dès que plusieurs organisations sont déclarées")
 	assertHasError(t, errs, `identities.principals[1].orgs: organisation inconnue "bureau"`)
+}
+
+// Une instance entièrement pilotée en ligne — organisations créées depuis
+// l'administration, membres rattachés par jeton — ne déclare ni principal
+// ni canal : lui imposer une organisation de façade n'apporterait rien, et
+// celle-ci polluerait la liste des organisations réelles.
+func TestValidateOrganizations_AllowsEmptyWhenNothingRefersToOne(t *testing.T) {
+	cfg := &Config{Web: Web{Enabled: true}}
+
+	if errs := validateOrganizations(cfg); len(errs) != 0 {
+		t.Fatalf("configuration entièrement en ligne refusée: %v", errs)
+	}
+}
+
+// Sans interface web, aucune organisation ne peut être créée : l'instance
+// n'aurait alors aucune portée où ranger quoi que ce soit.
+func TestValidateOrganizations_RequiresOneWithoutWeb(t *testing.T) {
+	cfg := &Config{}
+
+	errs := validateOrganizations(cfg)
+	if len(errs) == 0 {
+		t.Fatal("une configuration sans organisation ni interface web devrait être refusée")
+	}
+	if !strings.Contains(errs[0].Error(), "web.enabled") {
+		t.Errorf("l'erreur n'indique pas l'issue: %v", errs[0])
+	}
+}
+
+// Dès qu'une section désigne une organisation, elle doit exister : sinon
+// l'erreur ne se manifesterait qu'au premier message, sous la forme d'un
+// refus d'autorisation incompréhensible. Le message cite la section
+// fautive.
+func TestValidateOrganizations_RequiresOneWhenReferenced(t *testing.T) {
+	cases := map[string]*Config{
+		"channels": {
+			Web:      Web{Enabled: true},
+			Channels: []Channel{{Provider: "whatsapp", ChannelID: "c1", OrgID: "home"}},
+		},
+		"identities.principals": {
+			Web:        Web{Enabled: true},
+			Identities: Identities{Principals: []Principal{{ID: "will"}}},
+		},
+		"schedules": {
+			Web:       Web{Enabled: true},
+			Schedules: []Schedule{{ID: "veille"}},
+		},
+		"agents.main.system_prompt.org_overrides": {
+			Web: Web{Enabled: true},
+			Agents: map[string]Agent{"main": {
+				SystemPrompt: SystemPrompt{OrgOverrides: map[string]SystemPrompt{"home": {Inline: "x"}}},
+			}},
+		},
+	}
+
+	for section, cfg := range cases {
+		t.Run(section, func(t *testing.T) {
+			errs := validateOrganizations(cfg)
+			if len(errs) == 0 {
+				t.Fatalf("%s désigne une organisation, l'absence aurait dû être refusée", section)
+			}
+			if !strings.Contains(errs[0].Error(), section) {
+				t.Errorf("l'erreur ne cite pas la section fautive: %v", errs[0])
+			}
+		})
+	}
 }

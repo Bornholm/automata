@@ -37,6 +37,21 @@ organizations:
     display_name: Bureau
 ```
 
+Cette section peut être **entièrement absente** quand l'interface web est
+active (`web.enabled`) : les organisations sont alors créées depuis
+l'administration, les membres s'y rattachent par jeton et les canaux se
+lient dynamiquement — c'est le mode d'un déploiement multi-organisations,
+où une organisation déclarée en dur n'aurait servi qu'à passer le
+chargement avant d'encombrer la liste réelle.
+
+Dès que le fichier désigne une organisation, en revanche, elle doit
+exister : `channels`, `identities.principals`, `schedules` et les
+surcharges `system_prompt.org_overrides` portent toutes un `org_id`. Un
+identifiant sans organisation correspondante ne se manifesterait
+qu'au premier message reçu, sous la forme d'un refus d'autorisation
+difficile à relier à sa cause — l'erreur de chargement nomme la section
+fautive.
+
 La forme abrégée reste acceptée quand il n'y en a qu'une :
 
 ```yaml

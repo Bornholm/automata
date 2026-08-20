@@ -615,16 +615,35 @@ func validatePermission(perm string) bool {
 	return validPermissionScopes[scope] && validPermissionActions[action]
 }
 
-// validateOrganizations vérifie les organisations déclarées. Au moins une
-// est exigée : sans elle, aucun canal ne peut désigner une organisation
-// valide et toute résolution d'identité échouerait au premier message.
+// validateOrganizations vérifie les organisations déclarées.
+//
+// Une organisation est exigée dès que QUELQUE CHOSE du fichier en désigne
+// une : canaux, principaux, surcharges de prompt et tâches planifiées
+// portent tous un org_id, et un identifiant sans organisation
+// correspondante ne se manifesterait qu'au premier message reçu, sous la
+// forme d'un refus d'autorisation difficile à relier à sa cause.
+//
+// Une instance dont tout est piloté en ligne — organisations créées depuis
+// l'administration, membres rattachés par jeton, canaux liés
+// dynamiquement — ne déclare aucune de ces sections : lui imposer une
+// organisation de façade n'apporterait rien, et elle irait polluer la
+// liste des organisations réelles au premier démarrage.
 func validateOrganizations(cfg *Config) []error {
 	var errs []error
 
 	orgs := cfg.AllOrganizations()
 
 	if len(orgs) == 0 {
-		return []error{fmt.Errorf("organizations: au moins une organisation est requise")}
+		if referrers := organizationReferrers(cfg); len(referrers) > 0 {
+			return []error{fmt.Errorf(
+				"organizations: au moins une organisation est requise dès que la configuration en désigne une (%s)",
+				strings.Join(referrers, ", "))}
+		}
+		if !cfg.Web.Enabled {
+			return []error{fmt.Errorf(
+				"organizations: au moins une organisation est requise, ou activez web.enabled pour les créer depuis l'administration")}
+		}
+		return nil
 	}
 
 	seen := map[string]bool{}
@@ -643,6 +662,34 @@ func validateOrganizations(cfg *Config) []error {
 	}
 
 	return errs
+}
+
+// organizationReferrers nomme les sections du fichier qui désignent une
+// organisation. Le message d'erreur les cite : « il en faut une » est une
+// consigne, « il en faut une parce que channels[0] en réclame une » est
+// une explication.
+func organizationReferrers(cfg *Config) []string {
+	var referrers []string
+
+	if len(cfg.Identities.Principals) > 0 {
+		referrers = append(referrers, "identities.principals")
+	}
+	if len(cfg.Channels) > 0 {
+		referrers = append(referrers, "channels")
+	}
+	if len(cfg.Schedules) > 0 {
+		referrers = append(referrers, "schedules")
+	}
+	for name, agent := range cfg.Agents {
+		if len(agent.SystemPrompt.OrgOverrides) > 0 {
+			referrers = append(referrers, fmt.Sprintf("agents.%s.system_prompt.org_overrides", name))
+			break
+		}
+	}
+
+	sort.Strings(referrers)
+
+	return referrers
 }
 
 // organizationExists indique si orgID désigne une organisation déclarée.

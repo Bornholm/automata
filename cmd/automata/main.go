@@ -220,7 +220,15 @@ func newConfigValidateCommand() *cobra.Command {
 				orgIDs = append(orgIDs, org.ID)
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "configuration valide: %s (organisation(s) %s, %d agent(s))\n", *configPath, strings.Join(orgIDs, ", "), len(cfg.Agents))
+			// Aucune organisation configurée est un cas légitime : elles
+			// sont alors créées depuis l'administration web. Le dire vaut
+			// mieux qu'afficher une liste vide.
+			orgSummary := "organisation(s) " + strings.Join(orgIDs, ", ")
+			if len(orgIDs) == 0 {
+				orgSummary = "organisations créées depuis l'administration"
+			}
+
+			fmt.Fprintf(cmd.OutOrStdout(), "configuration valide: %s (%s, %d agent(s))\n", *configPath, orgSummary, len(cfg.Agents))
 
 			return nil
 		},
