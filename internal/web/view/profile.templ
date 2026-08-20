@@ -55,6 +55,19 @@ type ProfilePage struct {
 	Error          string
 
 	Channels []ProfileChannel
+
+	// PluginUIs : plugins actifs pour l'organisation du membre et dotés
+	// d'une interface, rendus en iframe SANDBOXÉE (origine opaque : le
+	// document du plugin n'accède ni aux cookies ni au DOM de la page).
+	PluginUIs []ProfilePluginUI
+}
+
+type ProfilePluginUI struct {
+	Name string
+	// Title : nom lisible du plugin (description courte).
+	Title string
+	// Src : URL du proxy vers l'interface du plugin.
+	Src string
 }
 
 templ ProfileHome(page ProfilePage) {
@@ -126,6 +139,14 @@ templ ProfileHome(page ProfilePage) {
 					</div>
 				}
 			</div>
+			for _, plugin := range page.PluginUIs {
+				<div class="mt-6">
+					@Eyebrow(plugin.Title, "text-text-4")
+					<div class="mt-3 overflow-hidden rounded-[11px] border border-line-2 bg-white">
+						<iframe src={ plugin.Src } title={ plugin.Title } sandbox="allow-forms allow-scripts" class="block h-[420px] w-full border-0"></iframe>
+					</div>
+				</div>
+			}
 			@profileNav(page.LinkID, "profile")
 		}
 	}

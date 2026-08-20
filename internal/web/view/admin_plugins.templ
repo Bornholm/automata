@@ -100,6 +100,9 @@ type PluginActivationRow struct {
 	Description string
 	Running     bool
 	Enabled     bool
+	// UISrc : URL du proxy vers l'interface du plugin pour cette
+	// organisation ; vide si le plugin n'a pas d'interface.
+	UISrc string
 }
 
 // OrgPluginsTab rend l'onglet d'activation des plugins d'une organisation.
@@ -115,7 +118,8 @@ templ OrgPluginsTab(orgID string, rows []PluginActivationRow, csrfToken string, 
 			<form method="post" action={ templ.SafeURL("/admin/orgs/" + orgID + "/plugins") }>
 				<input type="hidden" name="csrf_token" value={ csrfToken }/>
 				for _, row := range rows {
-					<label class="flex items-center gap-3.5 border-b border-line-3 px-5 py-3 last:border-b-0">
+					<div class="border-b border-line-3 last:border-b-0">
+					<label class="flex items-center gap-3.5 px-5 py-3">
 						<input type="checkbox" name="plugins" value={ row.Name } checked?={ row.Enabled } class="h-4 w-4 accent-brand"/>
 						<div class="min-w-0 flex-1">
 							<div class="flex items-center gap-2">
@@ -129,6 +133,12 @@ templ OrgPluginsTab(orgID string, rows []PluginActivationRow, csrfToken string, 
 							}
 						</div>
 					</label>
+					if row.Enabled && row.UISrc != "" {
+						<div class="px-5 pb-4">
+							<iframe src={ row.UISrc } title={ row.Name } sandbox="allow-forms allow-scripts" class="block h-[360px] w-full rounded-lg border border-line-2"></iframe>
+						</div>
+					}
+					</div>
 				}
 				<div class="flex items-center gap-3 px-5 py-3.5">
 					<button type="submit" class="h-9 rounded-lg bg-brand px-3.5 text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer</button>

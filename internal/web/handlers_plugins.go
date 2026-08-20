@@ -175,14 +175,22 @@ func (s *Server) pluginActivationRows(r *http.Request, tx *sql.Tx, orgID string)
 		enabledSet[name] = true
 	}
 
+	endpoint, _ := s.pluginManager.(PluginUIEndpoint)
+
 	var rows []view.PluginActivationRow
 	for _, st := range s.pluginManager.Statuses() {
-		rows = append(rows, view.PluginActivationRow{
+		row := view.PluginActivationRow{
 			Name:        st.Name,
 			Description: st.Description,
 			Running:     st.Running,
 			Enabled:     enabledSet[st.Name],
-		})
+		}
+		if endpoint != nil {
+			if _, _, hasUI := endpoint.UIEndpoint(st.Name); hasUI {
+				row.UISrc = "/admin/orgs/" + orgID + "/plugins/" + st.Name + "/ui/"
+			}
+		}
+		rows = append(rows, row)
 	}
 	return rows, nil
 }

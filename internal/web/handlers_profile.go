@@ -171,6 +171,28 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		page.Error = "Ce code ne correspond pas. Vérifiez les six chiffres, ou renvoyez-en un."
 	}
 
+	// Interfaces des plugins actifs pour l'organisation du membre.
+	if endpoint, ok := s.pluginManager.(PluginUIEndpoint); ok && s.pluginManager != nil {
+		var enabled []string
+		if ok := s.withTx(w, r, func(tx *sql.Tx) error {
+			var err error
+			enabled, err = s.pluginActivations.EnabledPlugins(r.Context(), tx, member.OrgID)
+			return err
+		}); !ok {
+			return
+		}
+		for _, name := range enabled {
+			if _, _, hasUI := endpoint.UIEndpoint(name); !hasUI {
+				continue
+			}
+			page.PluginUIs = append(page.PluginUIs, view.ProfilePluginUI{
+				Name:  name,
+				Title: name,
+				Src:   "/p/" + page.LinkID + "/plugins/" + name + "/ui/",
+			})
+		}
+	}
+
 	for _, ch := range s.memberChannels(member.ID) {
 		detail := "Conversation privée"
 		if ch.Kind == "Groupe" {
