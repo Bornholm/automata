@@ -52,7 +52,7 @@ type Registry struct {
 // deux passes sont nécessaires : un OrchestratorAgent a besoin que ses
 // délégués existent déjà dans le registre pour les envelopper.
 func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error) {
-	return NewRegistryWithMemory(cfg, MemoryTools{}, ReminderTools{}, ProfileTools{}, nil, mcpManager, nil, nil)
+	return NewRegistryWithMemory(cfg, MemoryTools{}, ReminderTools{}, ProfileTools{}, nil, mcpManager, nil, nil, nil)
 }
 
 // NewRegistryWithMemory se comporte comme NewRegistry, mais attache
@@ -85,7 +85,7 @@ func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error)
 // logger, s'il n'est pas nil, active l'introspection des tours sur chaque
 // agent construit (voir OrchestratorAgent.WithLogger) : outils exposés,
 // appels d'outils et délégations, durées — jamais les contenus.
-func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminderTools ReminderTools, profileTools ProfileTools, customizer OrgCustomizer, mcpManager *mcp.Manager, metrics *observability.Metrics, logger *slog.Logger) (*Registry, error) {
+func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminderTools ReminderTools, profileTools ProfileTools, customizer OrgCustomizer, mcpManager *mcp.Manager, pluginProvider PluginSpecialistProvider, metrics *observability.Metrics, logger *slog.Logger) (*Registry, error) {
 	agents := make(map[string]Agent, len(cfg.Agents))
 	clients := make(map[string]llm.Client, len(cfg.Agents))
 	prompts := make(map[string]string, len(cfg.Agents))
@@ -236,6 +236,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 		agentProfileTools.Enabled = profileTools.Enabled && agentCfg.ProfileLink
 
 		agents[name] = orchestrator.
+			WithPluginSpecialists(pluginProvider).
 			WithMemoryTools(agentMemoryTools).
 			WithReminderTools(agentReminderTools).
 			WithProfileTools(agentProfileTools).

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/secretbox"
 	proto "github.com/bornholm/automata/pkg/pluginsdk/proto"
@@ -366,5 +367,89 @@ func TestHostService_NothingInClearOnDisk(t *testing.T) {
 		if strings.Contains(string(raw), needle) {
 			t.Errorf("%q apparaît en clair dans le fichier de base", needle)
 		}
+	}
+}
+
+func activateEcho(t *testing.T, db *persistence.DB, orgID string) {
+	t.Helper()
+	now := time.Now().UTC()
+	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		return persistence.NewPluginActivationRepository().Upsert(context.Background(), tx, persistence.PluginActivation{
+			PluginName: "echo", OrgID: orgID, Enabled: true, CreatedAt: now, UpdatedAt: now,
+		})
+	})
+	if err != nil {
+		t.Fatalf("activation: %v", err)
+	}
+}
+
+// ActiveSubAgents ne sert que les plugins actifs pour l'organisation, et
+// interroge ListTools avec l'identité du tour.
+func TestManager_ActiveSubAgentsHonorsActivation(t *testing.T) {
+	manager, db := newTestManager(t, config.Plugins{})
+	seedOrgAndMember(t, db, "atelier", "cam")
+	seedOrgAndMember(t, db, "autre", "")
+
+	cc := CallContext{OrgID: "atelier", MemberID: "cam", Scope: "personal", ScopeID: "cam"}
+
+	if specs := manager.ActiveSubAgents(context.Background(), db, cc); len(specs) != 0 {
+		t.Fatalf("sous-agents servis sans activation: %+v", specs)
+	}
+
+	activateEcho(t, db, "atelier")
+
+	specs := manager.ActiveSubAgents(context.Background(), db, cc)
+	if len(specs) != 1 || specs[0].PluginName != "echo" {
+		t.Fatalf("sous-agents inattendus: %+v", specs)
+	}
+	if len(specs[0].Tools) != 2 {
+		t.Errorf("%d outil(s), attendu 2", len(specs[0].Tools))
+	}
+
+	// L'autre organisation n'a rien activé.
+	if specs := manager.ActiveSubAgents(context.Background(), db, CallContext{OrgID: "autre"}); len(specs) != 0 {
+		t.Errorf("sous-agents servis à une organisation sans activation")
+	}
+}
+
+// L'exécuteur d'actions rejoue l'appel confirmé avec la clé d'idempotence
+// de l'action, et refuse si le plugin a été désactivé entre la proposition
+// et la confirmation.
+func TestActionExecutor_ExecutesConfirmedWrite(t *testing.T) {
+	manager, db := newTestManager(t, config.Plugins{})
+	seedOrgAndMember(t, db, "atelier", "cam")
+	activateEcho(t, db, "atelier")
+
+	executor := NewActionExecutor(manager, db, "echo")
+
+	identity := model.ExecutionIdentity{PrincipalID: "cam", OrgID: "atelier"}
+	plan := persistence.ActionPlan{ID: "plan-1", OrgID: "atelier", Scope: model.ScopePersonal, ScopeID: "cam"}
+	act := persistence.Action{ID: "act-7", ToolName: "echo_write"}
+
+	result, err := executor.Execute(context.Background(), identity, plan, act, map[string]any{"text": "bonjour"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	// Le plugin echo renvoie le contexte reçu : on vérifie l'idempotence
+	// et l'identité du confirmateur.
+	for _, needle := range []string{"idem=act-7", "org=atelier", "member=cam", "echo_write"} {
+		if !strings.Contains(result, needle) {
+			t.Errorf("résultat sans %q: %s", needle, result)
+		}
+	}
+
+	// Désactivation entre proposition et confirmation.
+	now := time.Now().UTC()
+	err = db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		return persistence.NewPluginActivationRepository().Upsert(context.Background(), tx, persistence.PluginActivation{
+			PluginName: "echo", OrgID: "atelier", Enabled: false, CreatedAt: now, UpdatedAt: now,
+		})
+	})
+	if err != nil {
+		t.Fatalf("désactivation: %v", err)
+	}
+
+	if _, err := executor.Execute(context.Background(), identity, plan, act, nil); err == nil {
+		t.Fatal("l'action d'un plugin désactivé a été exécutée")
 	}
 }

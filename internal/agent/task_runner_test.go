@@ -27,7 +27,7 @@ func TestTaskRunner_IdentityIsTheCreatorScheduledTask(t *testing.T) {
 		},
 	}
 
-	registry, err := agent.NewRegistryWithMemory(cfg, agent.MemoryTools{}, agent.ReminderTools{}, agent.ProfileTools{}, nil, nil, nil, nil)
+	registry, err := agent.NewRegistryWithMemory(cfg, agent.MemoryTools{}, agent.ReminderTools{}, agent.ProfileTools{}, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewRegistryWithMemory: %v", err)
 	}

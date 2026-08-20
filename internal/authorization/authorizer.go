@@ -28,7 +28,8 @@ type AuthorizationRequest struct {
 // Authorizer vérifie qu'une identité d'exécution est autorisée à effectuer
 // une opération donnée, dans une portée cible donnée.
 type Authorizer struct {
-	cfg *config.Config
+	pluginDomains PluginDomainSource
+	cfg           *config.Config
 
 	// members, s'il est renseigné, donne le rôle web des membres
 	// enregistrés en base (voir WithMemberRoles).
@@ -102,24 +103,88 @@ func (a *Authorizer) WithMemberRoles(source MemberRoleSource) *Authorizer {
 // en ligne n'a pas de rôle configurable : son jeu de permissions découle
 // de son rôle produit (voir identity.DynamicRolePermissions).
 func (a *Authorizer) effectivePermissions(ctx context.Context, execIdentity model.ExecutionIdentity) (map[string]struct{}, error) {
+	permissions, role, err := a.basePermissions(ctx, execIdentity)
+	if err != nil {
+		return nil, err
+	}
+
+	return a.withPluginDomains(ctx, execIdentity, permissions, role), nil
+}
+
+// basePermissions résout le jeu de base et, pour un membre en ligne, son
+// rôle produit ("" pour un principal de la configuration).
+func (a *Authorizer) basePermissions(ctx context.Context, execIdentity model.ExecutionIdentity) (map[string]struct{}, string, error) {
 	permissions, cfgErr := identity.EffectivePermissions(a.cfg, execIdentity.OrgID, execIdentity.PrincipalID)
 	if cfgErr == nil {
-		return permissions, nil
+		return permissions, "", nil
 	}
 
 	if a.members == nil {
-		return nil, cfgErr
+		return nil, "", cfgErr
 	}
 
 	role, found, err := a.members.MemberRole(ctx, string(execIdentity.OrgID), string(execIdentity.PrincipalID))
 	if err != nil {
-		return nil, fmt.Errorf("recherche du rôle du membre %q: %w", execIdentity.PrincipalID, err)
+		return nil, "", fmt.Errorf("recherche du rôle du membre %q: %w", execIdentity.PrincipalID, err)
 	}
 	if !found {
-		return nil, cfgErr
+		return nil, "", cfgErr
 	}
 
-	return identity.DynamicRolePermissions(role), nil
+	return identity.DynamicRolePermissions(role), role, nil
+}
+
+// PluginDomainSource fournit les domaines de permission des plugins actifs
+// pour une organisation. Implémentée dans internal/registry sur le
+// gestionnaire de plugins ; nil quand le système de plugins est désactivé.
+type PluginDomainSource interface {
+	ActiveDomains(ctx context.Context, orgID string) []string
+}
+
+// WithPluginDomains attache la source des domaines de plugins actifs.
+func (a *Authorizer) WithPluginDomains(source PluginDomainSource) *Authorizer {
+	a.pluginDomains = source
+	return a
+}
+
+// withPluginDomains étend le jeu de base avec les permissions des domaines
+// de plugins ACTIFS pour l'organisation : activer un plugin, décision
+// d'administration par organisation, accorde à ses membres l'usage du
+// domaine. La vraie porte des écritures reste la confirmation humaine —
+// toute écriture de plugin passe par un plan d'actions, et l'activation
+// est elle-même re-vérifiée par l'exécuteur au moment de la confirmation.
+// Un rôle readonly ne gagne que la lecture, comme partout ailleurs.
+func (a *Authorizer) withPluginDomains(ctx context.Context, execIdentity model.ExecutionIdentity, base map[string]struct{}, role string) map[string]struct{} {
+	if a.pluginDomains == nil {
+		return base
+	}
+
+	domains := a.pluginDomains.ActiveDomains(ctx, string(execIdentity.OrgID))
+	if len(domains) == 0 {
+		return base
+	}
+
+	permissions := make(map[string]struct{}, len(base)+len(domains)*5)
+	for p := range base {
+		permissions[p] = struct{}{}
+	}
+
+	for _, domain := range domains {
+		if domain == "" {
+			continue
+		}
+		grants := []string{domain + ".personal.read", domain + ".group.read"}
+		if role != "readonly" {
+			grants = append(grants,
+				domain+".personal.write", domain+".personal.delete",
+				domain+".group.write")
+		}
+		for _, g := range grants {
+			permissions[g] = struct{}{}
+		}
+	}
+
+	return permissions
 }
 
 type permissionParts struct {

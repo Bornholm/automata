@@ -45,7 +45,7 @@ func TestNewRegistry_DelegatesReachMCPEquippedSpecialist(t *testing.T) {
 
 	// Répété : un seul passage pourrait tomber sur le bon ordre par chance.
 	for i := 0; i < 20; i++ {
-		registry, err := NewRegistryWithMemory(cfg, MemoryTools{}, ReminderTools{}, ProfileTools{}, nil, manager, nil, nil)
+		registry, err := NewRegistryWithMemory(cfg, MemoryTools{}, ReminderTools{}, ProfileTools{}, nil, manager, nil, nil, nil)
 		if err != nil {
 			t.Fatalf("NewRegistryWithMemory: %v", err)
 		}

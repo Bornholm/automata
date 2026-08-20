@@ -51,6 +51,10 @@ type OrchestratorAgent struct {
 	agentName              string
 	specialists            map[string]delegation.Specialist
 	specialistDescriptions map[string]string
+	// pluginProvider fournit les sous-agents des plugins actifs pour
+	// l'organisation du tour ; nil quand le système de plugins est
+	// désactivé.
+	pluginProvider         PluginSpecialistProvider
 	maxSequentialToolCalls int
 	maxActionsPerTurn      int
 	maxToolContextBytes    int64
@@ -102,6 +106,17 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	tools := a.buildDelegationTools(req.Identity, req.Attachments, collector, mediaCollector)
 	if len(custom.DisabledAgents) > 0 {
 		tools = filterDelegationTools(tools, custom.DisabledAgents)
+	}
+	// Sous-agents des plugins actifs pour l'organisation du tour :
+	// l'activation est relue à CHAQUE tour (comme la personnalisation),
+	// une désactivation s'applique donc au message suivant, sans
+	// redémarrage. La personnalisation ne filtre pas ces outils : c'est
+	// l'activation elle-même qui accorde ou retire.
+	if a.pluginProvider != nil {
+		pluginSpecs, pluginDescs := a.pluginProvider.SpecialistsFor(ctx, req.Identity)
+		for name, specialist := range pluginSpecs {
+			tools = append(tools, newDelegationTool(name, pluginDescs[name], specialist, req.Identity, req.Attachments, collector, mediaCollector, a.metrics, a.logger))
+		}
 	}
 	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity, collector)...)
 	tools = append(tools, a.reminderTools.buildReminderTools(req.Identity)...)
@@ -362,6 +377,13 @@ func (a *OrchestratorAgent) orgCustomization(ctx context.Context, identity model
 // WithMemoryTools et WithReminderTools — la valeur zéro le désactive.
 func (a *OrchestratorAgent) WithProfileTools(tools ProfileTools) *OrchestratorAgent {
 	a.profileTools = tools
+	return a
+}
+
+// WithPluginSpecialists branche les sous-agents fournis par les plugins.
+// Nil-safe : sans provider, aucun outil de plugin n'est jamais exposé.
+func (a *OrchestratorAgent) WithPluginSpecialists(provider PluginSpecialistProvider) *OrchestratorAgent {
+	a.pluginProvider = provider
 	return a
 }
 
