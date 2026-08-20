@@ -416,7 +416,12 @@ signale d'ailleurs les appels sans coût rapporté, la marge affichée étant
 optimiste d'autant.
 
 Ce réglage ne concerne que les clients `provider: openai` pointés sur une
-passerelle. Le provider `openrouter` natif demande déjà le coût de lui-même.
+passerelle, et seulement la complétion. Les transcriptions et les
+générations d'images d'OpenRouter portent leur coût sans qu'on le demande :
+il est enregistré tel quel. C'est d'autant plus important pour les images,
+facturées à l'unité — plusieurs centimes l'une, trois ordres de grandeur
+au-dessus d'un tour de conversation, qu'aucune estimation au jeton
+n'approcherait.
 
 ### vision
 
