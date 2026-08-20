@@ -187,12 +187,12 @@ func (p *Plugin) account(ctx context.Context, cc *proto.CallContext) (memberConf
 		return memberConfig{}, "", "the mailbox configuration is incomplete"
 	}
 
-	password, found, err := host.GetSecret(ctx, cc.OrgId, cc.MemberId, secretKeyPassword)
-	if err != nil || !found {
-		return memberConfig{}, "", "the mailbox password is not set"
+	cred, err := credential(ctx, host, cc.OrgId, cc.MemberId, cfg)
+	if err != nil {
+		return memberConfig{}, "", err.Error()
 	}
 
-	return cfg, password, ""
+	return cfg, cred, ""
 }
 
 func (p *Plugin) listRecent(cfg memberConfig, password string, args map[string]any) (*proto.CallToolOutput, error) {

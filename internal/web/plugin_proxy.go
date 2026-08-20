@@ -22,6 +22,21 @@ import (
 // jeton. La protection vient de la session (admin ou lien de profil), du
 // jeton d'UI et de la sandbox.
 
+// isPluginUIPath reconnaît les chemins servis par le reverse proxy des
+// interfaces de plugins, seuls exemptés du contrôle CSRF de
+// l'application (voir le commentaire de tête).
+func isPluginUIPath(path string) bool {
+	if !strings.HasPrefix(path, "/admin/orgs/") {
+		return false
+	}
+	_, rest, found := strings.Cut(strings.TrimPrefix(path, "/admin/orgs/"), "/plugins/")
+	if !found {
+		return false
+	}
+	_, uiPath, found := strings.Cut(rest, "/ui/")
+	return found && !strings.Contains(uiPath, "..")
+}
+
 // PluginUIEndpoint est la part du gestionnaire de plugins dont le proxy a
 // besoin. Le port et le jeton sont relus à CHAQUE requête : ils changent à
 // chaque redémarrage du plugin.
@@ -82,6 +97,17 @@ func (s *Server) handleProfilePluginUI(w http.ResponseWriter, r *http.Request) {
 	s.proxyPluginUI(w, r, name, member.OrgID, member.ID, "member", base)
 }
 
+// handlePluginOAuthCallback relaie le retour d'un fournisseur OAuth vers
+// le plugin. La route est PUBLIQUE et stable — un fournisseur comme Google
+// exige une URL de redirection fixe, incompatible avec les liens de profil
+// temporaires — mais elle est étroite : seul le chemin oauth/callback du
+// plugin est atteignable, sans aucun en-tête d'identité. La sécurité du
+// flux repose sur le paramètre state, généré et vérifié par le plugin.
+func (s *Server) handlePluginOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	s.proxyPluginUI(w, r, name, "", "", "public", "/plugins/"+name+"/oauth")
+}
+
 // proxyPluginUI relaie la requête vers le serveur HTTP embarqué du plugin.
 func (s *Server) proxyPluginUI(w http.ResponseWriter, r *http.Request, name, orgID, memberID, view, basePath string) {
 	if s.pluginManager == nil {
@@ -104,6 +130,10 @@ func (s *Server) proxyPluginUI(w http.ResponseWriter, r *http.Request, name, org
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
 	uiPath := "/" + r.PathValue("path")
+	if view == "public" {
+		// La route publique ne dessert que le retour OAuth, rien d'autre.
+		uiPath = "/oauth/callback"
+	}
 
 	originalDirector := proxy.Director
 	proxy.Director = func(req *http.Request) {
@@ -117,6 +147,9 @@ func (s *Server) proxyPluginUI(w http.ResponseWriter, r *http.Request, name, org
 		req.Header.Set("X-Automata-Plugin-Base-Path", basePath+"/")
 		req.Header.Set("X-Automata-View", view)
 		req.Header.Set("X-Automata-UI-Token", token)
+		// L'URL publique de l'instance : le plugin en a besoin pour
+		// composer une URL de redirection OAuth enregistrable.
+		req.Header.Set("X-Automata-Base-Url", strings.TrimSuffix(s.cfg.Web.BaseURL, "/"))
 	}
 
 	proxy.ModifyResponse = func(resp *http.Response) error {

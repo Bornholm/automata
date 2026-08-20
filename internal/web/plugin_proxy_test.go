@@ -175,3 +175,32 @@ func portOf(t *testing.T, u *url.URL) uint32 {
 }
 
 var _ = io.Discard
+
+// L'exemption CSRF doit être exactement aussi large que nécessaire : les
+// chemins d'UI de plugin, et rien d'autre.
+func TestIsPluginUIPath(t *testing.T) {
+	exempt := []string{
+		"/admin/orgs/org-a/plugins/email/ui/",
+		"/admin/orgs/org-a/plugins/email/ui/save",
+		"/admin/orgs/org-a/plugins/email/ui/oauth/callback",
+	}
+	for _, path := range exempt {
+		if !isPluginUIPath(path) {
+			t.Errorf("%q devrait être exempté", path)
+		}
+	}
+
+	protected := []string{
+		"/admin/orgs/org-a/plugins",
+		"/admin/orgs/org-a/grant",
+		"/admin/plugins/email/restart",
+		"/admin/orgs",
+		"/admin/pricing/settings",
+		"/admin/orgs/org-a/plugins/email/ui/../../../grant",
+	}
+	for _, path := range protected {
+		if isPluginUIPath(path) {
+			t.Errorf("%q ne doit PAS être exempté du contrôle CSRF", path)
+		}
+	}
+}

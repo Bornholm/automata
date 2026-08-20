@@ -130,12 +130,12 @@ func (p *Plugin) pollOnce(ctx context.Context, orgID, memberID string, events ch
 	}
 	interval := time.Duration(cfg.pollInterval()) * time.Second
 
-	password, found, err := host.GetSecret(ctx, orgID, memberID, secretKeyPassword)
-	if err != nil || !found {
+	cred, err := credential(ctx, host, orgID, memberID, cfg)
+	if err != nil {
 		return interval
 	}
 
-	client, err := dialIMAP(cfg, password)
+	client, err := dialIMAP(cfg, cred)
 	if err != nil {
 		return interval
 	}

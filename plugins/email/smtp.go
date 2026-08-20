@@ -9,7 +9,7 @@ import (
 // sendEmail submits a message. replyTo carries the threading headers when
 // answering an existing message — resolved by the plugin from the mailbox,
 // never by the model.
-func sendEmail(cfg memberConfig, password, to, subject, body, inReplyTo string) error {
+func sendEmail(cfg memberConfig, credential, to, subject, body, inReplyTo string) error {
 	m := gomail.NewMessage()
 	m.SetHeader("From", cfg.From)
 	m.SetHeader("To", to)
@@ -20,7 +20,10 @@ func sendEmail(cfg memberConfig, password, to, subject, body, inReplyTo string) 
 	}
 	m.SetBody("text/plain", body)
 
-	d := gomail.NewDialer(cfg.SMTPHost, cfg.SMTPPort, cfg.Username, password)
+	d := gomail.NewDialer(cfg.SMTPHost, cfg.SMTPPort, cfg.Username, credential)
+	if cfg.oauth() {
+		d.Auth = &smtpXOAUTH2{username: cfg.Username, accessToken: credential}
+	}
 	if cfg.SMTPInsecure {
 		// Serveur de test local : ni TLS ni authentification.
 		d.SSL = false

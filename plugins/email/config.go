@@ -5,6 +5,14 @@ import (
 	"fmt"
 )
 
+// unmarshalJSON décode une configuration quelconque du service hôte.
+func unmarshalJSON(raw string, target any) error {
+	if raw == "" {
+		return fmt.Errorf("empty configuration")
+	}
+	return json.Unmarshal([]byte(raw), target)
+}
+
 // memberConfig is the per-member configuration stored by the host
 // (sealed at rest). Secrets never live here: the password goes through
 // SetSecret only.
@@ -20,6 +28,10 @@ type memberConfig struct {
 	// de test locaux, jamais exposés dans l'interface.
 	IMAPInsecure bool `json:"imap_insecure,omitempty"`
 	SMTPInsecure bool `json:"smtp_insecure,omitempty"`
+
+	// AuthMode is "password" (default) or "oauth" for a Google mailbox
+	// connected through the consent screen.
+	AuthMode string `json:"auth_mode,omitempty"`
 
 	// AllowRead exposes the reading tools to the agent; AllowWrite
 	// exposes the sending tools. Sending ALWAYS goes through the host's
@@ -58,6 +70,22 @@ func parseConfig(raw string) (memberConfig, error) {
 
 func (c memberConfig) complete() bool {
 	return c.IMAPHost != "" && c.IMAPPort > 0 && c.Username != ""
+}
+
+// oauth indique si le compte s'authentifie par jeton Google.
+func (c memberConfig) oauth() bool { return c.AuthMode == authModeOAuth }
+
+// googleDefaults renseigne les serveurs Gmail : un compte connecté par
+// consentement n'a aucune raison de les saisir à la main.
+func (c memberConfig) googleDefaults(address string) memberConfig {
+	c.AuthMode = authModeOAuth
+	c.IMAPHost, c.IMAPPort = googleIMAPHost, googleIMAPPort
+	c.SMTPHost, c.SMTPPort = googleSMTPHost, googleSMTPPort
+	c.IMAPInsecure, c.SMTPInsecure = false, false
+	if address != "" {
+		c.Username, c.From = address, address
+	}
+	return c
 }
 
 func (c memberConfig) sendComplete() bool {

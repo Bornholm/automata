@@ -27,12 +27,36 @@ button{margin-top:16px;height:36px;padding:0 16px;border:0;border-radius:8px;bac
 .flash{margin-top:12px;padding:8px 12px;border-radius:8px;background:#e7f4ef;color:#17795e;font-size:13px}
 .error{background:#fce9e7;color:#b42318}
 .notice{margin-top:14px;padding:8px 12px;border-radius:8px;background:#f5f5fe;color:#3f3fa8;font-size:12px;line-height:1.5}
+.google{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-top:6px;padding:12px 14px;border:1px solid #d8dce4;border-radius:10px}
+.google.connected{border-color:#bfe3d4;background:#f2faf7}
+.google button{margin-top:0}
+button.ghost{background:#fff;color:#161c27;border:1px solid #d8dce4}
 </style></head><body>
 {{if .Saved}}<div class="flash">Configuration enregistrée.</div>{{end}}
 {{if .Tested}}<div class="flash {{if not .TestOK}}error{{end}}">{{.TestMessage}}</div>{{end}}
-{{if not .MemberScoped}}
-<p class="hint">La boîte mail se configure depuis la page de profil de chaque membre : ce panneau d'administration n'affiche aucune donnée personnelle.</p>
+{{if .OAuthMessage}}<div class="flash {{if .OAuthError}}error{{end}}">{{.OAuthMessage}}</div>{{end}}
+{{if .GoogleConnected}}
+<div class="google connected">
+	<div><strong>Compte Google connecté</strong><div class="hint">{{.Cfg.Username}} — les serveurs Gmail sont réglés automatiquement, aucun mot de passe à saisir.</div></div>
+	<form method="post" action="{{.Base}}disconnect"><button type="submit" class="ghost">Déconnecter</button></form>
+</div>
+<form method="post" action="{{.Base}}save">
+	<input type="hidden" name="imap_host" value="{{.Cfg.IMAPHost}}"><input type="hidden" name="imap_port" value="{{.Cfg.IMAPPort}}">
+	<input type="hidden" name="smtp_host" value="{{.Cfg.SMTPHost}}"><input type="hidden" name="smtp_port" value="{{.Cfg.SMTPPort}}">
+	<input type="hidden" name="username" value="{{.Cfg.Username}}"><input type="hidden" name="from_address" value="{{.Cfg.From}}">
+	<div class="check"><input type="checkbox" id="ar" name="allow_read" {{if .Cfg.AllowRead}}checked{{end}}><label for="ar" style="margin:0">L'agent peut lire mes courriels</label></div>
+	<div class="check"><input type="checkbox" id="aw" name="allow_write" {{if .Cfg.AllowWrite}}checked{{end}}><label for="aw" style="margin:0">L'agent peut préparer des envois</label></div>
+	<div class="notice">Aucun courriel ne part jamais sans votre accord : chaque envoi préparé par l'agent attend votre « confirmer » dans la conversation. Ce réglage décide seulement de ce que l'agent voit.</div>
+	<button type="submit">Enregistrer</button>
+</form>
 {{else}}
+{{if .GoogleAvailable}}
+<div class="google">
+	<div><strong>Boîte Gmail</strong><div class="hint">Connectez votre compte Google : rien à saisir, et aucun mot de passe conservé.</div></div>
+	<form method="post" action="{{.Base}}connect"><button type="submit">Connecter Gmail</button></form>
+</div>
+<p class="hint" style="margin-top:14px">Ou configurez un autre fournisseur ci-dessous.</p>
+{{end}}
 <form method="post" action="{{.Base}}save">
 	<div class="row">
 		<div><label>Serveur IMAP<input type="text" name="imap_host" value="{{.Cfg.IMAPHost}}" placeholder="imap.exemple.fr"></label></div>
@@ -64,14 +88,37 @@ type uiData struct {
 	Tested       bool
 	TestOK       bool
 	TestMessage  string
+
+	// OAuth : état de la connexion Google.
+	GoogleAvailable bool
+	GoogleConnected bool
+	OAuthMessage    string
+	OAuthError      bool
 }
 
 func newUIHandler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", handleUIHome)
+	mux.HandleFunc("GET /", handleUIRoot)
 	mux.HandleFunc("POST /save", handleUISave)
 	mux.HandleFunc("POST /test", handleUITest)
+	// Connexion Google : consentement, retour, déconnexion.
+	mux.HandleFunc("POST /connect", handleConnect)
+	mux.HandleFunc("POST /disconnect", handleDisconnect)
+	mux.HandleFunc("POST /app", handleAdminSaveApp)
+	// Le retour de Google arrive par la route publique de l'hôte, sans
+	// contexte de membre : c'est le state signé qui désigne le compte.
+	mux.HandleFunc("GET /oauth/callback", handleOAuthCallback)
 	return mux
+}
+
+// handleUIRoot aiguille : l'administrateur configure l'application
+// Google, le membre configure SA boîte.
+func handleUIRoot(w http.ResponseWriter, r *http.Request) {
+	if pluginsdk.MemberID(r) == "" {
+		handleAdminHome(w, r)
+		return
+	}
+	handleUIHome(w, r)
 }
 
 func loadUIData(r *http.Request) uiData {
@@ -96,12 +143,27 @@ func loadUIData(r *http.Request) uiData {
 		data.HasPassword = true
 	}
 
+	// La connexion Google n'est proposée que si l'organisation a
+	// enregistré une application.
+	if _, err := loadOAuthApp(r.Context(), host, orgID); err == nil {
+		data.GoogleAvailable = true
+	}
+	if _, found, err := host.GetSecret(r.Context(), orgID, memberID, secretKeyRefreshToken); err == nil && found {
+		data.GoogleConnected = data.Cfg.oauth()
+	}
+
 	return data
 }
 
 func handleUIHome(w http.ResponseWriter, r *http.Request) {
 	data := loadUIData(r)
 	data.Saved = r.URL.Query().Get("saved") == "1"
+	switch r.URL.Query().Get("oauth") {
+	case "noapp":
+		data.OAuthMessage, data.OAuthError = "Aucune application Google n'est enregistrée pour votre organisation : demandez à l'exploitant de la configurer.", true
+	case "disconnected":
+		data.OAuthMessage = "Compte Google déconnecté."
+	}
 	if msg := r.URL.Query().Get("tested"); msg != "" {
 		data.Tested = true
 		data.TestOK = msg == "ok"

@@ -1444,6 +1444,13 @@ Ce que l'hôte garantit, quel que soit le plugin :
 - les rafales de déclencheurs sont bornées (`triggers.*`) — abandon compté,
   jamais de file illimitée.
 
+Une route publique, `GET /plugins/{nom}/oauth/callback`, est réservée aux
+retours d'autorisation OAuth des plugins (le plugin `email` s'en sert pour
+Gmail). Elle est délibérément étroite : seul ce chemin est proxifié, elle
+ne transporte aucune identité, et c'est au plugin de prouver l'origine de
+l'appel — le plugin `email` le fait par un paramètre `state` signé avec une
+graine propre au membre.
+
 Un plugin qui meurt est relancé au prochain usage, après le délai de
 refroidissement ; le bouton « Redémarrer » de l'écran Plugins force la
 relance. Le nom d'un plugin (déclaré par son descripteur) devient l'outil

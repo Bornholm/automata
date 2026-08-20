@@ -22,6 +22,7 @@ const (
 	HeaderBasePath = "X-Automata-Plugin-Base-Path"
 	HeaderView     = "X-Automata-View"
 	HeaderUIToken  = "X-Automata-UI-Token"
+	HeaderBaseURL  = "X-Automata-Base-Url"
 )
 
 // OrgID returns the organization the UI request acts for.
@@ -35,8 +36,14 @@ func MemberID(r *http.Request) string { return r.Header.Get(HeaderMemberID) }
 // mounted; use it to build URLs that survive the reverse proxy.
 func BasePath(r *http.Request) string { return r.Header.Get(HeaderBasePath) }
 
-// View returns "admin" or "member", so one UI can adapt to both surfaces.
+// View returns "admin", "member", or "public" for the OAuth callback
+// route, so one UI can adapt to each surface.
 func View(r *http.Request) string { return r.Header.Get(HeaderView) }
+
+// BaseURL returns the public base URL of the instance. Plugins use it to
+// build an OAuth redirect URI that a provider can be configured with:
+// BaseURL(r) + "/plugins/<name>/oauth/callback".
+func BaseURL(r *http.Request) string { return r.Header.Get(HeaderBaseURL) }
 
 // HostClientSetter is implemented by plugins that need the HostClient from
 // their gRPC methods (ListTools/CallTool/WatchTriggers), not only from

@@ -18,8 +18,9 @@ type emailSummary struct {
 	Date    time.Time
 }
 
-// dialIMAP opens an authenticated session on the INBOX.
-func dialIMAP(cfg memberConfig, password string) (*imapclient.Client, error) {
+// dialIMAP opens an authenticated session on the INBOX. credential is the
+// account password, or the OAuth access token when cfg.oauth() is true.
+func dialIMAP(cfg memberConfig, credential string) (*imapclient.Client, error) {
 	addr := fmt.Sprintf("%s:%d", cfg.IMAPHost, cfg.IMAPPort)
 
 	var client *imapclient.Client
@@ -35,7 +36,12 @@ func dialIMAP(cfg memberConfig, password string) (*imapclient.Client, error) {
 		return nil, fmt.Errorf("IMAP connection failed")
 	}
 
-	if err := client.Login(cfg.Username, password).Wait(); err != nil {
+	if cfg.oauth() {
+		if err := client.Authenticate(&imapXOAUTH2{username: cfg.Username, accessToken: credential}); err != nil {
+			_ = client.Close()
+			return nil, fmt.Errorf("Google refused the mailbox token (reconnect the account)")
+		}
+	} else if err := client.Login(cfg.Username, credential).Wait(); err != nil {
 		_ = client.Close()
 		return nil, fmt.Errorf("IMAP authentication refused")
 	}

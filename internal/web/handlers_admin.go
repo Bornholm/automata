@@ -25,7 +25,13 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if r.Method == http.MethodPost && !checkCSRF(r) {
+		// Les POST proxifiés vers l'interface d'un plugin sont exemptés :
+		// le formulaire vit dans le document du plugin, qui ne peut pas
+		// porter notre jeton (origine opaque de la sandbox). La
+		// protection vient de la session, du jeton d'UI connu du seul
+		// proxy, et de cette même sandbox qui interdit à un site tiers de
+		// lire quoi que ce soit de la réponse.
+		if r.Method == http.MethodPost && !isPluginUIPath(r.URL.Path) && !checkCSRF(r) {
 			http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 			return
 		}
