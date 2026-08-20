@@ -1394,6 +1394,62 @@ binaire Tailwind sous `tools/` ; `make web-generate` régénère les fichiers
 `*_templ.go` et `internal/web/assets/app.css`. Les fichiers générés sont
 commités : `go build` reste autonome.
 
+## plugins
+
+```yaml
+plugins:
+  enabled: true
+  dir: ./plugins            # binaires exécutables, relatif au fichier de config
+  client: main              # clé de llm_clients servant les sous-agents
+  restart_cooldown: 30s     # facultatif
+  mem_limit: ""             # GOMEMLIMIT des sous-processus, facultatif
+  triggers:
+    max_per_minute: 6       # par (plugin, organisation)
+    max_concurrent: 2       # exécutions de sous-agents simultanées
+```
+
+Les plugins étendent Automata sans toucher à son cœur : chaque binaire
+exécutable du répertoire est lancé en sous-processus (hashicorp/go-plugin,
+gRPC) et peut fournir un **sous-agent** délégué, des **déclencheurs**
+extérieurs (courriel entrant, alerte d'infrastructure) et sa propre
+**interface**, rendue en iframe dans l'administration et la page de profil.
+Le SDK des auteurs de plugins est le module `pkg/pluginsdk` ; le plugin
+`plugins/email` sert d'exemple complet.
+
+**L'activation se décide par organisation**, sur la fiche de l'organisation
+(onglet Plugins). Elle est relue à chaque tour : une désactivation
+s'applique au message suivant. Activer un plugin accorde aux membres de
+l'organisation les permissions de son domaine (`email.personal.write`…) —
+mais la porte des écritures reste la **confirmation humaine** : tout outil
+de plugin non marqué lecture seule produit une action à confirmer par un
+« confirmer » littéral dans la conversation, jamais une exécution directe.
+Aucun réglage, du membre, de l'administrateur ou du plugin, ne peut
+débrayer ce passage.
+
+Ce que l'hôte garantit, quel que soit le plugin :
+
+- les appels LLM des sous-agents passent par le client de l'instance
+  (`plugins.client`) — comptabilité d'usage et débit de crédits inchangés ;
+- l'identité d'un appel est construite par l'hôte, jamais par le modèle ni
+  par le plugin ; un événement de déclencheur *désigne* une organisation et
+  un membre, l'hôte re-vérifie l'activation et l'appartenance avant d'agir ;
+- chaque connexion de service hôte est liée au plugin qui l'a établie : un
+  plugin ne lit jamais les configurations ni les secrets d'un autre ;
+- configurations et secrets des plugins sont scellés au repos (contexte de
+  clé dédié) ; l'interface ne relit jamais une valeur de secret ;
+- l'interface d'un plugin est servie par un port local fermé (jeton connu
+  du seul reverse proxy) et rendue dans une iframe *sandbox* sans
+  `allow-same-origin` : le document du plugin n'accède ni aux cookies ni au
+  DOM de l'application ;
+- les rafales de déclencheurs sont bornées (`triggers.*`) — abandon compté,
+  jamais de file illimitée.
+
+Un plugin qui meurt est relancé au prochain usage, après le délai de
+refroidissement ; le bouton « Redémarrer » de l'écran Plugins force la
+relance. Le nom d'un plugin (déclaré par son descripteur) devient l'outil
+`delegate_to_<nom>` : une collision avec un agent configuré est refusée au
+chargement.
+
 ## backup
 
 Sauvegardes périodiques des bases SQLite. Désactivées par défaut ; une

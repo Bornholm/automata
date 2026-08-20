@@ -23,3 +23,6 @@
 # go.mod ne porte aucun replace.
 /go.work
 /go.work.sum
+/bin
+# Binaires de plugins compilés localement (make build-plugins les range dans local/plugins/)
+plugins/email/email
