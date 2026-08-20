@@ -51,6 +51,21 @@ type DB struct {
 	cipher *secretbox.Box
 }
 
+// Vacuum reconstruit le fichier de base et tronque son journal WAL. Après
+// une migration de chiffrement, c'est ce qui efface les restes du clair :
+// les pages mortes du fichier et le journal gardent sinon les anciennes
+// versions des lignes.
+func (db *DB) Vacuum(ctx context.Context) error {
+	// VACUUM refuse de s'exécuter dans une transaction : accès direct.
+	if _, err := db.sqlDB.ExecContext(ctx, `VACUUM`); err != nil {
+		return fmt.Errorf("vacuum de la base: %w", err)
+	}
+	if _, err := db.sqlDB.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		return fmt.Errorf("troncature du journal WAL: %w", err)
+	}
+	return nil
+}
+
 // Cipher retourne le chiffrement des contenus, ou nil s'il n'est pas
 // configuré. Les repositories porteurs de contenu le reçoivent à la
 // construction : le passer explicitement rend impossible d'ouvrir un

@@ -77,7 +77,17 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 		}
 	}
 
-	store, err := amoxtligorm.NewSQLiteStore(cfg.Memory.Store.Path)
+	// La même clé protège les conversations et les souvenirs : ce sont
+	// les deux moitiés du même contenu personnel. L'index plein texte,
+	// lui, reste en clair — chiffrer des termes indexés casserait la
+	// recherche — et le répertoire de l'index doit être protégé par les
+	// permissions du système.
+	var storeOpts []amoxtligorm.StoreOptionFunc
+	if cfg.Storage.EncryptionKey != "" {
+		storeOpts = append(storeOpts, amoxtligorm.WithEncryptionKey(cfg.Storage.EncryptionKey))
+	}
+
+	store, err := amoxtligorm.NewSQLiteStore(cfg.Memory.Store.Path, storeOpts...)
 	if err != nil {
 		return res, fmt.Errorf("registry: mémoire: ouverture du store sqlite %q: %w", cfg.Memory.Store.Path, err)
 	}

@@ -117,9 +117,20 @@ L'opération est reprenable — une valeur déjà chiffrée est laissée telle
 quelle — et la lecture reste transparente entre-temps : une base à moitié
 migrée fonctionne, les deux formes cohabitant sans que rien ne s'en aperçoive.
 
-Ce que le chiffrement ne couvre pas encore : les souvenirs de la mémoire
-(base `amoxtli`), qui vivent dans leur propre base avec leur index plein
-texte.
+La même clé protège les souvenirs de la mémoire : la base `amoxtli`
+chiffre le contenu de ses documents (chiffrement porté par la bibliothèque,
+`amoxtli/crypto`, mêmes primitives). La commande `storage encrypt` migre
+les deux bases, puis les reconstruit (`VACUUM`) : chiffrer les lignes ne
+suffit pas, les pages mortes et le journal WAL gardent sinon les anciennes
+versions en clair.
+
+**Ce qui reste en clair, à dessein.** L'enveloppe : identifiants,
+horodatages, noms affichés des membres (l'admin les liste et les cherche),
+métadonnées de portée des souvenirs (la recherche filtre dessus). Et
+l'index plein texte de la mémoire (`memory.bleve`) : il stocke les termes
+du texte pour pouvoir chercher — le chiffrer casserait la recherche. Le
+répertoire de données doit donc rester protégé par les permissions du
+système ; le chiffrement de la base protège ses copies, pas la machine.
 
 ## courier
 
