@@ -107,5 +107,11 @@ VOLUME ["/data", "/config"]
 # qui doit posseder les volumes.
 USER searxng
 
-ENTRYPOINT ["/usr/local/bin/automata-entrypoint.sh"]
-CMD ["-config", "/config/config.yaml"]
+# ENTRYPOINT vide, deliberement : l'image SearXNG en declare un, et tout
+# ENTRYPOINT transforme la commande du Procfile en ARGUMENTS au lieu de
+# l'executer. Automata recevait alors son propre chemin en premiere
+# position et refusait de demarrer ; sans cette remise a zero, c'est
+# l'entrypoint de SearXNG qui prenait la main. Le superviseur est donc la
+# commande du conteneur, pas son entrypoint.
+ENTRYPOINT []
+CMD ["/usr/local/bin/automata-entrypoint.sh", "-config", "/config/config.yaml"]

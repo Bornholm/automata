@@ -9,4 +9,6 @@
 # Dokku route le trafic public vers le port déclaré par `ports:set`, que
 # le serveur web doit écouter sur 0.0.0.0 (voir web.addr de config.yaml) :
 # une écoute en loopback ne serait jamais atteinte depuis le proxy.
-web: /usr/local/bin/automata -config /config/config.yaml
+# La commande passe par le superviseur : il lance les services annexes
+# (SearXNG, serveur MCP) avant Automata et lie leurs destins.
+web: /usr/local/bin/automata-entrypoint.sh -config /config/config.yaml

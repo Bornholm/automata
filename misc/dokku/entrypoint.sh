@@ -83,6 +83,14 @@ terminate() {
 }
 trap terminate INT TERM
 
+# Dokku exécute la commande du Procfile ; si l'image déclarait un
+# ENTRYPOINT, cette commande arriverait ici en arguments, chemin du binaire
+# compris. On l'absorbe plutôt que de le passer à Automata, qui le prendrait
+# pour une sous-commande et refuserait de démarrer.
+if [ "${1:-}" = "/usr/local/bin/automata" ] || [ "${1:-}" = "automata" ]; then
+    shift
+fi
+
 start_services
 
 log "démarrage d'Automata"

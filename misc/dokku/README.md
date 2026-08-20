@@ -151,6 +151,19 @@ complète — services annexes, plugins et serveur web compris — sans rien
 déployer. Les volumes locaux doivent appartenir à l'utilisateur qui lance
 le conteneur.
 
+## Un piège d'assemblage à connaître
+
+L'image ne déclare **aucun ENTRYPOINT** (`ENTRYPOINT []`), et c'est
+délibéré. Dokku exécute la commande du `Procfile` : tout ENTRYPOINT la
+transformerait en simples *arguments*, et Automata recevrait son propre
+chemin en première position — il refuserait de démarrer sur « le drapeau
+-config est requis ». Sans la remise à zéro explicite, c'est l'ENTRYPOINT
+hérité de l'image SearXNG qui prendrait la main, et granian démarrerait à
+la place du superviseur.
+
+Le superviseur est donc la **commande** du conteneur, jamais son
+entrypoint — dans le `Procfile` comme dans le `CMD` par défaut.
+
 ## Journaux et diagnostic
 
 ```bash

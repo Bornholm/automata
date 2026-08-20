@@ -147,7 +147,7 @@ dokku-deploy:
 	git read-tree HEAD; \
 	git update-index --add --cacheinfo 100644,$$(git hash-object -w misc/dokku/Dockerfile),Dockerfile; \
 	git update-index --add --cacheinfo 100644,$$(git hash-object -w misc/dokku/Procfile),Procfile; \
-	git update-index --add --cacheinfo 100644,$$(git hash-object -w misc/dokku/CHECKS),CHECKS; \
+	git update-index --add --cacheinfo 100644,$$(git hash-object -w misc/dokku/app.json),app.json; \
 	tree=$$(git write-tree); \
 	commit=$$(git commit-tree "$$tree" -p HEAD -m "deploy: $$(git rev-parse --short HEAD)"); \
 	echo "Déploiement de $$commit vers $(DOKKU_DEPLOY_URL):$(DOKKU_APP)..."; \
