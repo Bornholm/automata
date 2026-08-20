@@ -118,8 +118,9 @@ quelle — et la lecture reste transparente entre-temps : une base à moitié
 migrée fonctionne, les deux formes cohabitant sans que rien ne s'en aperçoive.
 
 La même clé protège les souvenirs de la mémoire : la base `amoxtli`
-chiffre le contenu de ses documents (chiffrement porté par la bibliothèque,
-`amoxtli/crypto`, mêmes primitives). La commande `storage encrypt` migre
+chiffre le contenu de ses documents et de ses images (chiffrement porté
+par la bibliothèque, `amoxtli/crypto`, mêmes primitives — utilisable par
+tout projet adossé à amoxtli, SQLite ou PostgreSQL). La commande `storage encrypt` migre
 les deux bases, puis les reconstruit (`VACUUM`) : chiffrer les lignes ne
 suffit pas, les pages mortes et le journal WAL gardent sinon les anciennes
 versions en clair.
