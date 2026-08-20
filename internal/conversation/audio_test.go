@@ -74,7 +74,7 @@ func blockingUntilCtxDone(ctx context.Context) (io.ReadCloser, error) {
 func lastPersistedUserContent(t *testing.T, db *persistence.DB, convID model.ConversationID) string {
 	t.Helper()
 
-	messages := persistence.NewMessageRepository()
+	messages := persistence.NewMessageRepository(nil)
 
 	var records []persistence.Message
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {

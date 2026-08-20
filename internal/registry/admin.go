@@ -31,7 +31,7 @@ const (
 // AdminInspectKindRuns), pour l'administrateur d'une instance (PLAN.md
 // Phase 18, "ajouter une commande d'inspection administrative").
 func AdminInspect(ctx context.Context, cfg *config.Config, kind string, out io.Writer) error {
-	db, err := persistence.Open(ctx, cfg.Storage.Application)
+	db, err := persistence.OpenWithEncryption(ctx, cfg.Storage.Application, cfg.Storage.EncryptionKey)
 	if err != nil {
 		return fmt.Errorf("registry: ouverture de la persistance: %w", err)
 	}

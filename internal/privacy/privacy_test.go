@@ -50,7 +50,7 @@ func seed(t *testing.T, db *persistence.DB) {
 			return err
 		}
 
-		messages := persistence.NewMessageRepository()
+		messages := persistence.NewMessageRepository(nil)
 		for i, content := range []string{"bonjour", "peux-tu me rappeler demain ?"} {
 			if err := messages.Insert(context.Background(), tx, persistence.Message{
 				ID:                "msg-" + string(rune('a'+i)),

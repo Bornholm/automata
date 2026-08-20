@@ -45,7 +45,7 @@ func testDB(t *testing.T) *persistence.DB {
 func insertReminder(t *testing.T, db *persistence.DB, rem persistence.Reminder) {
 	t.Helper()
 
-	repo := persistence.NewReminderRepository()
+	repo := persistence.NewReminderRepository(nil)
 	if err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		return repo.Insert(context.Background(), tx, rem)
 	}); err != nil {
@@ -56,7 +56,7 @@ func insertReminder(t *testing.T, db *persistence.DB, rem persistence.Reminder) 
 func reminderStatus(t *testing.T, db *persistence.DB, id persistence.ReminderID) string {
 	t.Helper()
 
-	repo := persistence.NewReminderRepository()
+	repo := persistence.NewReminderRepository(nil)
 	var status string
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		rem, found, err := repo.FindByID(context.Background(), tx, id)
@@ -79,7 +79,7 @@ func reminderStatus(t *testing.T, db *persistence.DB, id persistence.ReminderID)
 func reminderRow(t *testing.T, db *persistence.DB, id persistence.ReminderID) persistence.Reminder {
 	t.Helper()
 
-	repo := persistence.NewReminderRepository()
+	repo := persistence.NewReminderRepository(nil)
 	var rem persistence.Reminder
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		r, found, err := repo.FindByID(context.Background(), tx, id)
@@ -216,7 +216,7 @@ func TestDispatcher_RecurringReminderIsRearmed(t *testing.T) {
 		t.Fatalf("messages envoyés = %d, attendu 1", len(sent))
 	}
 
-	repo := persistence.NewReminderRepository()
+	repo := persistence.NewReminderRepository(nil)
 	var after persistence.Reminder
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		var found bool
@@ -254,7 +254,7 @@ func TestReminderRepository_RescheduleNextRespectsCancellation(t *testing.T) {
 	rem.Status = persistence.ReminderStatusCancelled
 	insertReminder(t, db, rem)
 
-	repo := persistence.NewReminderRepository()
+	repo := persistence.NewReminderRepository(nil)
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		ok, err := repo.RescheduleNext(context.Background(), tx, "cancelled", "2026-08-18T18:00:00Z")
 		if err != nil {

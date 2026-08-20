@@ -113,7 +113,7 @@ func New(db *persistence.DB, store memory.Store, creditRate func(ctx context.Con
 		creditRate:    creditRate,
 		members:       persistence.NewMemberRepository(),
 		organizations: persistence.NewOrganizationRepository(),
-		messages:      persistence.NewMessageRepository(),
+		messages:      persistence.NewMessageRepository(db.Cipher()),
 		usage:         persistence.NewUsageRecordRepository(),
 		profileLinks:  persistence.NewProfileLinkRepository(),
 		linkTokens:    persistence.NewLinkTokenRepository(),

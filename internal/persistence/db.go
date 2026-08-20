@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 
 	sqlitedriver "github.com/ncruces/go-sqlite3/driver"
+
+	"github.com/bornholm/automata/internal/secretbox"
 	// Embarque le binaire SQLite WASM : requis par go-sqlite3 v0.23.x
 	// (épinglé par compatibilité avec l'index sémantique d'amoxtli, voir
 	// go.mod), sans quoi toute ouverture échoue avec « no SQLite binary
@@ -44,6 +46,17 @@ func init() {
 // transactionnelles.
 type DB struct {
 	sqlDB *sql.DB
+	// cipher chiffre les contenus personnels au repos. Nil : ils sont
+	// écrits en clair (voir storage.encryption_key).
+	cipher *secretbox.Box
+}
+
+// Cipher retourne le chiffrement des contenus, ou nil s'il n'est pas
+// configuré. Les repositories porteurs de contenu le reçoivent à la
+// construction : le passer explicitement rend impossible d'ouvrir un
+// dépôt de contenu sans avoir décidé de son sort.
+func (db *DB) Cipher() *secretbox.Box {
+	return db.cipher
 }
 
 // Open ouvre la base SQLite applicative au chemin décrit par cfg, applique
@@ -56,6 +69,26 @@ type DB struct {
 // limitée à une seule connexion ouverte (SetMaxOpenConns(1)). Cela sérialise
 // les écritures au niveau du pool Go plutôt que de compter uniquement sur le
 // busy_timeout SQLite.
+// OpenWithEncryption ouvre la base et arme le chiffrement des contenus
+// avec la clé fournie. Une clé vide laisse les contenus en clair.
+func OpenWithEncryption(ctx context.Context, cfg config.StorageApplication, encryptionKey string) (*DB, error) {
+	db, err := Open(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	if encryptionKey != "" {
+		cipher, err := secretbox.NewContentBox(encryptionKey)
+		if err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("chiffrement des contenus: %w", err)
+		}
+		db.cipher = cipher
+	}
+
+	return db, nil
+}
+
 func Open(ctx context.Context, cfg config.StorageApplication) (*DB, error) {
 	isFile := cfg.Path != "" && cfg.Path != ":memory:"
 

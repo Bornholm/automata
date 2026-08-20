@@ -102,8 +102,8 @@ func NewHandler(db *persistence.DB, a agent.Agent, actions *action.Engine, histo
 	return &Handler{
 		db:                   db,
 		conversations:        persistence.NewConversationRepository(),
-		messages:             persistence.NewMessageRepository(),
-		messageAttachments:   persistence.NewMessageAttachmentRepository(),
+		messages:             persistence.NewMessageRepository(db.Cipher()),
+		messageAttachments:   persistence.NewMessageAttachmentRepository(db.Cipher()),
 		agent:                a,
 		actions:              actions,
 		historyLimit:         historyLimit,
@@ -112,7 +112,7 @@ func NewHandler(db *persistence.DB, a agent.Agent, actions *action.Engine, histo
 		transcriber:          transcriber,
 		persistTranscription: persistTranscription,
 		metrics:              metrics,
-		summaries:            persistence.NewConversationSummaryRepository(),
+		summaries:            persistence.NewConversationSummaryRepository(db.Cipher()),
 	}
 }
 

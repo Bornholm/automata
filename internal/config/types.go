@@ -324,6 +324,19 @@ func (c *Config) PrincipalInOrganization(principalID, orgID string) bool {
 // Storage décrit le stockage applicatif.
 type Storage struct {
 	Application StorageApplication `yaml:"application"`
+	// EncryptionKey active le chiffrement au repos des contenus
+	// personnels : messages, résumés de conversation, rappels et pièces
+	// jointes. Vide, ils sont écrits en clair.
+	//
+	// Le chiffrement est applicatif, pas moteur : les valeurs partent
+	// chiffrées vers la base, donc le réglage suit tel quel vers un autre
+	// moteur. Il protège une base volée, une sauvegarde égarée, un disque
+	// revendu — pas un processus compromis, qui détient la clé.
+	//
+	// Perdre cette clé rend les contenus déjà chiffrés définitivement
+	// illisibles : elle se sauvegarde à part, et jamais dans le même
+	// coffre que les données.
+	EncryptionKey string `yaml:"encryption_key"`
 }
 
 // StorageApplication décrit la base SQLite applicative.

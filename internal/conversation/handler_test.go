@@ -155,7 +155,7 @@ func TestHandler_GroupAuthorAttribution(t *testing.T) {
 		t.Fatalf("Handle (bob): %v", err)
 	}
 
-	messages := persistence.NewMessageRepository()
+	messages := persistence.NewMessageRepository(nil)
 
 	var records []persistence.Message
 	err := db.WithTx(ctx, func(tx *sql.Tx) error {

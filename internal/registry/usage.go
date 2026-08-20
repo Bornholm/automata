@@ -148,7 +148,7 @@ func (r *dbUsageRecorder) priceTable(ctx context.Context) (persistence.PriceTabl
 // commande CLI "automata usage report". La base est ouverte le temps du
 // rapport puis refermée.
 func UsageReport(ctx context.Context, cfg *config.Config, from, to time.Time, groupBy []string, out io.Writer) error {
-	db, err := persistence.Open(ctx, cfg.Storage.Application)
+	db, err := persistence.OpenWithEncryption(ctx, cfg.Storage.Application, cfg.Storage.EncryptionKey)
 	if err != nil {
 		return fmt.Errorf("registry: ouverture de la persistance: %w", err)
 	}
@@ -239,7 +239,7 @@ func UsageReport(ctx context.Context, cfg *config.Config, from, to time.Time, gr
 // par la commande CLI « automata usage reprice », après avoir renseigné la
 // grille tarifaire.
 func UsageReprice(ctx context.Context, cfg *config.Config, out io.Writer) error {
-	db, err := persistence.Open(ctx, cfg.Storage.Application)
+	db, err := persistence.OpenWithEncryption(ctx, cfg.Storage.Application, cfg.Storage.EncryptionKey)
 	if err != nil {
 		return fmt.Errorf("registry: ouverture de la persistance: %w", err)
 	}

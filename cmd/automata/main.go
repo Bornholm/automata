@@ -89,6 +89,7 @@ func newRootCommand(logger *slog.Logger) *cobra.Command {
 	root.AddCommand(newMemoryCommand(logger))
 	root.AddCommand(newAdminCommand())
 	root.AddCommand(newUsageCommand())
+	root.AddCommand(newStorageCommand())
 	root.AddCommand(newWebCommand())
 
 	return root
@@ -390,6 +391,61 @@ func newUsageRepriceCommand() *cobra.Command {
 
 			if err := registry.UsageReprice(cmd.Context(), cfg, cmd.OutOrStdout()); err != nil {
 				fmt.Fprintln(cmd.ErrOrStderr(), "estimation échouée:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
+
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+// newStorageCommand construit la commande "storage" et sa sous-commande
+// "encrypt" (chiffrement des contenus déjà écrits en clair).
+func newStorageCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "storage",
+		Short: "Opérations sur la base applicative",
+	}
+
+	cmd.AddCommand(newStorageEncryptCommand())
+
+	return cmd
+}
+
+func newStorageEncryptCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                "encrypt",
+		Short:              "Chiffre les contenus déjà enregistrés en clair",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fs := flag.NewFlagSet("encrypt", flag.ContinueOnError)
+			fs.SetOutput(cmd.ErrOrStderr())
+
+			configPath := fs.String("config", "", "chemin du fichier de configuration YAML (requis)")
+
+			if err := fs.Parse(args); err != nil {
+				return errSilent
+			}
+
+			if *configPath == "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "le drapeau -config est requis")
+				return errSilent
+			}
+
+			cfg, err := config.Load(*configPath)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "configuration invalide:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
+
+			if err := registry.StorageEncrypt(cmd.Context(), cfg, cmd.OutOrStdout()); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "chiffrement échoué:")
 				fmt.Fprintln(cmd.ErrOrStderr(), err)
 
 				return errSilent

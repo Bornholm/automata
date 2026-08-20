@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/bornholm/automata/internal/secretbox"
 )
 
 // Statuts d'un rappel (table reminders). Un rappel naît pending, puis passe
@@ -25,11 +27,15 @@ const (
 )
 
 // ReminderRepository donne accès à la table reminders.
-type ReminderRepository struct{}
+type ReminderRepository struct {
+	// cipher protège le texte du rappel, qui est du contenu écrit par la
+	// personne ou par l'agent pour elle.
+	cipher *secretbox.Box
+}
 
 // NewReminderRepository crée un ReminderRepository.
-func NewReminderRepository() *ReminderRepository {
-	return &ReminderRepository{}
+func NewReminderRepository(cipher *secretbox.Box) *ReminderRepository {
+	return &ReminderRepository{cipher: cipher}
 }
 
 // Insert insère un rappel ou une tâche planifiée.
@@ -42,7 +48,13 @@ func (r *ReminderRepository) Insert(ctx context.Context, q Querier, rem Reminder
 		rem.Kind = ReminderKindMessage
 	}
 
-	_, err := q.ExecContext(ctx, `
+	message, err := sealContent(r.cipher, rem.Message)
+	if err != nil {
+		return fmt.Errorf("rappel %q: %w", rem.ID, err)
+	}
+	rem.Message = message
+
+	_, err = q.ExecContext(ctx, `
 		INSERT INTO reminders (id, org_id, principal_id, conversation_id, provider, channel_id, message, fire_at, status, created_at, sent_at, recurrence, timezone, kind, agent_id, attempts)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, rem.ID, rem.OrgID, rem.PrincipalID, rem.ConversationID, rem.Provider, rem.ChannelID, rem.Message, rem.FireAt, rem.Status, rem.CreatedAt, rem.SentAt, rem.Recurrence, rem.Timezone, rem.Kind, rem.AgentID, rem.Attempts)
@@ -61,7 +73,7 @@ func (r *ReminderRepository) FindByID(ctx context.Context, q Querier, id Reminde
 		WHERE id = ?
 	`, id)
 
-	rem, err := scanReminder(row)
+	rem, err := r.scanReminder(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Reminder{}, false, nil
@@ -89,7 +101,7 @@ func (r *ReminderRepository) ListDue(ctx context.Context, q Querier, now string,
 	}
 	defer rows.Close()
 
-	return collectReminders(rows)
+	return r.collectReminders(rows)
 }
 
 // ListPendingByConversation retourne les entrées pending d'une conversation
@@ -112,7 +124,7 @@ func (r *ReminderRepository) ListPendingByConversation(ctx context.Context, q Qu
 	}
 	defer rows.Close()
 
-	return collectReminders(rows)
+	return r.collectReminders(rows)
 }
 
 // UpdateStatus fait passer le rappel id du statut fromStatus à toStatus et
@@ -182,19 +194,35 @@ func (r *ReminderRepository) RetryLater(ctx context.Context, q Querier, id Remin
 	return affected == 1, nil
 }
 
-func scanReminder(row *sql.Row) (Reminder, error) {
+func (r *ReminderRepository) scanReminder(row *sql.Row) (Reminder, error) {
 	var rem Reminder
-	err := row.Scan(&rem.ID, &rem.OrgID, &rem.PrincipalID, &rem.ConversationID, &rem.Provider, &rem.ChannelID, &rem.Message, &rem.FireAt, &rem.Status, &rem.CreatedAt, &rem.SentAt, &rem.Recurrence, &rem.Timezone, &rem.Kind, &rem.AgentID, &rem.Attempts)
-	return rem, err
+	if err := row.Scan(&rem.ID, &rem.OrgID, &rem.PrincipalID, &rem.ConversationID, &rem.Provider, &rem.ChannelID, &rem.Message, &rem.FireAt, &rem.Status, &rem.CreatedAt, &rem.SentAt, &rem.Recurrence, &rem.Timezone, &rem.Kind, &rem.AgentID, &rem.Attempts); err != nil {
+		return rem, err
+	}
+
+	message, err := openContent(r.cipher, rem.Message)
+	if err != nil {
+		return rem, fmt.Errorf("rappel %q: %w", rem.ID, err)
+	}
+	rem.Message = message
+
+	return rem, nil
 }
 
-func collectReminders(rows *sql.Rows) ([]Reminder, error) {
+func (r *ReminderRepository) collectReminders(rows *sql.Rows) ([]Reminder, error) {
 	var reminders []Reminder
 	for rows.Next() {
 		var rem Reminder
 		if err := rows.Scan(&rem.ID, &rem.OrgID, &rem.PrincipalID, &rem.ConversationID, &rem.Provider, &rem.ChannelID, &rem.Message, &rem.FireAt, &rem.Status, &rem.CreatedAt, &rem.SentAt, &rem.Recurrence, &rem.Timezone, &rem.Kind, &rem.AgentID, &rem.Attempts); err != nil {
 			return nil, fmt.Errorf("lecture d'un rappel: %w", err)
 		}
+
+		message, err := openContent(r.cipher, rem.Message)
+		if err != nil {
+			return nil, fmt.Errorf("rappel %q: %w", rem.ID, err)
+		}
+		rem.Message = message
+
 		reminders = append(reminders, rem)
 	}
 	if err := rows.Err(); err != nil {

@@ -79,6 +79,48 @@ une transaction attendre au lieu d'échouer immédiatement.
 
 Le fichier est créé en 0600 et son répertoire en 0700.
 
+### encryption_key
+
+```yaml
+storage:
+  encryption_key: ${STORAGE_ENCRYPTION_KEY}   # au moins 32 caractères
+```
+
+Chiffre au repos les contenus personnels : messages, résumés de
+conversation, rappels, pièces jointes et leurs légendes. Sans cette clé,
+ils sont écrits en clair — c'est le comportement historique.
+
+Le chiffrement est **applicatif** : les valeurs partent chiffrées vers la
+base (AES-256-GCM, clé dérivée par HKDF-SHA256 avec un contexte propre aux
+contenus) et en reviennent telles quelles. Un chiffrement de fichier
+SQLite serait plus simple à activer, mais il adhérerait au moteur ; celui-ci
+suivra tel quel vers PostgreSQL.
+
+**Ce que cela protège :** une base volée, une sauvegarde égarée, un disque
+revendu, un `sqlite3` ouvert par curiosité. **Ce que cela ne protège pas :**
+un processus compromis ou un accès root pendant que le service tourne — la
+clé y est. C'est un chiffrement au repos, pas un coffre-fort.
+
+**Perdre la clé rend les contenus déjà chiffrés définitivement illisibles.**
+Elle se sauvegarde à part, jamais dans le même coffre que les données, et
+n'est pas dérivée de `web.session_secret` : faire tourner un secret de
+session ne doit pas rendre les archives muettes.
+
+Activer le réglage ne protège que ce qui est écrit ensuite. Pour l'historique
+déjà en base :
+
+```bash
+automata storage encrypt -config config.yaml
+```
+
+L'opération est reprenable — une valeur déjà chiffrée est laissée telle
+quelle — et la lecture reste transparente entre-temps : une base à moitié
+migrée fonctionne, les deux formes cohabitant sans que rien ne s'en aperçoive.
+
+Ce que le chiffrement ne couvre pas encore : les souvenirs de la mémoire
+(base `amoxtli`), qui vivent dans leur propre base avec leur index plein
+texte.
+
 ## courier
 
 ```yaml

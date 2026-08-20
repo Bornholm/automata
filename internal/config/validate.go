@@ -51,6 +51,7 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateCourier(cfg)...)
 	errs = append(errs, validateCourierProviders(cfg)...)
 	errs = append(errs, validateConversation(cfg)...)
+	errs = append(errs, validateStorage(cfg)...)
 
 	return joinErrors(errs)
 }
@@ -1034,4 +1035,20 @@ func validateSchedules(cfg *Config) []error {
 	}
 
 	return errs
+}
+
+// validateStorage vérifie la clé de chiffrement des contenus. Une clé trop
+// courte est refusée au chargement plutôt qu'au premier message : une base
+// à moitié chiffrée avec une clé faible serait pire que pas de chiffrement
+// du tout, puisqu'on la croirait protégée.
+func validateStorage(cfg *Config) []error {
+	if cfg.Storage.EncryptionKey == "" {
+		return nil
+	}
+
+	if len(cfg.Storage.EncryptionKey) < 32 {
+		return []error{fmt.Errorf("storage.encryption_key: au moins 32 caractères requis")}
+	}
+
+	return nil
 }

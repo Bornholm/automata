@@ -3,20 +3,39 @@ package persistence
 import (
 	"context"
 	"fmt"
+
+	"github.com/bornholm/automata/internal/secretbox"
 )
 
 // MessageAttachmentRepository donne accès à la table message_attachments
 // (pièces jointes conservées pour être rejouées dans l'historique).
-type MessageAttachmentRepository struct{}
+type MessageAttachmentRepository struct {
+	// cipher protège les octets de la pièce jointe : une photo reçue est
+	// aussi personnelle que le message qui l'accompagne. La légende l'est
+	// aussi, et suit le même sort.
+	cipher *secretbox.Box
+}
 
 // NewMessageAttachmentRepository crée un MessageAttachmentRepository.
-func NewMessageAttachmentRepository() *MessageAttachmentRepository {
-	return &MessageAttachmentRepository{}
+func NewMessageAttachmentRepository(cipher *secretbox.Box) *MessageAttachmentRepository {
+	return &MessageAttachmentRepository{cipher: cipher}
 }
 
 // Insert insère une pièce jointe de message.
 func (r *MessageAttachmentRepository) Insert(ctx context.Context, q Querier, a MessageAttachment) error {
-	_, err := q.ExecContext(ctx, `
+	data, err := sealBytes(r.cipher, a.Data)
+	if err != nil {
+		return fmt.Errorf("pièce jointe %q: %w", a.ID, err)
+	}
+	a.Data = data
+
+	caption, err := sealContent(r.cipher, a.Caption)
+	if err != nil {
+		return fmt.Errorf("pièce jointe %q: %w", a.ID, err)
+	}
+	a.Caption = caption
+
+	_, err = q.ExecContext(ctx, `
 		INSERT INTO message_attachments (
 			id, message_id, position, kind, mime_type, filename, caption, data, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -86,6 +105,18 @@ func (r *MessageAttachmentRepository) ListByMessageIDs(ctx context.Context, q Qu
 		if err := rows.Scan(&a.ID, &a.MessageID, &a.Position, &a.Kind, &a.MimeType, &a.Filename, &a.Caption, &a.Data, &a.CreatedAt); err != nil {
 			return nil, fmt.Errorf("lecture des pièces jointes des messages: %w", err)
 		}
+
+		data, err := openBytes(r.cipher, a.Data)
+		if err != nil {
+			return nil, fmt.Errorf("pièce jointe %q: %w", a.ID, err)
+		}
+		a.Data = data
+
+		caption, err := openContent(r.cipher, a.Caption)
+		if err != nil {
+			return nil, fmt.Errorf("pièce jointe %q: %w", a.ID, err)
+		}
+		a.Caption = caption
 
 		byMessage[a.MessageID] = append(byMessage[a.MessageID], a)
 	}

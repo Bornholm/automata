@@ -36,12 +36,18 @@ type Box struct {
 
 // New dérive une Box du secret fourni (web.session_secret).
 func New(secret string) (*Box, error) {
+	return newBox(secret, derivationInfo)
+}
+
+// newBox dérive une Box du secret fourni, pour l'usage nommé par info :
+// deux usages ne partagent jamais la même clé, même issus du même secret.
+func newBox(secret, info string) (*Box, error) {
 	if len(secret) < 32 {
 		return nil, fmt.Errorf("secretbox: secret trop court (au moins 32 octets)")
 	}
 
 	key := make([]byte, 32)
-	if _, err := io.ReadFull(hkdf.New(sha256.New, []byte(secret), nil, []byte(derivationInfo)), key); err != nil {
+	if _, err := io.ReadFull(hkdf.New(sha256.New, []byte(secret), nil, []byte(info)), key); err != nil {
 		return nil, fmt.Errorf("secretbox: dérivation de la clé: %w", err)
 	}
 

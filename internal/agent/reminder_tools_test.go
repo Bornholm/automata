@@ -69,7 +69,7 @@ func newReminderTools(t *testing.T) (agent.ReminderTools, *persistence.DB) {
 
 	return agent.ReminderTools{
 		DB:         db,
-		Repo:       persistence.NewReminderRepository(),
+		Repo:       persistence.NewReminderRepository(nil),
 		Authorizer: authorization.NewAuthorizer(reminderTestConfig()),
 		Now:        func() time.Time { return reminderTestNow },
 	}, db
@@ -111,7 +111,7 @@ func executeReminderTool(t *testing.T, tools agent.ReminderTools, identity model
 func listReminderRows(t *testing.T, db *persistence.DB, conversationID string) []persistence.Reminder {
 	t.Helper()
 
-	repo := persistence.NewReminderRepository()
+	repo := persistence.NewReminderRepository(nil)
 	var rows []persistence.Reminder
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		var err error

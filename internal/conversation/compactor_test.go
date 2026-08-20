@@ -59,7 +59,7 @@ func seedConversation(t *testing.T, db *persistence.DB, conv model.Conversation,
 	t.Helper()
 
 	conversations := persistence.NewConversationRepository()
-	messages := persistence.NewMessageRepository()
+	messages := persistence.NewMessageRepository(nil)
 
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		if err := conversations.Insert(context.Background(), tx, persistence.Conversation{
@@ -100,7 +100,7 @@ func seedConversation(t *testing.T, db *persistence.DB, conv model.Conversation,
 func getSummary(t *testing.T, db *persistence.DB, convID model.ConversationID) (persistence.ConversationSummary, bool) {
 	t.Helper()
 
-	repo := persistence.NewConversationSummaryRepository()
+	repo := persistence.NewConversationSummaryRepository(nil)
 	var (
 		summary persistence.ConversationSummary
 		found   bool
@@ -171,7 +171,7 @@ func TestCompactor_MergesWithPreviousSummary(t *testing.T) {
 	}
 
 	// 4 nouveaux messages : 2 (restants) + 4 = 6 non couverts >= 4 (seuil).
-	messages := persistence.NewMessageRepository()
+	messages := persistence.NewMessageRepository(nil)
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		for i := 5; i < 9; i++ {
 			if err := messages.Insert(context.Background(), tx, persistence.Message{
@@ -235,7 +235,7 @@ func TestHandler_SummaryInjectedAndCoveredHistoryExcluded(t *testing.T) {
 	seedConversation(t, db, conv, 5)
 
 	// Résumé couvrant les trois premiers messages (rowid 1 à 3).
-	summaries := persistence.NewConversationSummaryRepository()
+	summaries := persistence.NewConversationSummaryRepository(nil)
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		return summaries.Upsert(context.Background(), tx, persistence.ConversationSummary{
 			ConversationID:   conv.ID,

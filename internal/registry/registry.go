@@ -67,7 +67,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	metrics := observability.NewMetrics()
 	ready := &observability.Ready{}
 
-	db, err := persistence.Open(ctx, cfg.Storage.Application)
+	db, err := persistence.OpenWithEncryption(ctx, cfg.Storage.Application, cfg.Storage.EncryptionKey)
 	if err != nil {
 		return fmt.Errorf("registry: ouverture de la persistance: %w", err)
 	}
@@ -397,7 +397,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	// déclarant reminders: true.
 	reminderTools := agent.ReminderTools{
 		DB:         db,
-		Repo:       persistence.NewReminderRepository(),
+		Repo:       persistence.NewReminderRepository(db.Cipher()),
 		Authorizer: authorizer,
 		Metrics:    metrics,
 		// Un exécuteur de tâches est câblé sur le dispatcher juste après

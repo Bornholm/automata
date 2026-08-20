@@ -122,7 +122,7 @@ func TestForeignKeyConstraintEnforced(t *testing.T) {
 	cfg := testConfig(t)
 	db := openTestDB(t, cfg)
 
-	messages := persistence.NewMessageRepository()
+	messages := persistence.NewMessageRepository(nil)
 
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		return messages.Insert(context.Background(), tx, persistence.Message{
@@ -146,7 +146,7 @@ func TestDuplicateMessageConstraint(t *testing.T) {
 	db := openTestDB(t, cfg)
 
 	conversations := persistence.NewConversationRepository()
-	messages := persistence.NewMessageRepository()
+	messages := persistence.NewMessageRepository(nil)
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	conv := persistence.Conversation{

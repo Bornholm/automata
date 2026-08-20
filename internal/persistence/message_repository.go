@@ -7,19 +7,31 @@ import (
 	"fmt"
 
 	"github.com/bornholm/automata/internal/model"
+	"github.com/bornholm/automata/internal/secretbox"
 )
 
 // MessageRepository donne accès à la table messages.
-type MessageRepository struct{}
+type MessageRepository struct {
+	// cipher chiffre le contenu des messages avant écriture et le
+	// déchiffre à la lecture. Nil : les contenus restent en clair, comme
+	// avant l'existence du réglage.
+	cipher *secretbox.Box
+}
 
 // NewMessageRepository crée un MessageRepository.
-func NewMessageRepository() *MessageRepository {
-	return &MessageRepository{}
+func NewMessageRepository(cipher *secretbox.Box) *MessageRepository {
+	return &MessageRepository{cipher: cipher}
 }
 
 // Insert insère un message.
 func (r *MessageRepository) Insert(ctx context.Context, q Querier, m Message) error {
-	_, err := q.ExecContext(ctx, `
+	content, err := sealContent(r.cipher, m.Content)
+	if err != nil {
+		return err
+	}
+	m.Content = content
+
+	_, err = q.ExecContext(ctx, `
 		INSERT INTO messages (
 			id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -46,6 +58,12 @@ func (r *MessageRepository) FindByID(ctx context.Context, q Querier, id string) 
 		}
 		return Message{}, false, fmt.Errorf("lecture du message %q: %w", id, err)
 	}
+
+	content, err := openContent(r.cipher, m.Content)
+	if err != nil {
+		return Message{}, false, fmt.Errorf("message %q: %w", id, err)
+	}
+	m.Content = content
 
 	return m, true, nil
 }
@@ -78,6 +96,13 @@ func (r *MessageRepository) ListRecentByConversation(ctx context.Context, q Quer
 		if err := rows.Scan(&m.ID, &m.ConversationID, &m.ExternalMessageID, &m.PrincipalID, &m.Role, &m.Content, &m.ContentKind, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("lecture de l'historique de la conversation %q: %w", conversationID, err)
 		}
+
+		content, err := openContent(r.cipher, m.Content)
+		if err != nil {
+			return nil, fmt.Errorf("message %q: %w", m.ID, err)
+		}
+		m.Content = content
+
 		messages = append(messages, m)
 	}
 	if err := rows.Err(); err != nil {
@@ -116,6 +141,13 @@ func (r *MessageRepository) ListRecentByConversationAfterRowID(ctx context.Conte
 		if err := rows.Scan(&m.ID, &m.ConversationID, &m.ExternalMessageID, &m.PrincipalID, &m.Role, &m.Content, &m.ContentKind, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("lecture de l'historique de la conversation %q: %w", conversationID, err)
 		}
+
+		content, err := openContent(r.cipher, m.Content)
+		if err != nil {
+			return nil, fmt.Errorf("message %q: %w", m.ID, err)
+		}
+		m.Content = content
+
 		messages = append(messages, m)
 	}
 	if err := rows.Err(); err != nil {
@@ -168,6 +200,13 @@ func (r *MessageRepository) ListOldestByConversationAfterRowID(ctx context.Conte
 		if err := rows.Scan(&lastRowID, &m.ID, &m.ConversationID, &m.ExternalMessageID, &m.PrincipalID, &m.Role, &m.Content, &m.ContentKind, &m.CreatedAt); err != nil {
 			return nil, 0, fmt.Errorf("lecture des messages à compacter de la conversation %q: %w", conversationID, err)
 		}
+
+		content, err := openContent(r.cipher, m.Content)
+		if err != nil {
+			return nil, 0, fmt.Errorf("message %q: %w", m.ID, err)
+		}
+		m.Content = content
+
 		messages = append(messages, m)
 	}
 	if err := rows.Err(); err != nil {

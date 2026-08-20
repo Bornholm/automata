@@ -118,7 +118,7 @@ func NewDispatcher(db *persistence.DB, senders SenderSet, logger *slog.Logger, m
 
 	return &Dispatcher{
 		db:      db,
-		repo:    persistence.NewReminderRepository(),
+		repo:    persistence.NewReminderRepository(db.Cipher()),
 		senders: senders,
 		logger:  logger,
 		metrics: metrics,

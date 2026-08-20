@@ -19,7 +19,7 @@ import (
 // jamais écrasées — l'interface web devient la source de vérité dès
 // qu'elle a la main.
 func WebBootstrap(ctx context.Context, cfg *config.Config, out io.Writer) error {
-	db, err := persistence.Open(ctx, cfg.Storage.Application)
+	db, err := persistence.OpenWithEncryption(ctx, cfg.Storage.Application, cfg.Storage.EncryptionKey)
 	if err != nil {
 		return fmt.Errorf("registry: ouverture de la persistance: %w", err)
 	}

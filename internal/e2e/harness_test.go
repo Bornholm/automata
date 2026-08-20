@@ -736,7 +736,7 @@ func conversationMessages(t *testing.T, db *persistence.DB, convID model.Convers
 	var records []persistence.Message
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		var err error
-		records, err = persistence.NewMessageRepository().ListRecentByConversation(context.Background(), tx, convID, 50)
+		records, err = persistence.NewMessageRepository(nil).ListRecentByConversation(context.Background(), tx, convID, 50)
 		return err
 	})
 	if err != nil {

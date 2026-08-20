@@ -11,7 +11,7 @@ import (
 func insertTestReminder(t *testing.T, db *persistence.DB, rem persistence.Reminder) {
 	t.Helper()
 
-	repo := persistence.NewReminderRepository()
+	repo := persistence.NewReminderRepository(nil)
 	if err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		return repo.Insert(context.Background(), tx, rem)
 	}); err != nil {
@@ -36,7 +36,7 @@ func testReminder(id, fireAt string) persistence.Reminder {
 
 func TestReminderRepository_ListDueReturnsOnlyElapsedPending(t *testing.T) {
 	db := openTestDB(t, testConfig(t))
-	repo := persistence.NewReminderRepository()
+	repo := persistence.NewReminderRepository(nil)
 
 	insertTestReminder(t, db, testReminder("due-1", "2026-08-17T11:00:00Z"))
 	insertTestReminder(t, db, testReminder("due-2", "2026-08-17T09:00:00Z"))
@@ -68,7 +68,7 @@ func TestReminderRepository_ListDueReturnsOnlyElapsedPending(t *testing.T) {
 
 func TestReminderRepository_UpdateStatusIsOptimistic(t *testing.T) {
 	db := openTestDB(t, testConfig(t))
-	repo := persistence.NewReminderRepository()
+	repo := persistence.NewReminderRepository(nil)
 
 	insertTestReminder(t, db, testReminder("rem-1", "2026-08-17T11:00:00Z"))
 
@@ -108,7 +108,7 @@ func TestReminderRepository_UpdateStatusIsOptimistic(t *testing.T) {
 
 func TestReminderRepository_ListPendingByConversationIsolates(t *testing.T) {
 	db := openTestDB(t, testConfig(t))
-	repo := persistence.NewReminderRepository()
+	repo := persistence.NewReminderRepository(nil)
 
 	insertTestReminder(t, db, testReminder("mine", "2026-08-18T09:00:00Z"))
 

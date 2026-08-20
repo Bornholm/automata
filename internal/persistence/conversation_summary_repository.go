@@ -7,15 +7,21 @@ import (
 	"fmt"
 
 	"github.com/bornholm/automata/internal/model"
+	"github.com/bornholm/automata/internal/secretbox"
 )
 
 // ConversationSummaryRepository donne accès à la table
 // conversation_summaries.
-type ConversationSummaryRepository struct{}
+type ConversationSummaryRepository struct {
+	// cipher protège le résumé, qui condense tout ce qui s'est dit dans
+	// la conversation : le laisser en clair viderait de son sens le
+	// chiffrement des messages.
+	cipher *secretbox.Box
+}
 
 // NewConversationSummaryRepository crée un ConversationSummaryRepository.
-func NewConversationSummaryRepository() *ConversationSummaryRepository {
-	return &ConversationSummaryRepository{}
+func NewConversationSummaryRepository(cipher *secretbox.Box) *ConversationSummaryRepository {
+	return &ConversationSummaryRepository{cipher: cipher}
 }
 
 // Get retourne le résumé de la conversation, ou (ConversationSummary{},
@@ -35,12 +41,24 @@ func (r *ConversationSummaryRepository) Get(ctx context.Context, q Querier, conv
 		return ConversationSummary{}, false, fmt.Errorf("lecture du résumé de la conversation %q: %w", conversationID, err)
 	}
 
+	summary, err := openContent(r.cipher, s.Summary)
+	if err != nil {
+		return ConversationSummary{}, false, fmt.Errorf("résumé de la conversation %q: %w", conversationID, err)
+	}
+	s.Summary = summary
+
 	return s, true, nil
 }
 
 // Upsert insère ou remplace le résumé de la conversation.
 func (r *ConversationSummaryRepository) Upsert(ctx context.Context, q Querier, s ConversationSummary) error {
-	_, err := q.ExecContext(ctx, `
+	summary, err := sealContent(r.cipher, s.Summary)
+	if err != nil {
+		return fmt.Errorf("résumé de la conversation %q: %w", s.ConversationID, err)
+	}
+	s.Summary = summary
+
+	_, err = q.ExecContext(ctx, `
 		INSERT INTO conversation_summaries (conversation_id, summary, last_message_rowid, messages_covered, updated_at)
 		VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT (conversation_id) DO UPDATE SET

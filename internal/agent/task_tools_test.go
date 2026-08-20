@@ -34,7 +34,7 @@ func newTaskTools(t *testing.T) (agent.ReminderTools, *persistence.DB) {
 
 	return agent.ReminderTools{
 		DB:         db,
-		Repo:       persistence.NewReminderRepository(),
+		Repo:       persistence.NewReminderRepository(nil),
 		Authorizer: authorization.NewAuthorizer(taskTestConfig()),
 		Now:        func() time.Time { return reminderTestNow },
 		Tasks:      true,
@@ -45,7 +45,7 @@ func newTaskTools(t *testing.T) (agent.ReminderTools, *persistence.DB) {
 func listTaskRows(t *testing.T, db *persistence.DB, conversationID string) []persistence.Reminder {
 	t.Helper()
 
-	repo := persistence.NewReminderRepository()
+	repo := persistence.NewReminderRepository(nil)
 	var rows []persistence.Reminder
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		var err error
@@ -129,7 +129,7 @@ func TestScheduleTask_ReminderPermissionIsNotEnough(t *testing.T) {
 	db := reminderTestDB(t)
 	tools := agent.ReminderTools{
 		DB:         db,
-		Repo:       persistence.NewReminderRepository(),
+		Repo:       persistence.NewReminderRepository(nil),
 		Authorizer: authorization.NewAuthorizer(reminderTestConfig()), // reminder.* uniquement
 		Now:        func() time.Time { return reminderTestNow },
 		Tasks:      true,

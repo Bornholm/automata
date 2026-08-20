@@ -104,8 +104,8 @@ func NewCompactor(db *persistence.DB, client llm.ChatCompletionClient, historyLi
 	return &Compactor{
 		db:              db,
 		client:          client,
-		messages:        persistence.NewMessageRepository(),
-		summaries:       persistence.NewConversationSummaryRepository(),
+		messages:        persistence.NewMessageRepository(db.Cipher()),
+		summaries:       persistence.NewConversationSummaryRepository(db.Cipher()),
 		historyLimit:    historyLimit,
 		maxSummaryChars: maxSummaryChars,
 		logger:          logger,
