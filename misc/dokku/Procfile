@@ -1,12 +1,12 @@
-# Automata n'est pas un service web : il consomme des messages WhatsApp et
-# déclenche des tâches planifiées. Le déclarer en "worker" plutôt qu'en "web"
-# évite que Dokku attende un port à router et lui applique des vérifications
-# HTTP qui échoueraient.
+# Automata tourne en UN SEUL processus : le worker de messagerie et le
+# serveur web (administration, pages de profil, webhook Stripe, retours
+# OAuth) vivent dans le même binaire et partagent la même base SQLite.
 #
-# Conséquence : rien n'est exposé publiquement. Le serveur d'observabilité,
-# s'il est activé, écoute en loopback dans le conteneur et reste joignable via
-# `make dokku-healthcheck`.
+# D'où le process "web" unique, et jamais deux : la persistance est
+# mono-écrivain, et deux conteneurs se disputeraient la base comme la
+# session WhatsApp. `dokku ps:scale automata web=1`, jamais davantage.
 #
-# Après le premier déploiement :
-#   dokku ps:scale automata worker=1
-worker: /usr/local/bin/automata -config /config/config.yaml
+# Dokku route le trafic public vers le port déclaré par `ports:set`, que
+# le serveur web doit écouter sur 0.0.0.0 (voir web.addr de config.yaml) :
+# une écoute en loopback ne serait jamais atteinte depuis le proxy.
+web: /usr/local/bin/automata -config /config/config.yaml

@@ -5,14 +5,21 @@
 #   make dokku-env       — pousser les variables du fichier d'environnement local
 #   make dokku-config    — pousser config.yaml vers le volume /config
 #   make dokku-deploy    — déployer le HEAD courant
-#   make dokku-scale     — démarrer le worker (après le premier déploiement)
+#   make dokku-scale     — démarrer l'application (après le premier déploiement)
+#   make dokku-tls       — activer HTTPS (Let's Encrypt)
 #   make dokku-logs      — suivre les journaux
 #   make dokku-qr        — retrouver le QR code de liaison WhatsApp
 #   make dokku-build     — construire l'image exactement comme Dokku le fera
+#   make dokku-run       — lancer l'image en local, comme en production
 #
-# Automata n'est pas un service web : pas de domaine, pas de port publié, pas
-# de certificat. Il tourne en process "worker" (voir misc/dokku/Procfile), et
-# Dokku ne lui route aucun trafic.
+# Automata est un service web depuis le socle SaaS : administration,
+# pages de profil, webhook Stripe et retours OAuth. Il est donc déclaré en
+# process "web" (voir misc/dokku/Procfile), avec un domaine et un
+# certificat — Stripe comme Google exigent une URL publique en HTTPS.
+#
+# Un seul processus, jamais deux : le worker de messagerie et le serveur
+# web vivent dans le même binaire et partagent une base SQLite
+# mono-écrivain.
 
 DOKKU_APP        ?= automata
 DOKKU_HOST       ?= dokku.example.org
@@ -23,20 +30,28 @@ DOKKU_DEPLOY_URL ?= dokku@$(DOKKU_HOST)
 DOKKU_SSH_ADMIN  ?= root@$(DOKKU_HOST)
 # Chemin du volume persistant côté hôte, tel que le crée `dokku storage:ensure-directory`.
 DOKKU_STORAGE    ?= /var/lib/dokku/data/storage/$(DOKKU_APP)
-# UID de l'utilisateur nonroot de l'image distroless : c'est lui qui doit
+# UID de l'utilisateur searxng de l'image finale : c'est lui qui doit
 # posséder les volumes, sinon le premier démarrage échoue sur une écriture
 # refusée.
-DOKKU_UID        ?= 65532
+DOKKU_UID        ?= 977
 # Fichier d'environnement local, tel que le produit `automata config init`.
 DOKKU_ENV_FILE   ?= config/config.env
 # Configuration locale déposée sur le volume /config.
 DOKKU_CONFIG_FILE ?= config/config.yaml
+# Domaine public de l'application. Le webhook Stripe et le retour OAuth de
+# Google doivent l'atteindre : ce ne peut pas être une adresse privée.
+DOKKU_DOMAIN     ?= $(DOKKU_APP).$(DOKKU_HOST)
+# Port écouté par le serveur web dans le conteneur, tel que déclaré par
+# web.addr de config.yaml (0.0.0.0:5000).
+DOKKU_APP_PORT   ?= 5000
+# Adresse de contact du certificat Let's Encrypt.
+DOKKU_LETSENCRYPT_EMAIL ?= $(shell git config user.email)
 
 DOKKU := ssh $(DOKKU_DEPLOY_URL)
 
 .PHONY: dokku-setup dokku-storage dokku-env dokku-config dokku-deploy \
-        dokku-scale dokku-logs dokku-qr dokku-healthcheck dokku-ps \
-        dokku-build
+        dokku-scale dokku-tls dokku-logs dokku-qr dokku-healthcheck dokku-ps \
+        dokku-build dokku-run
 
 # Préparation initiale de l'application. Idempotent : peut être relancé.
 dokku-setup:
@@ -55,12 +70,20 @@ dokku-setup:
 	@echo "Montages en place — il doit y en avoir exactement deux, /data et /config :"
 	@$(DOKKU) storage:list $(DOKKU_APP)
 	@echo
+	# Le trafic public entre par le proxy vers le port du serveur web.
+	-$(DOKKU) domains:add $(DOKKU_APP) $(DOKKU_DOMAIN)
+	$(DOKKU) ports:set $(DOKKU_APP) http:80:$(DOKKU_APP_PORT)
+	# Les pièces jointes (photos, notes vocales) transitent par les pages
+	# de profil : la valeur par défaut du proxy est trop basse.
+	$(DOKKU) nginx:set $(DOKKU_APP) client-max-body-size 25m
+	@echo
 	@echo "Ensuite :"
 	@echo "  make dokku-storage    # créer les répertoires et leur propriétaire"
 	@echo "  make dokku-env        # pousser les secrets"
 	@echo "  make dokku-config     # déposer config.yaml"
 	@echo "  make dokku-deploy     # premier déploiement"
-	@echo "  make dokku-scale      # démarrer le worker"
+	@echo "  make dokku-scale      # démarrer l'application"
+	@echo "  make dokku-tls        # activer HTTPS (exigé par Stripe et Google)"
 	@echo "  make dokku-qr         # scanner le QR code de liaison WhatsApp"
 
 # Crée les sous-répertoires du volume et leur donne le bon propriétaire.
@@ -97,47 +120,54 @@ dokku-config:
 	scp $(DOKKU_CONFIG_FILE) $(DOKKU_SSH_ADMIN):$(DOKKU_STORAGE)/config/config.yaml
 	ssh $(DOKKU_SSH_ADMIN) "chown $(DOKKU_UID):$(DOKKU_UID) $(DOKKU_STORAGE)/config/config.yaml"
 
-# dokku-deploy pousse HEAD vers Dokku, augmenté des dépendances vendorisées.
+# Déploie le commit courant.
 #
-# Pourquoi ce détour plutôt qu'un simple `git push` comme ailleurs : go.mod
-# redirige go-courier, genai et amoxtli vers des répertoires frères du dépôt
-# (directives "replace"), faute de version publiée. Dokku construit l'image
-# sur son serveur à partir du seul dépôt poussé, où ces répertoires n'existent
-# pas : le build échouerait dès `go mod download`.
+# Dokku construit l'image sur son serveur à partir du seul dépôt poussé.
+# Cela fonctionne sans artifice depuis que go-courier, genai et amoxtli
+# sont publiés sur le module proxy : la seule directive "replace" restante
+# (pkg/pluginsdk) pointe à l'intérieur du dépôt, donc le commit poussé
+# l'emporte. La vendorisation de 85 Mio que cette cible pratiquait
+# auparavant n'a plus lieu d'être.
 #
-# `go mod vendor` copie ces dépendances dans vendor/, que le commit poussé
-# emporte. Les 85 Mio produits n'entrent jamais dans l'historique local : le
-# commit est fabriqué dans un index temporaire, poussé, puis abandonné. Rien
-# n'est modifié dans le dépôt de travail, pas même l'index.
+# Le Dockerfile et le Procfile vivent sous misc/dokku/ ; ils sont hissés à
+# la racine dans un commit fabriqué pour l'occasion, dans un index
+# temporaire. Rien n'est modifié dans le dépôt de travail, pas même
+# l'index.
 #
-# Le jour où les trois bibliothèques publient une version taguée, cette cible
-# redevient le `git push` d'une ligne des autres projets.
+# --force parce que Dokku n'a pas d'historique commun avec le dépôt local
+# dès que l'on a rebasé.
 dokku-deploy:
 	@set -eu; \
 	if [ -n "$$(git status --porcelain)" ]; then \
 		echo "Attention : modifications non commitées, seul HEAD sera déployé."; \
 	fi; \
-	echo "Vendorisation des dépendances..."; \
-	go mod vendor; \
 	tmp_index=$$(mktemp); \
-	trap 'rm -f "$$tmp_index"; rm -rf vendor' EXIT; \
+	trap 'rm -f "$$tmp_index"' EXIT; \
 	export GIT_INDEX_FILE="$$tmp_index"; \
 	git read-tree HEAD; \
-	git add -f vendor; \
 	git update-index --add --cacheinfo 100644,$$(git hash-object -w misc/dokku/Dockerfile),Dockerfile; \
 	git update-index --add --cacheinfo 100644,$$(git hash-object -w misc/dokku/Procfile),Procfile; \
+	git update-index --add --cacheinfo 100644,$$(git hash-object -w misc/dokku/CHECKS),CHECKS; \
 	tree=$$(git write-tree); \
-	commit=$$(git commit-tree "$$tree" -p HEAD -m "deploy: $$(git rev-parse --short HEAD) with vendored dependencies"); \
+	commit=$$(git commit-tree "$$tree" -p HEAD -m "deploy: $$(git rev-parse --short HEAD)"); \
 	echo "Déploiement de $$commit vers $(DOKKU_DEPLOY_URL):$(DOKKU_APP)..."; \
 	git push --force "$(DOKKU_DEPLOY_URL):$(DOKKU_APP)" "$$commit:refs/heads/master"
 
-# Démarre le worker. À lancer après le premier déploiement, Dokku ne
+# Démarre l'application. À lancer après le premier déploiement, Dokku ne
 # connaissant les process qu'une fois l'image construite.
 #
-# Ne jamais dépasser 1 : la persistance est mono-écrivain et le scheduler
-# s'appuie sur des verrous en mémoire, propres au processus.
+# Ne jamais dépasser 1 : la persistance est mono-écrivain, le scheduler
+# s'appuie sur des verrous en mémoire, et deux conteneurs se disputeraient
+# la session WhatsApp.
 dokku-scale:
-	$(DOKKU) ps:scale $(DOKKU_APP) worker=1
+	$(DOKKU) ps:scale $(DOKKU_APP) web=1
+
+# Certificat Let's Encrypt. Stripe refuse d'appeler un webhook en clair, et
+# Google refuse une URL de redirection OAuth qui ne soit pas HTTPS (hors
+# 127.0.0.1) : sans certificat, ni paiements ni connexion Gmail.
+dokku-tls:
+	-$(DOKKU) letsencrypt:set $(DOKKU_APP) email $(DOKKU_LETSENCRYPT_EMAIL)
+	$(DOKKU) letsencrypt:enable $(DOKKU_APP)
 
 dokku-ps:
 	$(DOKKU) ps:report $(DOKKU_APP)
@@ -153,10 +183,18 @@ dokku-qr:
 dokku-healthcheck:
 	$(DOKKU) run $(DOKKU_APP) healthcheck
 
-# Construit l'image exactement comme Dokku le fera, pour valider le Dockerfile
-# avant de pousser. Vendorise puis nettoie, comme dokku-deploy.
+# Construit l'image exactement comme Dokku le fera, pour valider le
+# Dockerfile avant de pousser.
 dokku-build:
-	@set -eu; \
-	trap 'rm -rf vendor' EXIT; \
-	go mod vendor; \
 	docker build -f misc/dokku/Dockerfile -t $(DOKKU_APP):dokku .
+
+# Lance l'image en local, comme en production : mêmes volumes, même
+# configuration, mêmes services annexes. C'est la façon d'éprouver un
+# déploiement sans pousser quoi que ce soit.
+dokku-run: dokku-build
+	docker run --rm -it \
+		-p $(DOKKU_APP_PORT):$(DOKKU_APP_PORT) \
+		-v "$(PWD)/local/dokku-data:/data" \
+		-v "$(PWD)/local/dokku-config:/config" \
+		$$(test -f $(DOKKU_ENV_FILE) && echo --env-file $(DOKKU_ENV_FILE)) \
+		$(DOKKU_APP):dokku
