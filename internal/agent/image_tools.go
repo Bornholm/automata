@@ -68,9 +68,10 @@ func BuildImageGenerationClient(ctx context.Context, cfg config.ImageClient) (ll
 		return nil, fmt.Errorf("le provider %q ne fournit pas de génération d'images", cfg.Provider)
 	}
 
-	// Comptabilité d'usage : les providers d'images ne rapportent pas de
-	// coût facturé, mais l'appel et ses tokens éventuels sont enregistrés
-	// (voir internal/usage).
+	// Comptabilité d'usage : l'appel, ses jetons et le coût rapporté par
+	// le fournisseur sont enregistrés (voir internal/usage). Une image se
+	// facture à l'unité et coûte plusieurs centimes : l'estimer au jeton
+	// donnerait n'importe quoi.
 	return usage.WrapImageClient(generator, cfg.Provider, cfg.Model), nil
 }
 

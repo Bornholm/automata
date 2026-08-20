@@ -102,10 +102,32 @@ func (c *recordingClient) Transcription(ctx context.Context, audio []byte, funcs
 		rec.PromptTokens = usage.InputTokens()
 		rec.CompletionTokens = usage.OutputTokens()
 		rec.TotalTokens = usage.TotalTokens()
+		applyReportedCost(&rec, usage)
 	}
 	recorder.RecordUsage(ctx, rec)
 
 	return resp, nil
+}
+
+// applyReportedCost inscrit le coût rapporté par le fournisseur, s'il en
+// rapporte un. Toutes les natures d'usage passent par ici : une
+// transcription ou une image facturée au réel n'a aucune raison d'être
+// estimée, et les images le sont d'autant plus mal qu'elles se facturent à
+// l'unité, pas au jeton.
+func applyReportedCost(rec *Record, usage any) {
+	reporting, ok := usage.(llm.CostReportingUsage)
+	if !ok {
+		return
+	}
+
+	amount, currency, ok := reporting.Cost()
+	if !ok {
+		return
+	}
+
+	rec.CostAmount = amount
+	rec.CostCurrency = currency
+	rec.CostReported = true
 }
 
 // record enregistre usage (possiblement nil) sous la nature kind, si un
@@ -126,13 +148,7 @@ func (c *recordingClient) record(ctx context.Context, kind string, usage llm.Cha
 		if cached, ok := usage.(interface{ CachedTokens() int64 }); ok {
 			rec.CachedTokens = cached.CachedTokens()
 		}
-		if reporting, ok := usage.(llm.CostReportingUsage); ok {
-			if amount, currency, ok := reporting.Cost(); ok {
-				rec.CostAmount = amount
-				rec.CostCurrency = currency
-				rec.CostReported = true
-			}
-		}
+		applyReportedCost(&rec, usage)
 	}
 
 	recorder.RecordUsage(ctx, rec)
@@ -211,6 +227,7 @@ func (c *recordingImageClient) ImageGeneration(ctx context.Context, prompt strin
 		rec.PromptTokens = usage.InputTokens()
 		rec.CompletionTokens = usage.OutputTokens()
 		rec.TotalTokens = usage.TotalTokens()
+		applyReportedCost(&rec, usage)
 	}
 	recorder.RecordUsage(ctx, rec)
 

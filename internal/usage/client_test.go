@@ -217,3 +217,74 @@ func TestWrapImageClient_RecordsGeneration(t *testing.T) {
 		t.Errorf("trace d'image inattendue: %+v", rec)
 	}
 }
+
+// fakeCostlyClient transcrit en rapportant ce que l'appel a coûté.
+type fakeCostlyClient struct{ fakeLLMClient }
+
+func (c *fakeCostlyClient) Transcription(_ context.Context, _ []byte, _ ...llm.TranscriptionOptionFunc) (llm.TranscriptionResponse, error) {
+	return llm.NewTranscriptionResponse("bonjour", "fr",
+		llm.NewTranscriptionUsageWithCost(80, 10, 90, 4.2, 0.00005, "USD")), nil
+}
+
+// Une transcription facturée à la seconde n'a rien à voir avec une
+// estimation au jeton : quand la passerelle donne le prix, c'est lui qui
+// fait foi.
+func TestWrapClient_RecordsTranscriptionCost(t *testing.T) {
+	recorder := &fakeRecorder{}
+	client := WrapClient(&fakeCostlyClient{}, "openai", "voxtral-mini")
+
+	if _, err := client.Transcription(testContext(recorder), []byte("audio")); err != nil {
+		t.Fatalf("Transcription: %v", err)
+	}
+
+	if len(recorder.records) != 1 {
+		t.Fatalf("%d trace(s) enregistrée(s), attendu 1", len(recorder.records))
+	}
+
+	rec := recorder.records[0]
+	if rec.Kind != KindTranscription {
+		t.Errorf("nature = %q, attendu %q", rec.Kind, KindTranscription)
+	}
+	if !rec.CostReported || rec.CostAmount != 0.00005 || rec.CostCurrency != "USD" {
+		t.Errorf("coût enregistré = %v %q (rapporté=%v), attendu 0.00005 USD rapporté",
+			rec.CostAmount, rec.CostCurrency, rec.CostReported)
+	}
+}
+
+// fakeCostlyImageClient génère en rapportant le prix de l'image.
+type fakeCostlyImageClient struct {
+	usage llm.ImageGenerationUsage
+}
+
+func (c *fakeCostlyImageClient) ImageGeneration(_ context.Context, _ string, _ ...llm.ImageGenerationOptionFunc) (llm.ImageGenerationResponse, error) {
+	return llm.NewImageGenerationResponse(nil, c.usage), nil
+}
+
+// Une image se facture à l'unité et coûte plusieurs centimes — trois ordres
+// de grandeur au-dessus d'un tour de conversation. La compter au jeton
+// reviendrait à l'offrir.
+func TestWrapImageClient_RecordsReportedCost(t *testing.T) {
+	recorder := &fakeRecorder{}
+	client := WrapImageClient(&fakeCostlyImageClient{
+		usage: llm.NewImageGenerationUsageWithCost(3, 1120, 1123, 0.03360075, "USD"),
+	}, "openrouter", "gemini-flash-image")
+
+	if _, err := client.ImageGeneration(testContext(recorder), "un point bleu"); err != nil {
+		t.Fatalf("ImageGeneration: %v", err)
+	}
+
+	if len(recorder.records) != 1 {
+		t.Fatalf("%d trace(s) enregistrée(s), attendu 1", len(recorder.records))
+	}
+
+	rec := recorder.records[0]
+	if rec.Kind != KindImage {
+		t.Errorf("nature = %q, attendu %q", rec.Kind, KindImage)
+	}
+	if !rec.CostReported || rec.CostAmount != 0.03360075 {
+		t.Errorf("coût enregistré = %v (rapporté=%v), attendu 0.03360075 rapporté", rec.CostAmount, rec.CostReported)
+	}
+	if rec.CompletionTokens != 1120 {
+		t.Errorf("jetons de sortie = %d, attendu 1120", rec.CompletionTokens)
+	}
+}

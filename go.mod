@@ -106,7 +106,7 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
-	github.com/bornholm/genai v0.35.1-0.20260819222821-78153b0335b4
+	github.com/bornholm/genai v0.35.1-0.20260820072909-f37d5e79f45d
 	github.com/google/uuid v1.6.0
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
