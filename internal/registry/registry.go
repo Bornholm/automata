@@ -243,6 +243,25 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	reminderDispatcher := reminder.NewDispatcher(db, platforms, logger, metrics).
 		WithTaskRunner(agent.NewTaskRunner(cfg, taskAgents, logger))
 
+	// Routeur des déclencheurs de plugins : un flux par plugin qui en
+	// déclare, exécution du sous-agent avec plan confirmable, réponse sur
+	// le canal privé du membre désigné. Le service hôte gagne du même
+	// coup l'envoi de notifications applicatives (Notify).
+	if pluginManager != nil {
+		triggerRouter := plugin.NewTriggerRouter(pluginManager, db, &pluginTriggerRunner{
+			provider: pluginProvider,
+			actions:  actionEngine,
+			logger:   logger,
+		}, platforms, logger)
+		pluginManager.HostService().WithNotifier(triggerRouter)
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			triggerRouter.Run(ctx)
+		}()
+	}
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

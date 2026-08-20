@@ -133,6 +133,12 @@ func (m *Manager) Start(ctx context.Context) error {
 	return nil
 }
 
+// HostService retourne le service hôte partagé, pour y brancher les
+// dépendances câblées après la construction (Notifier).
+func (m *Manager) HostService() *HostService {
+	return m.hostService
+}
+
 // Loaded retourne les noms des plugins chargés, pour le câblage des
 // exécuteurs d'actions.
 func (m *Manager) Loaded() []string {

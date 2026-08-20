@@ -2,10 +2,13 @@ package registry
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/bornholm/genai/llm"
 
+	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/delegation"
@@ -108,4 +111,44 @@ type pluginDomainSource struct {
 // ActiveDomains implémente authorization.PluginDomainSource.
 func (s pluginDomainSource) ActiveDomains(ctx context.Context, orgID string) []string {
 	return s.manager.ActiveDomains(ctx, s.db, orgID)
+}
+
+// pluginTriggerRunner exécute le sous-agent d'un plugin pour un événement
+// extérieur, puis transforme ses actions proposées en plan confirmable —
+// même chemin que la conversation : « email entrant → proposer une
+// réponse » est le cas nominal, pas une exception.
+type pluginTriggerRunner struct {
+	provider agent.PluginSpecialistProvider
+	actions  *action.Engine
+	logger   *slog.Logger
+}
+
+// RunTrigger implémente plugin.TriggerRunner.
+func (r *pluginTriggerRunner) RunTrigger(ctx context.Context, pluginName string, identity model.ExecutionIdentity, conversation model.Conversation, input string) (string, error) {
+	specialists, _ := r.provider.SpecialistsFor(ctx, identity)
+	specialist, ok := specialists[pluginName]
+	if !ok {
+		return "", fmt.Errorf("sous-agent du plugin %q indisponible pour cette organisation", pluginName)
+	}
+
+	result, err := specialist.Execute(ctx, delegation.Request{
+		AgentID:  pluginName,
+		Goal:     input,
+		Identity: identity,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	reply := strings.TrimSpace(result.Summary)
+
+	if r.actions != nil && len(result.ProposedActions) > 0 {
+		_, planText, err := r.actions.CreatePlan(ctx, identity, result.ProposedActions)
+		if err != nil {
+			return "", fmt.Errorf("création du plan d'actions: %w", err)
+		}
+		reply = strings.TrimSpace(reply + "\n\n" + planText)
+	}
+
+	return reply, nil
 }

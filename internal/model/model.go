@@ -85,6 +85,14 @@ const (
 	// l'accès à ses propres données — ce qui rend la fonctionnalité inutile
 	// (« je n'ai pas l'autorisation d'accéder aux ressources nécessaires »).
 	TriggerScheduledTask Trigger = "scheduled_task"
+
+	// TriggerPlugin est un tour déclenché par un événement extérieur relayé
+	// par un plugin (email entrant, alerte d'infrastructure). Il porte
+	// l'identité du membre désigné par l'événement — re-vérifiée par
+	// l'hôte, jamais crue — et suit les règles d'autorisation de son
+	// canal, comme une tâche planifiée : refuser au membre ses propres
+	// données rendrait le déclencheur inutile.
+	TriggerPlugin Trigger = "plugin"
 )
 
 // ExecutionIdentity décrit l'identité d'exécution résolue pour un
