@@ -10,6 +10,7 @@ import (
 	"github.com/bornholm/amoxtli"
 	amoxtlibleve "github.com/bornholm/amoxtli/index/bleve"
 	sqlitevecIndex "github.com/bornholm/amoxtli/index/sqlitevec"
+	"github.com/bornholm/amoxtli/ingest"
 	amoxtligorm "github.com/bornholm/amoxtli/ingest/gorm"
 
 	"github.com/bornholm/automata/internal/agent"
@@ -119,8 +120,21 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 				return res, fmt.Errorf("registry: mémoire: ouverture de l'index bleve %q (memory.indexes[%q]): %w", idxCfg.Path, idxCfg.ID, err)
 			}
 			res.closers = append(res.closers, bleveIdx.Close)
+
+			// Deux signaux de réindexation : l'index vient d'être
+			// reconstruit (changement de mapping), ou il est vide alors
+			// que le corpus ne l'est pas — l'état que laisse une
+			// réindexation interrompue à un démarrage précédent.
 			if bleveIdx.Recreated() {
 				indexRecreated = true
+			} else if count, err := bleveIdx.DocCount(); err == nil && count == 0 {
+				page, limit := 0, 1
+				docs, _, err := store.QueryDocuments(ctx, ingest.QueryDocumentsOptions{
+					Page: &page, Limit: &limit, HeaderOnly: true,
+				})
+				if err == nil && len(docs) > 0 {
+					indexRecreated = true
+				}
 			}
 
 			weight := idxCfg.Weight

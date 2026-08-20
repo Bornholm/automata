@@ -74,8 +74,8 @@ github.com/blevesearch/zapx/v15 v15.4.1 h1:B5IoTMUCEzFdc9FSQbhVOxAY+BO17c05866fN
 github.com/blevesearch/zapx/v15 v15.4.1/go.mod h1:b/MreHjYeQoLjyY2+UaM0hGZZUajEbE0xhnr1A2/Q6Y=
 github.com/blevesearch/zapx/v16 v16.2.2 h1:MifKJVRTEhMTgSlle2bDRTb39BGc9jXFRLPZc6r0Rzk=
 github.com/blevesearch/zapx/v16 v16.2.2/go.mod h1:B9Pk4G1CqtErgQV9DyCSA9Lb7WZe4olYfGw7fVDZ4sk=
-github.com/bornholm/amoxtli v0.17.2 h1:OP/xwEG6AGJcEC79eZoVKhdk4BaxXB/91zaqWhNviBU=
-github.com/bornholm/amoxtli v0.17.2/go.mod h1:N4nYlxH0DeGjz3ds7WW0WL2HmITAw0aBTgFs7F4c5ZI=
+github.com/bornholm/amoxtli v0.17.3 h1:sc+N3DO+MNmCazO98gM1s8kKYgXZ4FGUt/nTpeA3o3E=
+github.com/bornholm/amoxtli v0.17.3/go.mod h1:N4nYlxH0DeGjz3ds7WW0WL2HmITAw0aBTgFs7F4c5ZI=
 github.com/bornholm/genai v0.35.1-0.20260820072909-f37d5e79f45d h1:ZDNl5ATdioPL2lQVkauijgU9Rz+qmDeG8eGG+eiiR7k=
 github.com/bornholm/genai v0.35.1-0.20260820072909-f37d5e79f45d/go.mod h1:ajuzZJvHAhy2SOsjxVNI1WUZaYKvGfabRE9UnLWirr0=
 github.com/bornholm/go-courier v0.2.2-0.20260819222002-f997d6e6e648 h1:k/lfGbzW2GFWqorhVx5Q6pYHNtcaq+iYz8MNmvqLkb0=
