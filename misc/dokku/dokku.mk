@@ -3,7 +3,7 @@
 #   make dokku-setup     — préparation, une seule fois, de l'application distante
 #   make dokku-storage   — création et propriétaire des volumes (accès root requis)
 #   make dokku-env       — pousser les variables du fichier d'environnement local
-#   make dokku-config    — pousser config.yaml vers le volume /config
+#   make dokku-config    — valider puis pousser config.yaml vers /config
 #   make dokku-deploy    — déployer le HEAD courant
 #   make dokku-scale     — démarrer l'application (après le premier déploiement)
 #   make dokku-tls       — activer HTTPS (Let's Encrypt)
@@ -49,7 +49,7 @@ DOKKU_LETSENCRYPT_EMAIL ?= $(shell git config user.email)
 
 DOKKU := ssh $(DOKKU_DEPLOY_URL)
 
-.PHONY: dokku-setup dokku-storage dokku-env dokku-config dokku-deploy \
+.PHONY: dokku-setup dokku-storage dokku-env dokku-config dokku-config-check dokku-deploy \
         dokku-scale dokku-tls dokku-logs dokku-qr dokku-healthcheck dokku-ps \
         dokku-build dokku-run
 
@@ -115,10 +115,22 @@ dokku-env:
 #
 # config.yaml n'est pas versionné et ne contient aucun secret : il décrit un
 # déploiement, les valeurs sensibles restant des références d'environnement.
-dokku-config:
-	@test -f $(DOKKU_CONFIG_FILE) || { echo "Aucun fichier $(DOKKU_CONFIG_FILE) — lancez 'automata config init'."; exit 1; }
+# Une configuration refusée au démarrage ne se voit pas : Dokku relance le
+# conteneur en boucle, et l'assistant reste muet sans qu'aucune alerte ne
+# parte. Elle est donc validée ici, avec les variables réellement poussées,
+# AVANT de partir. Seul le jeton du serveur MCP intégré reçoit une valeur de
+# façade : il est engendré à chaque démarrage par l'entrypoint du conteneur,
+# et n'existe donc dans aucun fichier.
+dokku-config: dokku-config-check
 	scp $(DOKKU_CONFIG_FILE) $(DOKKU_SSH_ADMIN):$(DOKKU_STORAGE)/config/config.yaml
 	ssh $(DOKKU_SSH_ADMIN) "chown $(DOKKU_UID):$(DOKKU_UID) $(DOKKU_STORAGE)/config/config.yaml"
+
+dokku-config-check:
+	@test -f $(DOKKU_CONFIG_FILE) || { echo "Aucun fichier $(DOKKU_CONFIG_FILE) — lancez 'automata config init'."; exit 1; }
+	@test -f $(DOKKU_ENV_FILE) || { echo "Aucun fichier $(DOKKU_ENV_FILE) — lancez 'automata config init' et renseignez-le."; exit 1; }
+	@set -a; . ./$(DOKKU_ENV_FILE); set +a; \
+	export INTERNET_SEARCH_MCP_TOKEN=$${INTERNET_SEARCH_MCP_TOKEN:-jeton-engendre-au-demarrage}; \
+	go run ./cmd/automata config validate --config $(DOKKU_CONFIG_FILE)
 
 # Déploie le commit courant.
 #
