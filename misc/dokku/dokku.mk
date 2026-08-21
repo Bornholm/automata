@@ -99,17 +99,36 @@ dokku-storage:
 # Les valeurs vides sont ignorées, pour ne pas écraser par du vide une clé
 # déjà en place. Seuls les NOMS sont affichés : ce fichier contient des
 # secrets.
+#
+# Les valeurs sont lues LITTÉRALEMENT et transmises en arguments quotés.
+# Deux réexpansions guettaient, et la seconde a déjà détruit une valeur en
+# production : un hash bcrypt commence par « $2a$10$ », dont le shell fait
+# des paramètres positionnels vides.
+#
+#  1. côté local : ne jamais faire « eval echo $VALEUR » ni sourcer le
+#     fichier pour relire les variables — la valeur doit sortir du fichier
+#     telle quelle ;
+#  2. côté distant : ssh concatène ses arguments et les fait interpréter
+#     par un shell. Chaque valeur part donc entre guillemets SIMPLES, les
+#     apostrophes internes échappées.
+#
+# Symptôme si la protection saute : l'authentification de l'administration
+# échoue sans message clair, le hash stocké ayant perdu son préfixe.
 dokku-env:
 	@test -f $(DOKKU_ENV_FILE) || { echo "Aucun fichier $(DOKKU_ENV_FILE) — lancez 'automata config init' et renseignez-le."; exit 1; }
-	@set -a; . ./$(DOKKU_ENV_FILE); set +a; \
-	args=""; \
-	for key in $$(grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' $(DOKKU_ENV_FILE) | tr -d '='); do \
-		value=$$(eval echo \$$$$key); \
-		if [ -n "$$value" ]; then args="$$args $$key=$$value"; fi; \
-	done; \
-	if [ -z "$$args" ]; then echo "Aucune variable renseignée dans $(DOKKU_ENV_FILE)."; exit 1; fi; \
-	echo "Variables poussées :"; for a in $$args; do echo "  $${a%%=*}"; done; \
-	$(DOKKU) config:set --no-restart $(DOKKU_APP) $$args
+	@set --; \
+	while IFS= read -r line; do \
+		case "$$line" in ''|\#*) continue;; esac; \
+		key=$${line%%=*}; \
+		case "$$key" in *[!A-Za-z0-9_]*) continue;; esac; \
+		value=$${line#*=}; \
+		[ -n "$$value" ] || continue; \
+		esc=$$(printf '%s' "$$value" | sed "s/'/'\\\\''/g"); \
+		set -- "$$@" "$$key='$$esc'"; \
+	done < $(DOKKU_ENV_FILE); \
+	if [ "$$#" -eq 0 ]; then echo "Aucune variable renseignée dans $(DOKKU_ENV_FILE)."; exit 1; fi; \
+	echo "Variables poussées :"; for a in "$$@"; do echo "  $${a%%=*}"; done; \
+	$(DOKKU) config:set --no-restart $(DOKKU_APP) "$$@"
 
 # Dépose la configuration sur le volume /config.
 #
