@@ -165,6 +165,7 @@ func (s *Server) handleSkillForm(w http.ResponseWriter, r *http.Request) {
 		Agents:      strings.Join(skill.Agents, ", "),
 		Enabled:     skill.Enabled,
 		Builtin:     skill.Builtin,
+		Edited:      skill.Edited,
 		Saved:       r.URL.Query().Get("saved") != "",
 	}))
 }
@@ -224,6 +225,9 @@ func (s *Server) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 		existing.Content = content
 		existing.Agents = agents
 		existing.Enabled = enabled
+		// Marquée éditée : le semis ne la remplacera plus par le contenu
+		// embarqué au prochain démarrage. « Restaurer » lève ce marqueur.
+		existing.Edited = true
 		existing.UpdatedAt = s.now()
 
 		return s.skills.Upsert(r.Context(), tx, existing)
@@ -290,6 +294,8 @@ func (s *Server) handleSkillRestore(w http.ResponseWriter, r *http.Request) {
 		existing.Content = def.Content
 		existing.Agents = def.Agents
 		existing.Builtin = true
+		// Restaurée : elle redevient suiveuse des mises à jour du dépôt.
+		existing.Edited = false
 		existing.UpdatedAt = now
 
 		return s.skills.Upsert(r.Context(), tx, existing)

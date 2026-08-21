@@ -93,6 +93,7 @@ type SkillFormPage struct {
 	Agents      string
 	Enabled     bool
 	Builtin     bool
+	Edited      bool
 	Saved       bool
 	Error       string
 }
@@ -165,7 +166,11 @@ templ AdminSkillForm(page SkillFormPage) {
 						<form method="post" action={ templ.SafeURL("/admin/skills/" + page.Name + "/restore") } class="flex items-center gap-3">
 							<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 							<button type="submit" class="h-9 rounded-lg border border-line bg-white px-3.5 text-[13px] font-medium text-text hover:bg-bg">Restaurer la version d'origine</button>
-							<span class="text-[13px] text-text-4">Réécrit la description et le contenu depuis la version fournie par le projet.</span>
+							if page.Edited {
+								<span class="text-[13px] text-text-4">Vos modifications figent cette compétence : elle ne suit plus les mises à jour du projet. Restaurer la remet à la version fournie et lève ce gel.</span>
+							} else {
+								<span class="text-[13px] text-text-4">Non modifiée : elle suit les mises à jour du projet à chaque déploiement.</span>
+							}
 						</form>
 					}
 					<form method="post" action={ templ.SafeURL("/admin/skills/" + page.Name + "/delete") } class="flex items-center gap-3"

@@ -1,0 +1,12 @@
+-- Marqueur d'édition d'une compétence.
+--
+-- Une compétence fournie par le projet et jamais modifiée suit les mises à
+-- jour du dépôt : corriger une recette livrée doit profiter aux instances
+-- déjà semées. Dès qu'un administrateur la modifie, elle est figée — son
+-- travail prime toujours sur le contenu embarqué.
+--
+-- Un booléen explicite plutôt qu'une comparaison de dates : les
+-- horodatages perdent en précision au stockage, et une édition faite dans
+-- la même seconde que le semis serait indiscernable d'une absence
+-- d'édition.
+ALTER TABLE skills ADD COLUMN edited INTEGER NOT NULL DEFAULT 0;

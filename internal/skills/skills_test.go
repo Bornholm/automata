@@ -106,6 +106,11 @@ func TestSeedNeverOverwritesExistingSkill(t *testing.T) {
 			t.Fatalf("compétence %q absente après le semis (err=%v)", name, err)
 		}
 		skill.Content = edited
+		// Marqueur d'édition : c'est lui, et non l'horodatage, qui protège
+		// le travail de l'administrateur (les dates perdent en précision au
+		// stockage et une édition dans la même seconde que le semis serait
+		// indiscernable).
+		skill.Edited = true
 		skill.UpdatedAt = time.Now().UTC()
 		return repo.Upsert(ctx, tx, skill)
 	}); err != nil {
@@ -215,5 +220,55 @@ func TestBuiltinContent(t *testing.T) {
 
 	if _, ok := skills.BuiltinContent("skill-that-does-not-exist"); ok {
 		t.Error("une compétence inconnue ne devrait pas avoir de version d'origine")
+	}
+}
+
+// Une compétence fournie par le projet et jamais éditée suit les mises à
+// jour du dépôt : corriger une recette livrée doit profiter aux instances
+// déjà semées, sans intervention manuelle.
+func TestSeedRefreshesUneditedBuiltinSkills(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+
+	if err := skills.Seed(ctx, db, nil); err != nil {
+		t.Fatalf("premier semis: %v", err)
+	}
+
+	defs, err := skills.Defaults()
+	if err != nil {
+		t.Fatalf("Defaults: %v", err)
+	}
+	name := defs[0].Name
+
+	repo := persistence.NewSkillRepository()
+
+	// Simule une version antérieure livrée par le projet : contenu
+	// différent, jamais éditée par un administrateur.
+	if err := db.WithTx(ctx, func(tx *sql.Tx) error {
+		skill, found, err := repo.Get(ctx, tx, name)
+		if err != nil || !found {
+			t.Fatalf("compétence %q absente après le semis (err=%v)", name, err)
+		}
+		skill.Content = "Older version shipped by the project."
+		return repo.Upsert(ctx, tx, skill)
+	}); err != nil {
+		t.Fatalf("mise en place: %v", err)
+	}
+
+	if err := skills.Seed(ctx, db, nil); err != nil {
+		t.Fatalf("second semis: %v", err)
+	}
+
+	if err := db.WithTx(ctx, func(tx *sql.Tx) error {
+		skill, _, err := repo.Get(ctx, tx, name)
+		if err != nil {
+			return err
+		}
+		if skill.Content != defs[0].Content {
+			t.Errorf("la compétence non éditée aurait dû être rafraîchie, contenu = %q", skill.Content)
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("relecture: %v", err)
 	}
 }

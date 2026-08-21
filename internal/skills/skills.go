@@ -185,9 +185,36 @@ func Seed(ctx context.Context, db *persistence.DB, logger *slog.Logger) error {
 	repo := persistence.NewSkillRepository()
 	now := time.Now().UTC()
 	inserted := 0
+	refreshed := 0
 
 	if err := db.WithTx(ctx, func(tx *sql.Tx) error {
 		for _, def := range defs {
+			// Une compétence fournie par le projet et JAMAIS éditée suit
+			// les mises à jour du dépôt : sans cela, corriger une recette
+			// livrée n'aurait aucun effet sur les instances déjà semées, et
+			// il faudrait la restaurer à la main sur chacune.
+			//
+			// Dès qu'un administrateur l'a modifiée (Edited), elle est
+			// figée : son travail prime toujours sur le contenu embarqué.
+			existing, found, err := repo.Get(ctx, tx, def.Name)
+			if err != nil {
+				return err
+			}
+			if found {
+				if existing.Builtin && !existing.Edited && existing.Content != def.Content {
+					existing.Description = def.Description
+					existing.Content = def.Content
+					existing.Agents = def.Agents
+					existing.UpdatedAt = now
+					if err := repo.Upsert(ctx, tx, existing); err != nil {
+						return err
+					}
+					refreshed++
+				}
+
+				continue
+			}
+
 			ok, err := repo.InsertIfAbsent(ctx, tx, persistence.Skill{
 				Name:        def.Name,
 				Description: def.Description,
@@ -212,7 +239,7 @@ func Seed(ctx context.Context, db *persistence.DB, logger *slog.Logger) error {
 
 	// Compteurs seulement : le contenu d'une compétence n'a rien à faire
 	// dans les journaux.
-	logger.InfoContext(ctx, "skills: semées", "count", len(defs), "inserted", inserted)
+	logger.InfoContext(ctx, "skills: semées", "count", len(defs), "inserted", inserted, "refreshed", refreshed)
 
 	return nil
 }

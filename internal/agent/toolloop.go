@@ -316,6 +316,21 @@ func concludeToolLoop(ctx context.Context, client llm.ChatCompletionClient, mess
 // du contenu privé (texte d'un rappel, contenu mémorisé, requête de
 // recherche — AGENTS.md, "ne pas journaliser les contenus privés"). nil
 // désactive toute journalisation (tests, agents construits hors registre).
+// deliverWarning est le temps restant à partir duquel l'agent est prévenu
+// qu'il doit livrer. Il faut qu'il reste de quoi faire au moins un appel
+// d'outil et un tour de modèle : c'est plus que conclusionReserve, à
+// dessein.
+const deliverWarning = 40 * time.Second
+
+// deliverNowInstruction part vers le modèle : anglais uniquement.
+// Volontairement générique — elle sert tous les agents, pas seulement ceux
+// qui produisent des fichiers.
+const deliverNowInstruction = "You are running out of time for this task. " +
+	"If you already have a usable result, deliver it NOW with the appropriate tool " +
+	"(for example attach_file for a file you produced), then answer. " +
+	"Do not start anything new, do not check your work again: an imperfect result delivered " +
+	"is worth more than a perfect one you never hand over."
+
 // conclusionReserve est la marge en deçà de laquelle la boucle renonce à
 // une itération de plus. Elle est indicative : une itération déjà lancée
 // peut dépasser l'échéance, c'est conclusionBudget qui garantit la
@@ -356,9 +371,28 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 		attachments []media.Media
 		usedBytes   int64
 		totalCalls  int
+		warned      bool
 	)
 
 	for iteration := range maxIterations {
+		// Avertissement de fin de budget, une seule fois. Un agent ne sait
+		// pas qu'il est chronométré : il peaufine, vérifie une fois de
+		// plus, et le temps s'épuise AVANT qu'il ait livré. Vu en
+		// production : un fichier correctement produit, jamais joint à la
+		// réponse parce que la boucle s'est arrêtée entre-temps.
+		//
+		// La consigne arrive pendant la boucle, pas à la clôture : c'est ce
+		// qui permet encore d'exécuter l'appel d'outil qui livre.
+		if deadline, ok := ctx.Deadline(); ok && !warned && time.Until(deadline) <= deliverWarning {
+			warned = true
+			messages = append(messages, llm.NewMessage(llm.RoleUser, deliverNowInstruction))
+
+			if logger != nil {
+				logger.InfoContext(ctx, "agent: consigne de livraison injectée",
+					"agent", agentName, "iterations", iteration+1, "tool_calls", totalCalls)
+			}
+		}
+
 		// ToolChoiceAuto explicite : ne jamais dépendre du défaut de la
 		// bibliothèque — un défaut à "none" a historiquement interdit tout
 		// appel d'outil en silence, les modèles promettant alors des actions

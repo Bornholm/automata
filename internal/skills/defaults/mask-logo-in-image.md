@@ -33,15 +33,20 @@ convert in.jpg -region WxH+X+Y -statistic median 15x15 out.jpg
 If the logo sits in a corner and cropping is acceptable, cropping it away is
 also a legitimate answer — say so when you do it.
 
-## 3. Verify once
+## 3. Attach first, then verify
 
-One `view_file` on the result: "is the logo still visible?". Once. If the
-mask is slightly off, adjust the region and rerun the command a single time.
+Call `attach_file` on the result **before** checking it. Delivering is the
+only step the user actually sees; a file you never hand over is worth
+nothing, however good it looks.
 
-## 4. Attach
-
-Call `attach_file` on the result. State briefly what you did.
+Then, once — and only once — call `view_file` on the result: "is the logo
+still visible?". If the mask is clearly off, adjust the region, rerun the
+command and attach the corrected version. Never more than one such round.
 
 Never sample textures to reconstruct the background, never probe pixels one
 by one, never verify more than once: that is how a task that takes two
 commands ends up producing nothing at all.
+
+The result is a blurred patch where the logo was, not an invisible repair.
+That is the expected outcome — say so plainly instead of chasing a perfect
+reconstruction that these tools cannot produce.

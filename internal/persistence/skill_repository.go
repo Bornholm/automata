@@ -22,7 +22,12 @@ type Skill struct {
 	Enabled     bool
 	// Builtin marque une compétence fournie par le projet (semée depuis
 	// les fichiers embarqués) : elle seule peut être restaurée.
-	Builtin   bool
+	Builtin bool
+	// Edited marque une compétence modifiée par un administrateur. Une
+	// compétence fournie et jamais éditée suit les mises à jour du dépôt ;
+	// dès qu'elle est éditée, le travail de l'administrateur prime et le
+	// semis ne la touche plus.
+	Edited    bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -72,16 +77,17 @@ func (r *SkillRepository) Upsert(ctx context.Context, q Querier, s Skill) error 
 	}
 
 	_, err = q.ExecContext(ctx, `INSERT INTO skills
-		(name, description, content, agents, enabled, builtin, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		(name, description, content, agents, enabled, builtin, edited, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 			description = excluded.description,
 			content = excluded.content,
 			agents = excluded.agents,
 			enabled = excluded.enabled,
 			builtin = excluded.builtin,
+			edited = excluded.edited,
 			updated_at = excluded.updated_at`,
-		s.Name, s.Description, s.Content, agents, boolToInt(s.Enabled), boolToInt(s.Builtin),
+		s.Name, s.Description, s.Content, agents, boolToInt(s.Enabled), boolToInt(s.Builtin), boolToInt(s.Edited),
 		formatTenantTime(s.CreatedAt), formatTenantTime(s.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("enregistrement de la compétence %q: %w", s.Name, err)
@@ -101,10 +107,10 @@ func (r *SkillRepository) InsertIfAbsent(ctx context.Context, q Querier, s Skill
 	}
 
 	res, err := q.ExecContext(ctx, `INSERT INTO skills
-		(name, description, content, agents, enabled, builtin, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		(name, description, content, agents, enabled, builtin, edited, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(name) DO NOTHING`,
-		s.Name, s.Description, s.Content, agents, boolToInt(s.Enabled), boolToInt(s.Builtin),
+		s.Name, s.Description, s.Content, agents, boolToInt(s.Enabled), boolToInt(s.Builtin), boolToInt(s.Edited),
 		formatTenantTime(s.CreatedAt), formatTenantTime(s.UpdatedAt))
 	if err != nil {
 		return false, fmt.Errorf("semis de la compétence %q: %w", s.Name, err)
@@ -121,7 +127,7 @@ func (r *SkillRepository) InsertIfAbsent(ctx context.Context, q Querier, s Skill
 // Get retourne une compétence par son nom. found faux si elle n'existe
 // pas.
 func (r *SkillRepository) Get(ctx context.Context, q Querier, name string) (Skill, bool, error) {
-	row := q.QueryRowContext(ctx, `SELECT name, description, content, agents, enabled, builtin, created_at, updated_at
+	row := q.QueryRowContext(ctx, `SELECT name, description, content, agents, enabled, builtin, edited, created_at, updated_at
 		FROM skills WHERE name = ?`, name)
 
 	skill, err := scanSkill(row)
@@ -137,7 +143,7 @@ func (r *SkillRepository) Get(ctx context.Context, q Querier, name string) (Skil
 
 // List retourne toutes les compétences, triées par nom.
 func (r *SkillRepository) List(ctx context.Context, q Querier) ([]Skill, error) {
-	rows, err := q.QueryContext(ctx, `SELECT name, description, content, agents, enabled, builtin, created_at, updated_at
+	rows, err := q.QueryContext(ctx, `SELECT name, description, content, agents, enabled, builtin, edited, created_at, updated_at
 		FROM skills ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("liste des compétences: %w", err)
@@ -164,7 +170,7 @@ func (r *SkillRepository) List(ctx context.Context, q Querier) ([]Skill, error) 
 // bibliothèque est petite, et interroger du JSON en SQL coûterait plus
 // cher en complexité qu'il ne rapporte.
 func (r *SkillRepository) ListEnabledForAgent(ctx context.Context, q Querier, agentName string) ([]Skill, error) {
-	rows, err := q.QueryContext(ctx, `SELECT name, description, content, agents, enabled, builtin, created_at, updated_at
+	rows, err := q.QueryContext(ctx, `SELECT name, description, content, agents, enabled, builtin, edited, created_at, updated_at
 		FROM skills WHERE enabled = 1 ORDER BY name`)
 	if err != nil {
 		return nil, fmt.Errorf("compétences actives: %w", err)
@@ -219,20 +225,21 @@ type rowScanner interface {
 
 func scanSkill(row rowScanner) (Skill, error) {
 	var (
-		skill                Skill
-		agents               string
-		enabled, builtin     int
-		createdAt, updatedAt string
+		skill                    Skill
+		agents                   string
+		enabled, builtin, edited int
+		createdAt, updatedAt     string
 	)
 
 	if err := row.Scan(&skill.Name, &skill.Description, &skill.Content, &agents,
-		&enabled, &builtin, &createdAt, &updatedAt); err != nil {
+		&enabled, &builtin, &edited, &createdAt, &updatedAt); err != nil {
 		return Skill{}, err
 	}
 
 	skill.Agents = decodeAgents(agents)
 	skill.Enabled = enabled != 0
 	skill.Builtin = builtin != 0
+	skill.Edited = edited != 0
 
 	var err error
 	if skill.CreatedAt, err = parseTenantTime(createdAt); err != nil {
