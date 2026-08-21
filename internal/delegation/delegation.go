@@ -54,6 +54,31 @@ type Request struct {
 	// jointes du tour courant sont transmises, jamais celles des tours
 	// précédents.
 	Attachments []media.Media
+	// RecentAttachments porte les pièces jointes « outillage seulement »
+	// des messages précédents de la conversation, de la plus récente à la
+	// plus ancienne.
+	//
+	// Elles ne sont transmises qu'aux spécialistes qui déclarent savoir
+	// manipuler des fichiers (FileCapable), et restent invisibles du
+	// modèle : seuls les outils fichiers peuvent aller les chercher. C'est
+	// ce qui permet à un membre d'envoyer une vidéo, puis de demander sa
+	// transformation au message suivant.
+	//
+	// La nuance avec PLAN.md §6.3 est nette : le spécialiste ne reçoit
+	// toujours aucun contenu de l'historique — ni texte, ni image lisible
+	// par le modèle — mais il peut désigner par son nom un fichier déjà
+	// reçu, comme l'utilisateur le ferait.
+	RecentAttachments []media.Media
+}
+
+// FileCapable est implémentée par les spécialistes qui savent manipuler
+// des fichiers. L'orchestrateur s'en sert pour décider à qui transmettre
+// RecentAttachments : il interroge une capacité déclarée, il ne connaît
+// aucun spécialiste par son nom.
+type FileCapable interface {
+	// SupportsFiles indique que le spécialiste dispose d'outils capables
+	// d'importer et de produire des fichiers.
+	SupportsFiles() bool
 }
 
 // ProposedAction décrit une action que le spécialiste propose mais n'exécute

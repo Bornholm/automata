@@ -103,7 +103,11 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	// restreindre ou préciser.
 	custom := a.orgCustomization(ctx, req.Identity)
 
-	tools := a.buildDelegationTools(req.Identity, req.Attachments, collector, mediaCollector)
+	// Fichiers déjà reçus dans la conversation : ils ne partent qu'aux
+	// délégués capables de les manipuler, et jamais au modèle.
+	recentFiles := recentToolFiles(req.History, req.Attachments)
+
+	tools := a.buildDelegationTools(req.Identity, req.Attachments, recentFiles, collector, mediaCollector)
 	if len(custom.DisabledAgents) > 0 {
 		tools = filterDelegationTools(tools, custom.DisabledAgents)
 	}
@@ -115,7 +119,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	if a.pluginProvider != nil {
 		pluginSpecs, pluginDescs := a.pluginProvider.SpecialistsFor(ctx, req.Identity)
 		for name, specialist := range pluginSpecs {
-			tools = append(tools, newDelegationTool(name, pluginDescs[name], specialist, req.Identity, req.Attachments, collector, mediaCollector, a.metrics, a.logger))
+			tools = append(tools, newDelegationTool(name, pluginDescs[name], specialist, req.Identity, req.Attachments, recentFiles, collector, mediaCollector, a.metrics, a.logger))
 		}
 	}
 	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity, collector)...)
@@ -226,11 +230,11 @@ func (a *OrchestratorAgent) WithMaxToolContextBytes(max int64) *OrchestratorAgen
 // l'identité d'exécution propre à la requête courante : l'identité n'est
 // jamais décidée par le modèle (InvariantRules, règle 1), seulement
 // transmise par l'application.
-func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentity, attachments []media.Media, collector *proposalCollector, mediaCollector *mediaCollector) []llm.Tool {
+func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentity, attachments, recentFiles []media.Media, collector *proposalCollector, mediaCollector *mediaCollector) []llm.Tool {
 	tools := make([]llm.Tool, 0, len(a.specialists))
 
 	for agentID, specialist := range a.specialists {
-		tools = append(tools, newDelegationTool(agentID, a.specialistDescriptions[agentID], specialist, identity, attachments, collector, mediaCollector, a.metrics, a.logger))
+		tools = append(tools, newDelegationTool(agentID, a.specialistDescriptions[agentID], specialist, identity, attachments, recentFiles, collector, mediaCollector, a.metrics, a.logger))
 	}
 
 	// Ordre déterministe : la map d'origine n'a pas d'ordre garanti, et un
@@ -241,13 +245,54 @@ func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentit
 	return tools
 }
 
+// recentToolFiles rassemble les pièces jointes « outillage seulement »
+// déjà reçues dans la conversation, de la plus récente à la plus ancienne.
+//
+// Les pièces du tour courant sont exclues : elles voyagent déjà dans
+// Request.Attachments, et un doublon ferait hésiter le délégué entre deux
+// entrées de même nom. Le dédoublonnage par nom garde la plus récente,
+// pour la même raison — c'est celle que l'utilisateur a en tête.
+//
+// L'historique est déjà borné en amont (attachments.max_history) : rien
+// n'est relu en base ici.
+func recentToolFiles(history []Message, current []media.Media) []media.Media {
+	seen := make(map[string]struct{}, len(current))
+	for _, m := range current {
+		seen[m.Filename] = struct{}{}
+	}
+
+	var out []media.Media
+
+	for i := len(history) - 1; i >= 0; i-- {
+		for _, m := range history[i].Attachments {
+			if !m.ToolOnly {
+				continue
+			}
+			if _, dup := seen[m.Filename]; dup {
+				continue
+			}
+			seen[m.Filename] = struct{}{}
+			out = append(out, m)
+		}
+	}
+
+	return out
+}
+
 // newDelegationTool construit l'outil LLM "delegate_to_<agentID>" qui
 // adapte les arguments produits par le modèle en delegation.Request, puis
 // exécute specialist.Execute. Un échec du spécialiste n'est jamais remonté
 // comme erreur Go (ce qui ferait échouer tout le tour) : il est transmis au
 // modèle comme contenu de résultat d'outil, en clair, pour qu'il puisse
 // s'adapter (PLAN.md Phase 8, test "spécialiste en erreur").
-func newDelegationTool(agentID, description string, specialist delegation.Specialist, identity model.ExecutionIdentity, attachments []media.Media, collector *proposalCollector, mediaCollector *mediaCollector, metrics *observability.Metrics, logger *slog.Logger) llm.Tool {
+func newDelegationTool(agentID, description string, specialist delegation.Specialist, identity model.ExecutionIdentity, attachments, recentFiles []media.Media, collector *proposalCollector, mediaCollector *mediaCollector, metrics *observability.Metrics, logger *slog.Logger) llm.Tool {
+	// Les fichiers déjà reçus ne sont proposés qu'aux spécialistes qui
+	// déclarent savoir les manipuler : l'orchestrateur interroge une
+	// capacité, il ne connaît aucun spécialiste par son nom.
+	if capable, ok := specialist.(delegation.FileCapable); !ok || !capable.SupportsFiles() {
+		recentFiles = nil
+	}
+
 	schema := llm.NewJSONSchema().
 		RequiredProperty("goal", "Precise objective for the specialist to reach.", "string").
 		Property("relevant_input", "Context strictly needed for the task, spelled out. Never pass the whole conversation history.", "string").
@@ -295,6 +340,9 @@ func newDelegationTool(agentID, description string, specialist delegation.Specia
 				// délégation : le modèle ne peut pas les recopier dans
 				// relevant_input (voir delegation.Request.Attachments).
 				Attachments: attachments,
+				// Fichiers des messages précédents : invisibles du modèle,
+				// atteignables par les seuls outils fichiers du délégué.
+				RecentAttachments: recentFiles,
 			})
 			if err != nil {
 				// L'échec part au modèle sous forme de texte : sans cette

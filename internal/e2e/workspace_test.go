@@ -218,7 +218,11 @@ func TestWorkspacePlugin_VideoRoundTrip(t *testing.T) {
 			Scope:       model.ScopePersonal,
 			ScopeID:     "member-e2e",
 		},
-		Attachments: []media.Media{{
+		// La vidéo est arrivée au message PRÉCÉDENT : le membre l'envoie,
+		// puis demande la transformation au message suivant. C'est le geste
+		// naturel, et c'est le chemin le plus fragile — il traverse
+		// l'historique, la capacité déclarée et l'import.
+		RecentAttachments: []media.Media{{
 			Kind:     media.KindVideo,
 			MimeType: "video/mp4",
 			Filename: "exemple-whatsapp.mp4",

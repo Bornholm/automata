@@ -271,7 +271,7 @@ func TestPluginSubAgent_ImportAttachmentMissingGuidesTheAgent(t *testing.T) {
 				return scriptedToolCallResponse(llm.NewToolCall("c1", "import_attachment", `{"filename":"absent.mp4"}`)), nil
 			}
 			for _, m := range opts.Messages {
-				if strings.Contains(m.Content(), "send the file again") {
+				if strings.Contains(m.Content(), "send it again") {
 					toolResult = m.Content()
 				}
 			}
@@ -292,6 +292,9 @@ func TestPluginSubAgent_ImportAttachmentMissingGuidesTheAgent(t *testing.T) {
 
 	if toolResult == "" {
 		t.Fatal("le résultat d'outil devrait orienter l'agent vers un renvoi du fichier")
+	}
+	if !strings.Contains(toolResult, "list_files") {
+		t.Fatalf("il doit d'abord renvoyer l'agent vers son workspace: %q", toolResult)
 	}
 	if transfer.putFilename != "" {
 		t.Fatal("aucun PutFile ne devait être tenté")
@@ -581,5 +584,119 @@ func TestPluginSubAgent_ViewFileAbsentWithoutVisionClient(t *testing.T) {
 		if name == "view_file" {
 			t.Fatal("view_file monté sans client multimodal")
 		}
+	}
+}
+
+// Un fichier reçu à un message précédent reste importable : c'est le geste
+// naturel (« voici la vidéo », puis « enlève le logo ») et il doit marcher.
+func TestPluginSubAgent_ImportAttachmentFindsAnEarlierFile(t *testing.T) {
+	transfer := &fakeFileTransfer{putPath: "video.mp4"}
+	caller := &fakePluginCaller{result: "ok"}
+
+	var input string
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				for _, msg := range opts.Messages {
+					if msg.Role() == llm.RoleUser {
+						input = msg.Content()
+					}
+				}
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "import_attachment", `{"filename":"video.mp4"}`)), nil
+			}
+			return scriptedFinalResponse("Importée."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Remove the logo",
+		Identity: pluginTestIdentity(),
+		// Aucune pièce jointe sur le message courant : la vidéo est arrivée
+		// au message précédent.
+		RecentAttachments: []media.Media{{
+			Kind:     media.KindVideo,
+			MimeType: "video/mp4",
+			Filename: "video.mp4",
+			Data:     []byte("octets de la video"),
+			ToolOnly: true,
+		}},
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if string(transfer.putData) != "octets de la video" {
+		t.Fatalf("octets poussés au plugin = %q", string(transfer.putData))
+	}
+	if !strings.Contains(input, "video.mp4") {
+		t.Fatalf("les fichiers antérieurs doivent être annoncés au modèle: %q", input)
+	}
+	if !strings.Contains(input, "earlier in this conversation") {
+		t.Fatalf("l'annonce ne doit pas les présenter comme jointes au message courant: %q", input)
+	}
+}
+
+// À noms égaux, le fichier du message courant l'emporte sur son homonyme
+// plus ancien : c'est celui que l'utilisateur vient d'envoyer.
+func TestPluginSubAgent_CurrentAttachmentWinsOverEarlierNamesake(t *testing.T) {
+	transfer := &fakeFileTransfer{putPath: "video.mp4"}
+	caller := &fakePluginCaller{result: "ok"}
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "import_attachment", `{"filename":"video.mp4"}`)), nil
+			}
+			return scriptedFinalResponse("Importée."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Remove the logo",
+		Identity: pluginTestIdentity(),
+		Attachments: []media.Media{{
+			Kind: media.KindVideo, MimeType: "video/mp4", Filename: "video.mp4",
+			Data: []byte("la nouvelle"), ToolOnly: true,
+		}},
+		RecentAttachments: []media.Media{{
+			Kind: media.KindVideo, MimeType: "video/mp4", Filename: "video.mp4",
+			Data: []byte("l'ancienne"), ToolOnly: true,
+		}},
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if string(transfer.putData) != "la nouvelle" {
+		t.Fatalf("le fichier du tour courant devait l'emporter, poussé: %q", string(transfer.putData))
+	}
+}
+
+// La capacité est déclarée par le plugin ET servie par l'hôte : sans
+// WithFiles, le sous-agent ne prétend pas savoir manipuler des fichiers.
+func TestPluginSubAgent_SupportsFilesReflectsWhatTheHostCanServe(t *testing.T) {
+	caller := &fakePluginCaller{result: "ok"}
+	client := &fakeCompletionClient{
+		responseFunc: func(int, *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			return scriptedFinalResponse("ok"), nil
+		},
+	}
+
+	if agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).SupportsFiles() {
+		t.Fatal("sans WithFiles, le sous-agent ne peut rien servir")
+	}
+	if !agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(&fakeFileTransfer{}, 32<<20).SupportsFiles() {
+		t.Fatal("avec WithFiles et un plugin qui les déclare, la capacité doit être vraie")
+	}
+	if agent.NewPluginSubAgent(testPluginSpec(), client, caller, 0, nil).
+		WithFiles(&fakeFileTransfer{}, 32<<20).SupportsFiles() {
+		t.Fatal("un plugin qui ne déclare pas SupportsFiles ne doit jamais être FileCapable")
 	}
 }

@@ -130,6 +130,15 @@ func (a *PluginSubAgent) WithVision(client llm.ChatCompletionClient) *PluginSubA
 	return a
 }
 
+// SupportsFiles implémente delegation.FileCapable : c'est ce qui décide
+// si l'orchestrateur transmet à ce sous-agent les fichiers déjà reçus dans
+// la conversation. La capacité est déclarée par le plugin ET servie par
+// l'hôte — un plugin qui la déclare sans que WithFiles ait été appelé
+// n'obtient rien.
+func (a *PluginSubAgent) SupportsFiles() bool {
+	return a.spec.SupportsFiles && a.files != nil
+}
+
 // Execute implémente delegation.Specialist. Comme AgentSpecialist, seuls
 // Goal/RelevantInput/Constraints et les pièces jointes du tour composent
 // l'entrée — jamais l'historique de la conversation principale.
@@ -162,8 +171,11 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
 	messages := buildChatMessages(a.spec.SystemPrompt, agentName, false, "", Request{
-		Identity:    req.Identity,
-		Input:       buildDelegationInput(req),
+		Identity: req.Identity,
+		// Les fichiers antérieurs sont annoncés dans l'entrée, pas ajoutés
+		// aux pièces jointes : buildChatMessages les décrirait comme
+		// « jointes à ce message », ce qu'elles ne sont pas.
+		Input:       buildDelegationInput(req) + media.EarlierToolOnlyNotice(req.RecentAttachments),
 		Attachments: req.Attachments,
 		// History volontairement omis : garantie d'isolation des délégués.
 	})
@@ -280,20 +292,23 @@ func pluginCallContext(identity model.ExecutionIdentity) PluginCallContext {
 // chemin obtenu. Les octets ne traversent jamais la conversation, seul le
 // chemin remonte au modèle.
 //
-// Tour courant uniquement (v1) : rien n'est cherché dans l'historique. Une
-// pièce absente donne un résultat d'outil qui dit à l'agent de demander à
-// l'utilisateur de renvoyer le fichier avec sa demande — bien plus utile
-// qu'un « fichier introuvable ».
+// La recherche couvre les pièces du tour courant PUIS celles des messages
+// précédents (RecentAttachments) : un membre envoie une vidéo, puis demande
+// sa transformation au message suivant — c'est le geste naturel, il doit
+// fonctionner. Une pièce absente donne un résultat d'outil qui oriente
+// l'agent vers list_files, bien plus utile qu'un « fichier introuvable ».
 func (a *PluginSubAgent) newImportAttachmentTool(req delegation.Request) llm.Tool {
 	schema := llm.NewJSONSchema().
 		RequiredProperty("filename", "Exact name of the file attached to the user's message, as listed to you.", "string")
 
 	callCtx := pluginCallContext(req.Identity)
-	attachments := req.Attachments
+	// Les pièces du tour d'abord : à noms égaux, c'est le fichier que
+	// l'utilisateur vient d'envoyer qui l'emporte sur son homonyme ancien.
+	attachments := append(append([]media.Media(nil), req.Attachments...), req.RecentAttachments...)
 
 	return llm.NewFuncTool(
 		"import_attachment",
-		"Import a file attached to the user's message into your workspace so the other tools can work on it. Returns the path to use.",
+		"Import a file the user sent — with this message or earlier in the conversation — into your workspace so the other tools can work on it. Returns the path to use.",
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			filename, _ := params["filename"].(string)
@@ -304,8 +319,9 @@ func (a *PluginSubAgent) newImportAttachmentTool(req delegation.Request) llm.Too
 			found, ok := findAttachment(attachments, filename)
 			if !ok {
 				return llm.NewToolResult(
-					"error: no file named " + filename + " is attached to the current message. " +
-						"Files can only be imported from the message you are answering: ask the user to send the file again together with their request.",
+					"error: no file named " + filename + " was found in this conversation. " +
+						"Check list_files: it may already be in your workspace. " +
+						"Otherwise ask the user to send it again.",
 				), nil
 			}
 

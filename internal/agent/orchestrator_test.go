@@ -12,6 +12,7 @@ import (
 
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
 )
 
@@ -886,5 +887,142 @@ func TestOrchestratorAgent_EmptyReplyGetsConclusionSecondChance(t *testing.T) {
 	}
 	if res.Reply != "Réponse rattrapée." {
 		t.Errorf("reply = %q", res.Reply)
+	}
+}
+
+// fileCapableSpecialist déclare savoir manipuler des fichiers : c'est la
+// capacité que l'orchestrateur interroge pour décider à qui transmettre
+// les fichiers déjà reçus.
+type fileCapableSpecialist struct {
+	fakeSpecialist
+	supports bool
+}
+
+func (s *fileCapableSpecialist) SupportsFiles() bool { return s.supports }
+
+var _ delegation.FileCapable = &fileCapableSpecialist{}
+
+// historyWithToolFile fabrique un historique où l'utilisateur a envoyé un
+// fichier « outillage seulement » à un message précédent, puis a écrit sa
+// demande au message suivant.
+func historyWithToolFile(filename string) []agent.Message {
+	return []agent.Message{
+		{
+			Role:    "user",
+			Content: "Voici la vidéo.",
+			Attachments: []media.Media{{
+				Kind:     media.KindVideo,
+				MimeType: "video/mp4",
+				Filename: filename,
+				Data:     []byte("octets"),
+				ToolOnly: true,
+			}},
+		},
+		{Role: "assistant", Content: "Bien reçue."},
+	}
+}
+
+func delegateOnceClient(toolName string) *fakeCompletionClient {
+	return &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", toolName, `{"goal":"Remove the logo"}`)), nil
+			}
+			return scriptedFinalResponse("C'est fait."), nil
+		},
+	}
+}
+
+// Un fichier envoyé à un message précédent reste atteignable par le
+// délégué qui sait manipuler des fichiers.
+func TestOrchestratorAgent_PassesEarlierFilesToFileCapableSpecialists(t *testing.T) {
+	specialist := &fileCapableSpecialist{supports: true}
+	specialist.executeFunc = func(context.Context, delegation.Request) (delegation.Result, error) {
+		return delegation.Result{Summary: "fait"}, nil
+	}
+
+	a := agent.NewOrchestratorAgent(delegateOnceClient("delegate_to_workspace"), "system", "main",
+		map[string]delegation.Specialist{"workspace": specialist}, 5)
+
+	if _, err := a.Execute(context.Background(), agent.Request{
+		Input:   "Enlève le logo de la vidéo",
+		History: historyWithToolFile("video.mp4"),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if specialist.callCount() != 1 {
+		t.Fatalf("le spécialiste devait être appelé une fois, %d appels", specialist.callCount())
+	}
+	got := specialist.calls[0].RecentAttachments
+	if len(got) != 1 || got[0].Filename != "video.mp4" {
+		t.Fatalf("fichiers antérieurs transmis = %+v", got)
+	}
+}
+
+// Un délégué qui ne manipule pas de fichiers n'en reçoit aucun : la
+// garantie d'isolation ne s'élargit que pour ceux qui en ont l'usage.
+func TestOrchestratorAgent_WithholdsEarlierFilesFromOtherSpecialists(t *testing.T) {
+	plain := &fakeSpecialist{
+		executeFunc: func(context.Context, delegation.Request) (delegation.Result, error) {
+			return delegation.Result{Summary: "vu"}, nil
+		},
+	}
+	declining := &fileCapableSpecialist{supports: false}
+	declining.executeFunc = func(context.Context, delegation.Request) (delegation.Result, error) {
+		return delegation.Result{Summary: "vu"}, nil
+	}
+
+	for name, specialist := range map[string]delegation.Specialist{"vision": plain, "workspace": declining} {
+		a := agent.NewOrchestratorAgent(delegateOnceClient("delegate_to_"+name), "system", "main",
+			map[string]delegation.Specialist{name: specialist}, 5)
+
+		if _, err := a.Execute(context.Background(), agent.Request{
+			Input:   "Regarde ça",
+			History: historyWithToolFile("video.mp4"),
+		}); err != nil {
+			t.Fatalf("Execute (%s): %v", name, err)
+		}
+	}
+
+	if len(plain.calls) != 1 || len(plain.calls[0].RecentAttachments) != 0 {
+		t.Fatalf("un spécialiste sans capacité fichiers ne doit rien recevoir: %+v", plain.calls)
+	}
+	if len(declining.calls) != 1 || len(declining.calls[0].RecentAttachments) != 0 {
+		t.Fatalf("un spécialiste qui décline la capacité ne doit rien recevoir: %+v", declining.calls)
+	}
+}
+
+// Les pièces jointes visibles du modèle ne sont pas des fichiers d'outils :
+// elles restent hors de RecentAttachments, sans quoi le socle contournerait
+// la frontière « outillage seulement ».
+func TestOrchestratorAgent_EarlierFilesAreToolOnlyMedia(t *testing.T) {
+	specialist := &fileCapableSpecialist{supports: true}
+	specialist.executeFunc = func(context.Context, delegation.Request) (delegation.Result, error) {
+		return delegation.Result{Summary: "fait"}, nil
+	}
+
+	history := historyWithToolFile("video.mp4")
+	history[0].Attachments = append(history[0].Attachments, media.Media{
+		Kind:     media.KindImage,
+		MimeType: "image/png",
+		Filename: "capture.png",
+		Data:     []byte("png"),
+	})
+
+	a := agent.NewOrchestratorAgent(delegateOnceClient("delegate_to_workspace"), "system", "main",
+		map[string]delegation.Specialist{"workspace": specialist}, 5)
+
+	if _, err := a.Execute(context.Background(), agent.Request{
+		Input:   "Enlève le logo",
+		History: history,
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	for _, m := range specialist.calls[0].RecentAttachments {
+		if m.Filename == "capture.png" {
+			t.Fatal("une pièce jointe visible du modèle ne doit pas transiter par RecentAttachments")
+		}
 	}
 }

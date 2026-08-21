@@ -46,7 +46,7 @@ func (p *Plugin) Describe(context.Context, *proto.DescribeRequest) (*proto.Plugi
 		SubAgent: &proto.SubAgentDescriptor{
 			Description: "edits videos, images and files in a sandboxed workspace with ffmpeg and imagemagick " +
 				"(crop, trim, resize, remove a watermark, convert a format, extract audio)",
-			SystemPrompt:           workspaceSystemPrompt,
+			SystemPrompt: workspaceSystemPrompt,
 			// Le travail sur média est exploratoire : inspecter, regarder
 			// une trame, essayer un filtre, vérifier la taille du résultat.
 			// Un plafond serré épuise le budget avant la commande finale et
@@ -61,10 +61,11 @@ const workspaceSystemPrompt = "You are a shell expert working inside an isolated
 	"You have no network access and no tools other than the ones listed.\n\n" +
 	"Your workspace persists between messages for about a day: files you imported or produced earlier are still there. " +
 	"Always call list_files first to see what you already have, and only call import_attachment for a file that is not there yet. " +
-	"Never ask the user to send a file again when list_files shows it: import_attachment only sees the message you are answering, " +
-	"but the workspace remembers everything.\n\n" +
+	"import_attachment can bring in any file the user sent in this conversation, not only the one attached to the message you are answering: " +
+	"the files available to you are listed in your instructions. " +
+	"Only ask the user to send a file again when it appears neither in list_files nor in that list.\n\n" +
 	"Workflow for every request:\n" +
-	"1. Call list_files. If the file you need is missing, call import_attachment with the exact filename the user attached.\n" +
+	"1. Call list_files. If the file you need is missing, call import_attachment with its exact filename.\n" +
 	"2. Inspect it first (ffprobe for video and audio, identify for images) before deciding on any filter — never guess dimensions, duration or codecs.\n" +
 	"3. If the request depends on what the media looks like — locating a logo or a watermark, checking a result — use view_file. " +
 	"For a video, extract a frame first (ffmpeg -y -i input.mp4 -ss 1 -frames:v 1 frame.png) then look at that frame. " +

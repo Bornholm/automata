@@ -32,12 +32,22 @@ Aucune interface : tout passe par la conversation.
 Les octets ne traversent jamais la conversation : le modèle ne voit que des
 chemins, des noms et des tailles.
 
-**Le fichier doit accompagner la demande… la première fois seulement.**
-`import_attachment` ne cherche que dans le message du tour courant. Mais le
-workspace, lui, persiste (`LEASH_TTL`, 24 h par défaut) : aux tours
-suivants, l'agent retrouve le fichier avec `list_files` et travaille dessus
-sans réimport. Son prompt le lui dit explicitement — un agent qui redemande
-un fichier déjà listé est un défaut de prompt, pas une limite du plugin.
+**Envoyer le fichier puis demander au message suivant fonctionne.**
+L'agent peut importer n'importe quel fichier reçu dans la conversation, pas
+seulement celui joint au message auquel il répond : l'orchestrateur lui
+transmet la liste des pièces `tool_only` de l'historique récent (borné par
+`attachments.max_history`), et il les désigne par leur nom. À noms égaux,
+le fichier du message courant l'emporte.
+
+Une fois importé, le fichier reste dans le workspace (`LEASH_TTL`, 24 h par
+défaut) : aux tours suivants, l'agent le retrouve avec `list_files` sans
+réimport.
+
+Cette transmission ne va qu'aux délégués qui **déclarent** savoir manipuler
+des fichiers (`delegation.FileCapable`) : le socle interroge une capacité,
+il ne connaît aucun plugin par son nom. Le spécialiste `vision`, par
+exemple, n'en reçoit rien. Et ces fichiers restent invisibles du modèle —
+seuls les outils fichiers peuvent aller les chercher.
 
 ## Voir ce qu'il manipule
 

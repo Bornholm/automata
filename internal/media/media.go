@@ -392,6 +392,34 @@ func ToolOnlyNotice(medias []Media) string {
 		strings.Join(lines, "\n") + "]"
 }
 
+// EarlierToolOnlyNotice décrit les fichiers reçus lors des messages
+// PRÉCÉDENTS de la conversation, pour qu'un délégué sache qu'il peut les
+// importer par leur nom. Nom, type et taille seulement — jamais le
+// contenu.
+//
+// Distinct de ToolOnlyNotice à dessein : dire « joint à ce message » d'un
+// fichier vieux de trois messages ferait chercher le délégué au mauvais
+// endroit, et lui ferait relancer l'utilisateur pour rien.
+//
+// En anglais : ce texte part vers le modèle (AGENTS.md).
+func EarlierToolOnlyNotice(medias []Media) string {
+	var lines []string
+	for _, m := range medias {
+		if !m.ToolOnly {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- %s (%s, %d bytes)", m.Filename, m.MimeType, len(m.Data)))
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+
+	return "\n\n[Files the user sent earlier in this conversation, most recent first. " +
+		"You cannot see them directly, but your file tools can import them by their exact filename:\n" +
+		strings.Join(lines, "\n") + "]"
+}
+
 // ToolOnly retourne les pièces jointes réservées aux outils.
 func ToolOnly(medias []Media) []Media {
 	var out []Media
