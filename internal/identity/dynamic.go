@@ -39,8 +39,10 @@ type DynamicChannel struct {
 // prioritaire et le pipeline d'ingress traite le cas « inconnu ».
 type DynamicSource interface {
 	// FindMemberByOrigin retourne le membre lié à une identité de
-	// messagerie (provider + identifiant externe).
-	FindMemberByOrigin(ctx context.Context, provider, externalUserID string) (DynamicMember, bool, error)
+	// messagerie (provider + identifiant externe) dans une organisation
+	// donnée. orgID vide cherche dans toutes les organisations : une
+	// même personne peut être membre de plusieurs.
+	FindMemberByOrigin(ctx context.Context, provider, externalUserID, orgID string) (DynamicMember, bool, error)
 	// FindChannel retourne la liaison d'un canal.
 	FindChannel(ctx context.Context, provider, channelID string) (DynamicChannel, bool, error)
 	// OrgDisplayName retourne le nom affiché d'une organisation en base.
@@ -60,14 +62,11 @@ func (r *Resolver) WithDynamicSource(source DynamicSource) *Resolver {
 // ailleurs : un membre ne peut jamais parler dans le canal d'une autre
 // organisation que la sienne.
 func (r *Resolver) resolveDynamic(ctx context.Context, provider, externalUserID, channelID string) (model.ExecutionIdentity, model.Conversation, error) {
-	member, found, err := r.dynamic.FindMemberByOrigin(ctx, provider, externalUserID)
-	if err != nil {
-		return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf("identity: recherche du membre %s/%s: %w", provider, externalUserID, err)
-	}
-	if !found {
-		return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf("identity: origine %s/%s: %w", provider, externalUserID, apperr.ErrUnknownOrigin)
-	}
-
+	// Le canal d'abord : c'est lui qui désigne l'organisation, et donc
+	// lequel des profils de la personne prend la parole. Une même
+	// identité de messagerie peut être membre de plusieurs
+	// organisations — le groupe familial et celui de l'employeur, sur le
+	// même compte.
 	channel, found, err := r.dynamic.FindChannel(ctx, provider, channelID)
 	if err != nil {
 		return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf("identity: recherche du canal %s/%s: %w", provider, channelID, err)
@@ -76,8 +75,22 @@ func (r *Resolver) resolveDynamic(ctx context.Context, provider, externalUserID,
 		return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf("identity: canal %s/%s: %w", provider, channelID, apperr.ErrUnknownChannel)
 	}
 
-	if channel.OrgID != member.OrgID {
-		return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf("identity: membre %q hors de l'organisation du canal %s/%s: %w", member.ID, provider, channelID, apperr.ErrUnauthorized)
+	member, found, err := r.dynamic.FindMemberByOrigin(ctx, provider, externalUserID, channel.OrgID)
+	if err != nil {
+		return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf("identity: recherche du membre %s/%s: %w", provider, externalUserID, err)
+	}
+	if !found {
+		// La personne est peut-être connue ailleurs : le dire au journal
+		// évite de confondre « inconnu au bataillon » avec « pas de
+		// compte dans CETTE organisation », deux situations qui
+		// n'appellent pas le même geste.
+		if _, elsewhere, err := r.dynamic.FindMemberByOrigin(ctx, provider, externalUserID, ""); err == nil && elsewhere {
+			return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf(
+				"identity: origine %s/%s connue, mais sans compte dans l'organisation %q du canal: %w",
+				provider, externalUserID, channel.OrgID, apperr.ErrUnauthorized)
+		}
+
+		return model.ExecutionIdentity{}, model.Conversation{}, fmt.Errorf("identity: origine %s/%s: %w", provider, externalUserID, apperr.ErrUnknownOrigin)
 	}
 
 	// Un canal privé n'appartient qu'à son propriétaire : quelqu'un d'autre

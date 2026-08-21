@@ -17,9 +17,15 @@ import (
 	"github.com/bornholm/automata/internal/weblink"
 )
 
-// orgSubtitle décrit les canaux configurés d'une organisation
+// orgSubtitle décrit les canaux d'une organisation
 // (« WhatsApp · 2 canaux »).
-func (s *Server) orgSubtitle(orgID string) string {
+//
+// Les deux sources comptent : les canaux déclarés en configuration et
+// ceux rattachés en ligne par jeton de liaison. N'en compter qu'une
+// affichait « Aucun canal lié » à des organisations dont toutes les
+// conversations étaient rattachées — la liste contredisait alors l'écran
+// des canaux.
+func (s *Server) orgSubtitle(orgID string, bound []persistence.ChannelBinding) string {
 	var count int
 	firstType := ""
 	for _, ch := range s.cfg.Channels {
@@ -29,6 +35,16 @@ func (s *Server) orgSubtitle(orgID string) string {
 		count++
 		if firstType == "" {
 			firstType = providerTypeOf(s.cfg, ch.Provider)
+		}
+	}
+
+	for _, binding := range bound {
+		if binding.OrgID != orgID {
+			continue
+		}
+		count++
+		if firstType == "" {
+			firstType = providerTypeOf(s.cfg, binding.Provider)
 		}
 	}
 
@@ -68,6 +84,10 @@ func (s *Server) handleOrgs(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
+		bound, err := s.bindings.ListAll(r.Context(), tx)
+		if err != nil {
+			return err
+		}
 		monthUsage, err := s.orgUsageCredits(r.Context(), tx, monthFrom, monthTo)
 		if err != nil {
 			return err
@@ -89,7 +109,7 @@ func (s *Server) handleOrgs(w http.ResponseWriter, r *http.Request) {
 			page.Rows = append(page.Rows, view.OrgRow{
 				ID:           org.ID,
 				Name:         org.DisplayName,
-				Subtitle:     s.orgSubtitle(org.ID),
+				Subtitle:     s.orgSubtitle(org.ID, bound),
 				Chip:         state.Chip,
 				BalanceLabel: state.BalanceLabel,
 				GaugePct:     state.GaugePct,
@@ -177,6 +197,37 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 	orgID := slugify(name)
 	if orgID == "" {
 		orgID = "org"
+	}
+
+	// Deux organisations de même nom sont indiscernables partout où on
+	// les liste : dans le sélecteur des jetons de liaison comme dans la
+	// liste d'administration. Le doublon vient presque toujours d'une
+	// création refaite, pas d'une intention — mieux vaut le dire que le
+	// laisser passer et devoir démêler ensuite quel canal est allé où.
+	var duplicate bool
+	if !s.withTx(w, r, func(tx *sql.Tx) error {
+		existing, err := s.orgs.List(r.Context(), tx, "")
+		if err != nil {
+			return err
+		}
+		for _, org := range existing {
+			if strings.EqualFold(strings.TrimSpace(org.DisplayName), name) {
+				duplicate = true
+				break
+			}
+		}
+
+		return nil
+	}) {
+		return
+	}
+	if duplicate {
+		s.render(w, r, http.StatusConflict, view.AdminOrgNew(view.OrgNewPage{
+			Platforms: s.sidebarPlatforms(),
+			CSRFToken: s.csrfToken(w, r),
+			Error:     "Une organisation nommée « " + name + " » existe déjà. Choisissez un autre nom, ou ouvrez l'existante.",
+		}))
+		return
 	}
 
 	ok := s.withTx(w, r, func(tx *sql.Tx) error {

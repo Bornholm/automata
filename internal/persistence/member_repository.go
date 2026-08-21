@@ -153,9 +153,33 @@ func (r *MemberRepository) Update(ctx context.Context, q Querier, m Member) erro
 // FindByExternalUser retourne le membre lié à une identité de messagerie
 // (point d'entrée de la résolution d'identité dynamique, lot B).
 func (r *MemberRepository) FindByExternalUser(ctx context.Context, q Querier, provider, externalUserID string) (Member, bool, error) {
-	row := q.QueryRowContext(ctx, `SELECT `+memberColumns+` FROM members
-		WHERE provider = ? AND external_user_id = ? AND linked_at != '' LIMIT 1`,
-		provider, externalUserID)
+	return r.findByExternalUser(ctx, q, provider, externalUserID, "")
+}
+
+// FindByExternalUserInOrg retourne le membre lié à une identité de
+// messagerie DANS une organisation donnée.
+//
+// Une même personne peut appartenir à plusieurs organisations avec le
+// même compte de messagerie — son groupe familial et celui de son
+// employeur, sur le même WhatsApp. C'est l'organisation du canal qui
+// désigne lequel de ses profils parle : sans ce filtre, la première
+// ligne venue gagnait, et la personne se voyait refuser la parole dans
+// le groupe de son autre organisation.
+func (r *MemberRepository) FindByExternalUserInOrg(ctx context.Context, q Querier, provider, externalUserID, orgID string) (Member, bool, error) {
+	return r.findByExternalUser(ctx, q, provider, externalUserID, orgID)
+}
+
+func (r *MemberRepository) findByExternalUser(ctx context.Context, q Querier, provider, externalUserID, orgID string) (Member, bool, error) {
+	query := `SELECT ` + memberColumns + ` FROM members
+		WHERE provider = ? AND external_user_id = ? AND linked_at != ''`
+	args := []any{provider, externalUserID}
+	if orgID != "" {
+		query += ` AND org_id = ?`
+		args = append(args, orgID)
+	}
+	query += ` LIMIT 1`
+
+	row := q.QueryRowContext(ctx, query, args...)
 
 	m, err := scanMember(row.Scan)
 	if err != nil {

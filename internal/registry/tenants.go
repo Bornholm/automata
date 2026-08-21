@@ -46,14 +46,14 @@ func newTenantSource(db *persistence.DB, baseURL string) *tenantSource {
 }
 
 // FindMemberByOrigin implémente identity.DynamicSource.
-func (s *tenantSource) FindMemberByOrigin(ctx context.Context, provider, externalUserID string) (identity.DynamicMember, bool, error) {
+func (s *tenantSource) FindMemberByOrigin(ctx context.Context, provider, externalUserID, orgID string) (identity.DynamicMember, bool, error) {
 	var (
 		member persistence.Member
 		found  bool
 	)
 	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
 		var err error
-		member, found, err = s.members.FindByExternalUser(ctx, tx, provider, externalUserID)
+		member, found, err = s.members.FindByExternalUserInOrg(ctx, tx, provider, externalUserID, orgID)
 		return err
 	})
 	if err != nil || !found {

@@ -69,15 +69,34 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 		statuses = s.platformManager.Statuses()
 	}
 
-	channelCounts := map[string]int{}
+	// Canaux d'un compte de messagerie : ceux déclarés en configuration
+	// et ceux rattachés en ligne par jeton. Oublier les seconds affichait
+	// « 0 canaux » sur la carte d'une plateforme dont la table, juste en
+	// dessous, en listait trois.
+	configChannelCounts := map[string]int{}
 	for _, ch := range s.cfg.Channels {
-		channelCounts[ch.Provider]++
+		configChannelCounts[ch.Provider]++
 	}
 
 	ok := s.withTx(w, r, func(tx *sql.Tx) error {
 		accounts, err := s.platforms.List(r.Context(), tx)
 		if err != nil {
 			return err
+		}
+
+		// Canaux liés dynamiquement (jetons de groupe consommés) : lus
+		// avant les cartes, qui en affichent le compte.
+		bindings, err := s.bindings.ListAll(r.Context(), tx)
+		if err != nil {
+			return err
+		}
+
+		channelCounts := map[string]int{}
+		for provider, count := range configChannelCounts {
+			channelCounts[provider] += count
+		}
+		for _, binding := range bindings {
+			channelCounts[binding.Provider]++
 		}
 
 		for _, account := range accounts {
@@ -129,11 +148,6 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 			page.Cards = append(page.Cards, card)
 		}
 
-		// Canaux liés dynamiquement (jetons de groupe consommés).
-		bindings, err := s.bindings.ListAll(r.Context(), tx)
-		if err != nil {
-			return err
-		}
 		for _, binding := range bindings {
 			page.Channels = append(page.Channels, view.ChannelRow{
 				PlatformType: platformTypeOf(accounts, binding.Provider),

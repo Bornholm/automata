@@ -150,7 +150,10 @@ func (p *Pipeline) linkPersonal(ctx context.Context, tx *sql.Tx, token persisten
 
 	// Une identité de messagerie déjà rattachée à quelqu'un d'autre ne
 	// change jamais de propriétaire sur simple présentation d'un jeton.
-	existing, taken, err := members.FindByExternalUser(ctx, tx, p.providerName, externalUserID)
+	// Le contrôle porte sur l'organisation du jeton : la même personne
+	// peut avoir un profil dans plusieurs organisations avec le même
+	// compte de messagerie, ce qui n'est pas une usurpation.
+	existing, taken, err := members.FindByExternalUserInOrg(ctx, tx, p.providerName, externalUserID, member.OrgID)
 	if err != nil {
 		return linkResult{}, err
 	}
