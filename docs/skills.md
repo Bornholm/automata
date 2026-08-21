@@ -85,10 +85,17 @@ Les compétences fournies par le projet vivent dans
 (`go:embed`). À chaque démarrage, elles sont insérées en base **si et
 seulement si leur nom est absent**.
 
-Autrement dit : une compétence éditée dans l'administration n'est
-**jamais** écrasée par un redéploiement. Pour revenir à la version du
-dépôt, il faut le demander explicitement — bouton « Restaurer la version
-d'origine » de la fiche.
+Une compétence fournie et **jamais modifiée** suit ensuite les mises à jour
+du dépôt : corriger une recette livrée profite aux instances déjà semées,
+sans intervention. Dès qu'un administrateur l'édite, elle est figée — son
+travail prime sur le contenu embarqué, et un redéploiement ne l'écrase
+**jamais**. Le bouton « Restaurer la version d'origine » lève ce gel et
+remet la version du dépôt.
+
+Ce statut repose sur une colonne `edited` explicite, pas sur une
+comparaison de dates : les horodatages perdent en précision au stockage, et
+une édition faite dans la même seconde que le semis serait indiscernable
+d'une absence d'édition.
 
 Le journal du démarrage rend compte du semis en compteurs seulement :
 
@@ -128,3 +135,20 @@ apparaîtra, sur le modèle de `plugin_activations`.
 Rien à changer dans `config.yaml` : le système est actif dès que la table
 existe. Une instance sans compétence active a simplement un catalogue
 vide, et aucun outil `load_skill` monté.
+
+## Les compétences fournies avec le projet
+
+| Compétence | Pour qui | Ce qu'elle règle |
+| --- | --- | --- |
+| `mask-logo-in-image` | workspace | Masquer un logo sur une photo en une commande, livrer avant de vérifier. |
+| `remove-video-watermark` | workspace | Retirer un filigrane d'une vidéo (`delogo`), en surveillant la taille de sortie. |
+| `edit-office-document` | workspace | Lire, modifier et convertir un docx/odt/pdf, en avertissant des pertes de mise en page. |
+| `compress-media-for-messaging` | workspace | Ramener une vidéo ou une photo sous la limite d'envoi. |
+| `scan-to-pdf` | workspace | Transformer des photos de documents en PDF redressé et lisible. |
+| `unslop` | tous | Débarrasser un texte long de ses tics d'écriture d'IA. |
+| `translate` | tous | Traduire en gardant registre, noms propres et mise en forme. |
+
+Les deux dernières ne sont pas ciblées : elles apparaissent dans le
+catalogue de tous les agents équipés. `unslop` vise les textes destinés à
+être lus par d'autres — un courriel, un document — et non les réponses de
+conversation, dont le ton est déjà cadré par le prompt de l'agent.
