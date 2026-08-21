@@ -87,12 +87,17 @@ type PluginSpecialistProvider interface {
 // PluginSubAgent exécute une délégation avec les outils d'un plugin.
 // Implémente delegation.Specialist.
 type PluginSubAgent struct {
-	spec                PluginSubAgentSpec
-	client              llm.ChatCompletionClient
-	caller              PluginToolCaller
-	files               PluginFileTransfer
-	maxFileBytes        int64
-	vision              llm.ChatCompletionClient
+	spec         PluginSubAgentSpec
+	client       llm.ChatCompletionClient
+	caller       PluginToolCaller
+	files        PluginFileTransfer
+	maxFileBytes int64
+	vision       llm.ChatCompletionClient
+	// textOnly indique que le client du sous-agent refuse les images en
+	// entrée. Il ne reçoit alors AUCUNE pièce jointe : un fournisseur
+	// texte-seul rejette la requête entière — pas seulement l'image — avec
+	// un « no endpoints found that support image input ».
+	textOnly            bool
 	maxToolContextBytes int64
 	logger              *slog.Logger
 }
@@ -121,11 +126,24 @@ func (a *PluginSubAgent) WithFiles(files PluginFileTransfer, maxFileBytes int64)
 	return a
 }
 
-// WithVision branche le client multimodal qui sert l'outil view_file. Le
+// WithTextOnly déclare que le client du sous-agent n'accepte pas les
+// images. Les pièces jointes du tour lui sont alors décrites en texte au
+// lieu de lui être transmises : c'est sans perte pour un sous-agent qui
+// travaille sur des fichiers par leur chemin, et cela évite de faire
+// échouer tout le tour.
+func (a *PluginSubAgent) WithTextOnly(textOnly bool) *PluginSubAgent {
+	a.textOnly = textOnly
+	return a
+}
+
+// WithVisionClient branche le client multimodal qui sert l'outil view_file.
+// Le nom se distingue de WithVision(bool) des autres agents, qui déclare
+// tout autre chose : la capacité du client PRINCIPAL à recevoir des images.
+// Le
 // modèle du sous-agent est texte-seul : sans ce client, un agent qui
 // manipule des images travaille en aveugle et gaspille son budget d'outils
 // à sonder des histogrammes. Sans cet appel, view_file n'est pas monté.
-func (a *PluginSubAgent) WithVision(client llm.ChatCompletionClient) *PluginSubAgent {
+func (a *PluginSubAgent) WithVisionClient(client llm.ChatCompletionClient) *PluginSubAgent {
 	a.vision = client
 	return a
 }
@@ -170,13 +188,31 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
-	messages := buildChatMessages(a.spec.SystemPrompt, agentName, false, "", Request{
-		Identity: req.Identity,
-		// Les fichiers antérieurs sont annoncés dans l'entrée, pas ajoutés
-		// aux pièces jointes : buildChatMessages les décrirait comme
-		// « jointes à ce message », ce qu'elles ne sont pas.
-		Input:       buildDelegationInput(req) + media.EarlierToolOnlyNotice(req.RecentAttachments),
-		Attachments: req.Attachments,
+	// Un sous-agent à outils fichiers ne reçoit AUCUNE pièce jointe dans
+	// son contexte : il en reçoit la liste nommée et va chercher les octets
+	// lui-même (import_attachment, view_file). Ce n'est pas une précaution
+	// de coût mais de justesse — le client des plugins peut être un modèle
+	// texte-seul, qui rejette alors la requête ENTIÈRE (« no endpoints
+	// found that support image input »), et une photo jointe ferait échouer
+	// un tour qui n'avait besoin que de son nom.
+	//
+	// Les fichiers sont annoncés dans l'entrée plutôt qu'en pièces jointes :
+	// buildChatMessages décrirait les fichiers antérieurs comme « joints à
+	// ce message », ce qu'ils ne sont pas.
+	input := buildDelegationInput(req)
+	attachmentsForModel := req.Attachments
+	textOnly := a.textOnly
+
+	if a.SupportsFiles() {
+		attachmentsForModel = nil
+		textOnly = true
+		input += media.AttachedFilesNotice(req.Attachments) + media.EarlierToolOnlyNotice(req.RecentAttachments)
+	}
+
+	messages := buildChatMessages(a.spec.SystemPrompt, agentName, textOnly, "", Request{
+		Identity:    req.Identity,
+		Input:       input,
+		Attachments: attachmentsForModel,
 		// History volontairement omis : garantie d'isolation des délégués.
 	})
 

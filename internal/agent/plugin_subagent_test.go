@@ -479,7 +479,7 @@ func TestPluginSubAgent_ViewFileAsksTheVisionModel(t *testing.T) {
 
 	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
 		WithFiles(transfer, 32<<20).
-		WithVision(vision)
+		WithVisionClient(vision)
 
 	if _, err := subAgent.Execute(context.Background(), delegation.Request{
 		AgentID:  "workspace",
@@ -538,7 +538,7 @@ func TestPluginSubAgent_ViewFileRefusesNonImagesWithGuidance(t *testing.T) {
 
 	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
 		WithFiles(transfer, 32<<20).
-		WithVision(vision)
+		WithVisionClient(vision)
 
 	if _, err := subAgent.Execute(context.Background(), delegation.Request{
 		AgentID:  "workspace",
@@ -698,5 +698,55 @@ func TestPluginSubAgent_SupportsFilesReflectsWhatTheHostCanServe(t *testing.T) {
 	if agent.NewPluginSubAgent(testPluginSpec(), client, caller, 0, nil).
 		WithFiles(&fakeFileTransfer{}, 32<<20).SupportsFiles() {
 		t.Fatal("un plugin qui ne déclare pas SupportsFiles ne doit jamais être FileCapable")
+	}
+}
+
+// Une image jointe n'est jamais transmise au modèle d'un sous-agent à
+// outils fichiers : le client des plugins peut être texte-seul, et il
+// rejetterait alors la requête entière. L'agent en reçoit le nom, ce dont
+// import_attachment a besoin.
+func TestPluginSubAgent_NeverSendsAttachmentsToTheModel(t *testing.T) {
+	transfer := &fakeFileTransfer{putPath: "photo.jpg"}
+	caller := &fakePluginCaller{result: "ok"}
+
+	var (
+		sentAttachments int
+		input           string
+	)
+	client := &fakeCompletionClient{
+		responseFunc: func(_ int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, msg := range opts.Messages {
+				if msg.Role() == llm.RoleUser {
+					input = msg.Content()
+					sentAttachments += len(msg.Attachments())
+				}
+			}
+			return scriptedFinalResponse("Vu."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Remove the logo from the photo",
+		Identity: pluginTestIdentity(),
+		// Une photo ordinaire : visible du modèle, donc NON marquée ToolOnly.
+		Attachments: []media.Media{{
+			Kind:     media.KindImage,
+			MimeType: "image/jpeg",
+			Filename: "photo.jpg",
+			Data:     []byte("octets jpeg"),
+		}},
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if sentAttachments != 0 {
+		t.Fatalf("aucune pièce jointe ne doit partir au modèle du sous-agent, %d transmise(s)", sentAttachments)
+	}
+	if !strings.Contains(input, "photo.jpg") {
+		t.Fatalf("le nom du fichier doit être annoncé à l'agent: %q", input)
 	}
 }

@@ -225,7 +225,7 @@ func TestWorkspacePlugin_VideoRoundTrip(t *testing.T) {
 
 	subAgent := agent.NewPluginSubAgent(spec, client, pluginCaller{manager}, 0, nil).
 		WithFiles(fileTransfer{manager}, 16<<20).
-		WithVision(vision)
+		WithVisionClient(vision)
 
 	result, err := subAgent.Execute(context.Background(), delegation.Request{
 		AgentID: "workspace",

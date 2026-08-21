@@ -392,6 +392,32 @@ func ToolOnlyNotice(medias []Media) string {
 		strings.Join(lines, "\n") + "]"
 }
 
+// AttachedFilesNotice décrit TOUTES les pièces jointes du message courant,
+// réservées aux outils ou non, pour un agent qui travaille sur des fichiers
+// par leur nom. Nom, type et taille seulement — jamais le contenu.
+//
+// Distinct de ToolOnlyNotice : celui-ci s'adresse à un agent dont le modèle
+// voit les images et n'a besoin d'être renseigné que sur ce qu'il ne voit
+// pas. Un agent à outils fichiers, lui, a besoin du nom EXACT de chaque
+// pièce, y compris de celles qu'un modèle multimodal aurait pu regarder :
+// sans le nom, il ne peut pas les importer.
+//
+// En anglais : ce texte part vers le modèle (AGENTS.md).
+func AttachedFilesNotice(medias []Media) string {
+	if len(medias) == 0 {
+		return ""
+	}
+
+	lines := make([]string, 0, len(medias))
+	for _, m := range medias {
+		lines = append(lines, fmt.Sprintf("- %s (%s, %d bytes)", m.Filename, m.MimeType, len(m.Data)))
+	}
+
+	return "\n\n[Files attached to the message you are answering. You cannot see them directly; " +
+		"import them with your file tools, using each exact filename:\n" +
+		strings.Join(lines, "\n") + "]"
+}
+
 // EarlierToolOnlyNotice décrit les fichiers reçus lors des messages
 // PRÉCÉDENTS de la conversation, pour qu'un délégué sache qu'il peut les
 // importer par leur nom. Nom, type et taille seulement — jamais le

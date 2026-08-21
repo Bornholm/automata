@@ -34,7 +34,10 @@ type pluginSpecialistProvider struct {
 	// maxFileBytes borne un fichier échangé avec un plugin, dans les deux
 	// sens (attachments.max_tool_size).
 	maxFileBytes int64
-	logger       *slog.Logger
+	// textOnly reflète llm_clients.<plugins.client>.vision : un modèle
+	// texte-seul ne doit recevoir aucune pièce jointe.
+	textOnly bool
+	logger   *slog.Logger
 }
 
 // newPluginSpecialistProvider construit le provider ; nil si le système de
@@ -62,6 +65,7 @@ func newPluginSpecialistProvider(ctx context.Context, cfg *config.Config, manage
 		db:           db,
 		client:       client,
 		vision:       vision,
+		textOnly:     !cfg.LLMClients[cfg.Plugins.Client].SupportsVision(),
 		maxFileBytes: int64(cfg.Attachments.MaxToolSize.Bytes()),
 		logger:       logger,
 	}, nil
@@ -101,14 +105,15 @@ func (p *pluginSpecialistProvider) SpecialistsFor(ctx context.Context, identity 
 			})
 		}
 
-		subAgent := agent.NewPluginSubAgent(agentSpec, p.client, pluginToolCaller{p.manager}, 0, p.logger)
+		subAgent := agent.NewPluginSubAgent(agentSpec, p.client, pluginToolCaller{p.manager}, 0, p.logger).
+			WithTextOnly(p.textOnly)
 		if agentSpec.SupportsFiles {
 			// La borne des fichiers échangés est celle des pièces jointes
 			// « outillage seulement » : c'est la même taille qui entre par
 			// la messagerie et qui doit pouvoir en ressortir.
 			subAgent = subAgent.WithFiles(pluginFileTransfer{p.manager}, p.maxFileBytes)
 			if p.vision != nil {
-				subAgent = subAgent.WithVision(p.vision)
+				subAgent = subAgent.WithVisionClient(p.vision)
 			}
 		}
 
