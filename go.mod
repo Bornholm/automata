@@ -6,15 +6,18 @@ require (
 	github.com/Oudwins/tailwind-merge-go v0.2.3
 	github.com/a-h/templ v0.3.1020
 	github.com/bornholm/amoxtli v0.17.3
-	github.com/bornholm/go-courier v0.2.2-0.20260819222002-f997d6e6e648
+	github.com/bornholm/go-courier v0.2.2-0.20260821084610-4cde271e41d8
 	github.com/dustin/go-humanize v1.0.1
 	github.com/google/jsonschema-go v0.4.2
+	github.com/hashicorp/go-hclog v1.6.3
+	github.com/hashicorp/go-plugin v1.7.0
 	github.com/modelcontextprotocol/go-sdk v1.3.0
 	github.com/ncruces/go-sqlite3 v0.28.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/cobra v1.10.2
 	github.com/templui/templui v1.13.1
+	google.golang.org/grpc v1.79.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -63,8 +66,6 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/gopackage/ddp v0.0.6 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
-	github.com/hashicorp/go-hclog v1.6.3 // indirect
-	github.com/hashicorp/go-plugin v1.7.0 // indirect
 	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
@@ -103,7 +104,6 @@ require (
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260311181403-84a4fc48630c // indirect
-	google.golang.org/grpc v1.79.2 // indirect
 	gopkg.in/alexcesaro/quotedprintable.v3 v3.0.0-20150716171945-2caba252f4dc // indirect
 	gopkg.in/gomail.v2 v2.0.0-20160411212932-81ebce5c23df // indirect
 	gopkg.in/yaml.v2 v2.3.0 // indirect
