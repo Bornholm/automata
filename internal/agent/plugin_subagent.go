@@ -111,7 +111,11 @@ type PluginSubAgent struct {
 	// un « no endpoints found that support image input ».
 	textOnly            bool
 	maxToolContextBytes int64
-	logger              *slog.Logger
+	// skills fournit le catalogue des compétences et l'outil load_skill.
+	// Le nom d'agent vu par la bibliothèque est celui du plugin : une
+	// compétence ciblée `agents: [workspace]` n'apparaît que là.
+	skills SkillsProvider
+	logger *slog.Logger
 }
 
 // NewPluginSubAgent construit le sous-agent d'un plugin.
@@ -160,6 +164,13 @@ func (a *PluginSubAgent) WithVisionClient(client llm.ChatCompletionClient) *Plug
 	return a
 }
 
+// WithSkills branche la bibliothèque de compétences. Nil-safe : sans
+// provider, ni catalogue ni load_skill ne sont exposés.
+func (a *PluginSubAgent) WithSkills(provider SkillsProvider) *PluginSubAgent {
+	a.skills = provider
+	return a
+}
+
 // SupportsFiles implémente delegation.FileCapable : c'est ce qui décide
 // si l'orchestrateur transmet à ce sous-agent les fichiers déjà reçus dans
 // la conversation. La capacité est déclarée par le plugin ET servie par
@@ -198,6 +209,12 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 		}
 	}
 
+	// Le catalogue et load_skill se montent INCONDITIONNELLEMENT dès que
+	// la bibliothèque a quelque chose pour ce plugin — contrairement aux
+	// outils fichiers ci-dessus, qui dépendent de ce que l'hôte sait
+	// servir. Charger une compétence ne coûte ni appel LLM ni réseau.
+	systemPrompt, tools := appendSkills(ctx, a.skills, agentName, a.spec.SystemPrompt, tools)
+
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
 	// Un sous-agent à outils fichiers ne reçoit AUCUNE pièce jointe dans
@@ -221,7 +238,7 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 		input += media.AttachedFilesNotice(req.Attachments) + media.EarlierFilesNotice(req.RecentAttachments)
 	}
 
-	messages := buildChatMessages(a.spec.SystemPrompt, agentName, textOnly, "", Request{
+	messages := buildChatMessages(systemPrompt, agentName, textOnly, "", Request{
 		Identity:    req.Identity,
 		Input:       input,
 		Attachments: attachmentsForModel,

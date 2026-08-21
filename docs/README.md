@@ -18,6 +18,7 @@ seul sur des expressions cron.
 | [../misc/dokku/README.md](../misc/dokku/README.md) | Déploiement sur Dokku (`make dokku-deploy`) |
 | [plugins-email.md](plugins-email.md) | Plugin de boîte mail : connexion Gmail, courriels entrants |
 | [plugins-workspace.md](plugins-workspace.md) | Plugin d'atelier de fichiers : retouche vidéo et image en bac à sable |
+| [skills.md](skills.md) | Bibliothèque de compétences : modes opératoires chargés à la demande par les agents |
 | [security-model.md](security-model.md) | Modèle de menace, frontières de confiance, limitations assumées |
 | [integration-inventory.md](integration-inventory.md) | API réelles de go-courier, genai et Amoxtli, et leurs manques |
 

@@ -55,7 +55,10 @@ type OrchestratorAgent struct {
 	// pluginProvider fournit les sous-agents des plugins actifs pour
 	// l'organisation du tour ; nil quand le système de plugins est
 	// désactivé.
-	pluginProvider         PluginSpecialistProvider
+	pluginProvider PluginSpecialistProvider
+	// skills fournit le catalogue des compétences et l'outil load_skill ;
+	// nil quand aucune bibliothèque n'est câblée.
+	skills                 SkillsProvider
 	maxSequentialToolCalls int
 	maxActionsPerTurn      int
 	maxToolContextBytes    int64
@@ -131,11 +134,6 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity, collector)...)
 	tools = append(tools, a.reminderTools.buildReminderTools(req.Identity)...)
 	tools = append(tools, a.profileTools.buildProfileTools(req.Identity)...)
-	// L'introspection capture les outils du tour APRÈS leur assemblage :
-	// son instantané reflète exactement ce que ce tour offre, permissions
-	// comprises.
-	tools = append(tools, newDescribeCapabilitiesTool(tools, a.specialists, a.specialistDescriptions, req.Identity))
-	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
 	// Rappel automatique de souvenirs (memory.recall) : recherche mémoire
 	// sur le message entrant, injectée dans le message système. Jamais
@@ -147,6 +145,17 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	if custom.PromptExtra != "" {
 		systemPrompt += "\n\n---\n\n" + custom.PromptExtra
 	}
+
+	// Catalogue des compétences et outil load_skill : relus à CHAQUE tour,
+	// comme les activations de plugins — une compétence désactivée dans
+	// l'administration s'applique au message suivant, sans redémarrage.
+	systemPrompt, tools = appendSkills(ctx, a.skills, a.agentName, systemPrompt, tools)
+
+	// L'introspection capture les outils du tour APRÈS leur assemblage :
+	// son instantané reflète exactement ce que ce tour offre, permissions
+	// comprises.
+	tools = append(tools, newDescribeCapabilitiesTool(tools, a.specialists, a.specialistDescriptions, req.Identity))
+	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
 	// L'orchestrateur ne voit que le message courant : sans cette note, une
 	// demande qui renvoie à un fichier envoyé plus tôt lui paraît sans
@@ -484,6 +493,14 @@ func (a *OrchestratorAgent) WithProfileTools(tools ProfileTools) *OrchestratorAg
 // Nil-safe : sans provider, aucun outil de plugin n'est jamais exposé.
 func (a *OrchestratorAgent) WithPluginSpecialists(provider PluginSpecialistProvider) *OrchestratorAgent {
 	a.pluginProvider = provider
+	return a
+}
+
+// WithSkills branche la bibliothèque de compétences. Nil-safe : sans
+// provider, ni catalogue ni load_skill ne sont exposés — et un catalogue
+// vide ne coûte rien non plus.
+func (a *OrchestratorAgent) WithSkills(provider SkillsProvider) *OrchestratorAgent {
+	a.skills = provider
 	return a
 }
 

@@ -37,12 +37,17 @@ type pluginSpecialistProvider struct {
 	// textOnly reflète llm_clients.<plugins.client>.vision : un modèle
 	// texte-seul ne doit recevoir aucune pièce jointe.
 	textOnly bool
-	logger   *slog.Logger
+	// skills est la bibliothèque de compétences. Le nom d'agent vu par
+	// elle est celui du plugin : une compétence ciblée
+	// `agents: [workspace]` n'apparaît qu'au sous-agent du plugin
+	// workspace.
+	skills agent.SkillsProvider
+	logger *slog.Logger
 }
 
 // newPluginSpecialistProvider construit le provider ; nil si le système de
 // plugins est désactivé.
-func newPluginSpecialistProvider(ctx context.Context, cfg *config.Config, manager *plugin.Manager, db *persistence.DB, logger *slog.Logger) (agent.PluginSpecialistProvider, error) {
+func newPluginSpecialistProvider(ctx context.Context, cfg *config.Config, manager *plugin.Manager, db *persistence.DB, skills agent.SkillsProvider, logger *slog.Logger) (agent.PluginSpecialistProvider, error) {
 	if manager == nil {
 		return nil, nil
 	}
@@ -67,6 +72,7 @@ func newPluginSpecialistProvider(ctx context.Context, cfg *config.Config, manage
 		vision:       vision,
 		textOnly:     !cfg.LLMClients[cfg.Plugins.Client].SupportsVision(),
 		maxFileBytes: int64(cfg.Attachments.MaxToolSize.Bytes()),
+		skills:       skills,
 		logger:       logger,
 	}, nil
 }
@@ -106,7 +112,8 @@ func (p *pluginSpecialistProvider) SpecialistsFor(ctx context.Context, identity 
 		}
 
 		subAgent := agent.NewPluginSubAgent(agentSpec, p.client, pluginToolCaller{p.manager}, 0, p.logger).
-			WithTextOnly(p.textOnly)
+			WithTextOnly(p.textOnly).
+			WithSkills(p.skills)
 		if agentSpec.SupportsFiles {
 			// La borne des fichiers échangés est celle des pièces jointes
 			// « outillage seulement » : c'est la même taille qui entre par

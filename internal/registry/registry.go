@@ -42,6 +42,7 @@ import (
 	"github.com/bornholm/automata/internal/reminder"
 	"github.com/bornholm/automata/internal/scheduler"
 	"github.com/bornholm/automata/internal/secretbox"
+	"github.com/bornholm/automata/internal/skills"
 	"github.com/bornholm/automata/internal/usage"
 	"github.com/bornholm/automata/internal/web"
 )
@@ -109,6 +110,17 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	// repli, rôles des membres et génération de liens de profil. La
 	// configuration reste prioritaire partout.
 	step("persistance ouverte")
+
+	// Bibliothèque de compétences : semis des compétences embarquées (les
+	// noms absents seulement) puis fournisseur relu par tour. Un semis en
+	// échec est fatal : c'est un défaut du dépôt, pas une condition
+	// d'exploitation.
+	if err := skills.Seed(ctx, db, logger); err != nil {
+		return fmt.Errorf("registry: %w", err)
+	}
+	skillsProvider := skills.NewProvider(db, logger)
+
+	step("compétences semées")
 
 	tenants := newTenantSource(db, cfg.Web.BaseURL)
 
@@ -180,7 +192,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	// Provider des sous-agents de plugins et exécuteurs de leurs actions
 	// confirmées. Nil quand le système est désactivé : le registre
 	// d'agents est nil-safe.
-	pluginProvider, err := newPluginSpecialistProvider(ctx, cfg, pluginManager, db, logger)
+	pluginProvider, err := newPluginSpecialistProvider(ctx, cfg, pluginManager, db, skillsProvider, logger)
 	if err != nil {
 		return fmt.Errorf("registry: client llm des sous-agents de plugins: %w", err)
 	}
@@ -220,7 +232,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	step("moteur d'actions prêt")
 
-	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, pluginProvider, metrics, logger)
+	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, pluginProvider, skillsProvider, metrics, logger)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
@@ -481,7 +493,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 // réutilisé tel quel par internal/scheduler pour exécuter les tâches
 // planifiées (PLAN.md §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, skillsProvider agent.SkillsProvider, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
 	memoryTools := buildMemoryTools(cfg, authorizer, memStore, metrics)
 
 	// Outil open_profile_link : disponible dès que le serveur web est
@@ -517,7 +529,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		Tasks: true,
 	}
 
-	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, profileTools, tenants, mcpManager, pluginProvider, metrics, logger)
+	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, profileTools, tenants, mcpManager, pluginProvider, skillsProvider, metrics, logger)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
 	}
@@ -533,7 +545,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	// impossible, là où une consigne de prompt ne ferait que la rendre moins
 	// probable ; et cela ferme du même coup la boucle d'une tâche qui se
 	// reprogrammerait indéfiniment.
-	taskAgents, err := agent.NewRegistryWithMemory(cfg, memoryTools, agent.ReminderTools{}, profileTools, tenants, mcpManager, pluginProvider, metrics, logger)
+	taskAgents, err := agent.NewRegistryWithMemory(cfg, memoryTools, agent.ReminderTools{}, profileTools, tenants, mcpManager, pluginProvider, skillsProvider, metrics, logger)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("construction du registre d'agents des tâches planifiées: %w", err)
 	}

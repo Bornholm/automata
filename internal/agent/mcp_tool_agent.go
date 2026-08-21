@@ -65,7 +65,10 @@ type MCPToolAgent struct {
 	// (generate_image). Fixes à la construction : contrairement aux outils
 	// MCP, ils ne dépendent ni de la session ni du principal.
 	extraTools []llm.Tool
-	logger     *slog.Logger
+	// skills fournit le catalogue des compétences et l'outil load_skill ;
+	// nil quand aucune bibliothèque n'est câblée.
+	skills SkillsProvider
+	logger *slog.Logger
 }
 
 // NewMCPToolAgent construit un MCPToolAgent. mcpServerNames est la liste des
@@ -146,9 +149,16 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 
 	tools = append(tools, a.extraTools...)
 
+	systemPrompt := resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID)
+
+	// Catalogue des compétences et outil load_skill, montés PAR TOUR : la
+	// bibliothèque vit, une compétence ajoutée s'applique au message
+	// suivant sans redémarrage.
+	systemPrompt, tools = appendSkills(ctx, a.skills, a.agentName, systemPrompt, tools)
+
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
-	messages := buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, "", req)
+	messages := buildChatMessages(systemPrompt, a.agentName, a.textOnly, "", req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {
@@ -246,6 +256,13 @@ func (a *MCPToolAgent) WithOrgSystemPrompts(prompts map[string]string) *MCPToolA
 // agent. Retourne a pour permettre le chaînage.
 func (a *MCPToolAgent) WithExtraTools(tools ...llm.Tool) *MCPToolAgent {
 	a.extraTools = append(a.extraTools, tools...)
+	return a
+}
+
+// WithSkills branche la bibliothèque de compétences. Nil-safe : sans
+// provider, ni catalogue ni load_skill ne sont exposés.
+func (a *MCPToolAgent) WithSkills(provider SkillsProvider) *MCPToolAgent {
+	a.skills = provider
 	return a
 }
 

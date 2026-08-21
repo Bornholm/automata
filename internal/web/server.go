@@ -80,6 +80,7 @@ type Server struct {
 	platforms         *persistence.PlatformRepository
 	orgSettings       *persistence.OrgSettingsRepository
 	pluginActivations *persistence.PluginActivationRepository
+	skills            *persistence.SkillRepository
 	pricingRepo       *persistence.PricingRepository
 	modelPrices       *persistence.ModelPriceRepository
 	bindings          *persistence.ChannelBindingRepository
@@ -131,6 +132,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 		modelPrices:       persistence.NewModelPriceRepository(),
 		bindings:          persistence.NewChannelBindingRepository(),
 		pluginActivations: persistence.NewPluginActivationRepository(),
+		skills:            persistence.NewSkillRepository(),
 	}
 
 	// La clé de chiffrement des secrets dérive du secret de session : la
@@ -194,6 +196,16 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /admin/pricing/settings", admin(s.handlePricingSettings))
 	mux.HandleFunc("POST /admin/pricing/models", admin(s.handleModelPriceUpsert))
 	mux.HandleFunc("POST /admin/pricing/models/delete", admin(s.handleModelPriceDelete))
+	// Bibliothèque de compétences (ADM — voir docs/skills.md). Le nom
+	// d'une compétence est sa clé : les routes d'édition le portent.
+	mux.HandleFunc("GET /admin/skills", admin(s.handleSkills))
+	mux.HandleFunc("GET /admin/skills/new", admin(s.handleSkillNewForm))
+	mux.HandleFunc("POST /admin/skills", admin(s.handleSkillCreate))
+	mux.HandleFunc("GET /admin/skills/{name}", admin(s.handleSkillForm))
+	mux.HandleFunc("POST /admin/skills/{name}", admin(s.handleSkillUpdate))
+	mux.HandleFunc("POST /admin/skills/{name}/delete", admin(s.handleSkillDelete))
+	mux.HandleFunc("POST /admin/skills/{name}/restore", admin(s.handleSkillRestore))
+
 	mux.HandleFunc("GET /admin/plugins", admin(s.handlePlugins))
 	mux.HandleFunc("GET /admin/orgs/{id}/plugins/{name}/ui/{path...}", admin(s.handleAdminPluginUI))
 	mux.HandleFunc("POST /admin/orgs/{id}/plugins/{name}/ui/{path...}", admin(s.handleAdminPluginUI))
