@@ -245,8 +245,16 @@ func (a *OrchestratorAgent) buildDelegationTools(identity model.ExecutionIdentit
 	return tools
 }
 
-// recentToolFiles rassemble les pièces jointes « outillage seulement »
-// déjà reçues dans la conversation, de la plus récente à la plus ancienne.
+// recentToolFiles rassemble les fichiers déjà reçus dans la conversation,
+// de la plus récent au plus ancien.
+//
+// TOUTES les pièces jointes sont retenues, pas seulement celles réservées
+// aux outils : une photo ordinaire est un fichier comme un autre pour qui
+// sait l'éditer, et la retenir sur le seul critère « le modèle pourrait la
+// voir » condamnait « voici une photo » puis « enlève le logo » à travailler
+// sur le mauvais fichier. Rien ne fuit pour autant vers le modèle : ces
+// fichiers ne vont qu'aux délégués FileCapable, qui ne reçoivent aucune
+// pièce jointe dans leur contexte (voir PluginSubAgent.Execute).
 //
 // Les pièces du tour courant sont exclues : elles voyagent déjà dans
 // Request.Attachments, et un doublon ferait hésiter le délégué entre deux
@@ -265,9 +273,6 @@ func recentToolFiles(history []Message, current []media.Media) []media.Media {
 
 	for i := len(history) - 1; i >= 0; i-- {
 		for _, m := range history[i].Attachments {
-			if !m.ToolOnly {
-				continue
-			}
 			if _, dup := seen[m.Filename]; dup {
 				continue
 			}

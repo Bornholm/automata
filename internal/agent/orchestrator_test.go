@@ -993,10 +993,12 @@ func TestOrchestratorAgent_WithholdsEarlierFilesFromOtherSpecialists(t *testing.
 	}
 }
 
-// Les pièces jointes visibles du modèle ne sont pas des fichiers d'outils :
-// elles restent hors de RecentAttachments, sans quoi le socle contournerait
-// la frontière « outillage seulement ».
-func TestOrchestratorAgent_EarlierFilesAreToolOnlyMedia(t *testing.T) {
+// Une photo ordinaire — visible du modèle, donc non marquée « outillage
+// seulement » — reste un fichier atteignable par un délégué qui sait
+// éditer des fichiers. Ne retenir que les pièces d'outils condamnait
+// « voici une photo » puis « enlève le logo » à travailler sur le mauvais
+// fichier.
+func TestOrchestratorAgent_EarlierFilesIncludeOrdinaryAttachments(t *testing.T) {
 	specialist := &fileCapableSpecialist{supports: true}
 	specialist.executeFunc = func(context.Context, delegation.Request) (delegation.Result, error) {
 		return delegation.Result{Summary: "fait"}, nil
@@ -1005,24 +1007,29 @@ func TestOrchestratorAgent_EarlierFilesAreToolOnlyMedia(t *testing.T) {
 	history := historyWithToolFile("video.mp4")
 	history[0].Attachments = append(history[0].Attachments, media.Media{
 		Kind:     media.KindImage,
-		MimeType: "image/png",
-		Filename: "capture.png",
-		Data:     []byte("png"),
+		MimeType: "image/jpeg",
+		Filename: "photo.jpg",
+		Data:     []byte("jpeg"),
 	})
 
 	a := agent.NewOrchestratorAgent(delegateOnceClient("delegate_to_workspace"), "system", "main",
 		map[string]delegation.Specialist{"workspace": specialist}, 5)
 
 	if _, err := a.Execute(context.Background(), agent.Request{
-		Input:   "Enlève le logo",
+		Input:   "Enlève le logo de la photo",
 		History: history,
 	}); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 
+	var names []string
 	for _, m := range specialist.calls[0].RecentAttachments {
-		if m.Filename == "capture.png" {
-			t.Fatal("une pièce jointe visible du modèle ne doit pas transiter par RecentAttachments")
-		}
+		names = append(names, m.Filename)
+	}
+	if len(names) != 2 {
+		t.Fatalf("les deux fichiers de la conversation devaient être atteignables, obtenu %v", names)
+	}
+	if !strings.Contains(strings.Join(names, ","), "photo.jpg") {
+		t.Fatalf("la photo doit être atteignable: %v", names)
 	}
 }

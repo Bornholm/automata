@@ -418,7 +418,7 @@ func AttachedFilesNotice(medias []Media) string {
 		strings.Join(lines, "\n") + "]"
 }
 
-// EarlierToolOnlyNotice décrit les fichiers reçus lors des messages
+// EarlierFilesNotice décrit les fichiers reçus lors des messages
 // PRÉCÉDENTS de la conversation, pour qu'un délégué sache qu'il peut les
 // importer par leur nom. Nom, type et taille seulement — jamais le
 // contenu.
@@ -428,17 +428,14 @@ func AttachedFilesNotice(medias []Media) string {
 // endroit, et lui ferait relancer l'utilisateur pour rien.
 //
 // En anglais : ce texte part vers le modèle (AGENTS.md).
-func EarlierToolOnlyNotice(medias []Media) string {
-	var lines []string
-	for _, m := range medias {
-		if !m.ToolOnly {
-			continue
-		}
-		lines = append(lines, fmt.Sprintf("- %s (%s, %d bytes)", m.Filename, m.MimeType, len(m.Data)))
+func EarlierFilesNotice(medias []Media) string {
+	if len(medias) == 0 {
+		return ""
 	}
 
-	if len(lines) == 0 {
-		return ""
+	lines := make([]string, 0, len(medias))
+	for _, m := range medias {
+		lines = append(lines, fmt.Sprintf("- %s (%s, %d bytes)", m.Filename, m.MimeType, len(m.Data)))
 	}
 
 	return "\n\n[Files the user sent earlier in this conversation, most recent first. " +

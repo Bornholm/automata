@@ -54,15 +54,17 @@ type Request struct {
 	// jointes du tour courant sont transmises, jamais celles des tours
 	// précédents.
 	Attachments []media.Media
-	// RecentAttachments porte les pièces jointes « outillage seulement »
-	// des messages précédents de la conversation, de la plus récente à la
-	// plus ancienne.
+	// RecentAttachments porte les fichiers reçus lors des messages
+	// précédents de la conversation, du plus récent au plus ancien —
+	// réservés aux outils ou non : une photo ordinaire est un fichier comme
+	// un autre pour un spécialiste qui sait l'éditer.
 	//
-	// Elles ne sont transmises qu'aux spécialistes qui déclarent savoir
+	// Ils ne sont transmis qu'aux spécialistes qui déclarent savoir
 	// manipuler des fichiers (FileCapable), et restent invisibles du
-	// modèle : seuls les outils fichiers peuvent aller les chercher. C'est
-	// ce qui permet à un membre d'envoyer une vidéo, puis de demander sa
-	// transformation au message suivant.
+	// modèle : ces spécialistes ne reçoivent aucune pièce jointe dans leur
+	// contexte, seulement des noms, et vont chercher les octets avec leurs
+	// outils. C'est ce qui permet à un membre d'envoyer une vidéo ou une
+	// photo, puis d'en demander la transformation au message suivant.
 	//
 	// La nuance avec PLAN.md §6.3 est nette : le spécialiste ne reçoit
 	// toujours aucun contenu de l'historique — ni texte, ni image lisible

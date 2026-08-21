@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/bornholm/genai/llm"
 
@@ -206,7 +207,7 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 	if a.SupportsFiles() {
 		attachmentsForModel = nil
 		textOnly = true
-		input += media.AttachedFilesNotice(req.Attachments) + media.EarlierToolOnlyNotice(req.RecentAttachments)
+		input += media.AttachedFilesNotice(req.Attachments) + media.EarlierFilesNotice(req.RecentAttachments)
 	}
 
 	messages := buildChatMessages(a.spec.SystemPrompt, agentName, textOnly, "", Request{
@@ -456,6 +457,12 @@ func (a *PluginSubAgent) newViewFileTool(req delegation.Request) llm.Tool {
 
 	callCtx := pluginCallContext(req.Identity)
 
+	// Un service de vision en panne l'est pour tout le tour : le disjoncteur
+	// du client reste ouvert. Sans le dire clairement, l'agent rappelle
+	// l'outil à chaque étape et épuise son budget sans rien produire — c'est
+	// ce qui s'est vu en production, six appels perdus d'affilée.
+	var visionFailed atomic.Bool
+
 	return llm.NewFuncTool(
 		"view_file",
 		"Look at an image in your workspace and ask a question about it. Use this instead of probing pixels or histograms: "+
@@ -466,6 +473,13 @@ func (a *PluginSubAgent) newViewFileTool(req delegation.Request) llm.Tool {
 			question, _ := params["question"].(string)
 			if path == "" || question == "" {
 				return llm.NewToolResult("error: 'path' and 'question' are required."), nil
+			}
+
+			if visionFailed.Load() {
+				return llm.NewToolResult(
+					"error: looking at images is unavailable for this task and will not recover. " +
+						"Do not call view_file again: carry on without it, and tell the user what you could not verify.",
+				), nil
 			}
 
 			filename, mimeType, data, err := a.files.GetPluginFile(ctx, a.spec.PluginName, callCtx, path, a.maxFileBytes)
@@ -507,7 +521,12 @@ func (a *PluginSubAgent) newViewFileTool(req delegation.Request) llm.Tool {
 			if err != nil {
 				a.logger.WarnContext(ctx, "agent: appel du modèle de vision en échec",
 					"plugin", a.spec.PluginName, "bytes", len(data), "error", err)
-				return llm.NewToolResult("error: the image could not be looked at right now."), nil
+				visionFailed.Store(true)
+
+				return llm.NewToolResult(
+					"error: looking at images is unavailable for this task and will not recover. " +
+						"Do not call view_file again: carry on without it, and tell the user what you could not verify.",
+				), nil
 			}
 
 			text := ""

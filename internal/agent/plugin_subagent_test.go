@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -748,5 +749,60 @@ func TestPluginSubAgent_NeverSendsAttachmentsToTheModel(t *testing.T) {
 	}
 	if !strings.Contains(input, "photo.jpg") {
 		t.Fatalf("le nom du fichier doit être annoncé à l'agent: %q", input)
+	}
+}
+
+// Un service de vision en panne est annoncé comme définitif pour le tour :
+// sans cela, l'agent rappelle l'outil à chaque étape et épuise son budget
+// sans rien produire.
+func TestPluginSubAgent_ViewFileFailureStopsFurtherAttempts(t *testing.T) {
+	transfer := &fakeFileTransfer{
+		getFilename: "frame.png",
+		getMime:     "image/png",
+		getData:     []byte("octets"),
+	}
+	caller := &fakePluginCaller{result: "ok"}
+
+	visionCalls := 0
+	vision := &fakeCompletionClient{
+		responseFunc: func(int, *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			visionCalls++
+			return nil, errors.New("circuit breaker is open")
+		},
+	}
+
+	var lastToolResult string
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, msg := range opts.Messages {
+				if msg.Role() == llm.RoleTool {
+					lastToolResult = msg.Content()
+				}
+			}
+			if turn < 3 {
+				return scriptedToolCallResponse(llm.NewToolCall("c", "view_file",
+					`{"path":"frame.png","question":"where is the logo?"}`)), nil
+			}
+			return scriptedFinalResponse("Je n'ai pas pu regarder."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20).
+		WithVisionClient(vision)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Remove the logo",
+		Identity: pluginTestIdentity(),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if visionCalls != 1 {
+		t.Fatalf("le modèle de vision ne devait être sollicité qu'une fois, %d appels", visionCalls)
+	}
+	if !strings.Contains(lastToolResult, "Do not call view_file again") {
+		t.Fatalf("l'agent doit être averti que l'outil est hors service: %q", lastToolResult)
 	}
 }
