@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/bornholm/genai/llm"
 
@@ -84,6 +85,12 @@ type PluginToolSpec struct {
 type PluginSpecialistProvider interface {
 	SpecialistsFor(ctx context.Context, identity model.ExecutionIdentity) (map[string]delegation.Specialist, map[string]string)
 }
+
+// subAgentBudget borne la durée d'une délégation à un plugin, conclusion
+// comprise. Deux délégations au plus par tour (voir maxSameAgentDelegations)
+// doivent tenir dans le délai du pipeline d'ingress, avec de quoi laisser
+// l'orchestrateur formuler sa réponse.
+const subAgentBudget = 110 * time.Second
 
 // PluginSubAgent exécute une délégation avec les outils d'un plugin.
 // Implémente delegation.Specialist.
@@ -222,7 +229,21 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 		maxIterations = 5
 	}
 
-	loopResult, err := runToolLoop(withMediaCollector(ctx, mediaCollector), a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, "plugin:"+agentName)
+	// Budget de temps du sous-agent. Le plafond d'appels ne suffit pas :
+	// regarder une image coûte plusieurs secondes, et 25 appels tiennent
+	// largement plus que le délai du pipeline. Sans cette borne, un tour
+	// laborieux consomme tout le budget de la conversation et l'utilisateur
+	// n'obtient qu'un échec après plusieurs minutes d'attente.
+	//
+	// La deadline n'est posée que si elle resserre celle de l'appelant.
+	loopCtx := withMediaCollector(ctx, mediaCollector)
+	if deadline, ok := ctx.Deadline(); !ok || time.Until(deadline) > subAgentBudget {
+		var cancel context.CancelFunc
+		loopCtx, cancel = context.WithTimeout(loopCtx, subAgentBudget)
+		defer cancel()
+	}
+
+	loopResult, err := runToolLoop(loopCtx, a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, "plugin:"+agentName)
 	if err != nil {
 		return delegation.Result{}, err
 	}

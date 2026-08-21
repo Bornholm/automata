@@ -1033,3 +1033,118 @@ func TestOrchestratorAgent_EarlierFilesIncludeOrdinaryAttachments(t *testing.T) 
 		t.Fatalf("la photo doit être atteignable: %v", names)
 	}
 }
+
+// L'orchestrateur doit savoir qu'un fichier reçu plus tôt reste traitable :
+// sans cela, « voici une photo » puis « enlève le logo » lui présente un
+// message sans pièce jointe, et il répond n'avoir rien reçu.
+func TestOrchestratorAgent_AnnouncesEarlierFilesToTheModel(t *testing.T) {
+	specialist := &fileCapableSpecialist{supports: true}
+	specialist.executeFunc = func(context.Context, delegation.Request) (delegation.Result, error) {
+		return delegation.Result{Summary: "fait"}, nil
+	}
+
+	var input string
+	client := &fakeCompletionClient{
+		responseFunc: func(_ int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, msg := range opts.Messages {
+				if msg.Role() == llm.RoleUser {
+					input = msg.Content()
+				}
+			}
+			return scriptedFinalResponse("Je délègue."), nil
+		},
+	}
+
+	a := agent.NewOrchestratorAgent(client, "system", "main",
+		map[string]delegation.Specialist{"workspace": specialist}, 5)
+
+	if _, err := a.Execute(context.Background(), agent.Request{
+		Input:   "Enlève le logo de la photo",
+		History: historyWithToolFile("video.mp4"),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(input, "video.mp4") {
+		t.Fatalf("les fichiers déjà reçus doivent être annoncés: %q", input)
+	}
+	if !strings.Contains(input, "delegate") {
+		t.Fatalf("l'annonce doit orienter vers la délégation: %q", input)
+	}
+}
+
+// Rien n'est annoncé quand aucun spécialiste ne sait ouvrir ces fichiers :
+// promettre à l'utilisateur ce que le tour ne peut pas tenir est pire que
+// se taire.
+func TestOrchestratorAgent_AnnouncesNothingWithoutAFileSpecialist(t *testing.T) {
+	plain := &fakeSpecialist{
+		executeFunc: func(context.Context, delegation.Request) (delegation.Result, error) {
+			return delegation.Result{Summary: "vu"}, nil
+		},
+	}
+
+	var input string
+	client := &fakeCompletionClient{
+		responseFunc: func(_ int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, msg := range opts.Messages {
+				if msg.Role() == llm.RoleUser {
+					input = msg.Content()
+				}
+			}
+			return scriptedFinalResponse("Rien à faire."), nil
+		},
+	}
+
+	a := agent.NewOrchestratorAgent(client, "system", "main",
+		map[string]delegation.Specialist{"vision": plain}, 5)
+
+	if _, err := a.Execute(context.Background(), agent.Request{
+		Input:   "Enlève le logo",
+		History: historyWithToolFile("video.mp4"),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if strings.Contains(input, "video.mp4") {
+		t.Fatalf("aucun fichier ne doit être annoncé sans spécialiste capable: %q", input)
+	}
+}
+
+// Un spécialiste ne garde aucun état d'une délégation à l'autre : le
+// re-solliciter indéfiniment épuise le délai du pipeline sans rien produire.
+func TestOrchestratorAgent_StopsRepeatedDelegationsToTheSameAgent(t *testing.T) {
+	specialist := &fakeSpecialist{
+		executeFunc: func(context.Context, delegation.Request) (delegation.Result, error) {
+			return delegation.Result{Summary: "je n'ai pas fini"}, nil
+		},
+	}
+
+	var lastToolResult string
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, msg := range opts.Messages {
+				if msg.Role() == llm.RoleTool {
+					lastToolResult = msg.Content()
+				}
+			}
+			if turn < 4 {
+				return scriptedToolCallResponse(llm.NewToolCall("c", "delegate_to_workspace", `{"goal":"encore"}`)), nil
+			}
+			return scriptedFinalResponse("Je m'arrête là."), nil
+		},
+	}
+
+	a := agent.NewOrchestratorAgent(client, "system", "main",
+		map[string]delegation.Specialist{"workspace": specialist}, 8)
+
+	if _, err := a.Execute(context.Background(), agent.Request{Input: "Enlève le logo"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if specialist.callCount() != 2 {
+		t.Fatalf("le spécialiste devait être sollicité 2 fois au plus, %d appels", specialist.callCount())
+	}
+	if !strings.Contains(lastToolResult, "repartirait de zéro") {
+		t.Fatalf("le refus doit expliquer pourquoi: %q", lastToolResult)
+	}
+}

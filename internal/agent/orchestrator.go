@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"github.com/bornholm/genai/llm"
 
@@ -107,6 +108,10 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	// délégués capables de les manipuler, et jamais au modèle.
 	recentFiles := recentToolFiles(req.History, req.Attachments)
 
+	// Un spécialiste capable de fichiers peut venir de la configuration ou
+	// d'un plugin actif pour l'organisation : les deux sources comptent.
+	fileCapable := hasFileCapableSpecialist(a.specialists)
+
 	tools := a.buildDelegationTools(req.Identity, req.Attachments, recentFiles, collector, mediaCollector)
 	if len(custom.DisabledAgents) > 0 {
 		tools = filterDelegationTools(tools, custom.DisabledAgents)
@@ -121,6 +126,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 		for name, specialist := range pluginSpecs {
 			tools = append(tools, newDelegationTool(name, pluginDescs[name], specialist, req.Identity, req.Attachments, recentFiles, collector, mediaCollector, a.metrics, a.logger))
 		}
+		fileCapable = fileCapable || hasFileCapableSpecialist(pluginSpecs)
 	}
 	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity, collector)...)
 	tools = append(tools, a.reminderTools.buildReminderTools(req.Identity)...)
@@ -140,6 +146,14 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	systemPrompt := resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID)
 	if custom.PromptExtra != "" {
 		systemPrompt += "\n\n---\n\n" + custom.PromptExtra
+	}
+
+	// L'orchestrateur ne voit que le message courant : sans cette note, une
+	// demande qui renvoie à un fichier envoyé plus tôt lui paraît sans
+	// objet, et il répond « je n'ai rien reçu » au lieu de déléguer.
+	// N'annoncer que ce qu'un spécialiste peut réellement traiter.
+	if len(recentFiles) > 0 && fileCapable {
+		req.Input += media.DelegableFilesNotice(recentFiles)
 	}
 
 	messages := buildChatMessages(systemPrompt, a.agentName, a.textOnly, recallNote, req)
@@ -284,6 +298,25 @@ func recentToolFiles(history []Message, current []media.Media) []media.Media {
 	return out
 }
 
+// hasFileCapableSpecialist indique si au moins un spécialiste sait
+// manipuler des fichiers. Annoncer des fichiers qu'aucun délégué ne peut
+// ouvrir ne ferait que promettre à l'utilisateur ce que le tour ne sait pas
+// tenir.
+func hasFileCapableSpecialist(specialists map[string]delegation.Specialist) bool {
+	for _, specialist := range specialists {
+		if capable, ok := specialist.(delegation.FileCapable); ok && capable.SupportsFiles() {
+			return true
+		}
+	}
+
+	return false
+}
+
+// maxSameAgentDelegations borne le nombre d'appels au MÊME spécialiste
+// pendant un tour. Solliciter deux spécialistes différents reste libre :
+// c'est la répétition stérile qui est bornée, pas la délégation.
+const maxSameAgentDelegations = 2
+
 // newDelegationTool construit l'outil LLM "delegate_to_<agentID>" qui
 // adapte les arguments produits par le modèle en delegation.Request, puis
 // exécute specialist.Execute. Un échec du spécialiste n'est jamais remonté
@@ -297,6 +330,13 @@ func newDelegationTool(agentID, description string, specialist delegation.Specia
 	if capable, ok := specialist.(delegation.FileCapable); !ok || !capable.SupportsFiles() {
 		recentFiles = nil
 	}
+
+	// Un spécialiste ne garde aucun état d'une délégation à l'autre : le
+	// re-solliciter dans le même tour le fait repartir de zéro, pour le
+	// même coût. Vu en production, trois délégations d'affilée ont épuisé
+	// le délai du pipeline sans rien produire. Passé la limite, l'outil
+	// répond sans rien exécuter.
+	var delegations atomic.Int32
 
 	schema := llm.NewJSONSchema().
 		RequiredProperty("goal", "Precise objective for the specialist to reach.", "string").
@@ -331,6 +371,13 @@ func newDelegationTool(agentID, description string, specialist delegation.Specia
 						constraints = append(constraints, s)
 					}
 				}
+			}
+
+			if delegations.Add(1) > maxSameAgentDelegations {
+				return llm.NewToolResult(fmt.Sprintf(
+					"erreur: le spécialiste %q a déjà été sollicité %d fois pendant ce tour et repartirait de zéro. "+
+						"Conclus avec ce qu'il t'a déjà rapporté, ou explique à l'utilisateur ce qui n'a pas abouti.",
+					agentID, maxSameAgentDelegations)), nil
 			}
 
 			metrics.IncDelegation(agentID)

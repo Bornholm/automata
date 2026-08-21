@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/bornholm/genai/llm"
 
@@ -804,5 +805,40 @@ func TestPluginSubAgent_ViewFileFailureStopsFurtherAttempts(t *testing.T) {
 	}
 	if !strings.Contains(lastToolResult, "Do not call view_file again") {
 		t.Fatalf("l'agent doit être averti que l'outil est hors service: %q", lastToolResult)
+	}
+}
+
+// Le budget de temps clôt la boucle proprement : le sous-agent conclut avec
+// ce qu'il a plutôt que de laisser expirer le délai du pipeline, ce qui ne
+// rendrait rien à l'utilisateur après plusieurs minutes d'attente.
+func TestPluginSubAgent_TimeBudgetConcludesInsteadOfExpiring(t *testing.T) {
+	caller := &fakePluginCaller{result: "sortie de commande"}
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "email_read", `{"id":"1"}`)), nil
+			}
+			return scriptedFinalResponse("Voici ce que j'ai pu faire."), nil
+		},
+	}
+
+	// Le contexte n'a presque plus de temps : moins que la réserve de
+	// conclusion. La boucle doit s'arrêter dès la première vérification.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	subAgent := agent.NewPluginSubAgent(testPluginSpec(), client, caller, 0, nil)
+
+	result, err := subAgent.Execute(ctx, delegation.Request{
+		AgentID:  "email",
+		Goal:     "Read the mail",
+		Identity: pluginTestIdentity(),
+	})
+	if err != nil {
+		t.Fatalf("le budget de temps doit produire une conclusion, pas une erreur: %v", err)
+	}
+	if result.Summary == "" {
+		t.Fatal("la conclusion ne doit pas être vide")
 	}
 }

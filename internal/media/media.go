@@ -418,6 +418,33 @@ func AttachedFilesNotice(medias []Media) string {
 		strings.Join(lines, "\n") + "]"
 }
 
+// DelegableFilesNotice décrit à un orchestrateur les fichiers déjà reçus
+// dans la conversation, pour qu'il sache qu'ils restent traitables par un
+// spécialiste. Sans cette note, il ne voit que le message courant : « voici
+// une photo » puis « enlève le logo » lui donne un message sans pièce
+// jointe, et il répond à l'utilisateur qu'il n'a rien reçu au lieu de
+// déléguer.
+//
+// Nom, type et taille seulement — jamais le contenu, que l'orchestrateur ne
+// reçoit de toute façon pas.
+//
+// En anglais : ce texte part vers le modèle (AGENTS.md).
+func DelegableFilesNotice(medias []Media) string {
+	if len(medias) == 0 {
+		return ""
+	}
+
+	lines := make([]string, 0, len(medias))
+	for _, m := range medias {
+		lines = append(lines, fmt.Sprintf("- %s (%s, %d bytes)", m.Filename, m.MimeType, len(m.Data)))
+	}
+
+	return "\n\n[Files already received earlier in this conversation, most recent first:\n" +
+		strings.Join(lines, "\n") + "\n" +
+		"You cannot see them, but a specialist that works on files can still open and edit them. " +
+		"If the user refers to one of these, delegate instead of telling them you received nothing.]"
+}
+
 // EarlierFilesNotice décrit les fichiers reçus lors des messages
 // PRÉCÉDENTS de la conversation, pour qu'un délégué sache qu'il peut les
 // importer par leur nom. Nom, type et taille seulement — jamais le
