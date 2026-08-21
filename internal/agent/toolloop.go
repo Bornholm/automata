@@ -316,10 +316,27 @@ func concludeToolLoop(ctx context.Context, client llm.ChatCompletionClient, mess
 // du contenu privé (texte d'un rappel, contenu mémorisé, requête de
 // recherche — AGENTS.md, "ne pas journaliser les contenus privés"). nil
 // désactive toute journalisation (tests, agents construits hors registre).
-// conclusionReserve est le temps laissé à la conclusion quand la boucle
-// s'arrête sur son budget : conclure demande un appel au modèle, parfois
-// deux si la première variante échoue.
+// conclusionReserve est la marge en deçà de laquelle la boucle renonce à
+// une itération de plus. Elle est indicative : une itération déjà lancée
+// peut dépasser l'échéance, c'est conclusionBudget qui garantit la
+// conclusion.
 const conclusionReserve = 25 * time.Second
+
+// conclusionBudget est le temps GARANTI à la conclusion, indépendant de
+// l'échéance de la boucle. Sans lui, la conclusion héritait d'un contexte
+// déjà expiré et ses variantes de repli échouaient toutes en
+// « context deadline exceeded » — le travail du tour était perdu alors même
+// que le mécanisme de secours se déclenchait correctement.
+const conclusionBudget = 45 * time.Second
+
+// withConclusionBudget détache le contexte de l'échéance de la boucle pour
+// lui en donner une propre. L'annulation du parent n'est délibérément pas
+// propagée : c'est justement parce que le temps de la boucle est écoulé que
+// l'on conclut. La borne reste courte, et le pipeline garde sa propre
+// échéance au-dessus.
+func withConclusionBudget(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), conclusionBudget)
+}
 
 func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages []llm.Message, tools []llm.Tool, maxIterations int, maxContextBytes int64, maxReachedErr error, logger *slog.Logger, agentName string) (toolLoopResult, error) {
 	if maxIterations <= 0 {
@@ -368,7 +385,10 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 					"agent", agentName, "iterations", iteration+1, "tool_calls", totalCalls, "error", err)
 			}
 
-			return concludeToolLoop(ctx, client, messages, tools, "appel du modèle en échec", fmt.Errorf("agent: appel du client llm: %w", err),
+			conclusionCtx, cancel := withConclusionBudget(ctx)
+			defer cancel()
+
+			return concludeToolLoop(conclusionCtx, client, messages, tools, "appel du modèle en échec", fmt.Errorf("agent: appel du client llm: %w", err),
 				iteration+1, totalCalls, toolResults, attachments, logger, agentName, true)
 		}
 
@@ -461,12 +481,18 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 		// minutes pour un échec. On sort AVANT l'échéance, en gardant de
 		// quoi conclure : la matière déjà rassemblée est le coût déjà payé.
 		if deadline, ok := ctx.Deadline(); ok && time.Until(deadline) <= conclusionReserve {
-			return concludeToolLoop(ctx, client, messages, tools, "budget de temps épuisé", maxReachedErr,
+			conclusionCtx, cancel := withConclusionBudget(ctx)
+			defer cancel()
+
+			return concludeToolLoop(conclusionCtx, client, messages, tools, "budget de temps épuisé", maxReachedErr,
 				iteration+1, totalCalls, toolResults, attachments, logger, agentName, true)
 		}
 	}
 
-	return concludeToolLoop(ctx, client, messages, tools, "plafond d'appels d'outils atteint", maxReachedErr,
+	conclusionCtx, cancel := withConclusionBudget(ctx)
+	defer cancel()
+
+	return concludeToolLoop(conclusionCtx, client, messages, tools, "plafond d'appels d'outils atteint", maxReachedErr,
 		maxIterations, totalCalls, toolResults, attachments, logger, agentName, true)
 }
 

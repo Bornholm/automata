@@ -954,3 +954,41 @@ func TestPluginSubAgent_ModelFailureWithoutMaterialSurfaces(t *testing.T) {
 		t.Fatal("une panne sans matière doit remonter")
 	}
 }
+
+// La conclusion doit disposer de son propre temps : héritant du contexte
+// épuisé de la boucle, toutes ses variantes de repli échouaient en
+// « context deadline exceeded » et le travail du tour était perdu — alors
+// même que le mécanisme de secours se déclenchait correctement.
+func TestPluginSubAgent_ConclusionSurvivesAnExhaustedLoopDeadline(t *testing.T) {
+	caller := &fakePluginCaller{result: "sortie"}
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "email_read", `{"id":"1"}`)), nil
+			}
+			return scriptedFinalResponse("Voici ce que j'ai pu faire."), nil
+		},
+	}
+
+	// Contexte quasi expiré : la boucle renonce immédiatement, et la
+	// conclusion doit malgré tout aboutir.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	spec := testPluginSpec()
+	spec.MaxToolCalls = 3
+
+	result, err := agent.NewPluginSubAgent(spec, client, caller, 0, nil).
+		Execute(ctx, delegation.Request{
+			AgentID:  "email",
+			Goal:     "Read the mail",
+			Identity: pluginTestIdentity(),
+		})
+	if err != nil {
+		t.Fatalf("la conclusion devait aboutir malgré l'échéance dépassée: %v", err)
+	}
+	if result.Summary == "" {
+		t.Fatal("la conclusion ne doit pas être vide")
+	}
+}

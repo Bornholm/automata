@@ -86,11 +86,15 @@ type PluginSpecialistProvider interface {
 	SpecialistsFor(ctx context.Context, identity model.ExecutionIdentity) (map[string]delegation.Specialist, map[string]string)
 }
 
-// subAgentBudget borne la durée d'une délégation à un plugin, conclusion
-// comprise. Deux délégations au plus par tour (voir maxSameAgentDelegations)
-// doivent tenir dans le délai du pipeline d'ingress, avec de quoi laisser
-// l'orchestrateur formuler sa réponse.
-const subAgentBudget = 110 * time.Second
+// subAgentBudget borne la durée de la BOUCLE d'une délégation à un plugin.
+// La conclusion dispose ensuite de son propre budget (conclusionBudget),
+// qui s'y ajoute.
+//
+// Le calcul : deux délégations au plus par tour
+// (maxSameAgentDelegations), soit 2 × (90 s + 45 s) = 270 s, plus les tours
+// de l'orchestrateur — le tout devant tenir dans les 5 minutes du pipeline
+// d'ingress.
+const subAgentBudget = 90 * time.Second
 
 // PluginSubAgent exécute une délégation avec les outils d'un plugin.
 // Implémente delegation.Specialist.
