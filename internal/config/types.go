@@ -537,6 +537,15 @@ type Attachments struct {
 	// sans réponse. Il doit donc rester aligné sur ce que le modèle visé
 	// accepte réellement.
 	AcceptedTypes []string `yaml:"accepted_types"`
+	// ToolTypes énumère les types MIME conservés POUR LES OUTILS et jamais
+	// transmis au modèle : une vidéo reçue par messagerie que le
+	// sous-agent d'un plugin ira chercher lui-même. Les déclarer dans
+	// accepted_types ferait au contraire échouer le tour entier chez un
+	// fournisseur qui ne sait pas lire une vidéo.
+	ToolTypes []string `yaml:"tool_types"`
+	// MaxToolSize borne la taille d'une pièce jointe tool_types. Distincte
+	// de max_size : ces pièces ne coûtent aucun jeton.
+	MaxToolSize ByteSize `yaml:"max_tool_size"`
 	// MaxHistory borne le nombre de pièces jointes rejouées depuis
 	// l'historique à chaque tour, les plus récentes d'abord. Sans cette
 	// borne, une conversation riche en images ferait croître indéfiniment la

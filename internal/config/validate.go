@@ -589,6 +589,31 @@ func validateAttachments(cfg *Config) []error {
 		}
 	}
 
+	for i, mimeType := range cfg.Attachments.ToolTypes {
+		if strings.TrimSpace(mimeType) == "" {
+			errs = append(errs, fmt.Errorf("attachments.tool_types[%d]: type mime vide", i))
+			continue
+		}
+
+		if !strings.Contains(mimeType, "/") {
+			errs = append(errs, fmt.Errorf("attachments.tool_types[%d]: %q n'est pas un type mime valide (forme attendue: type/sous-type)", i, mimeType))
+			continue
+		}
+
+		// Un même type des deux côtés serait ambigu : tool_types gagne à
+		// l'extraction, et accepted_types ne servirait jamais. Autant le
+		// dire à la configuration plutôt que de laisser la surprise.
+		for _, accepted := range cfg.Attachments.AcceptedTypes {
+			if strings.EqualFold(strings.TrimSpace(accepted), strings.TrimSpace(mimeType)) {
+				errs = append(errs, fmt.Errorf("attachments.tool_types[%d]: %q figure aussi dans accepted_types ; un type doit être soit transmis au modèle, soit réservé aux outils", i, mimeType))
+			}
+		}
+	}
+
+	if len(cfg.Attachments.ToolTypes) > 0 && cfg.Attachments.MaxToolSize <= 0 {
+		errs = append(errs, fmt.Errorf("attachments.max_tool_size: doit être strictement positif lorsque attachments.tool_types est renseigné"))
+	}
+
 	if cfg.Attachments.MaxHistory < 0 {
 		errs = append(errs, fmt.Errorf("attachments.max_history: ne peut pas être négatif (valeur actuelle: %d)", cfg.Attachments.MaxHistory))
 	}

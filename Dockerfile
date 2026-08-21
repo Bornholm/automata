@@ -22,6 +22,23 @@ RUN --mount=type=cache,target=/root/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/automata ./cmd/automata
 
+# Plugins : chaque plugins/<nom>/ est un module Go a part entiere, compile
+# ici vers /out/plugins. Sans cette etape, plugins.dir pointe sur un
+# repertoire vide en production et aucun plugin ne se charge. Meme
+# CGO_ENABLED=0 que le binaire principal : le gestionnaire de plugins lance
+# ces binaires depuis l'image distroless, qui n'a ni libc ni interpreteur
+# dynamique.
+RUN --mount=type=cache,target=/root/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    set -eu; \
+    mkdir -p /out/plugins; \
+    for dir in plugins/*/; do \
+        [ -f "$dir/go.mod" ] || continue; \
+        name=$(basename "$dir"); \
+        echo "building plugin $name"; \
+        (cd "$dir" && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o "/out/plugins/$name" .); \
+    done
+
 # Image finale minimale : aucun shell, aucun gestionnaire de paquets,
 # surface d'attaque reduite au strict binaire. Variante "nonroot" :
 # utilisateur UID/GID 65532 deja non privilegie, pas besoin de creer un
@@ -38,6 +55,11 @@ COPY --from=build /usr/local/go/lib/time/zoneinfo.zip /zoneinfo.zip
 ENV ZONEINFO=/zoneinfo.zip
 
 COPY --from=build /out/automata /usr/local/bin/automata
+
+# Binaires de plugins. Le repertoire est en lecture seule dans l'image : le
+# gestionnaire ne fait que lister et executer, il n'y ecrit jamais (configs
+# et secrets des plugins vivent en base, cotes hote).
+COPY --from=build /out/plugins /plugins
 
 USER nonroot:nonroot
 

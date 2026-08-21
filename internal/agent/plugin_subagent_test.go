@@ -10,6 +10,7 @@ import (
 
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
 )
 
@@ -23,12 +24,13 @@ type fakePluginCaller struct {
 type fakePluginCall struct {
 	Plugin, Tool, ArgsJSON string
 	Ctx                    agent.PluginCallContext
+	TimeoutSeconds         int
 }
 
-func (f *fakePluginCaller) CallPluginTool(_ context.Context, pluginName, toolName string, callCtx agent.PluginCallContext, argsJSON string) (string, bool, error) {
+func (f *fakePluginCaller) CallPluginTool(_ context.Context, pluginName, toolName string, callCtx agent.PluginCallContext, argsJSON string, timeoutSeconds int) (string, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.calls = append(f.calls, fakePluginCall{Plugin: pluginName, Tool: toolName, ArgsJSON: argsJSON, Ctx: callCtx})
+	f.calls = append(f.calls, fakePluginCall{Plugin: pluginName, Tool: toolName, ArgsJSON: argsJSON, Ctx: callCtx, TimeoutSeconds: timeoutSeconds})
 	return f.result, false, nil
 }
 
@@ -172,5 +174,259 @@ func TestPluginSubAgent_PrincipalIDNeverReachesTheModel(t *testing.T) {
 				t.Fatalf("le PrincipalID apparaît dans un message au modèle: %q", msg.Content())
 			}
 		}
+	}
+}
+
+// fakeFileTransfer enregistre les transferts de fichiers hôte ↔ plugin.
+type fakeFileTransfer struct {
+	mu sync.Mutex
+
+	putFilename string
+	putMime     string
+	putData     []byte
+	putPath     string
+	putIsError  bool
+	putErrText  string
+	putErr      error
+
+	getPath     string
+	getFilename string
+	getMime     string
+	getData     []byte
+	getErr      error
+}
+
+func (f *fakeFileTransfer) PutPluginFile(_ context.Context, _ string, _ agent.PluginCallContext, filename, mimeType string, data []byte) (string, bool, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.putFilename, f.putMime, f.putData = filename, mimeType, append([]byte(nil), data...)
+	return f.putPath, f.putIsError, f.putErrText, f.putErr
+}
+
+func (f *fakeFileTransfer) GetPluginFile(_ context.Context, _ string, _ agent.PluginCallContext, path string, _ int64) (string, string, []byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.getPath = path
+	return f.getFilename, f.getMime, f.getData, f.getErr
+}
+
+func fileCapableSpec() agent.PluginSubAgentSpec {
+	return agent.PluginSubAgentSpec{
+		PluginName:       "workspace",
+		SystemPrompt:     "You edit files in a sandbox.",
+		Description:      "Edits files.",
+		PermissionDomain: "workspace",
+		SupportsFiles:    true,
+		Tools: []agent.PluginToolSpec{
+			{Name: "run_command", Description: "Run a command.", SchemaJSON: `{"type":"object","properties":{"script":{"type":"string"}}}`, ReadOnly: true, TimeoutSeconds: 330},
+		},
+	}
+}
+
+func TestPluginSubAgent_ImportAttachmentPushesTheRightBytes(t *testing.T) {
+	transfer := &fakeFileTransfer{putPath: "input.mp4"}
+	caller := &fakePluginCaller{result: "ok"}
+	video := []byte("octets mp4 de la video")
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "import_attachment", `{"filename":"clip.mp4"}`)), nil
+			}
+			return scriptedFinalResponse("Fichier importé."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20)
+
+	_, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Crop the video",
+		Identity: pluginTestIdentity(),
+		Attachments: []media.Media{
+			{Kind: media.KindVideo, MimeType: "video/mp4", Filename: "clip.mp4", Data: video, ToolOnly: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if transfer.putFilename != "clip.mp4" || transfer.putMime != "video/mp4" {
+		t.Fatalf("PutFile appelé avec %q / %q", transfer.putFilename, transfer.putMime)
+	}
+	if string(transfer.putData) != string(video) {
+		t.Fatal("PutFile n'a pas reçu les octets de la pièce jointe")
+	}
+}
+
+func TestPluginSubAgent_ImportAttachmentMissingGuidesTheAgent(t *testing.T) {
+	transfer := &fakeFileTransfer{putPath: "input.mp4"}
+	caller := &fakePluginCaller{result: "ok"}
+
+	var toolResult string
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "import_attachment", `{"filename":"absent.mp4"}`)), nil
+			}
+			for _, m := range opts.Messages {
+				if strings.Contains(m.Content(), "send the file again") {
+					toolResult = m.Content()
+				}
+			}
+			return scriptedFinalResponse("Peux-tu renvoyer le fichier ?"), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Crop the video",
+		Identity: pluginTestIdentity(),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if toolResult == "" {
+		t.Fatal("le résultat d'outil devrait orienter l'agent vers un renvoi du fichier")
+	}
+	if transfer.putFilename != "" {
+		t.Fatal("aucun PutFile ne devait être tenté")
+	}
+}
+
+func TestPluginSubAgent_AttachFileCollectsTheMedia(t *testing.T) {
+	transfer := &fakeFileTransfer{
+		getFilename: "sortie.mp4",
+		getMime:     "video/mp4",
+		getData:     []byte("octets du resultat"),
+	}
+	caller := &fakePluginCaller{result: "ok"}
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "attach_file", `{"path":"sortie.mp4"}`)), nil
+			}
+			return scriptedFinalResponse("Voilà la vidéo recadrée."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20)
+
+	result, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Crop the video",
+		Identity: pluginTestIdentity(),
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if transfer.getPath != "sortie.mp4" {
+		t.Fatalf("GetFile appelé avec %q", transfer.getPath)
+	}
+	if len(result.Attachments) != 1 {
+		t.Fatalf("pièces jointes du résultat: got %d, expected 1", len(result.Attachments))
+	}
+	got := result.Attachments[0]
+	if got.Filename != "sortie.mp4" || got.MimeType != "video/mp4" || string(got.Data) != "octets du resultat" {
+		t.Fatalf("média collecté = %+v", media.Media{Filename: got.Filename, MimeType: got.MimeType})
+	}
+	if got.ToolOnly {
+		t.Fatal("un fichier renvoyé à l'utilisateur ne doit pas être marqué ToolOnly")
+	}
+}
+
+func TestPluginSubAgent_AttachFileFailureIsRelayedNotFatal(t *testing.T) {
+	transfer := &fakeFileTransfer{getErr: context.DeadlineExceeded}
+	caller := &fakePluginCaller{result: "ok"}
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "attach_file", `{"path":"sortie.mp4"}`)), nil
+			}
+			return scriptedFinalResponse("Je n'ai pas pu joindre le fichier."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20)
+
+	result, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Crop the video",
+		Identity: pluginTestIdentity(),
+	})
+	if err != nil {
+		t.Fatalf("un échec d'outil ne doit jamais avorter le tour: %v", err)
+	}
+	if len(result.Attachments) != 0 {
+		t.Fatal("aucune pièce jointe ne devait être collectée")
+	}
+}
+
+func TestPluginSubAgent_FileToolsAbsentWithoutSupport(t *testing.T) {
+	transfer := &fakeFileTransfer{}
+	caller := &fakePluginCaller{result: "ok"}
+
+	var toolNames []string
+	client := &fakeCompletionClient{
+		responseFunc: func(_ int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, tool := range opts.Tools {
+				toolNames = append(toolNames, tool.Name())
+			}
+			return scriptedFinalResponse("Rien à faire."), nil
+		},
+	}
+
+	// testPluginSpec() ne déclare pas SupportsFiles.
+	subAgent := agent.NewPluginSubAgent(testPluginSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "email",
+		Goal:     "Do nothing",
+		Identity: pluginTestIdentity(),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	for _, name := range toolNames {
+		if name == "import_attachment" || name == "attach_file" {
+			t.Fatalf("outil fichier %q monté alors que le plugin ne les déclare pas", name)
+		}
+	}
+}
+
+func TestPluginSubAgent_ToolTimeoutIsForwardedToTheHost(t *testing.T) {
+	caller := &fakePluginCaller{result: "ok"}
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "run_command", `{"script":"ls"}`)), nil
+			}
+			return scriptedFinalResponse("Fait."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "List files",
+		Identity: pluginTestIdentity(),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if len(caller.calls) != 1 || caller.calls[0].TimeoutSeconds != 330 {
+		t.Fatalf("appels = %+v", caller.calls)
 	}
 }

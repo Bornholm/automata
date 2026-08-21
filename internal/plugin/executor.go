@@ -58,7 +58,10 @@ func (e *ActionExecutor) Execute(ctx context.Context, identity model.ExecutionId
 		Scope:          string(plan.Scope),
 		ScopeID:        string(plan.ScopeID),
 		IdempotencyKey: string(act.ID),
-	}, string(argsJSON))
+		// Timeout par défaut de l'hôte : l'exécution d'une action confirmée
+		// se fait hors du tour de conversation, elle n'a pas la même
+		// contrainte de latence qu'un outil appelé pendant la réponse.
+	}, string(argsJSON), 0)
 	if err != nil {
 		return "", err
 	}

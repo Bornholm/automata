@@ -73,6 +73,9 @@ type MessageAttachment struct {
 	Caption   string
 	Data      []byte
 	CreatedAt string
+	// ToolOnly marque une pièce jointe réservée aux outils, jamais rejouée
+	// vers le modèle (voir migration 0018 et internal/media).
+	ToolOnly bool
 }
 
 // ProcessedMessage est le DTO de persistance de la table processed_messages.

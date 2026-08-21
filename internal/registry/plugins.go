@@ -27,7 +27,10 @@ type pluginSpecialistProvider struct {
 	manager *plugin.Manager
 	db      *persistence.DB
 	client  llm.ChatCompletionClient
-	logger  *slog.Logger
+	// maxFileBytes borne un fichier échangé avec un plugin, dans les deux
+	// sens (attachments.max_tool_size).
+	maxFileBytes int64
+	logger       *slog.Logger
 }
 
 // newPluginSpecialistProvider construit le provider ; nil si le système de
@@ -42,7 +45,13 @@ func newPluginSpecialistProvider(ctx context.Context, cfg *config.Config, manage
 		return nil, err
 	}
 
-	return &pluginSpecialistProvider{manager: manager, db: db, client: client, logger: logger}, nil
+	return &pluginSpecialistProvider{
+		manager:      manager,
+		db:           db,
+		client:       client,
+		maxFileBytes: int64(cfg.Attachments.MaxToolSize.Bytes()),
+		logger:       logger,
+	}, nil
 }
 
 // SpecialistsFor implémente agent.PluginSpecialistProvider.
@@ -67,17 +76,27 @@ func (p *pluginSpecialistProvider) SpecialistsFor(ctx context.Context, identity 
 			Description:      spec.Description,
 			PermissionDomain: spec.PermissionDomain,
 			MaxToolCalls:     spec.MaxToolCalls,
+			SupportsFiles:    spec.SupportsFiles,
 		}
 		for _, t := range spec.Tools {
 			agentSpec.Tools = append(agentSpec.Tools, agent.PluginToolSpec{
-				Name:        t.Name,
-				Description: t.Description,
-				SchemaJSON:  t.SchemaJSON,
-				ReadOnly:    t.ReadOnly,
+				Name:           t.Name,
+				Description:    t.Description,
+				SchemaJSON:     t.SchemaJSON,
+				ReadOnly:       t.ReadOnly,
+				TimeoutSeconds: t.TimeoutSeconds,
 			})
 		}
 
-		specialists[spec.PluginName] = agent.NewPluginSubAgent(agentSpec, p.client, pluginToolCaller{p.manager}, 0, p.logger)
+		subAgent := agent.NewPluginSubAgent(agentSpec, p.client, pluginToolCaller{p.manager}, 0, p.logger)
+		if agentSpec.SupportsFiles {
+			// La borne des fichiers échangés est celle des pièces jointes
+			// « outillage seulement » : c'est la même taille qui entre par
+			// la messagerie et qui doit pouvoir en ressortir.
+			subAgent = subAgent.WithFiles(pluginFileTransfer{p.manager}, p.maxFileBytes)
+		}
+
+		specialists[spec.PluginName] = subAgent
 		descriptions[spec.PluginName] = spec.Description
 	}
 
@@ -91,14 +110,40 @@ type pluginToolCaller struct {
 }
 
 // CallPluginTool implémente agent.PluginToolCaller.
-func (c pluginToolCaller) CallPluginTool(ctx context.Context, pluginName, toolName string, callCtx agent.PluginCallContext, argsJSON string) (string, bool, error) {
+func (c pluginToolCaller) CallPluginTool(ctx context.Context, pluginName, toolName string, callCtx agent.PluginCallContext, argsJSON string, timeoutSeconds int) (string, bool, error) {
 	return c.manager.CallTool(ctx, pluginName, toolName, plugin.CallContext{
 		OrgID:          callCtx.OrgID,
 		MemberID:       callCtx.MemberID,
 		Scope:          callCtx.Scope,
 		ScopeID:        callCtx.ScopeID,
 		IdempotencyKey: callCtx.IdempotencyKey,
-	}, argsJSON)
+	}, argsJSON, timeoutSeconds)
+}
+
+// pluginFileTransfer adapte les transferts de fichiers du gestionnaire au
+// contrat agent.PluginFileTransfer.
+type pluginFileTransfer struct {
+	manager *plugin.Manager
+}
+
+// PutPluginFile implémente agent.PluginFileTransfer.
+func (t pluginFileTransfer) PutPluginFile(ctx context.Context, pluginName string, callCtx agent.PluginCallContext, filename, mimeType string, data []byte) (string, bool, string, error) {
+	return t.manager.PutFile(ctx, pluginName, toPluginCallContext(callCtx), filename, mimeType, data)
+}
+
+// GetPluginFile implémente agent.PluginFileTransfer.
+func (t pluginFileTransfer) GetPluginFile(ctx context.Context, pluginName string, callCtx agent.PluginCallContext, path string, maxBytes int64) (string, string, []byte, error) {
+	return t.manager.GetFile(ctx, pluginName, toPluginCallContext(callCtx), path, maxBytes)
+}
+
+func toPluginCallContext(callCtx agent.PluginCallContext) plugin.CallContext {
+	return plugin.CallContext{
+		OrgID:          callCtx.OrgID,
+		MemberID:       callCtx.MemberID,
+		Scope:          callCtx.Scope,
+		ScopeID:        callCtx.ScopeID,
+		IdempotencyKey: callCtx.IdempotencyKey,
+	}
 }
 
 // pluginDomainSource adapte le gestionnaire au contrat

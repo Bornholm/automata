@@ -37,9 +37,9 @@ func (r *MessageAttachmentRepository) Insert(ctx context.Context, q Querier, a M
 
 	_, err = q.ExecContext(ctx, `
 		INSERT INTO message_attachments (
-			id, message_id, position, kind, mime_type, filename, caption, data, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, a.ID, a.MessageID, a.Position, a.Kind, a.MimeType, a.Filename, a.Caption, a.Data, a.CreatedAt)
+			id, message_id, position, kind, mime_type, filename, caption, data, created_at, tool_only
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, a.ID, a.MessageID, a.Position, a.Kind, a.MimeType, a.Filename, a.Caption, a.Data, a.CreatedAt, a.ToolOnly)
 	if err != nil {
 		return fmt.Errorf("insertion de la pièce jointe %q du message %q: %w", a.ID, a.MessageID, err)
 	}
@@ -81,9 +81,9 @@ func (r *MessageAttachmentRepository) ListByMessageIDs(ctx context.Context, q Qu
 	// rowid décroissant puis inversion : on garde les pièces jointes les plus
 	// récentes, tout en les restituant dans leur ordre d'origine.
 	query := `
-		SELECT id, message_id, position, kind, mime_type, filename, caption, data, created_at
+		SELECT id, message_id, position, kind, mime_type, filename, caption, data, created_at, tool_only
 		FROM (
-			SELECT rowid, id, message_id, position, kind, mime_type, filename, caption, data, created_at
+			SELECT rowid, id, message_id, position, kind, mime_type, filename, caption, data, created_at, tool_only
 			FROM message_attachments
 			WHERE message_id IN (` + string(placeholders) + `)
 			ORDER BY rowid DESC
@@ -102,7 +102,7 @@ func (r *MessageAttachmentRepository) ListByMessageIDs(ctx context.Context, q Qu
 
 	for rows.Next() {
 		var a MessageAttachment
-		if err := rows.Scan(&a.ID, &a.MessageID, &a.Position, &a.Kind, &a.MimeType, &a.Filename, &a.Caption, &a.Data, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.MessageID, &a.Position, &a.Kind, &a.MimeType, &a.Filename, &a.Caption, &a.Data, &a.CreatedAt, &a.ToolOnly); err != nil {
 			return nil, fmt.Errorf("lecture des pièces jointes des messages: %w", err)
 		}
 

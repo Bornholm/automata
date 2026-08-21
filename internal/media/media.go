@@ -48,6 +48,13 @@ type Media struct {
 	Filename string
 	Caption  string
 	Data     []byte
+	// ToolOnly marque une pièce jointe retenue POUR LES OUTILS et jamais
+	// transmise au modèle. Un fournisseur texte-seul refuse la requête
+	// entière quand elle porte une vidéo ; un fournisseur multimodal la
+	// facturerait pour rien. La pièce reste disponible à l'agent par sa
+	// description textuelle (ToolOnlyNotice), et un outil hôte va en
+	// chercher les octets quand il en a besoin.
+	ToolOnly bool
 }
 
 // Config décrit les limites appliquées aux pièces jointes, dérivée de
@@ -71,6 +78,16 @@ type Config struct {
 	// laisserait l'utilisateur sans réponse. Mieux vaut écarter la pièce et
 	// le lui dire.
 	AcceptedTypes []string
+	// ToolTypes énumère les types MIME retenus à l'extraction pour les
+	// OUTILS seulement : ils ne partent jamais au modèle. C'est ce qui
+	// permet de recevoir une vidéo par messagerie et de la faire traiter
+	// par un sous-agent, sans qu'elle fasse échouer le tour chez un
+	// fournisseur qui ne sait pas la lire.
+	ToolTypes []string
+	// MaxToolSize borne la taille d'une pièce jointe ToolTypes, en octets.
+	// Distincte de MaxSize : ces pièces ne coûtent pas de jetons, elles
+	// peuvent donc être bien plus grosses qu'une image envoyée au modèle.
+	MaxToolSize int64
 	// MaxHistory borne le nombre de pièces jointes rejouées depuis
 	// l'historique à chaque tour. <= 0 : aucun rejeu.
 	MaxHistory int
@@ -86,8 +103,17 @@ type Config struct {
 
 // accepts indique si mimeType figure parmi les types acceptés.
 func (c Config) accepts(mimeType string) bool {
-	for _, accepted := range c.AcceptedTypes {
-		if strings.EqualFold(strings.TrimSpace(accepted), mimeType) {
+	return containsMIME(c.AcceptedTypes, mimeType)
+}
+
+// acceptsForTools indique si mimeType est retenu pour les outils seulement.
+func (c Config) acceptsForTools(mimeType string) bool {
+	return containsMIME(c.ToolTypes, mimeType)
+}
+
+func containsMIME(list []string, mimeType string) bool {
+	for _, candidate := range list {
+		if strings.EqualFold(strings.TrimSpace(candidate), mimeType) {
 			return true
 		}
 	}
@@ -170,6 +196,19 @@ func Extract(ctx context.Context, msg courier.Message, cfg Config) ([]Media, []s
 			continue
 		}
 
+		// Les types « outillage seulement » sont testés en premier : ils ont
+		// leur propre borne de taille, et ne doivent surtout pas retomber
+		// dans le chemin qui convertit la pièce pour le modèle.
+		if cfg.acceptsForTools(mimeType) {
+			m, err := extractToolOnly(ctx, attachment, name, mimeType, cfg.MaxToolSize)
+			if err != nil {
+				rejected = append(rejected, fmt.Sprintf("%s (%s) : %v", name, mimeType, err))
+				continue
+			}
+			kept = append(kept, m)
+			continue
+		}
+
 		if !cfg.accepts(mimeType) {
 			rejected = append(rejected, fmt.Sprintf("%s (%s) : type non pris en charge", name, mimeType))
 			continue
@@ -205,6 +244,36 @@ func Extract(ctx context.Context, msg courier.Message, cfg Config) ([]Media, []s
 	}
 
 	return kept, rejected
+}
+
+// extractToolOnly lit une pièce jointe destinée aux seuls outils. Son type
+// n'a pas besoin d'être représentable par genai (KindFromMIME) : elle ne
+// sera jamais convertie en llm.Attachment. Faute de classement, on retient
+// KindDocument, qui n'est utilisé que si la pièce ressort vers la
+// messagerie.
+func extractToolOnly(ctx context.Context, attachment courier.Attachment, name, mimeType string, maxToolSize int64) (Media, error) {
+	if size := attachment.Size(); size > 0 && size > maxToolSize {
+		return Media{}, fmt.Errorf("dépasse %d octets", maxToolSize)
+	}
+
+	data, err := readBounded(ctx, attachment, maxToolSize)
+	if err != nil {
+		return Media{}, err
+	}
+
+	kind, ok := KindFromMIME(mimeType)
+	if !ok {
+		kind = KindDocument
+	}
+
+	return Media{
+		Kind:     kind,
+		MimeType: mimeType,
+		Filename: name,
+		Caption:  attachment.Caption(),
+		Data:     data,
+		ToolOnly: true,
+	}, nil
 }
 
 // readBounded lit au plus maxSize octets du flux de attachment, et refuse
@@ -282,6 +351,12 @@ func ToLLMAll(medias []Media) ([]llm.Attachment, []string) {
 	)
 
 	for _, m := range medias {
+		// Écartée sans être signalée comme rejet : elle n'est pas refusée,
+		// elle est simplement invisible du modèle, par construction.
+		if m.ToolOnly {
+			continue
+		}
+
 		attachment, err := ToLLM(m)
 		if err != nil {
 			rejected = append(rejected, fmt.Sprintf("%s (%s) : conversion impossible", m.Filename, m.MimeType))
@@ -292,6 +367,41 @@ func ToLLMAll(medias []Media) ([]llm.Attachment, []string) {
 	}
 
 	return attachments, rejected
+}
+
+// ToolOnlyNotice décrit en texte les pièces jointes retenues pour les
+// outils, afin que l'agent sache quels fichiers il peut importer. Nom,
+// type et taille seulement — jamais le contenu.
+//
+// En anglais : ce texte part vers le modèle (AGENTS.md).
+func ToolOnlyNotice(medias []Media) string {
+	var lines []string
+	for _, m := range medias {
+		if !m.ToolOnly {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- %s (%s, %d bytes)", m.Filename, m.MimeType, len(m.Data)))
+	}
+
+	if len(lines) == 0 {
+		return ""
+	}
+
+	return "\n\n[Files attached to this message. You cannot see them directly; " +
+		"use the file tools to work on them, referring to each by its exact filename:\n" +
+		strings.Join(lines, "\n") + "]"
+}
+
+// ToolOnly retourne les pièces jointes réservées aux outils.
+func ToolOnly(medias []Media) []Media {
+	var out []Media
+	for _, m := range medias {
+		if m.ToolOnly {
+			out = append(out, m)
+		}
+	}
+
+	return out
 }
 
 // ToCourier convertit m en pièce jointe sortante go-courier, prête à être
@@ -366,9 +476,16 @@ var usualExtensions = map[string]string{
 	"audio/mpeg": ".mp3",
 }
 
+// DefaultFilename est la version exportée de defaultFilename, pour les
+// appelants qui reçoivent un fichier sans nom (outils de plugin).
+//
 // defaultFilename fabrique un nom de fichier lorsqu'aucun n'est fourni : les
 // plateformes de messagerie en exigent un pour afficher correctement une
 // pièce jointe.
+func DefaultFilename(mimeType string) string {
+	return defaultFilename(mimeType)
+}
+
 func defaultFilename(mimeType string) string {
 	if extension, found := usualExtensions[normalizeMIME(mimeType)]; found {
 		return "piece-jointe" + extension

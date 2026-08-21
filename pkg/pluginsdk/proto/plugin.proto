@@ -11,6 +11,12 @@ service AutomataPlugin {
   rpc ListTools(ListToolsInput) returns (ListToolsOutput);
   rpc CallTool(CallToolInput) returns (CallToolOutput);
   rpc WatchTriggers(WatchTriggersRequest) returns (stream TriggerEvent);
+  // PutFile and GetFile move file bytes between the host and the plugin's
+  // own storage. They exist because tool results are text and bounded: a
+  // video never belongs in a CallTool result. The host only calls them
+  // when the descriptor sets supports_files.
+  rpc PutFile(stream PutFileChunk) returns (PutFileResult);
+  rpc GetFile(GetFileRequest) returns (stream FileChunk);
 }
 
 // AutomataHostService is served by the host over the gRPC broker. Note the
@@ -44,6 +50,10 @@ message PluginDescriptor {
   string permission_domain = 5;
   // has_triggers tells the host to open WatchTriggers.
   bool has_triggers = 6;
+  // supports_files tells the host the plugin implements PutFile/GetFile,
+  // and that the sub-agent may be given the host-side file tools. A plugin
+  // leaving it false is never called on those RPCs.
+  bool supports_files = 7;
 }
 
 message SubAgentDescriptor {
@@ -91,6 +101,9 @@ message ToolDescriptor {
   // read_only is treated as a write: it is never executed directly, only
   // proposed for human confirmation. Absence of annotation means write.
   bool read_only = 4;
+  // timeout_seconds overrides the host's per-tool timeout for this tool.
+  // 0 keeps the host default; the host caps whatever is asked.
+  uint32 timeout_seconds = 5;
 }
 
 message ListToolsInput {
@@ -112,6 +125,49 @@ message CallToolOutput {
   // is_error marks a business failure. The host relays it to the model as
   // a plain-text error result; it never aborts the turn.
   bool is_error = 2;
+}
+
+// PutFileChunk streams one file from the host to the plugin. The first
+// chunk carries the metadata, every following chunk carries data.
+message PutFileChunk {
+  oneof payload {
+    PutFileMetadata metadata = 1;
+    bytes data = 2;
+  }
+}
+message PutFileMetadata {
+  CallContext ctx = 1;
+  string filename = 2;
+  string mime_type = 3;
+  uint64 size = 4;
+}
+message PutFileResult {
+  // path is where the plugin stored the file, expressed the way the
+  // plugin's own tools expect to see it.
+  string path = 1;
+  // is_error marks a business failure (quota, unreachable backend). Like
+  // CallToolOutput.is_error it is relayed to the model, never fatal.
+  bool is_error = 2;
+  string error_text = 3;
+}
+
+message GetFileRequest {
+  CallContext ctx = 1;
+  string path = 2;
+}
+
+// FileChunk streams one file from the plugin back to the host. The first
+// chunk carries the metadata, every following chunk carries data.
+message FileChunk {
+  oneof payload {
+    FileMetadata metadata = 1;
+    bytes data = 2;
+  }
+}
+message FileMetadata {
+  string filename = 1;
+  string mime_type = 2;
+  uint64 size = 3;
 }
 
 message WatchTriggersRequest {}

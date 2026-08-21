@@ -261,23 +261,42 @@ func buildChatMessages(systemPrompt, agentName string, textOnly bool, recallNote
 		messages = append(messages, llm.NewMessageWithAttachments(role, m.Content, attachments...))
 	}
 
+	// Les pièces « outillage seulement » ne partent jamais au modèle, quel
+	// que soit le chemin : il n'en reçoit que la liste, pour savoir quels
+	// fichiers ses outils peuvent aller chercher.
+	toolNotice := media.ToolOnlyNotice(req.Attachments)
+
 	if textOnly {
 		input := req.Input
-		if len(req.Attachments) > 0 {
-			input += attachmentNotice(req.Attachments)
+		if visible := visibleAttachments(req.Attachments); len(visible) > 0 {
+			input += attachmentNotice(visible)
 		}
-		messages = append(messages, llm.NewMessage(llm.RoleUser, input))
+		messages = append(messages, llm.NewMessage(llm.RoleUser, input+toolNotice))
 		return messages
 	}
 
 	attachments, _ := media.ToLLMAll(req.Attachments)
 	if len(attachments) == 0 {
-		messages = append(messages, llm.NewMessage(llm.RoleUser, req.Input))
+		messages = append(messages, llm.NewMessage(llm.RoleUser, req.Input+toolNotice))
 	} else {
-		messages = append(messages, llm.NewMessageWithAttachments(llm.RoleUser, req.Input, attachments...))
+		messages = append(messages, llm.NewMessageWithAttachments(llm.RoleUser, req.Input+toolNotice, attachments...))
 	}
 
 	return messages
+}
+
+// visibleAttachments retient les pièces jointes que le modèle aurait pu
+// voir : celles réservées aux outils sont décrites séparément, il ne sert à
+// rien de conseiller au modèle de déléguer pour les regarder.
+func visibleAttachments(attachments []media.Media) []media.Media {
+	var out []media.Media
+	for _, m := range attachments {
+		if !m.ToolOnly {
+			out = append(out, m)
+		}
+	}
+
+	return out
 }
 
 // attachmentNotice décrit en texte les pièces jointes qu'un modèle

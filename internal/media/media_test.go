@@ -378,3 +378,112 @@ func TestKindFromMIME(t *testing.T) {
 
 // Kind est un alias local pour alléger la table de TestKindFromMIME.
 type Kind = media.Kind
+
+// toolConfigWithVideo autorise en plus une vidéo réservée aux outils.
+func toolConfigWithVideo() media.Config {
+	cfg := defaultTestConfig()
+	cfg.ToolTypes = []string{"video/mp4"}
+	cfg.MaxToolSize = 4096
+	return cfg
+}
+
+func TestExtract_ToolOnlyVideoIsKeptAndMarked(t *testing.T) {
+	data := []byte("octets mp4")
+	msg := messageWith(attachmentPart("clip.mp4", "video/mp4", data))
+
+	kept, rejected := media.Extract(context.Background(), msg, toolConfigWithVideo())
+
+	if len(rejected) != 0 {
+		t.Fatalf("aucun rejet attendu, obtenu %v", rejected)
+	}
+	if len(kept) != 1 {
+		t.Fatalf("pièces retenues: got %d, expected 1", len(kept))
+	}
+	if !kept[0].ToolOnly {
+		t.Fatal("la vidéo devrait être marquée ToolOnly")
+	}
+	if kept[0].Kind != media.KindVideo || kept[0].Filename != "clip.mp4" {
+		t.Fatalf("média = %+v", media.Media{Kind: kept[0].Kind, Filename: kept[0].Filename})
+	}
+	if !bytes.Equal(kept[0].Data, data) {
+		t.Fatal("les octets de la vidéo n'ont pas été conservés")
+	}
+}
+
+func TestExtract_ToolOnlyVideoIsBoundedByMaxToolSize(t *testing.T) {
+	cfg := toolConfigWithVideo()
+	cfg.MaxToolSize = 4
+	msg := messageWith(attachmentPart("clip.mp4", "video/mp4", []byte("bien trop gros")))
+
+	kept, rejected := media.Extract(context.Background(), msg, cfg)
+
+	if len(kept) != 0 {
+		t.Fatalf("aucune pièce retenue attendue, obtenu %d", len(kept))
+	}
+	if len(rejected) != 1 || !strings.Contains(rejected[0], "clip.mp4") {
+		t.Fatalf("rejets = %v", rejected)
+	}
+}
+
+func TestExtract_ToolOnlyUsesItsOwnSizeBound(t *testing.T) {
+	// MaxSize (modèle) est plus petit que MaxToolSize : la vidéo doit
+	// passer quand même, elle ne va pas au modèle.
+	cfg := toolConfigWithVideo()
+	cfg.MaxSize = 4
+	cfg.MaxToolSize = 4096
+	msg := messageWith(attachmentPart("clip.mp4", "video/mp4", []byte("des octets bien plus longs que quatre")))
+
+	kept, rejected := media.Extract(context.Background(), msg, cfg)
+
+	if len(kept) != 1 || !kept[0].ToolOnly {
+		t.Fatalf("retenues = %d, rejets = %v", len(kept), rejected)
+	}
+}
+
+func TestToLLMAll_SkipsToolOnlyWithoutRejecting(t *testing.T) {
+	medias := []media.Media{
+		{Kind: media.KindImage, MimeType: "image/png", Filename: "photo.png", Data: []byte("png")},
+		{Kind: media.KindVideo, MimeType: "video/mp4", Filename: "clip.mp4", Data: []byte("mp4"), ToolOnly: true},
+	}
+
+	attachments, rejected := media.ToLLMAll(medias)
+
+	if len(attachments) != 1 {
+		t.Fatalf("pièces converties: got %d, expected 1", len(attachments))
+	}
+	if len(rejected) != 0 {
+		t.Fatalf("une pièce ToolOnly ne doit pas compter comme rejet, obtenu %v", rejected)
+	}
+}
+
+func TestToolOnlyNotice_ListsFilesForTheModel(t *testing.T) {
+	medias := []media.Media{
+		{Kind: media.KindImage, MimeType: "image/png", Filename: "photo.png", Data: []byte("png")},
+		{Kind: media.KindVideo, MimeType: "video/mp4", Filename: "clip.mp4", Data: []byte("1234"), ToolOnly: true},
+	}
+
+	notice := media.ToolOnlyNotice(medias)
+
+	if !strings.Contains(notice, "clip.mp4") || !strings.Contains(notice, "video/mp4") || !strings.Contains(notice, "4 bytes") {
+		t.Fatalf("notice = %q", notice)
+	}
+	if strings.Contains(notice, "photo.png") {
+		t.Fatalf("une pièce visible du modèle ne doit pas figurer dans la notice: %q", notice)
+	}
+	if media.ToolOnlyNotice(medias[:1]) != "" {
+		t.Fatal("sans pièce ToolOnly, la notice doit être vide")
+	}
+}
+
+func TestToolOnly_FiltersMarkedMedias(t *testing.T) {
+	medias := []media.Media{
+		{Filename: "photo.png"},
+		{Filename: "clip.mp4", ToolOnly: true},
+	}
+
+	only := media.ToolOnly(medias)
+
+	if len(only) != 1 || only[0].Filename != "clip.mp4" {
+		t.Fatalf("ToolOnly = %+v", only)
+	}
+}

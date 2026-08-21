@@ -347,6 +347,7 @@ func (h *Handler) persistAttachments(ctx context.Context, tx *sql.Tx, messageID 
 			Caption:   m.Caption,
 			Data:      m.Data,
 			CreatedAt: now,
+			ToolOnly:  m.ToolOnly,
 		}); err != nil {
 			return err
 		}
@@ -397,6 +398,7 @@ func (h *Handler) buildHistory(ctx context.Context, tx *sql.Tx, records []persis
 				Filename: a.Filename,
 				Caption:  a.Caption,
 				Data:     a.Data,
+				ToolOnly: a.ToolOnly,
 			})
 		}
 

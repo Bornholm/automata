@@ -24,6 +24,8 @@ const (
 	AutomataPlugin_ListTools_FullMethodName     = "/automata.plugin.v1.AutomataPlugin/ListTools"
 	AutomataPlugin_CallTool_FullMethodName      = "/automata.plugin.v1.AutomataPlugin/CallTool"
 	AutomataPlugin_WatchTriggers_FullMethodName = "/automata.plugin.v1.AutomataPlugin/WatchTriggers"
+	AutomataPlugin_PutFile_FullMethodName       = "/automata.plugin.v1.AutomataPlugin/PutFile"
+	AutomataPlugin_GetFile_FullMethodName       = "/automata.plugin.v1.AutomataPlugin/GetFile"
 )
 
 // AutomataPluginClient is the client API for AutomataPlugin service.
@@ -39,6 +41,12 @@ type AutomataPluginClient interface {
 	ListTools(ctx context.Context, in *ListToolsInput, opts ...grpc.CallOption) (*ListToolsOutput, error)
 	CallTool(ctx context.Context, in *CallToolInput, opts ...grpc.CallOption) (*CallToolOutput, error)
 	WatchTriggers(ctx context.Context, in *WatchTriggersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TriggerEvent], error)
+	// PutFile and GetFile move file bytes between the host and the plugin's
+	// own storage. They exist because tool results are text and bounded: a
+	// video never belongs in a CallTool result. The host only calls them
+	// when the descriptor sets supports_files.
+	PutFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[PutFileChunk, PutFileResult], error)
+	GetFile(ctx context.Context, in *GetFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileChunk], error)
 }
 
 type automataPluginClient struct {
@@ -108,6 +116,38 @@ func (c *automataPluginClient) WatchTriggers(ctx context.Context, in *WatchTrigg
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AutomataPlugin_WatchTriggersClient = grpc.ServerStreamingClient[TriggerEvent]
 
+func (c *automataPluginClient) PutFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[PutFileChunk, PutFileResult], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AutomataPlugin_ServiceDesc.Streams[1], AutomataPlugin_PutFile_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[PutFileChunk, PutFileResult]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AutomataPlugin_PutFileClient = grpc.ClientStreamingClient[PutFileChunk, PutFileResult]
+
+func (c *automataPluginClient) GetFile(ctx context.Context, in *GetFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AutomataPlugin_ServiceDesc.Streams[2], AutomataPlugin_GetFile_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[GetFileRequest, FileChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AutomataPlugin_GetFileClient = grpc.ServerStreamingClient[FileChunk]
+
 // AutomataPluginServer is the server API for AutomataPlugin service.
 // All implementations must embed UnimplementedAutomataPluginServer
 // for forward compatibility.
@@ -121,6 +161,12 @@ type AutomataPluginServer interface {
 	ListTools(context.Context, *ListToolsInput) (*ListToolsOutput, error)
 	CallTool(context.Context, *CallToolInput) (*CallToolOutput, error)
 	WatchTriggers(*WatchTriggersRequest, grpc.ServerStreamingServer[TriggerEvent]) error
+	// PutFile and GetFile move file bytes between the host and the plugin's
+	// own storage. They exist because tool results are text and bounded: a
+	// video never belongs in a CallTool result. The host only calls them
+	// when the descriptor sets supports_files.
+	PutFile(grpc.ClientStreamingServer[PutFileChunk, PutFileResult]) error
+	GetFile(*GetFileRequest, grpc.ServerStreamingServer[FileChunk]) error
 	mustEmbedUnimplementedAutomataPluginServer()
 }
 
@@ -145,6 +191,12 @@ func (UnimplementedAutomataPluginServer) CallTool(context.Context, *CallToolInpu
 }
 func (UnimplementedAutomataPluginServer) WatchTriggers(*WatchTriggersRequest, grpc.ServerStreamingServer[TriggerEvent]) error {
 	return status.Error(codes.Unimplemented, "method WatchTriggers not implemented")
+}
+func (UnimplementedAutomataPluginServer) PutFile(grpc.ClientStreamingServer[PutFileChunk, PutFileResult]) error {
+	return status.Error(codes.Unimplemented, "method PutFile not implemented")
+}
+func (UnimplementedAutomataPluginServer) GetFile(*GetFileRequest, grpc.ServerStreamingServer[FileChunk]) error {
+	return status.Error(codes.Unimplemented, "method GetFile not implemented")
 }
 func (UnimplementedAutomataPluginServer) mustEmbedUnimplementedAutomataPluginServer() {}
 func (UnimplementedAutomataPluginServer) testEmbeddedByValue()                        {}
@@ -250,6 +302,24 @@ func _AutomataPlugin_WatchTriggers_Handler(srv interface{}, stream grpc.ServerSt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AutomataPlugin_WatchTriggersServer = grpc.ServerStreamingServer[TriggerEvent]
 
+func _AutomataPlugin_PutFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AutomataPluginServer).PutFile(&grpc.GenericServerStream[PutFileChunk, PutFileResult]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AutomataPlugin_PutFileServer = grpc.ClientStreamingServer[PutFileChunk, PutFileResult]
+
+func _AutomataPlugin_GetFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(GetFileRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AutomataPluginServer).GetFile(m, &grpc.GenericServerStream[GetFileRequest, FileChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AutomataPlugin_GetFileServer = grpc.ServerStreamingServer[FileChunk]
+
 // AutomataPlugin_ServiceDesc is the grpc.ServiceDesc for AutomataPlugin service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -278,6 +348,16 @@ var AutomataPlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WatchTriggers",
 			Handler:       _AutomataPlugin_WatchTriggers_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "PutFile",
+			Handler:       _AutomataPlugin_PutFile_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "GetFile",
+			Handler:       _AutomataPlugin_GetFile_Handler,
 			ServerStreams: true,
 		},
 	},

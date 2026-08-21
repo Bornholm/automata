@@ -3,7 +3,9 @@ package plugin
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 	"unicode/utf8"
@@ -19,8 +21,19 @@ import (
 // ne doit pas suspendre le tour entier.
 const pluginToolTimeout = 60 * time.Second
 
+// maxPluginToolTimeout plafonne ce qu'un plugin peut demander comme
+// timeout d'outil. Un plugin déclare ce dont il a besoin (une commande
+// ffmpeg dure plus qu'un appel d'API), l'hôte garde le dernier mot : sans
+// plafond, un plugin fautif suspendrait le tour indéfiniment.
+const maxPluginToolTimeout = 10 * time.Minute
+
 // maxToolResultBytes borne la taille d'un résultat relayé au modèle.
 const maxToolResultBytes = 48 * 1024
+
+// fileChunkBytes est la taille des tranches de fichier échangées avec un
+// plugin. Bien sous la limite de message gRPC (4 Mio par défaut) : la
+// tranche entière doit tenir dans un message, cadre compris.
+const fileChunkBytes = 1 << 20
 
 // SubAgentSpec décrit le sous-agent d'un plugin actif, prêt à être monté.
 type SubAgentSpec struct {
@@ -29,7 +42,10 @@ type SubAgentSpec struct {
 	Description      string
 	PermissionDomain string
 	MaxToolCalls     int
-	Tools            []ToolSpec
+	// SupportsFiles autorise l'hôte à monter ses outils fichiers sur ce
+	// sous-agent, et à appeler PutFile/GetFile sur ce plugin.
+	SupportsFiles bool
+	Tools         []ToolSpec
 }
 
 // ToolSpec décrit un outil du plugin.
@@ -38,6 +54,9 @@ type ToolSpec struct {
 	Description string
 	SchemaJSON  string
 	ReadOnly    bool
+	// TimeoutSeconds est le timeout demandé par le plugin pour cet outil.
+	// 0 : défaut de l'hôte. Toujours plafonné par maxPluginToolTimeout.
+	TimeoutSeconds int
 }
 
 // CallContext est l'identité d'un appel d'outil, construite par l'hôte.
@@ -89,13 +108,15 @@ func (m *Manager) ActiveSubAgents(ctx context.Context, db dbTx, callCtx CallCont
 			Description:      desc.SubAgent.Description,
 			PermissionDomain: desc.PermissionDomain,
 			MaxToolCalls:     int(desc.SubAgent.MaxSequentialToolCalls),
+			SupportsFiles:    desc.SupportsFiles,
 		}
 		for _, t := range tools.Tools {
 			spec.Tools = append(spec.Tools, ToolSpec{
-				Name:        t.Name,
-				Description: t.Description,
-				SchemaJSON:  t.InputSchemaJson,
-				ReadOnly:    t.ReadOnly,
+				Name:           t.Name,
+				Description:    t.Description,
+				SchemaJSON:     t.InputSchemaJson,
+				ReadOnly:       t.ReadOnly,
+				TimeoutSeconds: int(t.TimeoutSeconds),
 			})
 		}
 		specs = append(specs, spec)
@@ -112,13 +133,13 @@ type dbTx interface {
 // CallTool exécute un outil du plugin, avec timeout et troncature — même
 // discipline que les outils MCP. isError signale un échec métier, relayé
 // au modèle sans avorter le tour.
-func (m *Manager) CallTool(ctx context.Context, pluginName, toolName string, callCtx CallContext, argsJSON string) (string, bool, error) {
+func (m *Manager) CallTool(ctx context.Context, pluginName, toolName string, callCtx CallContext, argsJSON string, timeoutSeconds int) (string, bool, error) {
 	client, _, ok := m.GetOrRestart(ctx, pluginName)
 	if !ok {
 		return "", false, fmt.Errorf("plugin %q indisponible", pluginName)
 	}
 
-	callTimeout, cancel := context.WithTimeout(ctx, pluginToolTimeout)
+	callTimeout, cancel := context.WithTimeout(ctx, toolTimeout(timeoutSeconds))
 	defer cancel()
 
 	started := time.Now()
@@ -145,6 +166,128 @@ func (m *Manager) CallTool(ctx context.Context, pluginName, toolName string, cal
 	}
 
 	return text, out.IsError, nil
+}
+
+// toolTimeout applique le timeout demandé par le plugin, borné par
+// l'hôte des deux côtés : jamais moins que le défaut n'est imposé, jamais
+// plus que maxPluginToolTimeout n'est accordé.
+func toolTimeout(seconds int) time.Duration {
+	if seconds <= 0 {
+		return pluginToolTimeout
+	}
+	d := time.Duration(seconds) * time.Second
+	if d > maxPluginToolTimeout {
+		return maxPluginToolTimeout
+	}
+	return d
+}
+
+// PutFile pousse un fichier vers le plugin, par tranches. Retourne le
+// chemin sous lequel le plugin l'a rangé.
+//
+// Les octets ne passent JAMAIS par un résultat d'outil : ce canal existe
+// précisément pour qu'une vidéo n'ait pas à traverser la conversation.
+// PutFile et GetFile : voir agent.PluginFileTransfer pour le contrat côté
+// appelant.
+func (m *Manager) PutFile(ctx context.Context, pluginName string, callCtx CallContext, filename, mimeType string, data []byte) (string, bool, string, error) {
+	client, desc, ok := m.GetOrRestart(ctx, pluginName)
+	if !ok {
+		return "", false, "", fmt.Errorf("plugin %q indisponible", pluginName)
+	}
+	if desc == nil || !desc.SupportsFiles {
+		return "", false, "", fmt.Errorf("le plugin %q ne prend pas en charge les fichiers", pluginName)
+	}
+
+	callTimeout, cancel := context.WithTimeout(ctx, maxPluginToolTimeout)
+	defer cancel()
+
+	stream, err := client.PutFile(callTimeout)
+	if err != nil {
+		return "", false, "", fmt.Errorf("ouverture du flux PutFile vers %q: %w", pluginName, err)
+	}
+
+	meta := &proto.PutFileChunk{Payload: &proto.PutFileChunk_Metadata{Metadata: &proto.PutFileMetadata{
+		Ctx:      toProtoContext(callCtx),
+		Filename: filename,
+		MimeType: mimeType,
+		Size:     uint64(len(data)),
+	}}}
+	if err := stream.Send(meta); err != nil {
+		return "", false, "", fmt.Errorf("envoi des métadonnées à %q: %w", pluginName, err)
+	}
+
+	for offset := 0; offset < len(data); offset += fileChunkBytes {
+		end := min(offset+fileChunkBytes, len(data))
+		if err := stream.Send(&proto.PutFileChunk{Payload: &proto.PutFileChunk_Data{Data: data[offset:end]}}); err != nil {
+			return "", false, "", fmt.Errorf("envoi d'une tranche à %q: %w", pluginName, err)
+		}
+	}
+
+	result, err := stream.CloseAndRecv()
+	if err != nil {
+		return "", false, "", fmt.Errorf("fin du flux PutFile vers %q: %w", pluginName, err)
+	}
+
+	// Identifiants et compteurs seulement : jamais le nom du fichier, qui
+	// vient de l'utilisateur.
+	slog.InfoContext(ctx, "plugin: fichier transmis au plugin",
+		"plugin", pluginName, "bytes", len(data), "is_error", result.IsError)
+
+	return result.Path, result.IsError, result.ErrorText, nil
+}
+
+// GetFile récupère un fichier depuis le plugin, par tranches, en bornant
+// la taille reçue : un plugin ne doit pas pouvoir saturer la mémoire de
+// l'hôte en annonçant un fichier énorme.
+func (m *Manager) GetFile(ctx context.Context, pluginName string, callCtx CallContext, path string, maxBytes int64) (filename, mimeType string, data []byte, err error) {
+	client, desc, ok := m.GetOrRestart(ctx, pluginName)
+	if !ok {
+		return "", "", nil, fmt.Errorf("plugin %q indisponible", pluginName)
+	}
+	if desc == nil || !desc.SupportsFiles {
+		return "", "", nil, fmt.Errorf("le plugin %q ne prend pas en charge les fichiers", pluginName)
+	}
+
+	callTimeout, cancel := context.WithTimeout(ctx, maxPluginToolTimeout)
+	defer cancel()
+
+	stream, err := client.GetFile(callTimeout, &proto.GetFileRequest{
+		Ctx:  toProtoContext(callCtx),
+		Path: path,
+	})
+	if err != nil {
+		return "", "", nil, fmt.Errorf("ouverture du flux GetFile depuis %q: %w", pluginName, err)
+	}
+
+	var buf []byte
+	for {
+		chunk, recvErr := stream.Recv()
+		if errors.Is(recvErr, io.EOF) {
+			break
+		}
+		if recvErr != nil {
+			return "", "", nil, fmt.Errorf("lecture du flux GetFile depuis %q: %w", pluginName, recvErr)
+		}
+
+		switch payload := chunk.Payload.(type) {
+		case *proto.FileChunk_Metadata:
+			filename = payload.Metadata.Filename
+			mimeType = payload.Metadata.MimeType
+			if maxBytes > 0 && payload.Metadata.Size > uint64(maxBytes) {
+				return "", "", nil, fmt.Errorf("le fichier dépasse %d octets", maxBytes)
+			}
+		case *proto.FileChunk_Data:
+			buf = append(buf, payload.Data...)
+			if maxBytes > 0 && int64(len(buf)) > maxBytes {
+				return "", "", nil, fmt.Errorf("le fichier dépasse %d octets", maxBytes)
+			}
+		}
+	}
+
+	slog.InfoContext(ctx, "plugin: fichier récupéré depuis le plugin",
+		"plugin", pluginName, "bytes", len(buf))
+
+	return filename, mimeType, buf, nil
 }
 
 func toProtoContext(cc CallContext) *proto.CallContext {

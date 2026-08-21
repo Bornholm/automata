@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strings"
 
 	"github.com/bornholm/genai/llm"
 
@@ -28,7 +29,15 @@ import (
 type PluginToolCaller interface {
 	// CallPluginTool retourne le texte de résultat et isError (échec
 	// métier, à relayer au modèle sans avorter le tour).
-	CallPluginTool(ctx context.Context, pluginName, toolName string, callCtx PluginCallContext, argsJSON string) (result string, isError bool, err error)
+	CallPluginTool(ctx context.Context, pluginName, toolName string, callCtx PluginCallContext, argsJSON string, timeoutSeconds int) (result string, isError bool, err error)
+}
+
+// PluginFileTransfer déplace des octets entre l'hôte et un plugin, hors du
+// canal des résultats d'outils : ceux-ci sont textuels et bornés à 48 Ko,
+// une vidéo n'y a rien à faire. Implémenté par internal/plugin.Manager.
+type PluginFileTransfer interface {
+	PutPluginFile(ctx context.Context, pluginName string, callCtx PluginCallContext, filename, mimeType string, data []byte) (path string, isError bool, errText string, err error)
+	GetPluginFile(ctx context.Context, pluginName string, callCtx PluginCallContext, path string, maxBytes int64) (filename, mimeType string, data []byte, err error)
 }
 
 // PluginCallContext est l'identité transmise au plugin. Toujours
@@ -50,7 +59,9 @@ type PluginSubAgentSpec struct {
 	Description      string
 	PermissionDomain string
 	MaxToolCalls     int
-	Tools            []PluginToolSpec
+	// SupportsFiles monte les outils fichiers de l'hôte sur ce sous-agent.
+	SupportsFiles bool
+	Tools         []PluginToolSpec
 }
 
 // PluginToolSpec décrit un outil du plugin. ReadOnly faux = écriture :
@@ -61,6 +72,9 @@ type PluginToolSpec struct {
 	Description string
 	SchemaJSON  string
 	ReadOnly    bool
+	// TimeoutSeconds est le timeout demandé par le plugin pour cet outil.
+	// 0 : défaut de l'hôte. L'hôte le plafonne quoi qu'il arrive.
+	TimeoutSeconds int
 }
 
 // PluginSpecialistProvider fournit, par tour, les sous-agents des plugins
@@ -76,6 +90,8 @@ type PluginSubAgent struct {
 	spec                PluginSubAgentSpec
 	client              llm.ChatCompletionClient
 	caller              PluginToolCaller
+	files               PluginFileTransfer
+	maxFileBytes        int64
 	maxToolContextBytes int64
 	logger              *slog.Logger
 }
@@ -92,6 +108,16 @@ func NewPluginSubAgent(spec PluginSubAgentSpec, client llm.ChatCompletionClient,
 		maxToolContextBytes: maxToolContextBytes,
 		logger:              logger,
 	}
+}
+
+// WithFiles branche le transfert de fichiers hôte ↔ plugin et la taille
+// maximale d'un fichier échangé. Sans cet appel, les outils fichiers ne
+// sont pas montés, même si le plugin les déclare : l'hôte ne propose que
+// ce qu'il sait réellement servir.
+func (a *PluginSubAgent) WithFiles(files PluginFileTransfer, maxFileBytes int64) *PluginSubAgent {
+	a.files = files
+	a.maxFileBytes = maxFileBytes
+	return a
 }
 
 // Execute implémente delegation.Specialist. Comme AgentSpecialist, seuls
@@ -111,6 +137,15 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 		}
 		tools = append(tools, tool)
 	}
+	mediaCollector := newMediaCollector()
+
+	if a.spec.SupportsFiles && a.files != nil {
+		tools = append(tools,
+			a.newImportAttachmentTool(req),
+			a.newAttachFileTool(req, mediaCollector),
+		)
+	}
+
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
 	messages := buildChatMessages(a.spec.SystemPrompt, agentName, false, "", Request{
@@ -124,8 +159,6 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 	if maxIterations <= 0 {
 		maxIterations = 5
 	}
-
-	mediaCollector := newMediaCollector()
 
 	loopResult, err := runToolLoop(withMediaCollector(ctx, mediaCollector), a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, "plugin:"+agentName)
 	if err != nil {
@@ -166,7 +199,7 @@ func (a *PluginSubAgent) buildTool(spec PluginToolSpec, identity model.Execution
 				return llm.NewToolResult("erreur: arguments non sérialisables."), nil
 			}
 
-			result, isError, err := a.caller.CallPluginTool(ctx, a.spec.PluginName, spec.Name, callCtx, string(argsJSON))
+			result, isError, err := a.caller.CallPluginTool(ctx, a.spec.PluginName, spec.Name, callCtx, string(argsJSON), spec.TimeoutSeconds)
 			if err != nil {
 				// Convention du dépôt : un échec d'outil est relayé au
 				// modèle, jamais transformé en erreur qui avorte le tour.
@@ -216,6 +249,142 @@ func (a *PluginSubAgent) buildTool(spec PluginToolSpec, identity model.Execution
 		schema,
 		execute,
 	), nil
+}
+
+// pluginCallContext construit l'identité d'appel du tour. MemberID est un
+// identifiant de confiance : il part au plugin, jamais au modèle.
+func pluginCallContext(identity model.ExecutionIdentity) PluginCallContext {
+	return PluginCallContext{
+		OrgID:    string(identity.OrgID),
+		MemberID: string(identity.PrincipalID),
+		Scope:    string(identity.Scope),
+		ScopeID:  string(identity.ScopeID),
+	}
+}
+
+// newImportAttachmentTool expose import_attachment : il pousse une pièce
+// jointe du TOUR COURANT vers l'espace de travail du plugin et rend le
+// chemin obtenu. Les octets ne traversent jamais la conversation, seul le
+// chemin remonte au modèle.
+//
+// Tour courant uniquement (v1) : rien n'est cherché dans l'historique. Une
+// pièce absente donne un résultat d'outil qui dit à l'agent de demander à
+// l'utilisateur de renvoyer le fichier avec sa demande — bien plus utile
+// qu'un « fichier introuvable ».
+func (a *PluginSubAgent) newImportAttachmentTool(req delegation.Request) llm.Tool {
+	schema := llm.NewJSONSchema().
+		RequiredProperty("filename", "Exact name of the file attached to the user's message, as listed to you.", "string")
+
+	callCtx := pluginCallContext(req.Identity)
+	attachments := req.Attachments
+
+	return llm.NewFuncTool(
+		"import_attachment",
+		"Import a file attached to the user's message into your workspace so the other tools can work on it. Returns the path to use.",
+		schema,
+		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
+			filename, _ := params["filename"].(string)
+			if filename == "" {
+				return llm.NewToolResult("error: 'filename' is required."), nil
+			}
+
+			found, ok := findAttachment(attachments, filename)
+			if !ok {
+				return llm.NewToolResult(
+					"error: no file named " + filename + " is attached to the current message. " +
+						"Files can only be imported from the message you are answering: ask the user to send the file again together with their request.",
+				), nil
+			}
+
+			path, isError, errText, err := a.files.PutPluginFile(ctx, a.spec.PluginName, callCtx, found.Filename, found.MimeType, found.Data)
+			if err != nil {
+				a.logger.WarnContext(ctx, "agent: import de pièce jointe en échec",
+					"plugin", a.spec.PluginName, "bytes", len(found.Data), "error", err)
+				return llm.NewToolResult("error: the file could not be imported into the workspace."), nil
+			}
+			if isError {
+				return llm.NewToolResult("error: " + errText), nil
+			}
+
+			return llm.NewToolResult("File imported. Path in the workspace: " + path), nil
+		},
+	).WithReadOnlyHint(true)
+}
+
+// newAttachFileTool expose attach_file : il récupère un fichier de
+// l'espace de travail du plugin et le verse au collecteur de médias, d'où
+// il repart en pièce jointe de la réponse (Result.Attachments), sans
+// jamais repasser par le modèle.
+func (a *PluginSubAgent) newAttachFileTool(req delegation.Request, collector *mediaCollector) llm.Tool {
+	schema := llm.NewJSONSchema().
+		RequiredProperty("path", "Path of the file in your workspace, as returned by your other tools.", "string")
+
+	callCtx := pluginCallContext(req.Identity)
+
+	return llm.NewFuncTool(
+		"attach_file",
+		"Attach a file from your workspace to the reply sent to the user. Do NOT describe the file afterwards, just confirm briefly what you produced.",
+		schema,
+		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
+			path, _ := params["path"].(string)
+			if path == "" {
+				return llm.NewToolResult("error: 'path' is required."), nil
+			}
+
+			filename, mimeType, data, err := a.files.GetPluginFile(ctx, a.spec.PluginName, callCtx, path, a.maxFileBytes)
+			if err != nil {
+				a.logger.WarnContext(ctx, "agent: récupération de fichier en échec",
+					"plugin", a.spec.PluginName, "error", err)
+				return llm.NewToolResult(
+					"error: the file could not be attached (it may be missing, or too large to send: " +
+						"re-encode it smaller and try again).",
+				), nil
+			}
+			if len(data) == 0 {
+				return llm.NewToolResult("error: the file is empty."), nil
+			}
+
+			if mimeType == "" {
+				mimeType = "application/octet-stream"
+			}
+			kind, ok := media.KindFromMIME(mimeType)
+			if !ok {
+				kind = media.KindDocument
+			}
+			if filename == "" {
+				filename = media.DefaultFilename(mimeType)
+			}
+
+			collector.add(media.Media{
+				Kind:     kind,
+				MimeType: mimeType,
+				Filename: filename,
+				Data:     data,
+			})
+
+			return llm.NewToolResult(
+				"File attached to the reply. Confirm briefly what you produced; do not describe its content.",
+			), nil
+		},
+	).WithReadOnlyHint(true)
+}
+
+// findAttachment retrouve une pièce jointe du tour par son nom. La
+// comparaison insensible à la casse rattrape les modèles qui recopient
+// approximativement le nom listé.
+func findAttachment(attachments []media.Media, filename string) (media.Media, bool) {
+	for _, m := range attachments {
+		if m.Filename == filename {
+			return m, true
+		}
+	}
+	for _, m := range attachments {
+		if strings.EqualFold(m.Filename, filename) {
+			return m, true
+		}
+	}
+
+	return media.Media{}, false
 }
 
 var _ delegation.Specialist = &PluginSubAgent{}

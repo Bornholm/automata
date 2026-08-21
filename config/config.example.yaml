@@ -127,6 +127,23 @@ attachments:
     - image/gif
     - text/plain
 
+  # Types retenus POUR LES OUTILS et jamais transmis au modèle : une vidéo
+  # reçue par messagerie, qu'un sous-agent de plugin ira chercher lui-même
+  # (plugin « workspace »). Les déclarer dans accepted_types ferait au
+  # contraire échouer le tour entier chez un fournisseur qui ne sait pas
+  # lire une vidéo. Un même type ne peut pas figurer dans les deux listes.
+  #
+  # tool_types:
+  #   - video/mp4
+  #   - video/webm
+  #   - video/quicktime
+
+  # Taille maximale d'une pièce tool_types. Distincte de max_size : ces
+  # pièces ne coûtent aucun jeton. 16 MiB correspond à la limite d'une
+  # vidéo WhatsApp.
+  #
+  # max_tool_size: 16MiB
+
   # Pièces jointes rejouées depuis l'historique à chaque tour, les plus
   # récentes d'abord. C'est ce qui permet de dire « et sur la photo d'avant ? ».
   #

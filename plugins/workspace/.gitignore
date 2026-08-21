@@ -1,0 +1,4 @@
+# Binaire compilé localement (`go build .` dans ce répertoire).
+# Un .gitignore local plutôt qu'une entrée à la racine : chaque plugin est un
+# module autonome, il porte ses propres exclusions.
+/workspace

@@ -571,6 +571,8 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 			MaxSize:       int64(cfg.Attachments.MaxSize.Bytes()),
 			MaxCount:      cfg.Attachments.MaxCount,
 			AcceptedTypes: cfg.Attachments.AcceptedTypes,
+			ToolTypes:     cfg.Attachments.ToolTypes,
+			MaxToolSize:   int64(cfg.Attachments.MaxToolSize.Bytes()),
 			MaxHistory:    cfg.Attachments.MaxHistory,
 			MaxReply:      cfg.Attachments.MaxReply,
 		})

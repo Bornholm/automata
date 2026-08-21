@@ -360,6 +360,11 @@ attachments:
     - image/webp
     - image/gif
     - text/plain
+  tool_types:
+    - video/mp4
+    - video/webm
+    - video/quicktime
+  max_tool_size: 16MiB
   max_history: 4
   max_reply: 3
 ```
@@ -377,6 +382,21 @@ sera rejeté.
 Le filtre porte sur le type MIME déclaré par la plateforme, pas sur les octets
 reçus. Un fichier annoncé `image/png` qui n'en est pas un atteindra le
 fournisseur, qui le rejettera.
+
+`tool_types` est l'autre moitié du problème. Une vidéo reçue par messagerie
+n'a rien à faire dans une requête au modèle — le fournisseur la refuserait,
+ou la facturerait pour rien — mais on veut quand même pouvoir la traiter. Les
+types listés là sont retenus à la réception, conservés comme les autres
+pièces jointes, et **jamais** convertis vers le modèle : celui-ci n'en reçoit
+que la liste (nom, type, taille), et un sous-agent de plugin va chercher les
+octets lui-même par les outils `import_attachment` / `attach_file` (voir la
+section `plugins`). Un même type ne peut pas figurer à la fois dans
+`accepted_types` et dans `tool_types` : la configuration est refusée.
+
+`max_tool_size` borne ces pièces séparément de `max_size`. Elles ne coûtent
+aucun jeton, elles peuvent donc être bien plus grosses qu'une image envoyée
+au modèle : `16MiB` correspond à la limite d'une vidéo WhatsApp. C'est aussi
+la borne appliquée aux fichiers qu'un plugin renvoie en pièce jointe.
 
 `max_history` contrôle le rejeu. Les pièces jointes sont conservées en base et
 renvoyées au modèle aux tours suivants, ce qui permet de dire « et sur la
