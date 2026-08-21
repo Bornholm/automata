@@ -355,10 +355,25 @@ func stripDataURLPrefix(data string) string {
 	return data
 }
 
+// usualExtensions fixe l'extension des types les plus courants.
+// mime.ExtensionsByType retourne une liste triée par ordre alphabétique, dont
+// la première entrée est souvent marginale : « .jfif » pour une image JPEG,
+// « .asc » pour du texte brut. Un destinataire humain lit ce nom, et certaines
+// messageries se fient à l'extension pour prévisualiser le fichier.
+var usualExtensions = map[string]string{
+	"image/jpeg": ".jpg",
+	"text/plain": ".txt",
+	"audio/mpeg": ".mp3",
+}
+
 // defaultFilename fabrique un nom de fichier lorsqu'aucun n'est fourni : les
 // plateformes de messagerie en exigent un pour afficher correctement une
 // pièce jointe.
 func defaultFilename(mimeType string) string {
+	if extension, found := usualExtensions[normalizeMIME(mimeType)]; found {
+		return "piece-jointe" + extension
+	}
+
 	extensions, err := mime.ExtensionsByType(mimeType)
 	if err == nil && len(extensions) > 0 {
 		return "piece-jointe" + extensions[0]
