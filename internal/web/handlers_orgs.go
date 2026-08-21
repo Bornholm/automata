@@ -362,7 +362,15 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 			page.DailyRate = fmt.Sprintf("≈ %d cr./j", int(rate))
 		}
 
-		channelCount := 0
+		// Les canaux d'une organisation viennent de deux sources : la
+		// configuration et les liaisons par jeton. Lues une seule fois,
+		// elles servent au compteur d'en-tête comme à l'onglet Canaux.
+		bound, err := s.bindings.ListByOrg(r.Context(), tx, orgID)
+		if err != nil {
+			return err
+		}
+
+		channelCount := len(bound)
 		for _, ch := range s.cfg.Channels {
 			if ch.OrgID == orgID {
 				channelCount++
@@ -435,6 +443,15 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		sort.Slice(page.Specialists, func(i, j int) bool { return page.Specialists[i].Name < page.Specialists[j].Name })
+
+		for _, binding := range bound {
+			page.Channels = append(page.Channels, view.OrgChannelRow{
+				PlatformType: providerTypeOf(s.cfg, binding.Provider),
+				Name:         binding.DisplayName,
+				Kind:         channelKindLabelFromScope(binding.Kind),
+				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
+			})
+		}
 
 		for _, ch := range s.cfg.Channels {
 			if ch.OrgID != orgID {

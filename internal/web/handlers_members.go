@@ -146,11 +146,35 @@ func (s *Server) handleMemberTokenRevoke(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, "/admin/members/"+memberID, http.StatusFound)
 }
 
-// memberChannels retourne les canaux de la configuration où le membre est
-// présent (après bootstrap, les identifiants coïncident avec les
-// principals de la config).
-func (s *Server) memberChannels(memberID string) []view.OrgChannelRow {
+// memberChannels retourne les canaux où le membre est présent : ceux de
+// la configuration (après bootstrap, les identifiants coïncident avec les
+// principals) et ceux rattachés en ligne — sa conversation privée, et
+// les groupes de son organisation. Sans les seconds, la fiche d'un membre
+// rattaché par jeton n'affichait aucun canal.
+func (s *Server) memberChannels(ctx context.Context, q persistence.Querier, memberID, orgID string) []view.OrgChannelRow {
 	var rows []view.OrgChannelRow
+
+	if orgID != "" {
+		bound, err := s.bindings.ListByOrg(ctx, q, orgID)
+		if err != nil {
+			// L'absence de cette liste ne justifie pas de refuser la
+			// fiche entière : le reste de la page reste juste.
+			s.logger.ErrorContext(ctx, "web: lecture des canaux d'un membre", "member_id", memberID, "error", err)
+		}
+		for _, binding := range bound {
+			// Un canal privé n'appartient qu'à son membre ; un groupe est
+			// celui de toute l'organisation.
+			if binding.MemberID != "" && binding.MemberID != memberID {
+				continue
+			}
+			rows = append(rows, view.OrgChannelRow{
+				PlatformType: providerTypeOf(s.cfg, binding.Provider),
+				Name:         binding.DisplayName,
+				Kind:         channelKindLabelFromScope(binding.Kind),
+			})
+		}
+	}
+
 	for _, ch := range s.cfg.Channels {
 		if ch.PrincipalID != memberID && !slices.Contains(ch.Members, memberID) {
 			continue
@@ -206,7 +230,7 @@ func (s *Server) buildMemberPage(ctx context.Context, tx *sql.Tx, w http.Respons
 			providerType = member.Provider
 		}
 		page.LinkedIdentity = maskedIdentity(providerType, member.ExternalUserID)
-		page.LinkedChannels = s.memberChannels(member.ID)
+		page.LinkedChannels = s.memberChannels(ctx, tx, member.ID, member.OrgID)
 
 		monthFrom, monthTo := monthBounds(s.now())
 		aggregates, err := s.usage.AggregateUsage(ctx, tx, monthFrom, monthTo, nil, persistence.UsageFilter{PrincipalID: member.ID})

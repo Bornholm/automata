@@ -170,3 +170,44 @@ func TestOrgDelete(t *testing.T) {
 		t.Fatalf("vérification finale: %v", err)
 	}
 }
+
+// La fiche d'une organisation compte et liste ses canaux rattachés en
+// ligne : sans eux, une organisation dont toutes les conversations sont
+// liées par jeton s'affichait « Aucun canal rattaché » — et son compteur
+// à zéro — alors que l'écran des canaux en listait plusieurs.
+func TestOrgPageShowsBoundChannels(t *testing.T) {
+	server, ts, client := testServer(t)
+	login(t, ts, client)
+
+	now := server.now()
+	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		if err := server.orgs.Insert(context.Background(), tx, persistence.Organization{
+			ID: "atelier", DisplayName: "atelier", CreatedAt: now, UpdatedAt: now,
+		}, false); err != nil {
+			return err
+		}
+		return server.bindings.Upsert(context.Background(), tx, persistence.ChannelBinding{
+			Provider: "whatsapp", ChannelID: "120000000000000001@g.us", OrgID: "atelier",
+			Kind: "group", Scope: "group", DisplayName: "atelier IA", CreatedAt: now,
+		})
+	}); err != nil {
+		t.Fatalf("préparation: %v", err)
+	}
+
+	resp, err := client.Get(ts.URL + "/admin/orgs/atelier?tab=channels")
+	if err != nil {
+		t.Fatalf("GET fiche: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("lecture: %v", err)
+	}
+	if !strings.Contains(string(body), "atelier IA") {
+		t.Error("le canal rattaché devrait figurer dans l'onglet Canaux")
+	}
+	if strings.Contains(string(body), "Aucun canal rattaché") {
+		t.Error("l'onglet se dit vide alors qu'un canal est lié")
+	}
+}

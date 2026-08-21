@@ -193,7 +193,15 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	for _, ch := range s.memberChannels(member.ID) {
+	var channels []view.OrgChannelRow
+	if ok := s.withTx(w, r, func(tx *sql.Tx) error {
+		channels = s.memberChannels(r.Context(), tx, member.ID, member.OrgID)
+		return nil
+	}); !ok {
+		return
+	}
+
+	for _, ch := range channels {
 		detail := "Conversation privée"
 		if ch.Kind == "Groupe" {
 			detail = "Groupe"
