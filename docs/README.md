@@ -16,6 +16,8 @@ seul sur des expressions cron.
 | [operations.md](operations.md) | Sauvegarde, restauration, mise à jour, diagnostic, métriques |
 | [deployment.md](deployment.md) | Image Docker, volumes, sonde de santé, arrêt gracieux |
 | [../misc/dokku/README.md](../misc/dokku/README.md) | Déploiement sur Dokku (`make dokku-deploy`) |
+| [plugins-email.md](plugins-email.md) | Plugin de boîte mail : connexion Gmail, courriels entrants |
+| [plugins-workspace.md](plugins-workspace.md) | Plugin d'atelier de fichiers : retouche vidéo et image en bac à sable |
 | [security-model.md](security-model.md) | Modèle de menace, frontières de confiance, limitations assumées |
 | [integration-inventory.md](integration-inventory.md) | API réelles de go-courier, genai et Amoxtli, et leurs manques |
 
