@@ -78,7 +78,7 @@ storage:
     path: /data/app.sqlite
 web:
   enabled: true
-  addr: 0.0.0.0:5000        # 0.0.0.0, sinon le proxy ne l'atteint jamais
+  addr: 0.0.0.0:5000        # 0.0.0.0 IMPÉRATIF, voir ci-dessous
   base_url: https://automata.exemple.fr
 plugins:
   enabled: true
@@ -150,6 +150,32 @@ un `config.yaml` aux chemins du conteneur suffit à valider une image
 complète — services annexes, plugins et serveur web compris — sans rien
 déployer. Les volumes locaux doivent appartenir à l'utilisateur qui lance
 le conteneur.
+
+## Si la sonde de démarrage échoue
+
+`Failure in name='administration joignable': dial tcp …:5000: connect:
+connection refused` a presque toujours la même cause : **`web.addr`
+écoute en boucle locale**. Dans un conteneur, `127.0.0.1:5000` n'est
+joignable par personne — ni le proxy, ni la sonde. Il faut
+`0.0.0.0:5000`. Depuis, Automata le signale lui-même au démarrage :
+
+```
+web: écoute en boucle locale dans un conteneur, injoignable depuis l'extérieur
+```
+
+Vérifiez la configuration effectivement déposée sur le volume :
+
+```bash
+ssh root@<hôte> "grep -A3 '^web:' /var/lib/dokku/data/storage/automata/config/config.yaml"
+```
+
+Si l'adresse est bonne, lisez les jalons de démarrage : chaque étape est
+journalisée avec sa durée, et la dernière franchie désigne celle qui
+bloque.
+
+```bash
+dokku logs automata | grep "étape de démarrage"
+```
 
 ## Un piège d'assemblage à connaître
 

@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/bornholm/go-courier"
 
@@ -55,6 +56,16 @@ const mainAgentName = "main"
 func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	logger.InfoContext(ctx, "automata starting")
 
+	// Journal des étapes de démarrage. Le serveur web n'écoute qu'à la
+	// toute fin : sans ces jalons, un démarrage qui traîne ou qui reste
+	// bloqué ne se distingue pas d'un processus mort, et le diagnostic
+	// se réduit à deviner. Chaque étape porte sa durée.
+	startedAt := time.Now()
+	step := func(name string) {
+		logger.InfoContext(ctx, "registry: étape de démarrage",
+			"step", name, "elapsed", time.Since(startedAt).Round(time.Millisecond).String())
+	}
+
 	if err := scheduler.ValidateSchedules(cfg); err != nil {
 		return fmt.Errorf("registry: validation des schedules: %w", err)
 	}
@@ -87,6 +98,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	// Tenants enregistrés en ligne (socle SaaS) : résolution d'identité de
 	// repli, rôles des membres et génération de liens de profil. La
 	// configuration reste prioritaire partout.
+	step("persistance ouverte")
+
 	tenants := newTenantSource(db, cfg.Web.BaseURL)
 
 	resolver, err := identity.NewResolver(cfg)
@@ -110,11 +123,15 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		}
 	}
 
+	step("comptes de messagerie migrés")
+
 	memRes, err := buildMemory(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("registry: construction de la mémoire: %w", err)
 	}
 	defer memRes.close(logger)
+
+	step("mémoire prête")
 
 	mcpManager := mcp.NewManager(cfg, logger).WithMetrics(metrics)
 	defer func() {
@@ -146,6 +163,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			logger.WarnContext(ctx, "registry: démarrage des plugins incomplet", "error", err)
 		}
 		defer pluginManager.Shutdown()
+
+		step("plugins chargés")
 	}
 
 	// Provider des sous-agents de plugins et exécuteurs de leurs actions
@@ -188,6 +207,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	if err := actionEngine.RecoverInterrupted(ctx); err != nil {
 		logger.ErrorContext(ctx, "registry: échec de la récupération des plans d'actions interrompus", "error", err)
 	}
+
+	step("moteur d'actions prêt")
 
 	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, pluginProvider, metrics, logger)
 	if err != nil {
@@ -413,6 +434,8 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+
+			step("serveur web en écoute")
 
 			if err := webServer.Run(ctx); err != nil {
 				logger.ErrorContext(ctx, "registry: serveur web arrêté en erreur", "error", err)

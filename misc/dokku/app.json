@@ -4,12 +4,12 @@
       {
         "type": "startup",
         "name": "administration joignable",
-        "description": "La page de connexion ne répond que si la configuration a été chargée, la base ouverte et les migrations appliquées.",
+        "description": "La page de connexion ne répond que si la configuration a été chargée, la base ouverte et les migrations appliquées. La tolérance couvre un premier démarrage, qui crée les bases et l'index de mémoire.",
         "path": "/admin/login",
-        "attempts": 6,
-        "initialDelay": 8,
-        "timeout": 30,
-        "wait": 5
+        "attempts": 12,
+        "initialDelay": 15,
+        "wait": 10,
+        "timeout": 30
       }
     ]
   }

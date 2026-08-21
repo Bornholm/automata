@@ -204,3 +204,22 @@ func TestIsPluginUIPath(t *testing.T) {
 		}
 	}
 }
+
+// Une écoute en boucle locale dans un conteneur est injoignable : ni le
+// proxy de l'hôte, ni la sonde de démarrage n'y accèdent, et le message
+// obtenu est un « connection refused » qui ne dit pas sa cause.
+func TestIsLoopbackAddr(t *testing.T) {
+	loopback := []string{"127.0.0.1:5000", "localhost:8080", "[::1]:5000"}
+	for _, addr := range loopback {
+		if !isLoopbackAddr(addr) {
+			t.Errorf("%q devrait être reconnue comme boucle locale", addr)
+		}
+	}
+
+	reachable := []string{"0.0.0.0:5000", ":5000", "192.168.1.10:5000", "[::]:5000"}
+	for _, addr := range reachable {
+		if isLoopbackAddr(addr) {
+			t.Errorf("%q ne doit pas être prise pour une boucle locale", addr)
+		}
+	}
+}

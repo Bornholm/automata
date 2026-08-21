@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -273,6 +275,16 @@ func (s *Server) Run(ctx context.Context) error {
 
 	go func() {
 		s.logger.InfoContext(ctx, "web: serveur démarré", "addr", s.httpServer.Addr)
+
+		// Une écoute en boucle locale dans un conteneur n'est joignable
+		// par personne : ni le proxy de l'hôte, ni la sonde de démarrage,
+		// qui répondront « connection refused » sans jamais dire pourquoi.
+		// Le signaler ici est la seule occasion de relier la cause à
+		// l'effet.
+		if inContainer() && isLoopbackAddr(s.httpServer.Addr) {
+			s.logger.WarnContext(ctx, "web: écoute en boucle locale dans un conteneur, injoignable depuis l'extérieur",
+				"addr", s.httpServer.Addr, "attendu", "0.0.0.0:<port>")
+		}
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 			return
@@ -433,4 +445,26 @@ func (s *codeStore) verify(memberID, code string, now time.Time) (email string, 
 	delete(s.entries, memberID)
 
 	return entry.email, true
+}
+
+// isLoopbackAddr indique si l'adresse d'écoute est restreinte à la boucle
+// locale.
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// inContainer reconnaît une exécution conteneurisée. Le fichier
+// /.dockerenv est posé par Docker ; son absence n'affirme rien, d'où un
+// simple avertissement plutôt qu'un refus de démarrer.
+func inContainer() bool {
+	_, err := os.Stat("/.dockerenv")
+	return err == nil
 }
