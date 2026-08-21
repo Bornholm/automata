@@ -83,7 +83,16 @@ L'invariant du dépôt reste entier : tout outil qui écrit **hors** du bac à
 sable passe par une action proposée. Rien ici n'écrit hors du bac à sable.
 
 **Corollaire** : le réseau ne doit jamais être ouvert dans la policy de ce
-bac à sable sans revenir sur cette décision.
+bac à sable sans revenir sur cette décision. C'est aussi pourquoi la
+recherche d'information sur Internet n'a pas sa place ici : elle passe par
+le spécialiste `research` et son serveur MCP, et le résultat arrive au
+workspace sous forme de texte dans la délégation.
+
+**Interpréteurs** : `python3` est présent dans l'image (`ocrmypdf` en
+dépend et s'exécute par son shebang) mais n'est PAS dans la liste blanche.
+L'y ajouter changerait ce que cette liste signifie — elle ne dirait plus ce
+que l'agent peut calculer, seulement ce qu'il peut atteindre. Décision
+d'exploitation, à ne pas prendre à la légère.
 
 ## Configuration
 
@@ -134,6 +143,8 @@ dans cet ordre :
 | Écrire ou modifier              | en markdown, puis `pandoc brouillon.md -o rapport.docx` |
 | Produire un PDF                 | `office-convert pdf rapport.docx`              |
 | Vérifier un rendu               | `pdftoppm -png -r 60 -f 1 -l 1 rapport.pdf page` puis `view_file` |
+| Rendre un scan cherchable       | `ocrmypdf --image-dpi 300 -l fra scan.pdf sortie.pdf` |
+| Nettoyer les métadonnées        | `exiftool -all= -overwrite_original photo.jpg` |
 
 `office-convert` est le point d'entrée LibreOffice fourni par l'image ;
 `soffice` n'est pas autorisé en direct, car invoqué sans garde-fous il écrit

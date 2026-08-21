@@ -144,7 +144,8 @@ vide, et aucun outil `load_skill` monté.
 | `remove-video-watermark` | workspace | Retirer un filigrane d'une vidéo (`delogo`), en surveillant la taille de sortie. |
 | `edit-office-document` | workspace | Lire, modifier et convertir un docx/odt/pdf, en avertissant des pertes de mise en page. |
 | `compress-media-for-messaging` | workspace | Ramener une vidéo ou une photo sous la limite d'envoi. |
-| `scan-to-pdf` | workspace | Transformer des photos de documents en PDF redressé et lisible. |
+| `scan-to-pdf` | workspace | Transformer des photos de documents en PDF redressé, lisible et **cherchable** (OCR). |
+| `strip-photo-metadata` | workspace | Lire ou effacer les métadonnées d'une photo (position GPS, appareil) avant partage. |
 | `unslop` | tous | Débarrasser un texte long de ses tics d'écriture d'IA. |
 | `translate` | tous | Traduire en gardant registre, noms propres et mise en forme. |
 
