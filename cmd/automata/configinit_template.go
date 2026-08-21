@@ -127,6 +127,13 @@ agents:
     client: main
     system_prompt:
       file: {{ .PromptsDir }}/main.md
+{{- if .Web }}
+    # Ouvre à l'interlocuteur un lien temporaire vers sa page de profil
+    # (crédits, paiement, données personnelles). Sans lui, l'assistant
+    # n'a aucun moyen de donner son propre lien à quelqu'un qui le
+    # demande dans la conversation.
+    profile_link: true
+{{- end }}
 {{- if .Agents }}
     delegates:
 {{- range .Agents }}

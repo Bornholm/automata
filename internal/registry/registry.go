@@ -490,6 +490,17 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	if cfg.Web.Enabled && cfg.Web.BaseURL != "" {
 		profileTools.Generator = tenants
 		profileTools.Enabled = true
+
+		// L'outil reste recroisé avec agents.<nom>.profile_link. Si aucun
+		// orchestrateur ne le déclare, personne ne peut obtenir son lien
+		// depuis une conversation : à la question « donne-moi le lien vers
+		// mon compte », l'assistant répondra qu'il n'a pas l'outil, sans
+		// que rien n'ait l'air en panne. Le signaler au démarrage est la
+		// seule occasion de rendre cet oubli visible.
+		if !anyAgentExposesProfileLink(cfg) {
+			logger.Warn("registry: aucun agent n'expose open_profile_link alors que le web est actif",
+				"remède", "ajoutez profile_link: true à l'agent orchestrateur")
+		}
 	}
 
 	// Les outils de rappels partagent la base applicative et l'Authorizer de
@@ -614,4 +625,16 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	}
 
 	return handler, agents, taskAgents, nil
+}
+
+// anyAgentExposesProfileLink indique si au moins un agent déclare
+// profile_link.
+func anyAgentExposesProfileLink(cfg *config.Config) bool {
+	for _, agentCfg := range cfg.Agents {
+		if agentCfg.ProfileLink {
+			return true
+		}
+	}
+
+	return false
 }
