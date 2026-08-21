@@ -391,6 +391,12 @@ func (p *Pipeline) processBatch(ctx context.Context, self courier.User, msgs []c
 				"channel_name", first.Channel().Name(),
 				"user_id", externalUserID,
 				"user_name", first.From().DisplayName(),
+				// Le motif exact distingue trois situations qui n'appellent
+				// pas le même geste : un inconnu à rattacher, un canal non
+				// lié, ou quelqu'un de connu mais sans compte dans
+				// l'organisation du canal. L'erreur ne porte que des
+				// identifiants, jamais le message.
+				"raison", err.Error(),
 			)
 			return
 		}
