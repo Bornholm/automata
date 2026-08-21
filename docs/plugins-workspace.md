@@ -120,8 +120,13 @@ fiche organisation.
 
 ## Documents
 
-La chaîne bureautique tient en trois outils, que le prompt du sous-agent
-enchaîne dans cet ordre :
+Ces recettes ne sont plus dans le prompt du sous-agent : elles vivent
+dans la compétence `edit-office-document`, que l'agent charge quand la
+tâche s'y prête (voir [skills.md](skills.md)). Le prompt ne garde que le
+contrat de l'atelier.
+
+La chaîne bureautique tient en trois outils, que la compétence enchaîne
+dans cet ordre :
 
 | Besoin                          | Commande                                       |
 | ------------------------------- | ---------------------------------------------- |
@@ -136,10 +141,10 @@ son profil utilisateur dans le workspace du membre.
 
 **La limite à connaître** : éditer un document reçu passe par une
 conversion en markdown, puis un retour au format d'origine. Le texte
-survit, la mise en page d'un document richement formaté non. Le prompt
-demande à l'agent de le dire plutôt que de dégrader silencieusement le
-document — mais c'est une limite réelle, pas un défaut à corriger par un
-réglage.
+survit, la mise en page d'un document richement formaté non. La
+compétence demande à l'agent de le dire plutôt que de dégrader
+silencieusement le document — mais c'est une limite réelle, pas un défaut
+à corriger par un réglage.
 
 ## Le service LeaSH (« toolbox »)
 
