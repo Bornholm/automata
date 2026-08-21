@@ -842,3 +842,49 @@ func TestPluginSubAgent_TimeBudgetConcludesInsteadOfExpiring(t *testing.T) {
 		t.Fatal("la conclusion ne doit pas être vide")
 	}
 }
+
+// Une variante de conclusion en échec ne doit pas emporter tout le tour :
+// c'est précisément ce que les suivantes existent pour rattraper. Un modèle
+// à raisonnement répond « http 200 » sans contenu exploitable quand sa
+// réponse part dans le canal de réflexion, et la variante qui désactive ce
+// canal aboutit là où la première a échoué.
+func TestPluginSubAgent_ConclusionFallsBackAfterAFailedAttempt(t *testing.T) {
+	caller := &fakePluginCaller{result: "sortie"}
+
+	var completions int
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			completions++
+			switch {
+			case turn == 0:
+				// La boucle consomme son unique appel d'outil.
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "email_read", `{"id":"1"}`)), nil
+			case turn == 1:
+				// Première variante de conclusion : échec du fournisseur.
+				return nil, errors.New("http 200: ")
+			default:
+				return scriptedFinalResponse("Voici ce que j'ai trouvé."), nil
+			}
+		},
+	}
+
+	spec := testPluginSpec()
+	spec.MaxToolCalls = 1
+
+	subAgent := agent.NewPluginSubAgent(spec, client, caller, 0, nil)
+
+	result, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "email",
+		Goal:     "Read the mail",
+		Identity: pluginTestIdentity(),
+	})
+	if err != nil {
+		t.Fatalf("une variante de repli devait aboutir: %v", err)
+	}
+	if result.Summary != "Voici ce que j'ai trouvé." {
+		t.Fatalf("conclusion obtenue = %q", result.Summary)
+	}
+	if completions < 3 {
+		t.Fatalf("la variante suivante devait être tentée après l'échec, %d appels", completions)
+	}
+}

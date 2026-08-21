@@ -247,13 +247,35 @@ func concludeToolLoop(ctx context.Context, client llm.ChatCompletionClient, mess
 	attempts := conclusionAttempts(messages, tools)
 	orderConclusionFallbacks(attempts[1:], lastHadToolCalls)
 
+	// Conservée pour être rapportée si AUCUNE variante n'aboutit : sans
+	// elle, l'appelant ne verrait qu'un fallbackErr générique, sans la
+	// cause réelle.
+	var lastErr error
+
 	for len(attempts) > 0 {
 		attempt := attempts[0]
 		attempts = attempts[1:]
 
 		resp, err := client.ChatCompletion(ctx, attempt.opts...)
 		if err != nil {
-			return toolLoopResult{}, fmt.Errorf("agent: conclusion après clôture de la boucle (%s, %s): %w", closeReason, attempt.label, err)
+			// Une variante en échec n'est pas la fin : c'est précisément
+			// ce que les suivantes existent pour rattraper. Un modèle à
+			// raisonnement répond « http 200 » sans contenu exploitable
+			// quand sa réponse est partie dans le canal de réflexion, et
+			// la variante qui désactive ce canal aboutit là où la première
+			// a échoué. Abandonner au premier échec jetait tout le travail
+			// du tour.
+			lastErr = fmt.Errorf("agent: conclusion après clôture de la boucle (%s, %s): %w", closeReason, attempt.label, err)
+			if logger != nil {
+				logger.WarnContext(ctx, "agent: variante de conclusion en échec",
+					"agent", agentName, "attempt", attempt.label, "reason", closeReason, "error", err)
+			}
+
+			// Une réponse vide trahit le canal de réflexion : la variante
+			// qui le désactive passe devant.
+			orderConclusionFallbacks(attempts, false)
+
+			continue
 		}
 
 		lastHadToolCalls = len(resp.ToolCalls()) > 0
@@ -272,6 +294,10 @@ func concludeToolLoop(ctx context.Context, client llm.ChatCompletionClient, mess
 		}
 
 		orderConclusionFallbacks(attempts, lastHadToolCalls)
+	}
+
+	if lastErr != nil {
+		return toolLoopResult{}, lastErr
 	}
 
 	return toolLoopResult{}, fallbackErr
