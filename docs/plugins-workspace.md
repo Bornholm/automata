@@ -5,7 +5,11 @@ membre envoie une vidéo ou une image par sa messagerie, demande une
 opération dessus (« recadre cette vidéo », « retire le bas de l'image »),
 et reçoit le fichier transformé en pièce jointe de la réponse.
 
-Le travail se fait avec `ffmpeg` et `imagemagick`, dans un bac à sable
+Il en va de même des documents : envoyer un `.docx` et demander une
+correction, faire produire un rapport en PDF, convertir un `.odt`.
+
+Le travail se fait avec `ffmpeg` et `imagemagick` pour les médias, `pandoc`
+et LibreOffice pour les documents, dans un bac à sable
 [LeaSH](https://github.com/Bornholm/leash) — un service séparé, sans accès
 réseau, où chaque membre a son propre répertoire.
 
@@ -114,6 +118,29 @@ sous-agent lui demande de ré-encoder ses sorties sous ~15 Mio.
 Le plugin s'active ensuite par organisation, dans l'onglet Plugins de la
 fiche organisation.
 
+## Documents
+
+La chaîne bureautique tient en trois outils, que le prompt du sous-agent
+enchaîne dans cet ordre :
+
+| Besoin                          | Commande                                       |
+| ------------------------------- | ---------------------------------------------- |
+| Lire un docx, odt ou pdf        | `pandoc rapport.docx -t markdown`, `pdftotext rapport.pdf -` |
+| Écrire ou modifier              | en markdown, puis `pandoc brouillon.md -o rapport.docx` |
+| Produire un PDF                 | `office-convert pdf rapport.docx`              |
+| Vérifier un rendu               | `pdftoppm -png -r 60 -f 1 -l 1 rapport.pdf page` puis `view_file` |
+
+`office-convert` est le point d'entrée LibreOffice fourni par l'image ;
+`soffice` n'est pas autorisé en direct, car invoqué sans garde-fous il écrit
+son profil utilisateur dans le workspace du membre.
+
+**La limite à connaître** : éditer un document reçu passe par une
+conversion en markdown, puis un retour au format d'origine. Le texte
+survit, la mise en page d'un document richement formaté non. Le prompt
+demande à l'agent de le dire plutôt que de dégrader silencieusement le
+document — mais c'est une limite réelle, pas un défaut à corriger par un
+réglage.
+
 ## Le service LeaSH (« toolbox »)
 
 L'image est produite par `Dockerfile.toolbox` du dépôt LeaSH : le serveur
@@ -130,6 +157,15 @@ namespaces :
 --security-opt apparmor=unconfined
 --security-opt systempaths=unconfined
 ```
+
+**Débit** : le limiteur de LeaSH compte par IP cliente (60 requêtes par
+minute par défaut). Automata parle depuis une seule adresse pour tous ses
+membres, et chaque commande ouvre sa propre session MCP : le défaut se
+tarit au milieu d'une tâche un peu longue. L'application est configurée
+avec `LEASH_HTTP_RATE_LIMIT=600/minute` et `LEASH_HTTP_BURST=120` — le
+service n'étant joignable que par Automata sur le réseau interne, ce qui
+borne réellement le travail est ailleurs : sérialisation par workspace,
+`max_duration` de 300 s et quota de 256 Mio.
 
 Sans eux, `bwrap` échoue successivement sur la création du user namespace,
 sur `mount --make-rslave /`, puis sur le montage de `/proc`. Si un

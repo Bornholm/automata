@@ -39,15 +39,35 @@ const e2eSessionSecret = "un-secret-de-session-de-test-32-octets"
 // scriptedClient rejoue une suite d'appels d'outils décidée à l'avance :
 // le but du banc est d'éprouver la plomberie, pas le modèle.
 type scriptedClient struct {
-	mu    sync.Mutex
-	turn  int
-	steps []func(turn int) llm.ChatCompletionResponse
+	mu          sync.Mutex
+	turn        int
+	steps       []func(turn int) llm.ChatCompletionResponse
+	toolOutputs []string
+}
+
+// commandOutputs restitue tout ce que les outils ont renvoyé au modèle
+// simulé : c'est la sortie réelle du bac à sable, la seule preuve que la
+// transformation a eu lieu.
+func commandOutputs(c *scriptedClient) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return append([]string(nil), c.toolOutputs...)
 }
 
 func (c *scriptedClient) ChatCompletion(_ context.Context, funcs ...llm.ChatCompletionOptionFunc) (llm.ChatCompletionResponse, error) {
+	opts := llm.NewChatCompletionOptions(funcs...)
+
 	c.mu.Lock()
 	turn := c.turn
 	c.turn++
+	// Les résultats d'outils reviennent dans les messages du tour suivant :
+	// c'est là que le banc lit ce que le bac à sable a réellement produit.
+	for _, msg := range opts.Messages {
+		if msg.Role() == llm.RoleTool {
+			c.toolOutputs = append(c.toolOutputs, msg.Content())
+		}
+	}
 	c.mu.Unlock()
 
 	if turn >= len(c.steps) {
@@ -330,4 +350,118 @@ func startWorkspacePlugin(t *testing.T) *plugin.Manager {
 	}
 
 	return manager
+}
+
+// TestWorkspacePlugin_DocumentRoundTrip prouve la chaîne bureautique : un
+// document reçu par messagerie est lu, modifié, puis renvoyé dans un autre
+// format — ici un .docx édité et rendu en PDF.
+//
+// Le document de départ est fabriqué par le bac à sable lui-même : le banc
+// n'a pas besoin d'une fixture binaire, et la conversion markdown → docx
+// fait déjà partie de ce qui est éprouvé.
+func TestWorkspacePlugin_DocumentRoundTrip(t *testing.T) {
+	serverURL := os.Getenv("AUTOMATA_E2E_LEASH_URL")
+	apiKey := os.Getenv("AUTOMATA_E2E_LEASH_KEY")
+	if serverURL == "" || apiKey == "" {
+		t.Skip("banc de bout en bout non configuré (AUTOMATA_E2E_LEASH_URL / _KEY)")
+	}
+
+	t.Setenv("LEASH_SERVER_URL", serverURL)
+	t.Setenv("LEASH_API_KEY", apiKey)
+
+	manager := startWorkspacePlugin(t)
+
+	spec := agent.PluginSubAgentSpec{
+		PluginName:       "workspace",
+		SystemPrompt:     "You edit documents in a sandbox.",
+		Description:      "Edits documents.",
+		PermissionDomain: "workspace",
+		SupportsFiles:    true,
+		MaxToolCalls:     25,
+		Tools: []agent.PluginToolSpec{
+			{
+				Name:           "run_command",
+				Description:    "Run a shell script.",
+				SchemaJSON:     `{"type":"object","properties":{"script":{"type":"string"}},"required":["script"]}`,
+				ReadOnly:       true,
+				TimeoutSeconds: 330,
+			},
+		},
+	}
+
+	client := &scriptedClient{steps: []func(int) llm.ChatCompletionResponse{
+		func(int) llm.ChatCompletionResponse {
+			// Le document de départ, tel qu'un utilisateur l'aurait envoyé.
+			return scriptedCall("d1", "run_command",
+				`{"script":"printf '# Compte rendu\n\nRédigé par **Automata**.\n\n- premier point\n- second point\n' > source.md && pandoc source.md -o source.docx && ls -l source.docx"}`)
+		},
+		func(int) llm.ChatCompletionResponse {
+			// Lecture : c'est ainsi qu'un agent prend connaissance d'un docx.
+			return scriptedCall("d2", "run_command",
+				`{"script":"pandoc source.docx -t markdown -o lu.md && cat lu.md"}`)
+		},
+		func(int) llm.ChatCompletionResponse {
+			// Édition puis retour au format d'origine.
+			return scriptedCall("d3", "run_command",
+				`{"script":"sed 's/second point/deuxième point, corrigé/' lu.md > edite.md && pandoc edite.md -o rapport.docx && ls -l rapport.docx"}`)
+		},
+		func(int) llm.ChatCompletionResponse {
+			// Rendu PDF par LibreOffice, le point le plus fragile de la chaîne.
+			return scriptedCall("d4", "run_command",
+				// head -12 et non -5 : pdftotext rend chaque puce sur sa
+				// propre ligne, le texte des points arrive bien plus bas
+				// qu'on ne l'attend en lisant le markdown source.
+				`{"script":"office-convert pdf rapport.docx && pdftotext rapport.pdf - | head -12"}`)
+		},
+		func(int) llm.ChatCompletionResponse {
+			return scriptedCall("d5", "attach_file", `{"path":"rapport.pdf"}`)
+		},
+		func(int) llm.ChatCompletionResponse {
+			return scriptedText("Le rapport corrigé est joint en PDF.")
+		},
+	}}
+
+	subAgent := agent.NewPluginSubAgent(spec, client, pluginCaller{manager}, 0, nil).
+		WithFiles(fileTransfer{manager}, 16<<20)
+
+	result, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID: "workspace",
+		Goal:    "Fix the second bullet and send it back as a PDF",
+		Identity: model.ExecutionIdentity{
+			Trigger:     model.TriggerMessage,
+			PrincipalID: "member-e2e-doc",
+			OrgID:       "atelier-e2e",
+			ChannelKind: model.ChannelPrivate,
+			Scope:       model.ScopePersonal,
+			ScopeID:     "member-e2e-doc",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if len(result.Attachments) != 1 {
+		t.Fatalf("pièces jointes du résultat: got %d, expected 1", len(result.Attachments))
+	}
+
+	out := result.Attachments[0]
+	if out.MimeType != "application/pdf" {
+		t.Fatalf("type de la pièce jointe = %q", out.MimeType)
+	}
+	// Un PDF commence toujours par « %PDF- ».
+	if len(out.Data) < 5 || string(out.Data[:5]) != "%PDF-" {
+		t.Fatal("la sortie n'est pas un PDF")
+	}
+
+	// La correction doit se retrouver dans le document produit : sans cette
+	// vérification, un PDF vide passerait le test.
+	if !strings.Contains(strings.Join(commandOutputs(client), "\n"), "deuxième point, corrigé") {
+		t.Fatal("le texte corrigé n'apparaît pas dans le PDF produit")
+	}
+
+	produced := filepath.Join(t.TempDir(), "rapport.pdf")
+	if err := os.WriteFile(produced, out.Data, 0o600); err != nil {
+		t.Fatalf("écriture du fichier produit: %v", err)
+	}
+	t.Logf("fichier produit: %s (%d octets)", produced, len(out.Data))
 }

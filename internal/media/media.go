@@ -496,12 +496,14 @@ func stripDataURLPrefix(data string) string {
 // usualExtensions fixe l'extension des types les plus courants.
 // mime.ExtensionsByType retourne une liste triée par ordre alphabétique, dont
 // la première entrée est souvent marginale : « .jfif » pour une image JPEG,
-// « .asc » pour du texte brut. Un destinataire humain lit ce nom, et certaines
+// « .asc » pour du texte brut, « .markdown » pour du markdown. Un
+// destinataire humain lit ce nom, et certaines
 // messageries se fient à l'extension pour prévisualiser le fichier.
 var usualExtensions = map[string]string{
-	"image/jpeg": ".jpg",
-	"text/plain": ".txt",
-	"audio/mpeg": ".mp3",
+	"image/jpeg":    ".jpg",
+	"text/plain":    ".txt",
+	"audio/mpeg":    ".mp3",
+	"text/markdown": ".md",
 }
 
 // DefaultFilename est la version exportée de defaultFilename, pour les

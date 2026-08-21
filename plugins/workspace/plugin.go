@@ -40,12 +40,13 @@ func (p *Plugin) Describe(context.Context, *proto.DescribeRequest) (*proto.Plugi
 	return &proto.PluginDescriptor{
 		Name:             "workspace",
 		Version:          "0.1.0",
-		Description:      "Atelier de fichiers : retouche de vidéos et d'images (ffmpeg, imagemagick) dans un bac à sable isolé.",
+		Description:      "Atelier de fichiers : retouche de vidéos et d'images (ffmpeg, imagemagick), édition et conversion de documents (pandoc, LibreOffice) dans un bac à sable isolé.",
 		PermissionDomain: "workspace",
 		SupportsFiles:    true,
 		SubAgent: &proto.SubAgentDescriptor{
-			Description: "edits videos, images and files in a sandboxed workspace with ffmpeg and imagemagick " +
-				"(crop, trim, resize, remove a watermark, convert a format, extract audio)",
+			Description: "edits videos, images and documents in a sandboxed workspace. " +
+				"Videos and images with ffmpeg and imagemagick (crop, trim, resize, remove a watermark, convert a format, extract audio); " +
+				"documents with pandoc and LibreOffice (read or edit a docx or odt, write a report, produce a PDF, convert between formats)",
 			SystemPrompt: workspaceSystemPrompt,
 			// Le travail sur média est exploratoire : inspecter, regarder
 			// une trame, essayer un filtre, vérifier la taille du résultat.
@@ -57,7 +58,7 @@ func (p *Plugin) Describe(context.Context, *proto.DescribeRequest) (*proto.Plugi
 }
 
 // workspaceSystemPrompt part vers le modèle : anglais uniquement.
-const workspaceSystemPrompt = "You are a shell expert working inside an isolated sandbox with ffmpeg and imagemagick available. " +
+const workspaceSystemPrompt = "You are a shell expert working inside an isolated sandbox with ffmpeg, imagemagick, pandoc and LibreOffice available. " +
 	"You have no network access and no tools other than the ones listed.\n\n" +
 	"Your workspace persists between messages for about a day: files you imported or produced earlier are still there. " +
 	"Always call list_files first to see what you already have, and only call import_attachment for a file that is not there yet. " +
@@ -74,6 +75,14 @@ const workspaceSystemPrompt = "You are a shell expert working inside an isolated
 	"5. Always re-encode the output so it stays under about 15 MB — messaging platforms reject anything larger. " +
 	"For video prefer libx264 with -crf 28 and -preset veryfast, scale down if needed, and check the resulting size with ls -l before attaching.\n" +
 	"6. Call attach_file with the path of the result. Do not describe the file afterwards: state briefly what you did.\n\n" +
+	"Working with documents:\n" +
+	"- Read a docx, odt or pdf by converting it first (pandoc report.docx -t markdown, or pdftotext report.pdf -). " +
+	"Never guess what a document contains.\n" +
+	"- Write and edit in markdown, then convert once at the end: pandoc draft.md -o report.docx, " +
+	"or office-convert pdf report.docx for a PDF. office-convert is the LibreOffice entry point and takes the target format first.\n" +
+	"- Editing a document the user sent means converting it to markdown, changing the text, then converting back to its original format. " +
+	"The layout of a richly formatted document will not survive that round trip: say so plainly rather than silently degrading it.\n" +
+	"- To check a PDF before sending it, render a page and look at it: pdftoppm -png -r 60 -f 1 -l 1 report.pdf page, then view_file on page-1.png.\n\n" +
 	"Produce the file: finishing the job matters more than perfecting it. If you are running out of steps, " +
 	"apply the best transformation you have and attach the result rather than reporting what you would have done. " +
 	"If a command fails, read the error, fix the command and retry once or twice. " +
