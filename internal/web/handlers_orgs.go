@@ -769,17 +769,22 @@ func (s *Server) handleOrgCustomization(w http.ResponseWriter, r *http.Request) 
 	http.Redirect(w, r, "/admin/orgs/"+orgID+"?tab=customization&saved=1", http.StatusFound)
 }
 
-// handleOrgDelete supprime une organisation restée vide.
+// handleOrgDelete supprime une organisation et tout ce qui n'existe que
+// par elle.
 //
 // La confirmation demande de retaper le nom : la liste d'administration
 // peut présenter deux organisations homonymes, et se tromper de ligne
-// n'aurait aucun recours.
+// n'aurait aucun recours — l'effacement est complet et définitif.
 func (s *Server) handleOrgDelete(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	typed := strings.TrimSpace(r.PostFormValue("confirm_name"))
 
+	if s.privacy == nil {
+		s.redirectOrgError(w, r, orgID, "La suppression n'est pas disponible sur cette instance.")
+		return
+	}
+
 	var (
-		blockers []persistence.OrgDeletionBlocker
 		mismatch bool
 		missing  bool
 	)
@@ -793,21 +798,11 @@ func (s *Server) handleOrgDelete(w http.ResponseWriter, r *http.Request) {
 			missing = true
 			return nil
 		}
-
 		if !strings.EqualFold(typed, strings.TrimSpace(org.DisplayName)) {
 			mismatch = true
-			return nil
 		}
 
-		blockers, err = s.orgs.DeletionBlockers(r.Context(), tx, orgID)
-		if err != nil {
-			return err
-		}
-		if len(blockers) > 0 {
-			return nil
-		}
-
-		return s.orgs.Delete(r.Context(), tx, orgID)
+		return nil
 	})
 	if !ok {
 		return
@@ -817,23 +812,33 @@ func (s *Server) handleOrgDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-
-	switch {
-	case mismatch:
+	if mismatch {
 		s.redirectOrgError(w, r, orgID, "Le nom saisi ne correspond pas : rien n'a été supprimé.")
-		return
-	case len(blockers) > 0:
-		labels := make([]string, 0, len(blockers))
-		for _, blocker := range blockers {
-			labels = append(labels, blocker.Label())
-		}
-		s.redirectOrgError(w, r, orgID,
-			"Cette organisation ne peut pas être supprimée : "+strings.Join(labels, ", ")+
-				". Une organisation qui a vécu garde un historique dont une partie vit hors de cette base.")
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: organisation supprimée", "org_id", orgID)
+	// La suppression touche la base mémoire autant que la base
+	// applicative : elle passe par le service de confidentialité, qui
+	// possède les deux.
+	report, err := s.privacy.DeleteOrganization(r.Context(), orgID)
+	if err != nil {
+		s.logger.ErrorContext(r.Context(), "web: échec de la suppression d'une organisation", "org_id", orgID, "error", err)
+		s.redirectOrgError(w, r, orgID, "La suppression a échoué. Rien n'a été supprimé, ou seulement une partie : consultez les journaux.")
+		return
+	}
+
+	// Compteurs seulement : ce qui a été effacé ne se journalise pas.
+	s.logger.InfoContext(r.Context(), "web: organisation supprimée",
+		"org_id", orgID,
+		"members", report.Members,
+		"orphan_members", report.OrphanMembers,
+		"channels", report.Channels,
+		"conversations", report.Conversations,
+		"messages", report.Messages,
+		"reminders", report.Reminders,
+		"memories", report.Memories,
+	)
+
 	http.Redirect(w, r, "/admin/orgs?deleted="+url.QueryEscape(orgID), http.StatusFound)
 }
 

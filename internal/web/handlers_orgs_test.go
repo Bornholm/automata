@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/privacy"
 )
 
 // Deux organisations de même nom sont indiscernables dans toutes les
@@ -78,29 +79,44 @@ func TestOrgSubtitleCountsBoundChannels(t *testing.T) {
 	}
 }
 
-// Une organisation créée en double s'efface ; une organisation qui a
-// vécu, non — son historique déborde de cette base (souvenirs, pièces
-// jointes, relevés de consommation).
+// La suppression d'une organisation emporte tout ce qui n'existe que par
+// elle, canaux et membres compris ; le nom se retape pour confirmer.
 func TestOrgDelete(t *testing.T) {
 	server, ts, client := testServer(t)
+	server.WithPrivacy(privacy.New(server.db, nil, nil))
 	login(t, ts, client)
 
-	createOrg := func(name string) string {
-		if _, err := client.Get(ts.URL + "/admin/orgs/new"); err != nil {
-			t.Fatalf("GET création: %v", err)
+	if _, err := client.Get(ts.URL + "/admin/orgs/new"); err != nil {
+		t.Fatalf("GET création: %v", err)
+	}
+	resp, err := client.PostForm(ts.URL+"/admin/orgs", url.Values{
+		"display_name": {"Doublon"},
+		"csrf_token":   {csrfFrom(t, client, ts.URL)},
+	})
+	if err != nil {
+		t.Fatalf("POST création: %v", err)
+	}
+	resp.Body.Close()
+	orgID := path.Base(resp.Request.URL.Path)
+
+	now := server.now()
+	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		if err := server.members.Insert(context.Background(), tx, persistence.Member{
+			ID: "m-test", OrgID: orgID, DisplayName: "Témoin",
+			Role: persistence.MemberRoleMember, CreatedAt: now, UpdatedAt: now,
+		}, false); err != nil {
+			return err
 		}
-		resp, err := client.PostForm(ts.URL+"/admin/orgs", url.Values{
-			"display_name": {name},
-			"csrf_token":   {csrfFrom(t, client, ts.URL)},
+		return server.bindings.Upsert(context.Background(), tx, persistence.ChannelBinding{
+			Provider: "whatsapp", ChannelID: "120000000000000001@g.us", OrgID: orgID,
+			Kind: "group", Scope: "group", DisplayName: "Canal du doublon", CreatedAt: now,
 		})
-		if err != nil {
-			t.Fatalf("POST création: %v", err)
-		}
-		defer resp.Body.Close()
-		return path.Base(resp.Request.URL.Path)
+	}); err != nil {
+		t.Fatalf("préparation: %v", err)
 	}
 
-	deleteOrg := func(orgID, typed string) *http.Response {
+	deleteOrg := func(typed string) {
+		t.Helper()
 		resp, err := client.PostForm(ts.URL+"/admin/orgs/"+orgID+"/delete", url.Values{
 			"confirm_name": {typed},
 			"csrf_token":   {csrfFrom(t, client, ts.URL)},
@@ -108,73 +124,28 @@ func TestOrgDelete(t *testing.T) {
 		if err != nil {
 			t.Fatalf("POST suppression: %v", err)
 		}
-		return resp
+		resp.Body.Close()
 	}
-
-	orgID := createOrg("Doublon")
 
 	// Un nom mal retapé ne supprime rien.
-	resp := deleteOrg(orgID, "Autre chose")
-	resp.Body.Close()
+	deleteOrg("Autre chose")
+	if !orgExists(t, server, orgID) {
+		t.Fatal("l'organisation a été supprimée malgré un nom erroné")
+	}
+
+	// Le bon nom emporte l'organisation, ses membres et ses canaux.
+	deleteOrg("doublon")
+	if orgExists(t, server, orgID) {
+		t.Error("l'organisation aurait dû être supprimée")
+	}
+
 	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
-		_, found, err := server.orgs.FindByID(context.Background(), tx, orgID)
+		members, err := server.members.ListByOrg(context.Background(), tx, orgID)
 		if err != nil {
 			return err
 		}
-		if !found {
-			t.Error("l'organisation a été supprimée malgré un nom erroné")
-		}
-		return nil
-	}); err != nil {
-		t.Fatalf("vérification: %v", err)
-	}
-
-	// Un membre rattaché retient la suppression.
-	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
-		return server.members.Insert(context.Background(), tx, persistence.Member{
-			ID: "m-test", OrgID: orgID, DisplayName: "Témoin",
-			Role: persistence.MemberRoleMember, CreatedAt: server.now(), UpdatedAt: server.now(),
-		}, false)
-	}); err != nil {
-		t.Fatalf("insertion du membre: %v", err)
-	}
-
-	resp = deleteOrg(orgID, "Doublon")
-	body, _ := io.ReadAll(resp.Body)
-	resp.Body.Close()
-	if !strings.Contains(string(body), "membre rattaché") {
-		t.Error("le refus devrait nommer ce qui retient la suppression")
-	}
-
-	// Un canal rattaché ne retient rien : la liaison est un pointeur, pas
-	// un contenu, et elle part avec l'organisation.
-	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
-		return server.bindings.Upsert(context.Background(), tx, persistence.ChannelBinding{
-			Provider: "whatsapp", ChannelID: "120000000000000001@g.us", OrgID: orgID,
-			Kind: "group", Scope: "group", DisplayName: "Canal du doublon", CreatedAt: server.now(),
-		})
-	}); err != nil {
-		t.Fatalf("liaison du canal: %v", err)
-	}
-
-	// Le membre retiré, la suppression aboutit.
-	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(context.Background(), `DELETE FROM members WHERE org_id = ?`, orgID)
-		return err
-	}); err != nil {
-		t.Fatalf("retrait du membre: %v", err)
-	}
-
-	resp = deleteOrg(orgID, "doublon")
-	resp.Body.Close()
-
-	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
-		_, found, err := server.orgs.FindByID(context.Background(), tx, orgID)
-		if err != nil {
-			return err
-		}
-		if found {
-			t.Error("l'organisation vide aurait dû être supprimée")
+		if len(members) != 0 {
+			t.Errorf("%d membre(s) survivent à l'organisation", len(members))
 		}
 
 		bound, err := server.bindings.ListByOrg(context.Background(), tx, orgID)
@@ -187,8 +158,24 @@ func TestOrgDelete(t *testing.T) {
 
 		return nil
 	}); err != nil {
-		t.Fatalf("vérification finale: %v", err)
+		t.Fatalf("vérification: %v", err)
 	}
+}
+
+// orgExists dit si l'organisation est toujours en base.
+func orgExists(t *testing.T, server *Server, orgID string) bool {
+	t.Helper()
+
+	var found bool
+	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		var err error
+		_, found, err = server.orgs.FindByID(context.Background(), tx, orgID)
+		return err
+	}); err != nil {
+		t.Fatalf("lecture de l'organisation: %v", err)
+	}
+
+	return found
 }
 
 // La fiche d'une organisation compte et liste ses canaux rattachés en

@@ -224,6 +224,41 @@ qu'un récapitulatif opérationnel, pas une redocumentation complète (voir
   commande à exécuter pour diagnostiquer un plan bloqué, une confirmation
   qui semble ne jamais aboutir, ou un schedule qui ne se déclenche pas.
 
+## 6.2 Supprimer une organisation
+
+Fiche de l'organisation → onglet **Personnalisation** → bloc rouge en bas.
+Le nom de l'organisation se retape pour confirmer : deux organisations
+peuvent être homonymes, et l'effacement est sans retour.
+
+Ce que la suppression emporte :
+
+- les membres de l'organisation, avec leurs liens de profil et leurs
+  jetons ;
+- ses canaux rattachés — les conversations concernées redeviennent
+  inconnues de l'instance ;
+- ses conversations, avec messages, résumés, pièces jointes et plans
+  d'actions ;
+- ses rappels, ses tâches planifiées et ses événements d'audit ;
+- ses réglages, ses activations de plugins et leurs secrets ;
+- ses souvenirs, dans la base mémoire — personnels comme collectifs.
+
+Ce qui reste : **les relevés de consommation et les mouvements de
+portefeuille**, dissociés de la personne et de la conversation. Ce sont
+des pièces comptables ; une recette ou un coût constaté ne s'efface pas
+parce qu'un client s'en va.
+
+Un membre n'appartient qu'à une organisation : sa ligne lui est propre.
+Une personne membre de deux organisations avec le même compte de
+messagerie garde donc l'autre profil intact — c'est le journal
+(`orphan_members`) qui dit combien de personnes ont perdu là leur dernier
+rattachement.
+
+La suppression touche deux bases (applicative et mémoire) et n'est pas
+transactionnelle entre elles : les souvenirs partent en premier,
+délibérément. Si la suite échoue, l'organisation survit sans sa mémoire —
+état réparable, alors que l'inverse laisserait des souvenirs sans
+propriétaire.
+
 ## 7. Diagnostiquer une panne sans lire les conversations privées
 
 Ordre recommandé, du plus rapide au plus détaillé :

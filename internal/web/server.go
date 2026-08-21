@@ -93,6 +93,7 @@ type Server struct {
 type PrivacyService interface {
 	Export(ctx context.Context, memberID string) (privacy.Export, error)
 	Delete(ctx context.Context, memberID string) (privacy.DeletionReport, error)
+	DeleteOrganization(ctx context.Context, orgID string) (privacy.OrgDeletionReport, error)
 }
 
 type PlatformManager interface {
