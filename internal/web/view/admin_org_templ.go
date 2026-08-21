@@ -1414,7 +1414,7 @@ func orgDangerZone(page OrgPage) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "\"><div class=\"text-[15px] font-semibold text-crit-deep\">Supprimer cette organisation</div><div class=\"mt-1 text-sm leading-normal text-text-2\">Possible tant qu'elle est restée vide — aucun membre, aucun canal lié, aucune conversation, aucune consommation. Passé ce stade, son historique ne tient plus dans cette seule base et la suppression est refusée.</div><label class=\"mt-3.5 block max-w-md\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Pour confirmer, écrivez le nom de l'organisation</span> <input type=\"text\" name=\"confirm_name\" required autocomplete=\"off\" placeholder=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 116, "\"><div class=\"text-[15px] font-semibold text-crit-deep\">Supprimer cette organisation</div><div class=\"mt-1 text-sm leading-normal text-text-2\">Possible tant qu'elle est restée vide — aucun membre, aucune conversation, aucune consommation. Ses canaux rattachés partent avec elle : les conversations liées redeviennent inconnues de l'instance. Passé ce stade, son historique ne tient plus dans cette seule base et la suppression est refusée.</div><label class=\"mt-3.5 block max-w-md\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Pour confirmer, écrivez le nom de l'organisation</span> <input type=\"text\" name=\"confirm_name\" required autocomplete=\"off\" placeholder=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

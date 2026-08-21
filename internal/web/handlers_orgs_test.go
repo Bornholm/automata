@@ -146,6 +146,17 @@ func TestOrgDelete(t *testing.T) {
 		t.Error("le refus devrait nommer ce qui retient la suppression")
 	}
 
+	// Un canal rattaché ne retient rien : la liaison est un pointeur, pas
+	// un contenu, et elle part avec l'organisation.
+	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		return server.bindings.Upsert(context.Background(), tx, persistence.ChannelBinding{
+			Provider: "whatsapp", ChannelID: "120000000000000001@g.us", OrgID: orgID,
+			Kind: "group", Scope: "group", DisplayName: "Canal du doublon", CreatedAt: server.now(),
+		})
+	}); err != nil {
+		t.Fatalf("liaison du canal: %v", err)
+	}
+
 	// Le membre retiré, la suppression aboutit.
 	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(context.Background(), `DELETE FROM members WHERE org_id = ?`, orgID)
@@ -165,6 +176,15 @@ func TestOrgDelete(t *testing.T) {
 		if found {
 			t.Error("l'organisation vide aurait dû être supprimée")
 		}
+
+		bound, err := server.bindings.ListByOrg(context.Background(), tx, orgID)
+		if err != nil {
+			return err
+		}
+		if len(bound) != 0 {
+			t.Errorf("%d canal(aux) survivent à l'organisation", len(bound))
+		}
+
 		return nil
 	}); err != nil {
 		t.Fatalf("vérification finale: %v", err)

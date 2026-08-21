@@ -8,7 +8,7 @@ import (
 // OrgDeletionBlocker nomme ce qui retient la suppression d'une
 // organisation.
 type OrgDeletionBlocker struct {
-	// Kind : members | channels | conversations | usage.
+	// Kind : members | conversations | usage.
 	Kind  string
 	Count int64
 }
@@ -18,8 +18,6 @@ func (b OrgDeletionBlocker) Label() string {
 	switch b.Kind {
 	case "members":
 		return pluralize(b.Count, "%d membre rattaché", "%d membres rattachés")
-	case "channels":
-		return pluralize(b.Count, "%d canal lié", "%d canaux liés")
 	case "conversations":
 		return pluralize(b.Count, "%d conversation", "%d conversations")
 	case "usage":
@@ -51,7 +49,6 @@ func (r *OrganizationRepository) DeletionBlockers(ctx context.Context, q Querier
 		query string
 	}{
 		{"members", `SELECT COUNT(*) FROM members WHERE org_id = ?`},
-		{"channels", `SELECT COUNT(*) FROM channel_bindings WHERE org_id = ?`},
 		{"conversations", `SELECT COUNT(*) FROM conversations WHERE org_id = ?`},
 		{"usage", `SELECT COUNT(*) FROM usage_records WHERE org_id = ?`},
 	}
@@ -71,11 +68,17 @@ func (r *OrganizationRepository) DeletionBlockers(ctx context.Context, q Querier
 }
 
 // Delete supprime une organisation restée vide, avec ce qui n'a de sens
-// que par elle : son livre de comptes, ses jetons de liaison, ses
-// réglages et ses activations de plugins. L'appelant doit avoir vérifié
-// DeletionBlockers dans la même transaction.
+// que par elle : ses canaux rattachés, son livre de comptes, ses jetons
+// de liaison, ses réglages et ses activations de plugins. L'appelant
+// doit avoir vérifié DeletionBlockers dans la même transaction.
+//
+// Un canal rattaché ne retient pas la suppression : une liaison est un
+// pointeur, pas un contenu. Elle disparaît avec l'organisation, et la
+// conversation redevient simplement inconnue de l'instance — c'est
+// exactement l'état d'avant le jeton.
 func (r *OrganizationRepository) Delete(ctx context.Context, q Querier, orgID string) error {
 	statements := []string{
+		`DELETE FROM channel_bindings WHERE org_id = ?`,
 		`DELETE FROM wallet_entries WHERE org_id = ?`,
 		`DELETE FROM link_tokens WHERE org_id = ?`,
 		`DELETE FROM org_settings WHERE org_id = ?`,
