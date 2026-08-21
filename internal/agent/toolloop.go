@@ -348,7 +348,28 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 		// qu'ils n'avaient pas le droit d'exécuter.
 		resp, err := client.ChatCompletion(ctx, llm.WithMessages(messages...), llm.WithTools(tools...), llm.WithToolChoice(llm.ToolChoiceAuto))
 		if err != nil {
-			return toolLoopResult{}, fmt.Errorf("agent: appel du client llm: %w", err)
+			// Sans matière, il n'y a rien à sauver : l'erreur remonte.
+			if len(toolResults) == 0 {
+				return toolLoopResult{}, fmt.Errorf("agent: appel du client llm: %w", err)
+			}
+
+			// Avec de la matière, la jeter serait le pire résultat : les
+			// outils ont déjà tourné, le fichier est peut-être déjà
+			// produit. On tente de conclure — les variantes de conclusion
+			// sont plus légères que l'appel qui vient d'échouer (outils
+			// interdits, raisonnement désactivé), et l'une d'elles aboutit
+			// souvent là où celui-ci a échoué.
+			//
+			// Vu en production : une passerelle qui répond « 200 » avec un
+			// corps vide après 48 s emportait un tour de six appels
+			// d'outils.
+			if logger != nil {
+				logger.WarnContext(ctx, "agent: appel du modèle en échec, conclusion tentée",
+					"agent", agentName, "iterations", iteration+1, "tool_calls", totalCalls, "error", err)
+			}
+
+			return concludeToolLoop(ctx, client, messages, tools, "appel du modèle en échec", fmt.Errorf("agent: appel du client llm: %w", err),
+				iteration+1, totalCalls, toolResults, attachments, logger, agentName, true)
 		}
 
 		toolCalls := resp.ToolCalls()

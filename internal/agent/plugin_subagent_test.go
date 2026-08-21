@@ -888,3 +888,69 @@ func TestPluginSubAgent_ConclusionFallsBackAfterAFailedAttempt(t *testing.T) {
 		t.Fatalf("la variante suivante devait être tentée après l'échec, %d appels", completions)
 	}
 }
+
+// Un appel de modèle qui échoue EN COURS de boucle ne doit pas emporter le
+// travail déjà fait : les outils ont tourné, le fichier est peut-être déjà
+// produit. Le tour se conclut avec la matière acquise.
+func TestPluginSubAgent_ModelFailureMidLoopStillConcludes(t *testing.T) {
+	transfer := &fakeFileTransfer{
+		getFilename: "sortie.jpg",
+		getMime:     "image/jpeg",
+		getData:     []byte("octets du resultat"),
+	}
+	caller := &fakePluginCaller{result: "ok"}
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			switch turn {
+			case 0:
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "attach_file", `{"path":"sortie.jpg"}`)), nil
+			case 1:
+				// La passerelle répond 200 avec un corps vide.
+				return nil, errors.New("http 200: ")
+			default:
+				return scriptedFinalResponse("J'ai masqué le logo, le fichier est joint."), nil
+			}
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20)
+
+	result, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Remove the logo",
+		Identity: pluginTestIdentity(),
+	})
+	if err != nil {
+		t.Fatalf("le tour devait se conclure malgré l'échec: %v", err)
+	}
+	if result.Summary == "" {
+		t.Fatal("la conclusion ne doit pas être vide")
+	}
+	// Le fichier produit doit survivre à l'incident : c'est tout l'enjeu.
+	if len(result.Attachments) != 1 || result.Attachments[0].Filename != "sortie.jpg" {
+		t.Fatalf("la pièce jointe déjà produite doit être conservée: %+v", result.Attachments)
+	}
+}
+
+// Sans matière, il n'y a rien à sauver : l'erreur remonte telle quelle.
+func TestPluginSubAgent_ModelFailureWithoutMaterialSurfaces(t *testing.T) {
+	caller := &fakePluginCaller{result: "ok"}
+
+	client := &fakeCompletionClient{
+		responseFunc: func(int, *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			return nil, errors.New("http 500: fournisseur indisponible")
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(testPluginSpec(), client, caller, 0, nil)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "email",
+		Goal:     "Read the mail",
+		Identity: pluginTestIdentity(),
+	}); err == nil {
+		t.Fatal("une panne sans matière doit remonter")
+	}
+}
