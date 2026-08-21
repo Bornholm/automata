@@ -224,7 +224,19 @@ qu'un récapitulatif opérationnel, pas une redocumentation complète (voir
   commande à exécuter pour diagnostiquer un plan bloqué, une confirmation
   qui semble ne jamais aboutir, ou un schedule qui ne se déclenche pas.
 
-## 6.2 Supprimer une organisation
+## 6.2 Liens de profil et aperçus de messagerie
+
+Un lien de profil ne se consomme pas à la lecture : la page qu'il ouvre
+présente un bouton **« Ouvrir mon profil »**, et c'est ce POST qui grille
+le lien et ouvre la session.
+
+C'est délibéré. Les messageries préchargent les adresses qu'on y colle
+pour en afficher un aperçu — Rocket.Chat, Slack, WhatsApp ouvrent le lien
+avant tout humain. Un lien à usage unique consommé par un GET arrivait
+donc déjà mort chez son destinataire, qui n'y lisait que « Ce lien a déjà
+servi ». Aucun robot d'aperçu n'émet de POST.
+
+## 6.3 Supprimer une organisation
 
 Fiche de l'organisation → onglet **Personnalisation** → bloc rouge en bas.
 Le nom de l'organisation se retape pour confirmer : deux organisations

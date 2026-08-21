@@ -74,9 +74,7 @@ func TestPluginProxy_InjectsContractAndStripsCookies(t *testing.T) {
 	linkPath := seedPluginProfile(t, server)
 
 	// Ouvre la session de profil puis l'interface du plugin.
-	if _, err := client.Get(ts.URL + linkPath); err != nil {
-		t.Fatalf("ouverture du lien: %v", err)
-	}
+	openProfileLink(t, ts, client, linkPath).Body.Close()
 	resp, err := client.Get(ts.URL + linkPath + "/plugins/echo/ui/settings")
 	if err != nil {
 		t.Fatalf("GET interface: %v", err)
@@ -126,9 +124,8 @@ func TestPluginProxy_HiddenWhenInactive(t *testing.T) {
 	seedMember(t, server, persistence.Member{ID: "zoe", OrgID: "org-b", DisplayName: "Zoé", Role: "member"})
 	linkPath := createProfileLink(t, server, "zoe", 15*time.Minute)
 
-	if _, err := client.Get(ts.URL + linkPath); err != nil {
-		t.Fatalf("ouverture du lien: %v", err)
-	}
+	openProfileLink(t, ts, client, linkPath).Body.Close()
+
 	resp, err := client.Get(ts.URL + linkPath + "/plugins/echo/ui/")
 	if err != nil {
 		t.Fatalf("GET interface: %v", err)

@@ -72,7 +72,27 @@ func (s *Server) resolveProfile(w http.ResponseWriter, r *http.Request) (persist
 		return persistence.Member{}, 0, false
 	}
 
-	// Première ouverture : consommation atomique.
+	// Le lien est intact. Le consommer ici le griller: les messageries
+	// préchargent les adresses qu'on y colle pour en afficher un aperçu,
+	// et ce robot arriverait avant la personne. L'ouverture demande donc
+	// un geste — un POST, que nul aperçu n'émet.
+	if r.Method != http.MethodPost || r.URL.Path != "/p/"+segment+"/open" {
+		member, exists, err := s.findMember(r, link.MemberID)
+		if err != nil || !exists {
+			s.logger.ErrorContext(r.Context(), "web: lien de profil vers un membre introuvable", "link_id", linkID)
+			s.render(w, r, http.StatusInternalServerError, view.ProfileLinkState(view.LinkStatePage{State: "error", Ref: linkID}))
+			return persistence.Member{}, 0, false
+		}
+
+		s.render(w, r, http.StatusOK, view.ProfileLinkOpen(view.LinkOpenPage{
+			LinkID:    segment,
+			CSRFToken: s.csrfToken(w, r),
+			Name:      firstName(member.DisplayName),
+		}))
+		return persistence.Member{}, 0, false
+	}
+
+	// Ouverture demandée : consommation atomique.
 	consumed := false
 	ok = s.withTx(w, r, func(tx *sql.Tx) error {
 		var err error
@@ -504,4 +524,23 @@ func formatEuros(amount float64) string {
 		return fmt.Sprintf("%d €", int64(amount))
 	}
 	return strings.Replace(fmt.Sprintf("%.2f €", amount), ".", ",", 1)
+}
+
+// firstName ne garde que le premier mot d'un nom affiché : la page
+// d'ouverture salue, elle n'établit pas une identité.
+func firstName(displayName string) string {
+	first, _, _ := strings.Cut(strings.TrimSpace(displayName), " ")
+
+	return first
+}
+
+// handleProfileOpen consomme le lien et ouvre la session, puis renvoie
+// sur le profil. Séparé du GET pour que le préchargement d'un aperçu de
+// messagerie ne grille pas le lien.
+func (s *Server) handleProfileOpen(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := s.resolveProfile(w, r); !ok {
+		return
+	}
+
+	http.Redirect(w, r, "/p/"+r.PathValue("link"), http.StatusFound)
 }

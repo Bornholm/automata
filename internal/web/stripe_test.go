@@ -151,6 +151,8 @@ func TestCheckout_ReturnLinkSurvivesTheOriginalLink(t *testing.T) {
 	seedMember(t, server, persistence.Member{ID: "cam", OrgID: "org-a", DisplayName: "Camille", Role: "member"})
 
 	path := createProfileLink(t, server, "cam", 15*time.Minute)
+	openProfileLink(t, ts, client, path).Body.Close()
+
 	if _, err := client.Get(ts.URL + path + "/credits"); err != nil {
 		t.Fatalf("GET crédits: %v", err)
 	}

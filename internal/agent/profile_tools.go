@@ -58,9 +58,9 @@ func (t ProfileTools) newOpenProfileLinkTool(identity model.ExecutionIdentity) l
 		"open_profile_link",
 		"Give the user a private link to their own profile page, where they can manage their recovery email, "+
 			"see their credit balance and top it up. Use it whenever they ask about their account, their credits, "+
-			"paying, an invoice, or say the service seems paused. The link is single-use and expires in 15 minutes: "+
-			"generate a fresh one every time, never repeat an old one. It opens their own profile only — never "+
-			"someone else's, and never an administration page.",
+			"paying, an invoice, or say the service seems paused. The link expires in 15 minutes and opens once, "+
+			"on the button the page shows: generate a fresh one every time, never repeat an old one. It opens "+
+			"their own profile only — never someone else's, and never an administration page.",
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			url, ok, err := t.Generator.GenerateProfileLink(ctx, string(identity.OrgID), string(identity.PrincipalID))
@@ -73,8 +73,8 @@ func (t ProfileTools) newOpenProfileLinkTool(identity model.ExecutionIdentity) l
 
 			t.Metrics.IncProfileLink()
 
-			return llm.NewToolResult("Private profile link, valid 15 minutes, single use — give it to the user as-is, " +
-				"without altering it: " + url), nil
+			return llm.NewToolResult("Private profile link, valid 15 minutes, opens once on the page's button — " +
+				"give it to the user as-is, without altering it: " + url), nil
 		},
 	)
 }

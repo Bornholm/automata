@@ -394,6 +394,41 @@ templ ProfileCredits(page CreditsPage) {
 
 // --- PRO-90 — États de lien ---
 
+// LinkOpenPage est le seuil d'un lien encore intact : le visiteur
+// l'ouvre lui-même, d'un clic.
+type LinkOpenPage struct {
+	LinkID    string
+	CSRFToken string
+	// Name : prénom de la personne, pour qu'elle reconnaisse son lien.
+	Name string
+}
+
+// ProfileLinkOpen demande une action avant de consommer le lien.
+//
+// Les messageries préchargent les liens qu'on y colle pour en afficher un
+// aperçu : Rocket.Chat, Slack ou WhatsApp ouvrent l'adresse avant tout
+// humain. Un lien à usage unique consommé par un GET serait donc grillé
+// avant d'avoir servi. Le clic sur ce bouton — un POST, que nul robot
+// d'aperçu n'émet — est ce qui l'ouvre vraiment.
+templ ProfileLinkOpen(page LinkOpenPage) {
+	@ProfileStateLayout("Votre profil — Automata") {
+		@Logo("size-11 rounded-xl", "text-[21px]")
+		<div>
+			if page.Name != "" {
+				<h1 class="text-[27px] font-semibold leading-tight tracking-[-.015em] text-ink">Bonjour { page.Name }</h1>
+			} else {
+				<h1 class="text-[27px] font-semibold leading-tight tracking-[-.015em] text-ink">Votre profil</h1>
+			}
+			<p class="mt-2.5 text-base leading-relaxed text-text-3">Vos crédits, votre adresse de récupération et vos données personnelles. La page reste ouverte une quinzaine de minutes.</p>
+		</div>
+		<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/open") }>
+			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+			<button type="submit" class="h-12 w-full rounded-[10px] bg-brand text-base font-semibold text-white hover:bg-brand-strong">Ouvrir mon profil</button>
+		</form>
+		<div class="text-sm text-text-4">Ce lien ne s'ouvre qu'une fois, et n'appartient qu'à vous : ne le transmettez à personne.</div>
+	}
+}
+
 // LinkStatePage : expired | used | error.
 type LinkStatePage struct {
 	State string

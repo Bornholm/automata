@@ -351,13 +351,21 @@ func TestProfileLink_SingleUseAcrossClients(t *testing.T) {
 
 	path := createProfileLink(t, server, "cam", 15*time.Minute)
 
+	// Un aperçu de messagerie précharge le lien : il ne doit rien
+	// consommer, sans quoi la personne trouverait son lien déjà servi.
+	preview := &http.Client{}
+	previewResp, err := preview.Get(ts.URL + path)
+	if err != nil {
+		t.Fatalf("GET aperçu: %v", err)
+	}
+	if previewHTML := body(t, previewResp); previewResp.StatusCode != http.StatusOK || !strings.Contains(previewHTML, "Ouvrir mon profil") {
+		t.Fatalf("aperçu attendu sur la page d'ouverture, statut %d", previewResp.StatusCode)
+	}
+
 	// Premier client : ouverture réussie.
 	jar1, _ := cookiejar.New(nil)
 	client1 := &http.Client{Jar: jar1}
-	resp, err := client1.Get(ts.URL + path)
-	if err != nil {
-		t.Fatalf("GET lien: %v", err)
-	}
+	resp := openProfileLink(t, ts, client1, path)
 	html := body(t, resp)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(html, "Votre profil") {
 		t.Fatalf("première ouverture attendue en 200 avec la page profil, statut %d", resp.StatusCode)
@@ -376,11 +384,9 @@ func TestProfileLink_SingleUseAcrossClients(t *testing.T) {
 	}
 
 	// Un autre client (sans cookie) rejoue le lien : déjà servi.
-	client2 := &http.Client{}
-	resp3, err := client2.Get(ts.URL + path)
-	if err != nil {
-		t.Fatalf("GET relecture: %v", err)
-	}
+	jar2, _ := cookiejar.New(nil)
+	client2 := &http.Client{Jar: jar2}
+	resp3 := openProfileLink(t, ts, client2, path)
 	if html3 := body(t, resp3); resp3.StatusCode != http.StatusGone || !strings.Contains(html3, "Ce lien a déjà servi") {
 		t.Fatalf("relecture attendue en 410 « déjà servi », statut %d", resp3.StatusCode)
 	}
@@ -408,6 +414,8 @@ func TestProfileCredits_OfferedHidesPurchase(t *testing.T) {
 	seedMember(t, server, persistence.Member{ID: "denise", OrgID: "offerte", DisplayName: "Denise", Role: "member"})
 
 	path := createProfileLink(t, server, "denise", 15*time.Minute)
+	openProfileLink(t, ts, client, path).Body.Close()
+
 	resp, err := client.Get(ts.URL + path + "/credits")
 	if err != nil {
 		t.Fatalf("GET crédits: %v", err)
@@ -428,6 +436,8 @@ func TestProfileCredits_EmptyBalanceShowsPause(t *testing.T) {
 	seedMember(t, server, persistence.Member{ID: "marc", OrgID: "vide", DisplayName: "Marc", Role: "member"})
 
 	path := createProfileLink(t, server, "marc", 15*time.Minute)
+	openProfileLink(t, ts, client, path).Body.Close()
+
 	resp, err := client.Get(ts.URL + path + "/credits")
 	if err != nil {
 		t.Fatalf("GET crédits: %v", err)
@@ -464,4 +474,31 @@ func TestOrgGrant_AppendsLedgerEntry(t *testing.T) {
 	if balance != 800 {
 		t.Fatalf("solde attendu 800, obtenu %d", balance)
 	}
+}
+
+// openProfileLink franchit la page d'ouverture : le lien ne se consomme
+// que sur un POST, pour qu'un aperçu de messagerie ne le grille pas.
+func openProfileLink(t *testing.T, ts *httptest.Server, client *http.Client, linkPath string) *http.Response {
+	t.Helper()
+
+	resp, err := client.Get(ts.URL + linkPath)
+	if err != nil {
+		t.Fatalf("GET lien: %v", err)
+	}
+
+	// Lien déjà consommé, expiré ou inconnu : la page d'ouverture n'a pas
+	// été rendue, le statut porte la réponse — et son corps la nomme.
+	if resp.StatusCode != http.StatusOK {
+		return resp
+	}
+	resp.Body.Close()
+
+	resp, err = client.PostForm(ts.URL+linkPath+"/open", url.Values{
+		"csrf_token": {csrfFrom(t, client, ts.URL)},
+	})
+	if err != nil {
+		t.Fatalf("POST ouverture: %v", err)
+	}
+
+	return resp
 }
