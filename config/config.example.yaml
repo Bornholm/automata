@@ -182,6 +182,11 @@ agents:
       - agenda
       - research
       - todo
+    # Ouvre à l'interlocuteur un lien temporaire vers sa page de profil
+    # (crédits, paiement, données personnelles) : sans lui, personne ne
+    # peut obtenir son propre lien depuis une conversation. À activer dès
+    # que web.enabled l'est.
+    profile_link: true
     memory:
       search: true
       remember: true

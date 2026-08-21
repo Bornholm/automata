@@ -1,9 +1,12 @@
 package web
 
 import (
+	"context"
+	"database/sql"
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"testing"
 
@@ -72,5 +75,98 @@ func TestOrgSubtitleCountsBoundChannels(t *testing.T) {
 	subtitle = server.orgSubtitle("atelier", bound)
 	if !strings.Contains(subtitle, "1 canal") {
 		t.Errorf("avec un canal rattaché : %q", subtitle)
+	}
+}
+
+// Une organisation créée en double s'efface ; une organisation qui a
+// vécu, non — son historique déborde de cette base (souvenirs, pièces
+// jointes, relevés de consommation).
+func TestOrgDelete(t *testing.T) {
+	server, ts, client := testServer(t)
+	login(t, ts, client)
+
+	createOrg := func(name string) string {
+		if _, err := client.Get(ts.URL + "/admin/orgs/new"); err != nil {
+			t.Fatalf("GET création: %v", err)
+		}
+		resp, err := client.PostForm(ts.URL+"/admin/orgs", url.Values{
+			"display_name": {name},
+			"csrf_token":   {csrfFrom(t, client, ts.URL)},
+		})
+		if err != nil {
+			t.Fatalf("POST création: %v", err)
+		}
+		defer resp.Body.Close()
+		return path.Base(resp.Request.URL.Path)
+	}
+
+	deleteOrg := func(orgID, typed string) *http.Response {
+		resp, err := client.PostForm(ts.URL+"/admin/orgs/"+orgID+"/delete", url.Values{
+			"confirm_name": {typed},
+			"csrf_token":   {csrfFrom(t, client, ts.URL)},
+		})
+		if err != nil {
+			t.Fatalf("POST suppression: %v", err)
+		}
+		return resp
+	}
+
+	orgID := createOrg("Doublon")
+
+	// Un nom mal retapé ne supprime rien.
+	resp := deleteOrg(orgID, "Autre chose")
+	resp.Body.Close()
+	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		_, found, err := server.orgs.FindByID(context.Background(), tx, orgID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			t.Error("l'organisation a été supprimée malgré un nom erroné")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("vérification: %v", err)
+	}
+
+	// Un membre rattaché retient la suppression.
+	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		return server.members.Insert(context.Background(), tx, persistence.Member{
+			ID: "m-test", OrgID: orgID, DisplayName: "Témoin",
+			Role: persistence.MemberRoleMember, CreatedAt: server.now(), UpdatedAt: server.now(),
+		}, false)
+	}); err != nil {
+		t.Fatalf("insertion du membre: %v", err)
+	}
+
+	resp = deleteOrg(orgID, "Doublon")
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), "membre rattaché") {
+		t.Error("le refus devrait nommer ce qui retient la suppression")
+	}
+
+	// Le membre retiré, la suppression aboutit.
+	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(context.Background(), `DELETE FROM members WHERE org_id = ?`, orgID)
+		return err
+	}); err != nil {
+		t.Fatalf("retrait du membre: %v", err)
+	}
+
+	resp = deleteOrg(orgID, "doublon")
+	resp.Body.Close()
+
+	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		_, found, err := server.orgs.FindByID(context.Background(), tx, orgID)
+		if err != nil {
+			return err
+		}
+		if found {
+			t.Error("l'organisation vide aurait dû être supprimée")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("vérification finale: %v", err)
 	}
 }

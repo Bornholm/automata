@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -474,6 +475,10 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("saved") == "1" && tab == "plugins" {
 		page.Flash = "Activation des plugins enregistrée."
 	}
+	// Une suppression refusée revient sur la fiche avec son motif : le
+	// dire est le seul moyen d'expliquer pourquoi l'organisation est
+	// toujours là.
+	page.Error = r.URL.Query().Get("error")
 
 	s.render(w, r, http.StatusOK, view.AdminOrg(page))
 }
@@ -745,4 +750,77 @@ func (s *Server) handleOrgCustomization(w http.ResponseWriter, r *http.Request) 
 		"org_id", orgID, "disabled_agents", len(disabled), "max_tool_calls", maxToolCalls)
 
 	http.Redirect(w, r, "/admin/orgs/"+orgID+"?tab=customization&saved=1", http.StatusFound)
+}
+
+// handleOrgDelete supprime une organisation restée vide.
+//
+// La confirmation demande de retaper le nom : la liste d'administration
+// peut présenter deux organisations homonymes, et se tromper de ligne
+// n'aurait aucun recours.
+func (s *Server) handleOrgDelete(w http.ResponseWriter, r *http.Request) {
+	orgID := r.PathValue("id")
+	typed := strings.TrimSpace(r.PostFormValue("confirm_name"))
+
+	var (
+		blockers []persistence.OrgDeletionBlocker
+		mismatch bool
+		missing  bool
+	)
+
+	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+		org, found, err := s.orgs.FindByID(r.Context(), tx, orgID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			missing = true
+			return nil
+		}
+
+		if !strings.EqualFold(typed, strings.TrimSpace(org.DisplayName)) {
+			mismatch = true
+			return nil
+		}
+
+		blockers, err = s.orgs.DeletionBlockers(r.Context(), tx, orgID)
+		if err != nil {
+			return err
+		}
+		if len(blockers) > 0 {
+			return nil
+		}
+
+		return s.orgs.Delete(r.Context(), tx, orgID)
+	})
+	if !ok {
+		return
+	}
+
+	if missing {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch {
+	case mismatch:
+		s.redirectOrgError(w, r, orgID, "Le nom saisi ne correspond pas : rien n'a été supprimé.")
+		return
+	case len(blockers) > 0:
+		labels := make([]string, 0, len(blockers))
+		for _, blocker := range blockers {
+			labels = append(labels, blocker.Label())
+		}
+		s.redirectOrgError(w, r, orgID,
+			"Cette organisation ne peut pas être supprimée : "+strings.Join(labels, ", ")+
+				". Une organisation qui a vécu garde un historique dont une partie vit hors de cette base.")
+		return
+	}
+
+	s.logger.InfoContext(r.Context(), "web: organisation supprimée", "org_id", orgID)
+	http.Redirect(w, r, "/admin/orgs?deleted="+url.QueryEscape(orgID), http.StatusFound)
+}
+
+// redirectOrgError renvoie sur la fiche avec un message d'échec.
+func (s *Server) redirectOrgError(w http.ResponseWriter, r *http.Request, orgID, message string) {
+	http.Redirect(w, r, "/admin/orgs/"+orgID+"?tab=customization&error="+url.QueryEscape(message), http.StatusFound)
 }

@@ -173,6 +173,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /admin/orgs/{id}/offered", admin(s.handleOrgOffered))
 	mux.HandleFunc("POST /admin/orgs/{id}/group-token", admin(s.handleOrgGroupToken))
 	mux.HandleFunc("POST /admin/orgs/{id}/customization", admin(s.handleOrgCustomization))
+	mux.HandleFunc("POST /admin/orgs/{id}/delete", admin(s.handleOrgDelete))
 	mux.HandleFunc("GET /admin/orgs/{id}/members/new", admin(s.handleMemberNewForm))
 	mux.HandleFunc("POST /admin/orgs/{id}/members", admin(s.handleMemberCreate))
 	mux.HandleFunc("GET /admin/members/{id}", admin(s.handleMember))

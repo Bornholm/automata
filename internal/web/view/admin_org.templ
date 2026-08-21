@@ -65,6 +65,8 @@ type OrgPage struct {
 	Allowance     int64
 	FlashToken    *TokenPanelData // jeton de groupe fraîchement généré, sinon nil
 	Flash         string
+	// Error : motif d'un refus, affiché en tête de l'onglet.
+	Error string
 
 	// Onglet Plugins.
 	PluginRows []PluginActivationRow
@@ -157,6 +159,9 @@ templ AdminOrg(page OrgPage) {
 		<div class="p-7">
 			if page.Flash != "" {
 				<div class="mb-4 rounded-lg bg-ok-wash px-4 py-2.5 text-sm text-ok-deep">{ page.Flash }</div>
+			}
+			if page.Error != "" {
+				<div class="mb-4 rounded-lg bg-crit-wash px-4 py-2.5 text-sm leading-normal text-crit-deep">{ page.Error }</div>
 			}
 			if page.FlashToken != nil {
 				<div class="mb-5">
@@ -402,5 +407,26 @@ templ orgCustomizationTab(page OrgPage) {
 		<div class="flex justify-end">
 			<button type="submit" class="h-[38px] rounded-lg bg-brand px-5 text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
 		</div>
+	</form>
+	@orgDangerZone(page)
+}
+
+// orgDangerZone — suppression d'une organisation restée vide. Le nom se
+// retape : deux organisations peuvent porter le même, et se tromper de
+// ligne n'aurait aucun recours.
+templ orgDangerZone(page OrgPage) {
+	<form method="post" action={ templ.SafeURL("/admin/orgs/" + page.ID + "/delete") }
+		class="mt-6 rounded-[11px] border border-crit-wash bg-crit-row p-5.5">
+		<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+		<div class="text-[15px] font-semibold text-crit-deep">Supprimer cette organisation</div>
+		<div class="mt-1 text-sm leading-normal text-text-2">
+			Possible tant qu'elle est restée vide — aucun membre, aucun canal lié, aucune conversation, aucune consommation. Passé ce stade, son historique ne tient plus dans cette seule base et la suppression est refusée.
+		</div>
+		<label class="mt-3.5 block max-w-md">
+			<span class="mb-1.5 block text-[13px] font-medium text-text-2">Pour confirmer, écrivez le nom de l'organisation</span>
+			<input type="text" name="confirm_name" required autocomplete="off" placeholder={ page.Name }
+				class="h-[38px] w-full rounded-lg border border-line bg-white px-3.5 text-sm text-ink outline-none focus:border-crit"/>
+		</label>
+		<button type="submit" class="mt-3.5 h-[38px] rounded-lg bg-crit px-5 text-sm font-semibold text-white hover:opacity-90">Supprimer définitivement</button>
 	</form>
 }
