@@ -27,6 +27,10 @@ type pluginSpecialistProvider struct {
 	manager *plugin.Manager
 	db      *persistence.DB
 	client  llm.ChatCompletionClient
+	// vision sert l'outil view_file des sous-agents : le client ci-dessus
+	// est texte-seul. nil quand plugins.vision_client n'est pas
+	// configuré — l'outil n'est alors pas monté.
+	vision llm.ChatCompletionClient
 	// maxFileBytes borne un fichier échangé avec un plugin, dans les deux
 	// sens (attachments.max_tool_size).
 	maxFileBytes int64
@@ -45,10 +49,19 @@ func newPluginSpecialistProvider(ctx context.Context, cfg *config.Config, manage
 		return nil, err
 	}
 
+	var vision llm.ChatCompletionClient
+	if cfg.Plugins.VisionClient != "" {
+		vision, err = agent.BuildLLMClient(ctx, cfg.LLMClients[cfg.Plugins.VisionClient])
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &pluginSpecialistProvider{
 		manager:      manager,
 		db:           db,
 		client:       client,
+		vision:       vision,
 		maxFileBytes: int64(cfg.Attachments.MaxToolSize.Bytes()),
 		logger:       logger,
 	}, nil
@@ -94,6 +107,9 @@ func (p *pluginSpecialistProvider) SpecialistsFor(ctx context.Context, identity 
 			// « outillage seulement » : c'est la même taille qui entre par
 			// la messagerie et qui doit pouvoir en ressortir.
 			subAgent = subAgent.WithFiles(pluginFileTransfer{p.manager}, p.maxFileBytes)
+			if p.vision != nil {
+				subAgent = subAgent.WithVision(p.vision)
+			}
 		}
 
 		specialists[spec.PluginName] = subAgent

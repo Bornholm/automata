@@ -1144,6 +1144,11 @@ func validatePlugins(cfg *Config) []error {
 	} else if _, ok := cfg.LLMClients[cfg.Plugins.Client]; !ok {
 		errs = append(errs, fmt.Errorf("plugins.client: client llm %q inconnu (llm_clients)", cfg.Plugins.Client))
 	}
+	if cfg.Plugins.VisionClient != "" {
+		if _, ok := cfg.LLMClients[cfg.Plugins.VisionClient]; !ok {
+			errs = append(errs, fmt.Errorf("plugins.vision_client: client llm %q inconnu (llm_clients)", cfg.Plugins.VisionClient))
+		}
+	}
 	if cfg.Plugins.RestartCooldown.Duration() < 0 {
 		errs = append(errs, fmt.Errorf("plugins.restart_cooldown: doit être positif"))
 	}

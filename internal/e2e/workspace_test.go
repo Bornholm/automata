@@ -72,6 +72,34 @@ func scriptedCall(id, name, args string) llm.ChatCompletionResponse {
 	)
 }
 
+// visionSpy tient lieu de modèle multimodal : il n'interprète rien, il
+// retient ce qui lui a été réellement soumis. C'est ce qui prouve qu'une
+// trame extraite dans le bac à sable ressort jusqu'au client de vision.
+type visionSpy struct {
+	mu          sync.Mutex
+	calls       int
+	attachments int
+	question    string
+	answer      string
+}
+
+func (v *visionSpy) ChatCompletion(_ context.Context, funcs ...llm.ChatCompletionOptionFunc) (llm.ChatCompletionResponse, error) {
+	opts := llm.NewChatCompletionOptions(funcs...)
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	v.calls++
+	for _, msg := range opts.Messages {
+		if msg.Role() == llm.RoleUser {
+			v.question = msg.Content()
+			v.attachments += len(msg.Attachments())
+		}
+	}
+
+	return scriptedText(v.answer), nil
+}
+
 // pluginCaller et fileTransfer relient le sous-agent au vrai gestionnaire
 // de plugins — mêmes adaptateurs qu'internal/registry, recopiés ici pour
 // que le banc ne dépende que de ce qu'il éprouve.
@@ -129,7 +157,7 @@ func TestWorkspacePlugin_VideoRoundTrip(t *testing.T) {
 		Description:      "Edits files.",
 		PermissionDomain: "workspace",
 		SupportsFiles:    true,
-		MaxToolCalls:     10,
+		MaxToolCalls:     25,
 		Tools: []agent.PluginToolSpec{
 			{
 				Name:           "run_command",
@@ -150,21 +178,34 @@ func TestWorkspacePlugin_VideoRoundTrip(t *testing.T) {
 				`{"script":"ffprobe -v error -show_entries stream=codec_name,width,height -of default=nw=1 exemple-whatsapp.mp4"}`)
 		},
 		func(int) llm.ChatCompletionResponse {
+			// Extraction d'une trame : c'est ainsi qu'un agent regarde une
+			// vidéo, le modèle de vision n'acceptant que des images.
+			return scriptedCall("c3", "run_command",
+				`{"script":"ffmpeg -y -v error -i exemple-whatsapp.mp4 -ss 1 -frames:v 1 frame.png"}`)
+		},
+		func(int) llm.ChatCompletionResponse {
+			return scriptedCall("c4", "view_file",
+				`{"path":"frame.png","question":"where is the logo?"}`)
+		},
+		func(int) llm.ChatCompletionResponse {
 			// Recadrage réel : on retire 100 pixels en bas de l'image et on
 			// ré-encode, comme le ferait un retrait de filigrane.
-			return scriptedCall("c3", "run_command",
+			return scriptedCall("c5", "run_command",
 				`{"script":"ffmpeg -y -v error -i exemple-whatsapp.mp4 -vf crop=478:750:0:0 -c:v libx264 -preset veryfast -crf 28 -c:a copy sortie.mp4 && ls -l sortie.mp4"}`)
 		},
 		func(int) llm.ChatCompletionResponse {
-			return scriptedCall("c4", "attach_file", `{"path":"sortie.mp4"}`)
+			return scriptedCall("c6", "attach_file", `{"path":"sortie.mp4"}`)
 		},
 		func(int) llm.ChatCompletionResponse {
 			return scriptedText("La vidéo recadrée est jointe.")
 		},
 	}}
 
+	vision := &visionSpy{answer: "The logo is at 378, 2, 90x90 on a 478x850 image."}
+
 	subAgent := agent.NewPluginSubAgent(spec, client, pluginCaller{manager}, 0, nil).
-		WithFiles(fileTransfer{manager}, 16<<20)
+		WithFiles(fileTransfer{manager}, 16<<20).
+		WithVision(vision)
 
 	result, err := subAgent.Execute(context.Background(), delegation.Request{
 		AgentID: "workspace",
@@ -187,6 +228,13 @@ func TestWorkspacePlugin_VideoRoundTrip(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
+	}
+
+	if vision.calls != 1 || vision.attachments != 1 {
+		t.Fatalf("modèle de vision: %d appels, %d images soumises (attendu 1 et 1)", vision.calls, vision.attachments)
+	}
+	if !strings.Contains(vision.question, "where is the logo?") {
+		t.Fatalf("question soumise au modèle de vision = %q", vision.question)
 	}
 
 	if len(result.Attachments) != 1 {

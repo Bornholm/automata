@@ -92,6 +92,7 @@ type PluginSubAgent struct {
 	caller              PluginToolCaller
 	files               PluginFileTransfer
 	maxFileBytes        int64
+	vision              llm.ChatCompletionClient
 	maxToolContextBytes int64
 	logger              *slog.Logger
 }
@@ -120,6 +121,15 @@ func (a *PluginSubAgent) WithFiles(files PluginFileTransfer, maxFileBytes int64)
 	return a
 }
 
+// WithVision branche le client multimodal qui sert l'outil view_file. Le
+// modèle du sous-agent est texte-seul : sans ce client, un agent qui
+// manipule des images travaille en aveugle et gaspille son budget d'outils
+// à sonder des histogrammes. Sans cet appel, view_file n'est pas monté.
+func (a *PluginSubAgent) WithVision(client llm.ChatCompletionClient) *PluginSubAgent {
+	a.vision = client
+	return a
+}
+
 // Execute implémente delegation.Specialist. Comme AgentSpecialist, seuls
 // Goal/RelevantInput/Constraints et les pièces jointes du tour composent
 // l'entrée — jamais l'historique de la conversation principale.
@@ -144,6 +154,9 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 			a.newImportAttachmentTool(req),
 			a.newAttachFileTool(req, mediaCollector),
 		)
+		if a.vision != nil {
+			tools = append(tools, a.newViewFileTool(req))
+		}
 	}
 
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
@@ -365,6 +378,95 @@ func (a *PluginSubAgent) newAttachFileTool(req delegation.Request, collector *me
 			return llm.NewToolResult(
 				"File attached to the reply. Confirm briefly what you produced; do not describe its content.",
 			), nil
+		},
+	).WithReadOnlyHint(true)
+}
+
+// visionSystemPrompt part vers le modèle : anglais uniquement. Il vise la
+// réponse dont l'agent a besoin — des coordonnées exploitables par une
+// commande — plutôt qu'une description d'image.
+const visionSystemPrompt = "You are the eyes of an agent that edits images and videos with ffmpeg and imagemagick. " +
+	"Answer its question about the image precisely and briefly. " +
+	"Whenever you locate something in the image, give its position and size in pixels as x, y, width, height, " +
+	"with the origin at the top-left corner, and state the image dimensions you based them on. " +
+	"If you cannot see what is asked, say so plainly instead of guessing."
+
+// newViewFileTool expose view_file : il va chercher une image dans
+// l'espace de travail du plugin et la soumet au client multimodal, dont la
+// réponse textuelle revient au sous-agent.
+//
+// Les octets ne traversent jamais la conversation ni le modèle du
+// sous-agent (texte-seul) : seule la description remonte.
+func (a *PluginSubAgent) newViewFileTool(req delegation.Request) llm.Tool {
+	schema := llm.NewJSONSchema().
+		RequiredProperty("path", "Path of the image in your workspace. Extract a frame with ffmpeg first to look at a video.", "string").
+		RequiredProperty("question", "What you need to know about the image, e.g. \"where is the logo, and how big is it?\".", "string")
+
+	callCtx := pluginCallContext(req.Identity)
+
+	return llm.NewFuncTool(
+		"view_file",
+		"Look at an image in your workspace and ask a question about it. Use this instead of probing pixels or histograms: "+
+			"to locate something in a video, extract a frame with ffmpeg, then look at that frame.",
+		schema,
+		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
+			path, _ := params["path"].(string)
+			question, _ := params["question"].(string)
+			if path == "" || question == "" {
+				return llm.NewToolResult("error: 'path' and 'question' are required."), nil
+			}
+
+			filename, mimeType, data, err := a.files.GetPluginFile(ctx, a.spec.PluginName, callCtx, path, a.maxFileBytes)
+			if err != nil {
+				a.logger.WarnContext(ctx, "agent: lecture de fichier pour la vision en échec",
+					"plugin", a.spec.PluginName, "error", err)
+				return llm.NewToolResult("error: the file could not be read (it may be missing, or too large to look at)."), nil
+			}
+			if len(data) == 0 {
+				return llm.NewToolResult("error: the file is empty."), nil
+			}
+
+			// Seules les images sont soumises : un fichier vidéo entier
+			// coûterait cher et serait refusé par la plupart des
+			// fournisseurs. Le message dit à l'agent quoi faire à la place.
+			if kind, ok := media.KindFromMIME(mimeType); !ok || kind != media.KindImage {
+				return llm.NewToolResult(
+					"error: view_file only accepts images. Extract a frame first, " +
+						"for example: ffmpeg -y -i input.mp4 -ss 1 -frames:v 1 frame.png",
+				), nil
+			}
+
+			attachment, err := media.ToLLM(media.Media{
+				Kind:     media.KindImage,
+				MimeType: mimeType,
+				Filename: filename,
+				Data:     data,
+			})
+			if err != nil {
+				return llm.NewToolResult("error: this image could not be read."), nil
+			}
+
+			resp, err := a.vision.ChatCompletion(ctx,
+				llm.WithMessages(
+					llm.NewMessage(llm.RoleSystem, visionSystemPrompt),
+					llm.NewMessageWithAttachments(llm.RoleUser, question, attachment),
+				),
+			)
+			if err != nil {
+				a.logger.WarnContext(ctx, "agent: appel du modèle de vision en échec",
+					"plugin", a.spec.PluginName, "bytes", len(data), "error", err)
+				return llm.NewToolResult("error: the image could not be looked at right now."), nil
+			}
+
+			text := ""
+			if msg := resp.Message(); msg != nil {
+				text = cleanReply(msg.Content())
+			}
+			if text == "" {
+				return llm.NewToolResult("error: nothing could be read from this image."), nil
+			}
+
+			return llm.NewToolResult(text), nil
 		},
 	).WithReadOnlyHint(true)
 }

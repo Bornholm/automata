@@ -430,3 +430,156 @@ func TestPluginSubAgent_ToolTimeoutIsForwardedToTheHost(t *testing.T) {
 		t.Fatalf("appels = %+v", caller.calls)
 	}
 }
+
+// L'agent voit l'image par le client multimodal : les octets partent au
+// modèle de vision, jamais au modèle du sous-agent, et seule la
+// description revient dans le résultat d'outil.
+func TestPluginSubAgent_ViewFileAsksTheVisionModel(t *testing.T) {
+	transfer := &fakeFileTransfer{
+		getFilename: "frame.png",
+		getMime:     "image/png",
+		getData:     []byte("octets de l'image"),
+	}
+	caller := &fakePluginCaller{result: "ok"}
+
+	var (
+		visionAttachments int
+		visionQuestion    string
+	)
+	vision := &fakeCompletionClient{
+		responseFunc: func(_ int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, msg := range opts.Messages {
+				if msg.Role() == llm.RoleUser {
+					visionQuestion = msg.Content()
+					visionAttachments += len(msg.Attachments())
+				}
+			}
+			return scriptedFinalResponse("The logo sits at 378, 2, 90x90 on a 478x850 image."), nil
+		},
+	}
+
+	var toolResult string
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "view_file",
+					`{"path":"frame.png","question":"where is the logo?"}`)), nil
+			}
+			for _, msg := range opts.Messages {
+				if msg.Role() == llm.RoleTool {
+					toolResult = msg.Content()
+				}
+			}
+			return scriptedFinalResponse("Je sais où est le logo."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20).
+		WithVision(vision)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Remove the logo",
+		Identity: pluginTestIdentity(),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if transfer.getPath != "frame.png" {
+		t.Fatalf("GetFile appelé avec %q", transfer.getPath)
+	}
+	if visionAttachments != 1 {
+		t.Fatalf("images soumises au modèle de vision: got %d, expected 1", visionAttachments)
+	}
+	if !strings.Contains(visionQuestion, "where is the logo?") {
+		t.Fatalf("question transmise au modèle de vision = %q", visionQuestion)
+	}
+	if !strings.Contains(toolResult, "378, 2") {
+		t.Fatalf("la description n'est pas revenue à l'agent: %q", toolResult)
+	}
+}
+
+// Une vidéo n'est pas soumise au modèle de vision : le résultat d'outil
+// dit à l'agent d'en extraire une trame d'abord.
+func TestPluginSubAgent_ViewFileRefusesNonImagesWithGuidance(t *testing.T) {
+	transfer := &fakeFileTransfer{
+		getFilename: "att-0.mp4",
+		getMime:     "video/mp4",
+		getData:     []byte("octets de la video"),
+	}
+	caller := &fakePluginCaller{result: "ok"}
+
+	vision := &fakeCompletionClient{
+		responseFunc: func(int, *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			t.Fatal("une vidéo ne doit jamais être soumise au modèle de vision")
+			return nil, nil
+		},
+	}
+
+	var toolResult string
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "view_file",
+					`{"path":"att-0.mp4","question":"where is the logo?"}`)), nil
+			}
+			for _, msg := range opts.Messages {
+				if msg.Role() == llm.RoleTool {
+					toolResult = msg.Content()
+				}
+			}
+			return scriptedFinalResponse("J'extrais une trame."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20).
+		WithVision(vision)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Remove the logo",
+		Identity: pluginTestIdentity(),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(toolResult, "frames:v") {
+		t.Fatalf("le refus doit expliquer comment extraire une trame: %q", toolResult)
+	}
+}
+
+// Sans client multimodal configuré, l'outil n'est pas montré au modèle :
+// l'hôte ne propose que ce qu'il sait servir.
+func TestPluginSubAgent_ViewFileAbsentWithoutVisionClient(t *testing.T) {
+	transfer := &fakeFileTransfer{}
+	caller := &fakePluginCaller{result: "ok"}
+
+	var toolNames []string
+	client := &fakeCompletionClient{
+		responseFunc: func(_ int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, tool := range opts.Tools {
+				toolNames = append(toolNames, tool.Name())
+			}
+			return scriptedFinalResponse("Rien à faire."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Do nothing",
+		Identity: pluginTestIdentity(),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	for _, name := range toolNames {
+		if name == "view_file" {
+			t.Fatal("view_file monté sans client multimodal")
+		}
+	}
+}

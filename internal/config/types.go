@@ -338,6 +338,11 @@ type Plugins struct {
 	// plugins. Passer par un client de l'instance conserve la
 	// comptabilité d'usage et le débit de crédits.
 	Client string `yaml:"client"`
+	// VisionClient est la clé de llm_clients qui sert l'outil view_file
+	// des sous-agents de plugins : le client de complétion est
+	// texte-seul, c'est celui-ci qui regarde réellement les images d'un
+	// espace de travail. Vide : l'outil n'est pas monté.
+	VisionClient string `yaml:"vision_client"`
 	// RestartCooldown est le délai minimal entre deux redémarrages d'un
 	// même plugin après incident. Vide : 30s. Il évite qu'un plugin qui
 	// meurt en boucle (OOM) consomme la machine.

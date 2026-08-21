@@ -22,16 +22,40 @@ Aucune interface : tout passe par la conversation.
 3. Le sous-agent appelle `import_attachment` : l'hôte pousse les octets au
    plugin, qui les dépose dans le workspace du membre côté LeaSH.
 4. Il inspecte (`ffprobe`, `identify`), puis transforme (`run_command`).
-5. Il appelle `attach_file` : l'hôte récupère le résultat et le joint à la
+5. Quand la demande dépend de ce à quoi ressemble le média — repérer un logo
+   à masquer, vérifier un rendu — il appelle `view_file` : l'hôte soumet
+   l'image au modèle multimodal et lui rend la réponse en texte. Pour une
+   vidéo, il extrait d'abord une trame avec `ffmpeg`.
+6. Il appelle `attach_file` : l'hôte récupère le résultat et le joint à la
    réponse.
 
 Les octets ne traversent jamais la conversation : le modèle ne voit que des
 chemins, des noms et des tailles.
 
-**Le fichier doit accompagner la demande.** L'import ne cherche que dans le
-message du tour courant. Si l'utilisateur envoie la vidéo puis, dans un
-second message, demande le traitement, l'agent lui demandera de renvoyer le
-fichier avec sa demande.
+**Le fichier doit accompagner la demande… la première fois seulement.**
+`import_attachment` ne cherche que dans le message du tour courant. Mais le
+workspace, lui, persiste (`LEASH_TTL`, 24 h par défaut) : aux tours
+suivants, l'agent retrouve le fichier avec `list_files` et travaille dessus
+sans réimport. Son prompt le lui dit explicitement — un agent qui redemande
+un fichier déjà listé est un défaut de prompt, pas une limite du plugin.
+
+## Voir ce qu'il manipule
+
+Le modèle qui pilote le sous-agent est texte-seul : sans aide, il travaille
+en aveugle. Un agent aveugle à qui l'on demande de retirer un logo tente de
+« regarder » l'image en dumpant des histogrammes zone par zone — il épuise
+son budget d'appels d'outils avant d'avoir produit le moindre fichier.
+
+`view_file` lui donne des yeux : il désigne une image de son workspace et
+pose sa question ; l'hôte la soumet au client `plugins.vision_client` et lui
+rend la réponse. Le prompt du modèle de vision lui demande de répondre en
+coordonnées exploitables (`x, y, largeur, hauteur`, origine en haut à
+gauche, avec les dimensions de référence) plutôt qu'en description d'image.
+
+L'outil refuse tout ce qui n'est pas une image, et le dit avec la commande
+à lancer : une vidéo entière coûterait cher et serait refusée par la
+plupart des fournisseurs. Sans `plugins.vision_client` configuré, l'outil
+n'est pas monté du tout — l'hôte ne propose que ce qu'il sait servir.
 
 ## Pourquoi les commandes ne demandent pas de confirmation
 
@@ -60,6 +84,11 @@ par membre :
 Côté `config.yaml` :
 
 ```yaml
+plugins:
+  client: main
+  # Client multimodal de view_file : celui du sous-agent est texte-seul.
+  vision_client: vision
+
 attachments:
   tool_types:
     - video/mp4
