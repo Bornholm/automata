@@ -136,8 +136,20 @@ dokku-config:
 #
 # --force parce que Dokku n'a pas d'historique commun avec le dépôt local
 # dès que l'on a rebasé.
+#
+# L'application est ARRÊTÉE avant le push. Dokku déploie sans coupure :
+# il démarre le nouveau conteneur, attend ses healthchecks, puis arrête
+# l'ancien. Or les deux montent le même volume /data, et la persistance
+# d'Automata est mono-écrivain (verrou d'instance, verrou bolt de
+# l'index bleve) : le nouveau conteneur serait refusé par le verrou, ses
+# healthchecks échoueraient, et le déploiement serait rejeté sans que
+# rien n'ait changé. Une courte interruption est le prix d'un volume à
+# écrivain unique — c'est la même raison qui interdit ps:scale au-delà
+# de 1.
 dokku-deploy:
 	@set -eu; \
+	echo "Arrêt de l'application (volume à écrivain unique)..."; \
+	$(DOKKU) ps:stop $(DOKKU_APP) >/dev/null 2>&1 || true; \
 	if [ -n "$$(git status --porcelain)" ]; then \
 		echo "Attention : modifications non commitées, seul HEAD sera déployé."; \
 	fi; \

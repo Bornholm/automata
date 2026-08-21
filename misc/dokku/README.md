@@ -153,6 +153,28 @@ le conteneur.
 
 ## Si la sonde de démarrage échoue
 
+**Cause la plus fréquente : l'ancien conteneur tourne encore.** Dokku
+déploie sans coupure — nouveau conteneur, healthchecks, puis arrêt de
+l'ancien. Les deux montent le même `/data`, et la persistance d'Automata
+est à écrivain unique. `make dokku-deploy` arrête donc l'application
+avant le push ; si vous poussez à la main, faites-le vous-même :
+
+```bash
+dokku ps:stop automata && git push dokku …
+```
+
+Depuis le verrou d'instance, le symptôme est nommé au lieu d'être muet :
+
+```
+registry: une autre instance d'Automata utilise déjà "/data" (verrou /data/.automata.lock)
+```
+
+Sans ce verrou, le second processus s'arrêtait sans un mot sur le verrou
+bolt de l'index bleve, et le seul signe visible était un démarrage qui ne
+finissait jamais.
+
+## Si la sonde échoue toujours
+
 `Failure in name='administration joignable': dial tcp …:5000: connect:
 connection refused` a presque toujours la même cause : **`web.addr`
 écoute en boucle locale**. Dans un conteneur, `127.0.0.1:5000` n'est

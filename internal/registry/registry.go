@@ -79,6 +79,16 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	metrics := observability.NewMetrics()
 	ready := &observability.Ready{}
 
+	// Avant d'ouvrir quoi que ce soit : le verrou d'instance. Sans lui,
+	// un second processus sur les mêmes données s'arrête plus loin, à
+	// l'ouverture de l'index bleve, dans une attente silencieuse et sans
+	// fin.
+	lock, err := lockDataDir(cfg.Storage.Application.Path)
+	if err != nil {
+		return err
+	}
+	defer lock.release()
+
 	db, err := persistence.OpenWithEncryption(ctx, cfg.Storage.Application, cfg.Storage.EncryptionKey)
 	if err != nil {
 		return fmt.Errorf("registry: ouverture de la persistance: %w", err)
