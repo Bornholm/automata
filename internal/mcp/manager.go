@@ -230,7 +230,8 @@ func (m *Manager) getOrCreateClient(ctx context.Context, sessionKey SessionKey, 
 
 	// baseCtx, jamais ctx : voir le commentaire du champ Manager.baseCtx.
 	if err := client.Start(m.baseCtx); err != nil {
-		return nil, fmt.Errorf("mcp: connexion au serveur %q (session %q): %w", serverName, sessionKey, err)
+		return nil, fmt.Errorf("mcp: connexion au serveur %q (session %q)%s: %w",
+			serverName, sessionKey, authHint(serverName, m.cfg.MCPServers[serverName], err), err)
 	}
 
 	servers[serverName] = client
@@ -563,4 +564,31 @@ func joinErrors(errs []error) error {
 		return nil
 	}
 	return errors.Join(errs...)
+}
+
+// authHint ajoute la cause probable d'un refus d'authentification. Le
+// serveur, lui, se contente d'un « Unauthorized » qui ne dit ni quoi
+// corriger ni où : sans en-tête d'autorisation dans la configuration,
+// c'est presque toujours qu'il en manque un.
+func authHint(serverName string, server config.MCPServer, err error) string {
+	if err == nil {
+		return ""
+	}
+
+	message := strings.ToLower(err.Error())
+	if !strings.Contains(message, "unauthorized") && !strings.Contains(message, "forbidden") &&
+		!strings.Contains(message, "401") && !strings.Contains(message, "403") {
+		return ""
+	}
+
+	for name := range server.Headers {
+		if strings.EqualFold(name, "authorization") {
+			// Un en-tête est bien posé : c'est sa valeur qui est refusée,
+			// pas son absence.
+			return " — le jeton d'autorisation configuré a été refusé"
+		}
+	}
+
+	return " — aucun en-tête Authorization dans mcp_servers." + serverName +
+		".headers, alors que le serveur en exige un"
 }

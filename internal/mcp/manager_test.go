@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -588,4 +589,28 @@ func findTool(t *testing.T, tools []llm.Tool, name string) llm.Tool {
 	}
 	t.Fatalf("tool %q not found among returned tools", name)
 	return nil
+}
+
+// Un serveur MCP qui refuse l'authentification répond « Unauthorized »
+// sans dire quoi corriger. L'indice ajouté distingue les deux cas qui
+// n'appellent pas le même geste : l'en-tête manque, ou sa valeur est
+// refusée.
+func TestAuthHint(t *testing.T) {
+	unauthorized := errors.New(`calling "initialize": sending "initialize": Unauthorized`)
+
+	hint := authHint("internet-search", config.MCPServer{}, unauthorized)
+	if !strings.Contains(hint, "aucun en-tête Authorization dans mcp_servers.internet-search.headers") {
+		t.Errorf("sans en-tête, l'indice devrait nommer le réglage manquant: %q", hint)
+	}
+
+	withHeader := config.MCPServer{Headers: map[string]string{"authorization": "Bearer faux"}}
+	hint = authHint("internet-search", withHeader, unauthorized)
+	if !strings.Contains(hint, "refusé") || strings.Contains(hint, "aucun en-tête") {
+		t.Errorf("avec en-tête, l'indice devrait viser sa valeur: %q", hint)
+	}
+
+	// Une panne sans rapport ne reçoit aucun indice trompeur.
+	if hint := authHint("internet-search", config.MCPServer{}, errors.New("connection refused")); hint != "" {
+		t.Errorf("indice inattendu sur une erreur réseau: %q", hint)
+	}
 }
