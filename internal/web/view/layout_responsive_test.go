@@ -35,10 +35,15 @@ func TestAdminLayout_NavigationAdaptsToSmallScreens(t *testing.T) {
 		"md:w-[216px]",
 		// Empilement vertical par défaut, côte à côte ensuite.
 		"flex-col md:flex-row",
-		// La navigation défile latéralement tant qu'elle est en bandeau.
-		"overflow-x-auto",
-		// Les entrées ne se compriment pas dans le bandeau.
-		"shrink-0 whitespace-nowrap",
+		// Menu escamotable natif : le navigateur l'ouvre et le ferme seul,
+		// sans JavaScript.
+		"<details",
+		"<summary",
+		// « md:contents » efface le menu en tant que boîte sur écran large :
+		// ses entrées redeviennent la colonne de navigation.
+		"md:contents",
+		// Le bouton n'existe que sur téléphone.
+		"md:hidden",
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("le gabarit d'administration a perdu son adaptation mobile : %q absent", want)
@@ -49,5 +54,15 @@ func TestAdminLayout_NavigationAdaptsToSmallScreens(t *testing.T) {
 	// téléphone : c'est la régression que ce test surveille.
 	if strings.Contains(html, `class="flex w-[216px]`) {
 		t.Error("la barre latérale impose une largeur fixe sans point de rupture")
+	}
+
+	// La déconnexion doit rester atteignable depuis un téléphone : elle vit
+	// dans le menu, pas dans un pied masqué sous le point de rupture.
+	logout := strings.Index(html, "/admin/logout")
+	if logout < 0 {
+		t.Fatal("le bouton de déconnexion a disparu du gabarit")
+	}
+	if closing := strings.Index(html, "</details>"); closing >= 0 && closing < logout {
+		t.Error("la déconnexion est hors du menu : inatteignable sur téléphone")
 	}
 }

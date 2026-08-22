@@ -26,12 +26,12 @@ type SkillsPage struct {
 
 templ AdminSkills(page SkillsPage) {
 	@AdminLayout("Compétences — Automata Admin", "skills", page.Platforms, page.CSRFToken) {
-		<header class="flex items-center gap-4 border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5">
+		<header class="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5">
 			<div>
 				<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Compétences</h1>
 				<div class="mt-0.5 text-sm text-text-3">Les modes opératoires que les agents chargent à la demande</div>
 			</div>
-			<a href="/admin/skills/new" class="ml-auto flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline">Nouvelle compétence</a>
+			<a href="/admin/skills/new" class="flex h-9 shrink-0 items-center whitespace-nowrap rounded-lg bg-brand px-4 text-sm font-semibold text-white sm:ml-auto hover:bg-brand-strong hover:no-underline">Nouvelle compétence</a>
 		</header>
 		<div class="p-4 md:p-7">
 			if len(page.Skills) == 0 {
@@ -39,8 +39,8 @@ templ AdminSkills(page SkillsPage) {
 					Aucune compétence. Les compétences fournies par le projet sont semées au démarrage du service.
 				</div>
 			} else {
-				<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
-					<div class="grid grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
+				<div class="overflow-x-auto rounded-[11px] border border-line-2 bg-white">
+					<div class="grid min-w-[720px] grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
 						<div>Nom</div>
 						<div>Description</div>
 						<div>Agents ciblés</div>
@@ -48,7 +48,7 @@ templ AdminSkills(page SkillsPage) {
 						<div class="text-right">Modifiée</div>
 					</div>
 					for _, row := range page.Skills {
-						<a href={ templ.SafeURL("/admin/skills/" + row.Name) } class="grid grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr] items-center gap-4 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline">
+						<a href={ templ.SafeURL("/admin/skills/" + row.Name) } class="grid min-w-[720px] grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr] items-center gap-4 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline">
 							<div class="flex items-center gap-2">
 								<span class="font-mono text-sm font-medium text-text">{ row.Name }</span>
 								if row.Builtin {

@@ -159,7 +159,7 @@ func AdminOrgs(page OrgsPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<header class=\"flex items-center gap-4 border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Organisations</h1><div class=\"mt-0.5 text-sm text-text-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<header class=\"flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Organisations</h1><div class=\"mt-0.5 text-sm text-text-3\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -222,12 +222,12 @@ func AdminOrgs(page OrgsPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"grid grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Organisation</div><div>Solde de crédits</div><div>Membres</div><div class=\"text-right\">Conso. du mois</div><div class=\"text-right\">Création</div><div></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"overflow-x-auto rounded-[11px] border border-line-2 bg-white\"><div class=\"grid min-w-[760px] grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Organisation</div><div>Solde de crédits</div><div>Membres</div><div class=\"text-right\">Conso. du mois</div><div class=\"text-right\">Création</div><div></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, row := range page.Rows {
-					var templ_7745c5c3_Var9 = []any{"grid grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] items-center gap-4 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline", orgRowToneClass(row.RowTone)}
+					var templ_7745c5c3_Var9 = []any{"grid min-w-[760px] grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] items-center gap-4 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline", orgRowToneClass(row.RowTone)}
 					templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var9...)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err

@@ -65,7 +65,7 @@ func AdminSkills(page SkillsPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"flex items-center gap-4 border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Compétences</h1><div class=\"mt-0.5 text-sm text-text-3\">Les modes opératoires que les agents chargent à la demande</div></div><a href=\"/admin/skills/new\" class=\"ml-auto flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline\">Nouvelle compétence</a></header><div class=\"p-4 md:p-7\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Compétences</h1><div class=\"mt-0.5 text-sm text-text-3\">Les modes opératoires que les agents chargent à la demande</div></div><a href=\"/admin/skills/new\" class=\"flex h-9 shrink-0 items-center whitespace-nowrap rounded-lg bg-brand px-4 text-sm font-semibold text-white sm:ml-auto hover:bg-brand-strong hover:no-underline\">Nouvelle compétence</a></header><div class=\"p-4 md:p-7\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -75,7 +75,7 @@ func AdminSkills(page SkillsPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"grid grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Nom</div><div>Description</div><div>Agents ciblés</div><div>État</div><div class=\"text-right\">Modifiée</div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"overflow-x-auto rounded-[11px] border border-line-2 bg-white\"><div class=\"grid min-w-[720px] grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Nom</div><div>Description</div><div>Agents ciblés</div><div>État</div><div class=\"text-right\">Modifiée</div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -93,7 +93,7 @@ func AdminSkills(page SkillsPage) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"grid grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr] items-center gap-4 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline\"><div class=\"flex items-center gap-2\"><span class=\"font-mono text-sm font-medium text-text\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"grid min-w-[720px] grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr] items-center gap-4 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline\"><div class=\"flex items-center gap-2\"><span class=\"font-mono text-sm font-medium text-text\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

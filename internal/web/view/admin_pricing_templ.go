@@ -379,12 +379,12 @@ func AdminPricing(page PricingPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<div class=\"grid grid-cols-[1fr_1fr_1fr_1.2fr_auto] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Crédits</div><div>Prix</div><div>Pour mille</div><div>Marge</div><div></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<div class=\"grid min-w-[680px] grid-cols-[1fr_1fr_1fr_1.2fr_auto] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Crédits</div><div>Prix</div><div>Pour mille</div><div>Marge</div><div></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, pack := range page.Packs {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<div class=\"grid grid-cols-[1fr_1fr_1fr_1.2fr_auto] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0\"><div class=\"flex items-center gap-2\"><span class=\"font-mono text-sm text-text\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<div class=\"grid min-w-[680px] grid-cols-[1fr_1fr_1fr_1.2fr_auto] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0\"><div class=\"flex items-center gap-2\"><span class=\"font-mono text-sm text-text\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -679,12 +679,12 @@ func AdminPricing(page PricingPage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			if len(page.ModelPrices) > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<div class=\"grid grid-cols-[2fr_1fr_1fr_auto] gap-4 border-y border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Modèle</div><div class=\"text-right\">Entrée / M</div><div class=\"text-right\">Sortie / M</div><div></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<div class=\"grid min-w-[560px] grid-cols-[2fr_1fr_1fr_auto] gap-4 border-y border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Modèle</div><div class=\"text-right\">Entrée / M</div><div class=\"text-right\">Sortie / M</div><div></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, price := range page.ModelPrices {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<div class=\"grid grid-cols-[2fr_1fr_1fr_auto] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0\"><div class=\"truncate font-mono text-sm text-text\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<div class=\"grid min-w-[560px] grid-cols-[2fr_1fr_1fr_auto] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0\"><div class=\"truncate font-mono text-sm text-text\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

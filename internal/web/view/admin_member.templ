@@ -43,7 +43,7 @@ templ memberRoleOption(page MemberPage, value string, label string) {
 
 templ AdminMember(page MemberPage) {
 	@AdminLayout(page.Name+" — Automata Admin", "orgs", page.Platforms, page.CSRFToken) {
-		<header class="border-b border-line-2 bg-white px-8 py-5">
+		<header class="border-b border-line-2 bg-white px-4 py-4 md:px-8 md:py-5">
 			<div class="mb-2 text-[13px] text-text-4">
 				<a href="/admin/orgs">Organisations</a> / <a href={ templ.SafeURL("/admin/orgs/" + page.OrgID + "?tab=members") }>{ page.OrgName }</a> / Membres / <span class="text-text">{ page.Name }</span>
 			</div>
@@ -158,7 +158,7 @@ type MemberNewPage struct {
 
 templ AdminMemberNew(page MemberNewPage) {
 	@AdminLayout("Pré-créer un membre — Automata Admin", "orgs", page.Platforms, page.CSRFToken) {
-		<header class="border-b border-line-2 bg-white px-8 py-5">
+		<header class="border-b border-line-2 bg-white px-4 py-4 md:px-8 md:py-5">
 			<div class="mb-2 text-[13px] text-text-4">
 				<a href="/admin/orgs">Organisations</a> / <a href={ templ.SafeURL("/admin/orgs/" + page.OrgID + "?tab=members") }>{ page.OrgName }</a> / Membres / <span class="text-text">Nouveau membre</span>
 			</div>

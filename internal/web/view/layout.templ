@@ -49,48 +49,59 @@ templ Base(title string) {
 	</html>
 }
 
+// adminNavLinks rend les entrées de navigation. Le même balisage sert le
+// menu déroulant du téléphone et la colonne de l'écran large : une seule
+// définition, deux mises en page.
+templ adminNavLinks(active string) {
+	for _, item := range AdminNav(active) {
+		if item.Active {
+			<a href={ templ.SafeURL(item.Href) } class="rounded-[7px] bg-ink-3 px-2.5 py-2 text-sm font-semibold text-white">{ item.Label }</a>
+		} else if item.Planned {
+			<span class="cursor-default rounded-[7px] px-2.5 py-2 text-sm font-medium text-sidebar-muted" title="Prochain lot">{ item.Label }</span>
+		} else {
+			<a href={ templ.SafeURL(item.Href) } class="rounded-[7px] px-2.5 py-2 text-sm font-medium text-sidebar-text hover:bg-ink-3 hover:text-white hover:no-underline">{ item.Label }</a>
+		}
+	}
+}
+
 // AdminLayout : barre de navigation sombre, contenu clair.
 //
 // Sur téléphone, la barre latérale ne peut pas rester une colonne de 216 px
-// — il ne resterait rien au contenu. Elle passe donc en bandeau horizontal
-// au-dessus, sa navigation défilant latéralement. Pas de menu escamotable :
-// une dizaine d'entrées tiennent dans un ruban, et un tiroir demanderait du
-// JavaScript pour un gain nul.
+// — il ne resterait rien au contenu. Elle devient un bandeau avec un menu
+// déroulant, construit avec <details> : le navigateur sait ouvrir et fermer
+// tout seul, sans une ligne de JavaScript.
 templ AdminLayout(title string, active string, platforms []SidebarPlatform, csrfToken string) {
 	@Base(title) {
 		<div class="flex min-h-screen flex-col md:flex-row">
 			<aside class="flex w-full shrink-0 flex-col gap-3 bg-ink px-3.5 py-3 md:w-[216px] md:gap-6 md:py-5">
-				<div class="flex items-center gap-2.5 px-2">
-					<div class="flex size-[26px] items-center justify-center rounded-[7px] bg-brand font-mono text-[13px] font-bold text-white">a</div>
-					<div class="text-[15px] font-semibold text-white">Automata</div>
-					<div class="ml-auto font-mono text-[9px] font-bold tracking-[.08em] text-sidebar-muted">ADMIN</div>
-				</div>
-				<nav class="-mx-3.5 flex gap-0.5 overflow-x-auto px-3.5 pb-1 md:mx-0 md:flex-col md:overflow-visible md:px-0 md:pb-0">
-					for _, item := range AdminNav(active) {
-						if item.Active {
-							<a href={ templ.SafeURL(item.Href) } class="shrink-0 whitespace-nowrap rounded-[7px] bg-ink-3 px-2.5 py-2 text-sm font-semibold text-white">{ item.Label }</a>
-						} else if item.Planned {
-							<span class="shrink-0 cursor-default whitespace-nowrap rounded-[7px] px-2.5 py-2 text-sm font-medium text-sidebar-muted" title="Prochain lot">{ item.Label }</span>
-						} else {
-							<a href={ templ.SafeURL(item.Href) } class="shrink-0 whitespace-nowrap rounded-[7px] px-2.5 py-2 text-sm font-medium text-sidebar-text hover:bg-ink-3 hover:text-white hover:no-underline">{ item.Label }</a>
-						}
-					}
-				</nav>
-				<div class="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-ink-3 px-2.5 py-3 md:flex-col md:items-stretch md:gap-2">
-					<span class="hidden md:block">
+				<details class="group md:contents">
+					<summary class="flex cursor-pointer list-none items-center gap-2.5 px-2 [&::-webkit-details-marker]:hidden">
+						<div class="flex size-[26px] items-center justify-center rounded-[7px] bg-brand font-mono text-[13px] font-bold text-white">a</div>
+						<div class="text-[15px] font-semibold text-white">Automata</div>
+						<div class="ml-auto hidden font-mono text-[9px] font-bold tracking-[.08em] text-sidebar-muted md:block">ADMIN</div>
+						<span class="ml-auto flex size-9 items-center justify-center rounded-[7px] text-sidebar-text group-open:bg-ink-3 md:hidden" aria-label="Menu">
+							<svg viewBox="0 0 20 20" class="size-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+								<path d="M3 6h14M3 10h14M3 14h14"></path>
+							</svg>
+						</span>
+					</summary>
+					<nav class="mt-2 flex flex-col gap-0.5 md:mt-0">
+						@adminNavLinks(active)
+					</nav>
+					<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-ink-3 px-2.5 py-3 md:mt-auto md:flex-col md:items-stretch md:gap-2">
 						@Eyebrow("Plateformes", "text-sidebar-muted")
-					</span>
-					for _, p := range platforms {
-						<div class="flex items-center gap-2">
-							<span class="size-1.5 rounded-full bg-sidebar-muted" title="État de connexion : prochain lot"></span>
-							<span class="text-[13px] text-sidebar-text">{ p.Name }</span>
-						</div>
-					}
-					<form action="/admin/logout" method="post" class="ml-auto md:ml-0 md:mt-2">
-						<input type="hidden" name="csrf_token" value={ csrfToken }/>
-						<button type="submit" class="text-[13px] text-sidebar-muted hover:text-sidebar-text">Se déconnecter</button>
-					</form>
-				</div>
+						for _, p := range platforms {
+							<div class="flex items-center gap-2">
+								<span class="size-1.5 rounded-full bg-sidebar-muted" title="État de connexion : prochain lot"></span>
+								<span class="text-[13px] text-sidebar-text">{ p.Name }</span>
+							</div>
+						}
+						<form action="/admin/logout" method="post" class="ml-auto md:ml-0 md:mt-2">
+							<input type="hidden" name="csrf_token" value={ csrfToken }/>
+							<button type="submit" class="text-[13px] text-sidebar-muted hover:text-sidebar-text">Se déconnecter</button>
+						</form>
+					</div>
+				</details>
 			</aside>
 			<main class="min-w-0 flex-1 bg-panel">
 				<div id="admin-content">

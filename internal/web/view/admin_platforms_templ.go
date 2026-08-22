@@ -181,7 +181,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<header class=\"flex items-center border-b border-line-2 bg-white px-8 py-5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Canaux et plateformes</h1><div class=\"mt-0.5 text-sm text-text-3\">Comptes de messagerie de l'instance, partagés par toutes les organisations</div></div><a href=\"/admin/platforms?pairing=qr\" class=\"ml-auto flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline\">Ajouter un compte</a></header><div class=\"flex flex-col items-stretch gap-5.5 px-4 pb-6 pt-4 lg:flex-row lg:items-start md:px-8 md:pb-8 md:pt-6\"><div class=\"flex min-w-0 flex-1 flex-col gap-5.5\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<header class=\"flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-line-2 bg-white px-4 py-4 md:px-8 md:py-5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Canaux et plateformes</h1><div class=\"mt-0.5 text-sm text-text-3\">Comptes de messagerie de l'instance, partagés par toutes les organisations</div></div><a href=\"/admin/platforms?pairing=qr\" class=\"flex h-9 shrink-0 items-center whitespace-nowrap rounded-lg bg-brand px-4 text-sm font-semibold text-white sm:ml-auto hover:bg-brand-strong hover:no-underline\">Ajouter un compte</a></header><div class=\"flex flex-col items-stretch gap-5.5 px-4 pb-6 pt-4 lg:flex-row lg:items-start md:px-8 md:pb-8 md:pt-6\"><div class=\"flex min-w-0 flex-1 flex-col gap-5.5\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -433,12 +433,12 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</select> <button type=\"submit\" class=\"h-8 whitespace-nowrap rounded-lg border border-line bg-white px-3 text-[13px] font-medium text-text hover:bg-panel\">Générer un jeton de groupe</button></form></div><div class=\"grid grid-cols-[1.4fr_.8fr_1.2fr_1.1fr] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Canal</div><div>Type</div><div>Organisation</div><div>Liaison</div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</select> <button type=\"submit\" class=\"h-8 whitespace-nowrap rounded-lg border border-line bg-white px-3 text-[13px] font-medium text-text hover:bg-panel\">Générer un jeton de groupe</button></form></div><div class=\"grid min-w-[620px] grid-cols-[1.4fr_.8fr_1.2fr_1.1fr] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Canal</div><div>Type</div><div>Organisation</div><div>Liaison</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			for _, row := range page.Channels {
-				var templ_7745c5c3_Var20 = []any{"grid grid-cols-[1.4fr_.8fr_1.2fr_1.1fr] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0", orgRowToneClass(row.RowTone)}
+				var templ_7745c5c3_Var20 = []any{"grid min-w-[620px] grid-cols-[1.4fr_.8fr_1.2fr_1.1fr] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0", orgRowToneClass(row.RowTone)}
 				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var20...)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err

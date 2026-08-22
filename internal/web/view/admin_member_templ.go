@@ -162,7 +162,7 @@ func AdminMember(page MemberPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<header class=\"border-b border-line-2 bg-white px-8 py-5\"><div class=\"mb-2 text-[13px] text-text-4\"><a href=\"/admin/orgs\">Organisations</a> / <a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<header class=\"border-b border-line-2 bg-white px-4 py-4 md:px-8 md:py-5\"><div class=\"mb-2 text-[13px] text-text-4\"><a href=\"/admin/orgs\">Organisations</a> / <a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -591,7 +591,7 @@ func AdminMemberNew(page MemberNewPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<header class=\"border-b border-line-2 bg-white px-8 py-5\"><div class=\"mb-2 text-[13px] text-text-4\"><a href=\"/admin/orgs\">Organisations</a> / <a href=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "<header class=\"border-b border-line-2 bg-white px-4 py-4 md:px-8 md:py-5\"><div class=\"mb-2 text-[13px] text-text-4\"><a href=\"/admin/orgs\">Organisations</a> / <a href=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

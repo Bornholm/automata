@@ -196,14 +196,15 @@ templ orgCreditsTab(page OrgPage) {
 				if len(page.Ledger) == 0 {
 					<div class="px-5 py-8 text-center text-sm text-text-4">Aucun mouvement pour l'instant. Les crédits de bienvenue et les gestes commerciaux apparaîtront ici.</div>
 				} else {
-					<div class="grid grid-cols-[1fr_1.7fr_.9fr_.9fr] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
+					<div class="overflow-x-auto">
+					<div class="grid min-w-[620px] grid-cols-[1fr_1.7fr_.9fr_.9fr] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
 						<div>Date</div>
 						<div>Nature</div>
 						<div class="text-right">Mouvement</div>
 						<div class="text-right">Solde après</div>
 					</div>
 					for _, row := range page.Ledger {
-						<div class="grid grid-cols-[1fr_1.7fr_.9fr_.9fr] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0">
+						<div class="grid min-w-[620px] grid-cols-[1fr_1.7fr_.9fr_.9fr] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0">
 							<div class="font-mono text-[13px] text-text-3">{ row.At }</div>
 							<div class="text-sm text-text">
 								{ row.Label }
@@ -219,6 +220,7 @@ templ orgCreditsTab(page OrgPage) {
 							<div class="text-right font-mono text-sm text-text">{ FormatInt(row.After) }</div>
 						</div>
 					}
+					</div>
 				}
 			</div>
 			<div class="rounded-[11px] border border-line-2 bg-white p-5">
@@ -289,7 +291,7 @@ templ orgMembersTab(page OrgPage) {
 	<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
 		<div class="flex items-center border-b border-line-2 px-5 py-3.5">
 			<div class="text-[15px] font-semibold text-ink">Membres</div>
-			<a href={ templ.SafeURL("/admin/orgs/" + page.ID + "/members/new") } class="ml-auto flex h-8 items-center rounded-lg bg-brand px-3 text-[13px] font-semibold text-white hover:bg-brand-strong hover:no-underline">Pré-créer un membre</a>
+			<a href={ templ.SafeURL("/admin/orgs/" + page.ID + "/members/new") } class="flex h-8 shrink-0 items-center whitespace-nowrap rounded-lg bg-brand px-3 text-[13px] font-semibold text-white sm:ml-auto hover:bg-brand-strong hover:no-underline">Pré-créer un membre</a>
 		</div>
 		if len(page.Members) == 0 {
 			<div class="px-5 py-8 text-center text-sm text-text-4">Aucun membre. Pré-créez le premier : il recevra un jeton à envoyer à Automata pour se rattacher.</div>
