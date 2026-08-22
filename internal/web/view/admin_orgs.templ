@@ -82,7 +82,7 @@ templ AdminOrgs(page OrgsPage) {
 				</div>
 			} else {
 				<div class="overflow-x-auto rounded-[11px] border border-line-2 bg-white">
-					<div class="grid min-w-[760px] grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
+					<div class="hidden gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4 md:grid md:min-w-[760px] md:grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px]">
 						<div>Organisation</div>
 						<div>Solde de crédits</div>
 						<div>Membres</div>
@@ -91,7 +91,7 @@ templ AdminOrgs(page OrgsPage) {
 						<div></div>
 					</div>
 					for _, row := range page.Rows {
-						<a href={ templ.SafeURL("/admin/orgs/" + row.ID) } class={ "grid min-w-[760px] grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] items-center gap-4 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline", orgRowToneClass(row.RowTone) }>
+						<a href={ templ.SafeURL("/admin/orgs/" + row.ID) } class={ "flex flex-col gap-2.5 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline md:grid md:min-w-[760px] md:grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] md:items-center md:gap-4", orgRowToneClass(row.RowTone) }>
 							<div>
 								<div class="text-[15px] font-semibold leading-tight text-ink">{ row.Name }</div>
 								<div class="mt-0.5 text-[13px] leading-tight text-text-4">{ row.Subtitle }</div>
@@ -105,10 +105,16 @@ templ AdminOrgs(page OrgsPage) {
 								</div>
 								@Gauge(row.GaugePct, row.GaugeTone, "h-[5px]")
 							</div>
-							<div class="font-mono text-sm text-text">{ FormatInt(row.Members) }</div>
-							<div class="text-right font-mono text-sm text-text">{ row.MonthUsage }</div>
-							<div class="text-right font-mono text-[13px] text-text-4">{ row.CreatedAt }</div>
-							<div class="text-right text-[15px] font-semibold text-text-5">›</div>
+							<div class="font-mono text-sm text-text">
+								<span class="text-[13px] text-text-4 md:hidden">Membres&nbsp;</span>{ FormatInt(row.Members) }
+							</div>
+							<div class="font-mono text-sm text-text md:text-right">
+								<span class="text-[13px] text-text-4 md:hidden">Conso. du mois&nbsp;</span>{ row.MonthUsage }
+							</div>
+							<div class="font-mono text-[13px] text-text-4 md:text-right">
+								<span class="md:hidden">Créée le&nbsp;</span>{ row.CreatedAt }
+							</div>
+							<div class="hidden text-right text-[15px] font-semibold text-text-5 md:block">›</div>
 						</a>
 					}
 				</div>

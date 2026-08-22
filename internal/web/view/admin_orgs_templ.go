@@ -222,12 +222,12 @@ func AdminOrgs(page OrgsPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"overflow-x-auto rounded-[11px] border border-line-2 bg-white\"><div class=\"grid min-w-[760px] grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Organisation</div><div>Solde de crédits</div><div>Membres</div><div class=\"text-right\">Conso. du mois</div><div class=\"text-right\">Création</div><div></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"overflow-x-auto rounded-[11px] border border-line-2 bg-white\"><div class=\"hidden gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4 md:grid md:min-w-[760px] md:grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px]\"><div>Organisation</div><div>Solde de crédits</div><div>Membres</div><div class=\"text-right\">Conso. du mois</div><div class=\"text-right\">Création</div><div></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, row := range page.Rows {
-					var templ_7745c5c3_Var9 = []any{"grid min-w-[760px] grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] items-center gap-4 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline", orgRowToneClass(row.RowTone)}
+					var templ_7745c5c3_Var9 = []any{"flex flex-col gap-2.5 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline md:grid md:min-w-[760px] md:grid-cols-[1.6fr_1.5fr_.7fr_1fr_.9fr_32px] md:items-center md:gap-4", orgRowToneClass(row.RowTone)}
 					templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var9...)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
@@ -319,46 +319,46 @@ func AdminOrgs(page OrgsPage) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</div><div class=\"font-mono text-sm text-text\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</div><div class=\"font-mono text-sm text-text\"><span class=\"text-[13px] text-text-4 md:hidden\">Membres&nbsp;</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var15 string
 					templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(FormatInt(row.Members))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_orgs.templ`, Line: 108, Col: 72}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_orgs.templ`, Line: 109, Col: 100}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div><div class=\"text-right font-mono text-sm text-text\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "</div><div class=\"font-mono text-sm text-text md:text-right\"><span class=\"text-[13px] text-text-4 md:hidden\">Conso. du mois&nbsp;</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var16 string
 					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(row.MonthUsage)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_orgs.templ`, Line: 109, Col: 75}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_orgs.templ`, Line: 112, Col: 99}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</div><div class=\"text-right font-mono text-[13px] text-text-4\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "</div><div class=\"font-mono text-[13px] text-text-4 md:text-right\"><span class=\"md:hidden\">Créée le&nbsp;</span>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var17 string
 					templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(row.CreatedAt)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_orgs.templ`, Line: 110, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_orgs.templ`, Line: 115, Col: 70}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div><div class=\"text-right text-[15px] font-semibold text-text-5\">›</div></a>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div><div class=\"hidden text-right text-[15px] font-semibold text-text-5 md:block\">›</div></a>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -430,7 +430,7 @@ func AdminOrgNew(page OrgNewPage) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_orgs.templ`, Line: 137, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_orgs.templ`, Line: 143, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 			if templ_7745c5c3_Err != nil {
@@ -448,7 +448,7 @@ func AdminOrgNew(page OrgNewPage) templ.Component {
 				var templ_7745c5c3_Var21 string
 				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(page.Error)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_orgs.templ`, Line: 139, Col: 93}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_orgs.templ`, Line: 145, Col: 93}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 				if templ_7745c5c3_Err != nil {

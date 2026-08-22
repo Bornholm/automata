@@ -75,7 +75,7 @@ func AdminSkills(page SkillsPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"overflow-x-auto rounded-[11px] border border-line-2 bg-white\"><div class=\"grid min-w-[720px] grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Nom</div><div>Description</div><div>Agents ciblés</div><div>État</div><div class=\"text-right\">Modifiée</div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"overflow-x-auto rounded-[11px] border border-line-2 bg-white\"><div class=\"hidden gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4 md:grid md:min-w-[720px] md:grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr]\"><div>Nom</div><div>Description</div><div>Agents ciblés</div><div>État</div><div class=\"text-right\">Modifiée</div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -93,7 +93,7 @@ func AdminSkills(page SkillsPage) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"grid min-w-[720px] grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr] items-center gap-4 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline\"><div class=\"flex items-center gap-2\"><span class=\"font-mono text-sm font-medium text-text\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "\" class=\"flex flex-col gap-2 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline md:grid md:min-w-[720px] md:grid-cols-[1.2fr_2fr_.9fr_.6fr_.6fr] md:items-center md:gap-4\"><div class=\"flex flex-wrap items-center gap-2\"><span class=\"font-mono text-sm font-medium text-text\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -129,7 +129,7 @@ func AdminSkills(page SkillsPage) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div><div class=\"text-[13px] text-text-4\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</div><div class=\"order-last text-[13px] text-text-4 md:order-none\">Agents : ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -142,7 +142,7 @@ func AdminSkills(page SkillsPage) templ.Component {
 						var templ_7745c5c3_Var6 string
 						templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(row.Agents)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 63, Col: 21}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 64, Col: 21}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 						if templ_7745c5c3_Err != nil {
@@ -164,14 +164,14 @@ func AdminSkills(page SkillsPage) templ.Component {
 							return templ_7745c5c3_Err
 						}
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><div class=\"text-right font-mono text-[13px] text-text-4\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><div class=\"order-last font-mono text-[13px] text-text-4 md:order-none md:text-right\">Modifiée ")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var7 string
 					templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(row.UpdatedAt)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 73, Col: 80}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 74, Col: 118}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 					if templ_7745c5c3_Err != nil {
@@ -269,7 +269,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 				var templ_7745c5c3_Var10 string
 				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(page.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 109, Col: 40}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 110, Col: 40}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
@@ -293,7 +293,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(page.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 116, Col: 16}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 117, Col: 16}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -307,7 +307,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 			var templ_7745c5c3_Var12 templ.SafeURL
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinURLErrs(skillFormAction(page))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 121, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 122, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 			if templ_7745c5c3_Err != nil {
@@ -320,7 +320,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 			var templ_7745c5c3_Var13 string
 			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 122, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 123, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 			if templ_7745c5c3_Err != nil {
@@ -338,7 +338,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 				var templ_7745c5c3_Var14 string
 				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(page.Error)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 124, Col: 93}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 125, Col: 93}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {
@@ -367,7 +367,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 				var templ_7745c5c3_Var15 string
 				templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 135, Col: 63}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 136, Col: 63}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 				if templ_7745c5c3_Err != nil {
@@ -385,7 +385,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.Description)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 141, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 142, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
 			if templ_7745c5c3_Err != nil {
@@ -398,7 +398,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 			var templ_7745c5c3_Var17 string
 			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.Agents)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 146, Col: 57}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 147, Col: 57}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 			if templ_7745c5c3_Err != nil {
@@ -411,7 +411,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 			var templ_7745c5c3_Var18 string
 			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(page.Content)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 152, Col: 147}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 153, Col: 147}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 			if templ_7745c5c3_Err != nil {
@@ -444,7 +444,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 					var templ_7745c5c3_Var19 templ.SafeURL
 					templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/admin/skills/" + page.Name + "/restore"))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 166, Col: 91}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 167, Col: 91}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 					if templ_7745c5c3_Err != nil {
@@ -457,7 +457,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 					var templ_7745c5c3_Var20 string
 					templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 167, Col: 68}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 168, Col: 68}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
 					if templ_7745c5c3_Err != nil {
@@ -490,7 +490,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 				var templ_7745c5c3_Var21 templ.SafeURL
 				templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/admin/skills/" + page.Name + "/delete"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 176, Col: 89}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 177, Col: 89}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 				if templ_7745c5c3_Err != nil {
@@ -503,7 +503,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 				var templ_7745c5c3_Var22 string
 				templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 178, Col: 67}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_skills.templ`, Line: 179, Col: 67}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 				if templ_7745c5c3_Err != nil {
