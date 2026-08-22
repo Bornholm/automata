@@ -3,6 +3,7 @@
 # versionnée. Les secrets, eux, ne figurent dans aucun des deux : ils sont
 # référencés par ${VARIABLE} et lus dans l'environnement.
 /config/config.yaml
+/config/config.env
 
 # Variables d'environnement du déploiement local (lues par compose.yaml).
 .env
@@ -18,7 +19,8 @@
 # Outils de développement installés localement (modd).
 /tools/
 /local/
-*.log# Espace de travail local pour itérer sur un dépôt frère avant publication
+*.log 
+# Espace de travail local pour itérer sur un dépôt frère avant publication
 # (jamais versionné) : la règle reste qu'un clone nu compile seul, donc
 # go.mod ne porte aucun replace.
 /go.work
