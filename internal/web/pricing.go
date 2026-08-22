@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -47,15 +48,35 @@ func (p pricing) UnitMargin(credits int64, priceEUR float64) (float64, bool) {
 	return (unitPrice - p.CreditCostEUR()) / unitPrice * 100, true
 }
 
-// RecommendedPrice retourne le prix qu'il faudrait demander pour un pack
-// afin d'atteindre la marge visée.
+// RecommendedPrice retourne le prix à demander pour un pack afin
+// d'atteindre la marge visée, arrondi à l'euro SUPÉRIEUR.
+//
+// L'arrondi n'est pas cosmétique : « 4 € » se lit et se compare, « 3,67 € »
+// donne l'impression d'un tarif calculé à la virgule près par une machine.
+// Arrondir vers le haut garantit en outre que la marge obtenue est toujours
+// au moins celle visée — jamais en dessous.
+//
+// Un pack minuscule tombe donc à 1 € même si son coût est bien moindre :
+// c'est le plus petit prix affichable, et la marge réelle est simplement
+// meilleure qu'attendu.
 func (p pricing) RecommendedPrice(credits int64) float64 {
+	if credits <= 0 {
+		return 0
+	}
+
 	margin := p.TargetMargin
 	if margin < 0 || margin >= 100 {
 		margin = persistence.DefaultTargetMargin
 	}
 
-	return float64(credits) * p.CreditCostEUR() / (1 - margin/100)
+	exact := float64(credits) * p.CreditCostEUR() / (1 - margin/100)
+
+	rounded := math.Ceil(exact)
+	if rounded < 1 {
+		rounded = 1
+	}
+
+	return rounded
 }
 
 // defaultEURPerUSD sert d'ordre de grandeur pour comparer des recettes en

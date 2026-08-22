@@ -35,6 +35,10 @@ func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
 		page.USDPerCredit = trimFloat(p.USDPerCredit)
 		page.TargetMargin = trimFloat(p.TargetMargin)
 		page.CreditCost = fmt.Sprintf("%.5f €", p.CreditCostEUR())
+		// Valeurs brutes pour l'aperçu côté navigateur : le texte formaté
+		// ci-dessus n'est pas relisible par un calcul.
+		page.CreditCostRaw = strconv.FormatFloat(p.CreditCostEUR(), 'f', -1, 64)
+		page.TargetMarginRaw = strconv.FormatFloat(p.TargetMargin, 'f', -1, 64)
 		page.EURPerUSD = trimFloat(p.EURPerUSD)
 		page.WelcomeCredits = p.WelcomeCredits
 		page.DefaultAllowance = p.DefaultAllowance
@@ -130,14 +134,36 @@ func trimFloat(value float64) string {
 // handlePricingPackCreate ajoute une offre.
 func (s *Server) handlePricingPackCreate(w http.ResponseWriter, r *http.Request) {
 	credits, errCredits := strconv.ParseInt(r.PostFormValue("credits"), 10, 64)
-	price, errPrice := strconv.ParseFloat(strings.Replace(r.PostFormValue("price_eur"), ",", ".", 1), 64)
-
-	if errCredits != nil || errPrice != nil || credits <= 0 || price < 0 {
+	if errCredits != nil || credits <= 0 {
 		http.Redirect(w, r, "/admin/pricing", http.StatusFound)
 		return
 	}
 
+	// Le prix est facultatif : laissé vide, il découle du coût réel d'un
+	// crédit et de la marge visée. C'est le cas courant — fixer un prix à la
+	// main n'a de sens que pour une offre d'appel ou un tarif rond imposé
+	// par ailleurs.
+	rawPrice := strings.TrimSpace(r.PostFormValue("price_eur"))
+
+	var price float64
+	if rawPrice != "" {
+		parsed, err := strconv.ParseFloat(strings.Replace(rawPrice, ",", ".", 1), 64)
+		if err != nil || parsed < 0 {
+			http.Redirect(w, r, "/admin/pricing", http.StatusFound)
+			return
+		}
+		price = parsed
+	}
+
 	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+		if rawPrice == "" {
+			p, err := s.pricing(r.Context(), tx)
+			if err != nil {
+				return err
+			}
+			price = p.RecommendedPrice(credits)
+		}
+
 		packs, err := s.pricingRepo.ListPacks(r.Context(), tx)
 		if err != nil {
 			return err
@@ -154,7 +180,8 @@ func (s *Server) handlePricingPackCreate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: offre de crédits ajoutée", "credits", credits)
+	s.logger.InfoContext(r.Context(), "web: offre de crédits ajoutée",
+		"credits", credits, "price_computed", rawPrice == "")
 	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
 }
 

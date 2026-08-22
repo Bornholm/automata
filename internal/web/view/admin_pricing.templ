@@ -64,6 +64,12 @@ type PricingPage struct {
 	// EstimatedShare décrit la part d'appels estimés sur la période.
 	EstimatedShare string
 	// TargetMargin est la marge visée sur la vente de crédits, et
+	// CreditCostRaw et TargetMarginRaw portent les mêmes valeurs que
+	// CreditCost et TargetMargin, mais en nombres bruts : le calcul du prix
+	// suggéré, côté navigateur, ne peut pas les relire depuis un texte
+	// formaté (« 0.00092 € »).
+	CreditCostRaw   string
+	TargetMarginRaw string
 	// CreditCost ce qu'un crédit doit couvrir.
 	TargetMargin string
 	CreditCost   string
@@ -191,18 +197,49 @@ templ AdminPricing(page PricingPage) {
 						}
 						</div>
 					}
-					<form method="post" action="/admin/pricing/packs" class="flex flex-wrap items-end gap-3 border-t border-line-2 bg-panel px-5 py-4">
+					<form method="post" action="/admin/pricing/packs" class="flex flex-wrap items-end gap-3 border-t border-line-2 bg-panel px-5 py-4"
+						data-credit-cost={ page.CreditCostRaw } data-target-margin={ page.TargetMarginRaw }>
 						<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 						<label class="block">
 							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Crédits</span>
 							<input type="number" name="credits" min="1" required class="h-[38px] w-[140px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
 						</label>
 						<label class="block">
-							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Prix (€)</span>
-							<input type="number" name="price_eur" min="0" step="0.01" required class="h-[38px] w-[120px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Prix (€) <span class="font-normal text-text-4">— facultatif</span></span>
+							<input type="number" name="price_eur" min="0" step="0.01" placeholder="auto"
+								class="h-[38px] w-[120px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand"/>
 						</label>
 						<button type="submit" class="h-[38px] shrink-0 whitespace-nowrap rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong">Ajouter l'offre</button>
+						<div class="w-full text-[13px] text-text-4">
+							Laissé vide, le prix découle du coût réel et de la marge visée, arrondi à l'euro supérieur.
+							<output name="suggestion" class="font-medium text-text-2"></output>
+						</div>
 					</form>
+					<!-- Aperçu du prix pendant la saisie. Le calcul qui fait foi
+					     reste celui du serveur : ce script ne fait que montrer
+					     à l'avance ce qu'il produira. -->
+					<script>
+						(function () {
+							var form = document.currentScript.previousElementSibling;
+							if (!form) return;
+							var cost = parseFloat(form.dataset.creditCost || "0");
+							var margin = parseFloat(form.dataset.targetMargin || "0");
+							var credits = form.elements["credits"];
+							var price = form.elements["price_eur"];
+							var out = form.querySelector("output[name=suggestion]");
+							function refresh() {
+								var n = parseInt(credits.value, 10);
+								if (!n || n <= 0 || !cost || margin < 0 || margin >= 100) {
+									out.textContent = "";
+									return;
+								}
+								var suggested = Math.max(1, Math.ceil(n * cost / (1 - margin / 100)));
+								out.textContent = price.value ? "" : " Prix calculé : " + suggested + " €.";
+							}
+							credits.addEventListener("input", refresh);
+							price.addEventListener("input", refresh);
+						})();
+					</script>
 				</div>
 				<form method="post" action="/admin/pricing/settings" class="w-full shrink-0 lg:w-[360px] rounded-[11px] border border-line-2 bg-white p-5.5">
 					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
