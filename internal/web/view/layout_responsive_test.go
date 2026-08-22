@@ -66,3 +66,15 @@ func TestAdminLayout_NavigationAdaptsToSmallScreens(t *testing.T) {
 		t.Error("la déconnexion est hors du menu : inatteignable sur téléphone")
 	}
 }
+
+// Un écran dont un bloc déborde doit le faire défiler dans son propre
+// conteneur. Sans cette ceinture sur le contenu, la page entière glisse
+// latéralement : l'en-tête et le titre sortent du cadre, et plus rien n'est
+// lisible au doigt.
+func TestAdminLayout_ContentNeverScrollsThePage(t *testing.T) {
+	html := render(t, "AdminLayout")
+
+	if !strings.Contains(html, "overflow-x-hidden") {
+		t.Error("le contenu peut déborder et décaler la page entière")
+	}
+}

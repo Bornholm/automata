@@ -86,7 +86,7 @@ func AdminUsage(page UsagePage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Consommation et refacturation</h1><div class=\"mt-0.5 text-sm text-text-3\">Coûts d'inférence mesurés, tels que les fournisseurs les rapportent</div></header><div class=\"flex flex-col gap-5 p-4 md:p-7\"><form method=\"get\" action=\"/admin/usage\" class=\"flex flex-wrap items-end gap-4 rounded-[11px] border border-line-2 bg-white p-5\"><label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Du</span> <input type=\"date\" name=\"from\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Consommation et refacturation</h1><div class=\"mt-0.5 text-sm text-text-3\">Coûts d'inférence mesurés, tels que les fournisseurs les rapportent</div></header><div class=\"flex flex-col gap-5 p-4 md:p-7\"><form method=\"get\" action=\"/admin/usage\" class=\"flex flex-wrap items-end gap-4 rounded-[11px] border border-line-2 bg-white p-5\"><label class=\"block min-w-0 flex-1 sm:flex-none\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Du</span> <input type=\"date\" name=\"from\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -99,7 +99,7 @@ func AdminUsage(page UsagePage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"h-[38px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Au <span class=\"font-normal text-text-4\">— exclu</span></span> <input type=\"date\" name=\"to\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block min-w-0 flex-1 sm:flex-none\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Au <span class=\"font-normal text-text-4\">— exclu</span></span> <input type=\"date\" name=\"to\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -112,7 +112,7 @@ func AdminUsage(page UsagePage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" class=\"h-[38px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label><div class=\"min-w-0 flex-1\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Regrouper par</span><div class=\"flex flex-wrap gap-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label><div class=\"w-full min-w-0 lg:flex-1\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Regrouper par</span><div class=\"flex flex-wrap gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

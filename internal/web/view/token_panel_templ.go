@@ -149,7 +149,7 @@ func TokenPanel(data TokenPanelData) templ.Component {
 			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"flex items-center gap-7 rounded-xl bg-ink px-4 md:px-7 py-6\"><div class=\"min-w-0 flex-1\"><div class=\"mb-3.5 flex items-center gap-2.5\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"flex flex-col items-stretch gap-5 rounded-xl bg-ink px-4 py-6 md:px-7 lg:flex-row lg:items-center lg:gap-7\"><div class=\"min-w-0 flex-1\"><div class=\"mb-3.5 flex items-center gap-2.5\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -168,14 +168,14 @@ func TokenPanel(data TokenPanelData) templ.Component {
 			return templ_7745c5c3_Err
 		}
 		if data.Display != "" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"flex items-stretch gap-2.5\"><div class=\"min-w-0 flex-1 break-all rounded-[10px] border border-ink-3 bg-[#0D1117] px-4.5 py-4 font-mono text-[22px] font-bold leading-tight tracking-[.06em] text-white\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"flex flex-col items-stretch gap-2.5 sm:flex-row\"><div class=\"min-w-0 flex-1 break-all rounded-[10px] border border-ink-3 bg-[#0D1117] px-4.5 py-4 font-mono text-[18px] font-bold leading-tight tracking-[.06em] text-white sm:text-[22px]\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var6 string
 			templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(data.Display)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/token_panel.templ`, Line: 60, Col: 191}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/token_panel.templ`, Line: 60, Col: 206}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 			if templ_7745c5c3_Err != nil {
@@ -194,7 +194,7 @@ func TokenPanel(data TokenPanelData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" onclick=\"navigator.clipboard.writeText(this.dataset.clipboard).then(() => { this.textContent = 'Copié !'; })\" class=\"flex w-[132px] shrink-0 items-center justify-center rounded-[10px] bg-brand text-[15px] font-semibold text-white hover:bg-brand-strong\">Copier</button></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" onclick=\"navigator.clipboard.writeText(this.dataset.clipboard).then(() => { this.textContent = 'Copié !'; })\" class=\"flex h-12 w-full shrink-0 items-center justify-center rounded-[10px] bg-brand sm:h-auto sm:w-[132px] text-[15px] font-semibold text-white hover:bg-brand-strong\">Copier</button></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -229,7 +229,7 @@ func TokenPanel(data TokenPanelData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div><div class=\"w-px self-stretch bg-ink-3\"></div><div class=\"flex w-full shrink-0 lg:w-[250px] flex-col gap-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div><div class=\"hidden w-px self-stretch bg-ink-3 lg:block\"></div><div class=\"flex w-full flex-col gap-3 lg:w-[250px] lg:shrink-0\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

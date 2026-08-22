@@ -47,7 +47,7 @@ templ tokenLifecycleStep(label string, active bool, detail string) {
 }
 
 templ TokenPanel(data TokenPanelData) {
-	<div class="flex items-center gap-7 rounded-xl bg-ink px-4 md:px-7 py-6">
+	<div class="flex flex-col items-stretch gap-5 rounded-xl bg-ink px-4 py-6 md:px-7 lg:flex-row lg:items-center lg:gap-7">
 		<div class="min-w-0 flex-1">
 			<div class="mb-3.5 flex items-center gap-2.5">
 				@Eyebrow(data.Eyebrow, "text-brand-soft")
@@ -56,11 +56,11 @@ templ TokenPanel(data TokenPanelData) {
 				}
 			</div>
 			if data.Display != "" {
-				<div class="flex items-stretch gap-2.5">
-					<div class="min-w-0 flex-1 break-all rounded-[10px] border border-ink-3 bg-[#0D1117] px-4.5 py-4 font-mono text-[22px] font-bold leading-tight tracking-[.06em] text-white">{ data.Display }</div>
+				<div class="flex flex-col items-stretch gap-2.5 sm:flex-row">
+					<div class="min-w-0 flex-1 break-all rounded-[10px] border border-ink-3 bg-[#0D1117] px-4.5 py-4 font-mono text-[18px] font-bold leading-tight tracking-[.06em] text-white sm:text-[22px]">{ data.Display }</div>
 					<button type="button" data-clipboard={ data.Clipboard }
 						onclick="navigator.clipboard.writeText(this.dataset.clipboard).then(() => { this.textContent = 'Copié !'; })"
-						class="flex w-[132px] shrink-0 items-center justify-center rounded-[10px] bg-brand text-[15px] font-semibold text-white hover:bg-brand-strong">Copier</button>
+						class="flex h-12 w-full shrink-0 items-center justify-center rounded-[10px] bg-brand sm:h-auto sm:w-[132px] text-[15px] font-semibold text-white hover:bg-brand-strong">Copier</button>
 				</div>
 			} else {
 				<div class="rounded-[10px] border border-dashed border-ink-3 px-4.5 py-4 font-mono text-[15px] text-sidebar-muted">Le code n'est plus affichable — seulement régénérable.</div>
@@ -72,8 +72,8 @@ templ TokenPanel(data TokenPanelData) {
 				<div class="mt-3.5 max-w-[640px] text-sm leading-normal text-sidebar-text">Si la personne n'a pas reçu son code, régénérez-en un : le précédent cesse alors d'être valable.</div>
 			}
 		</div>
-		<div class="w-px self-stretch bg-ink-3"></div>
-		<div class="flex w-full shrink-0 lg:w-[250px] flex-col gap-3">
+		<div class="hidden w-px self-stretch bg-ink-3 lg:block"></div>
+		<div class="flex w-full flex-col gap-3 lg:w-[250px] lg:shrink-0">
 			@Eyebrow("Cycle de vie", "text-sidebar-muted")
 			@tokenLifecycleStep("En attente", data.Status == "pending", data.Expires)
 			@tokenLifecycleStep("Utilisé", data.Status == "used", "")

@@ -173,14 +173,14 @@ func AdminInstance(page InstancePage) templ.Component {
 					}
 				} else {
 					for _, row := range section.Rows {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"flex items-baseline gap-4 border-b border-line-3 px-5 py-3 last:border-b-0\"><div class=\"w-full shrink-0 font-mono sm:w-[220px] text-sm text-text\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"flex flex-wrap items-baseline gap-x-4 gap-y-1 border-b border-line-3 px-5 py-3 last:border-b-0\"><div class=\"w-full font-mono text-sm text-text sm:w-[220px] sm:shrink-0\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var8 string
 						templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(row.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_instance.templ`, Line: 62, Col: 88}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_instance.templ`, Line: 62, Col: 91}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 						if templ_7745c5c3_Err != nil {

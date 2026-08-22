@@ -392,7 +392,7 @@ func AdminMember(page MemberPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" placeholder=\"nom@exemple.fr\" class=\"h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none placeholder:text-text-5 focus:border-brand\"></label><div class=\"flex justify-end gap-2.5 border-t border-line-3 pt-4\"><button type=\"submit\" class=\"h-[38px] rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong\">Enregistrer</button></div></form></div><div class=\"w-[400px] shrink-0 rounded-[11px] border border-line-2 bg-white p-5.5\"><div class=\"mb-1.5 text-[15px] font-semibold text-ink\">Après la liaison</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\" placeholder=\"nom@exemple.fr\" class=\"h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none placeholder:text-text-5 focus:border-brand\"></label><div class=\"flex justify-end gap-2.5 border-t border-line-3 pt-4\"><button type=\"submit\" class=\"h-[38px] rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong\">Enregistrer</button></div></form></div><div class=\"w-full shrink-0 rounded-[11px] border border-line-2 bg-white p-5.5 lg:w-[400px]\"><div class=\"mb-1.5 text-[15px] font-semibold text-ink\">Après la liaison</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

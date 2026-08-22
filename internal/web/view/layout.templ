@@ -103,7 +103,11 @@ templ AdminLayout(title string, active string, platforms []SidebarPlatform, csrf
 					</div>
 				</details>
 			</aside>
-			<main class="min-w-0 flex-1 bg-panel">
+			<!-- overflow-x-hidden est une ceinture : un écran dont un bloc déborde
+			     doit le faire défiler dans SON conteneur, jamais décaler la page
+			     entière. Sans cela, l'en-tête et le titre glissent hors du cadre
+			     et la lecture devient impossible au doigt. -->
+			<main class="min-w-0 flex-1 overflow-x-hidden bg-panel">
 				<div id="admin-content">
 					{ children... }
 				</div>
