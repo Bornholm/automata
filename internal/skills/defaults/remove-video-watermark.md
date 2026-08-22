@@ -43,7 +43,7 @@ instead — and tell the user you cropped:
 ffmpeg -y -i input.mp4 -vf "crop=W:H:X:Y" -c:v libx264 -preset veryfast -crf 28 -c:a copy output.mp4
 ```
 
-## 4. Check the size
+## 4. Check the size, then attach
 
 ```
 ls -l output.mp4
@@ -53,6 +53,17 @@ Messaging platforms reject anything much over 15 MB. If it is larger,
 re-encode harder in one go: raise `-crf` to 30-32 and scale down with
 `-vf "scale=-2:720"`.
 
-## 5. Attach
+Then call `attach_file` on the result straight away. Attaching is the only
+step the user actually sees; a file that stays in the workspace is worth
+nothing to them.
 
-Call `attach_file` on the result and say briefly what you did.
+## Do not loop
+
+You have one `view_file` in this whole task: the one in step 2, to locate
+the watermark. Do not look at the result, then re-encode, then look again —
+that cycle eats the entire budget and delivers nothing. Encoding a video is
+slow; you get one pass, not five.
+
+If you genuinely need to check the output, attach it FIRST, then look once
+and say what you see. A delivered file the user can judge for themselves
+beats a perfect one they never receive.

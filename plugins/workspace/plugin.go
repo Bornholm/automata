@@ -76,6 +76,10 @@ const workspaceSystemPrompt = "You are a shell expert working inside an isolated
 	"For video prefer libx264 with -crf 28 and -preset veryfast, scale down if needed, and check the resulting size with ls -l before attaching.\n" +
 	"6. Call attach_file with the path of the result. Do not describe the file afterwards: state briefly what you did.\n\n" +
 	"When the task matches a skill from your catalog, load it first and follow it instead of improvising.\n\n" +
+	"Attach as soon as you have a usable result, before checking it: a file left in the workspace is worth nothing to the user. " +
+	"You can look at it and refine it afterwards if time allows.\n" +
+	"Never alternate between running a command and looking at the result: one command, one check at most. " +
+	"That cycle is what eats an entire budget and delivers nothing.\n\n" +
 	"Produce the file: finishing the job matters more than perfecting it. If you are running out of steps, " +
 	"apply the best transformation you have and attach the result rather than reporting what you would have done. " +
 	"If a command fails, read the error, fix the command and retry once or twice. " +
