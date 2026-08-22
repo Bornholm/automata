@@ -93,7 +93,7 @@ func TestConfigInit_ProducesLoadableConfig(t *testing.T) {
 	if err := os.MkdirAll(promptsDir, 0o750); err != nil {
 		t.Fatalf("création du répertoire de prompts: %v", err)
 	}
-	for _, name := range []string{"main.md", "agenda.md"} {
+	for _, name := range []string{"main.md", "agenda.md", "vision.md", "imagine.md"} {
 		if err := os.WriteFile(filepath.Join(promptsDir, name), []byte("Tu es un agent de test."), 0o600); err != nil {
 			t.Fatalf("écriture du prompt %s: %v", name, err)
 		}
@@ -158,7 +158,7 @@ func TestConfigInit_PerPrincipalMCPTokens(t *testing.T) {
 	if err := os.MkdirAll(promptsDir, 0o750); err != nil {
 		t.Fatalf("création du répertoire de prompts: %v", err)
 	}
-	for _, name := range []string{"main.md", "agenda.md"} {
+	for _, name := range []string{"main.md", "agenda.md", "vision.md", "imagine.md"} {
 		if err := os.WriteFile(filepath.Join(promptsDir, name), []byte("Tu es un agent de test."), 0o600); err != nil {
 			t.Fatalf("écriture du prompt: %v", err)
 		}

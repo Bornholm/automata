@@ -73,6 +73,9 @@ plugins:
   # Client LLM servant les sous-agents fournis par les plugins : leurs
   # appels passent par l'instance, donc dans sa comptabilité d'usage.
   client: main
+  # Client multimodal de l'outil view_file d'un plugin d'atelier : le
+  # client des plugins peut être texte-seul, celui-ci regarde les images.
+  vision_client: vision
 {{ end }}{{ if .Observability }}
 observability:
   enabled: true
@@ -106,13 +109,62 @@ attachments:
   max_history: 4
   max_reply: 3
 {{ end }}
+# Historique conversationnel et sa compaction.
+conversation:
+  # Messages passés rejoués au modèle à chaque tour. Au-delà, sans
+  # compaction, ils sortent simplement du contexte : l'assistant perd le
+  # fil d'une conversation suivie.
+  history_limit: 20
+  compaction:
+    enabled: true
+    # Un modèle économique suffit : il s'agit de condenser, pas de
+    # raisonner. L'échec d'une compaction n'est jamais bloquant.
+    client: main
+    max_summary_chars: 2000
+    # Les faits durables (préférences, décisions, engagements, dates)
+    # rejoignent la mémoire à long terme, dans la portée de la
+    # conversation. Avec memory.consolidation, cela forme le cycle
+    # complet : les faits entrent au fil des compactions, la nuit les
+    # fusionne et purge les périmés.
+    extract_facts: true
+    max_facts: 5
+    # record_episodes conserverait le fragment condensé VERBATIM dans le
+    # store mémoire, qui n'est PAS chiffré au repos contrairement à la base
+    # applicative. Laissé désactivé : l'activer suppose d'accepter ce
+    # stockage en clair, et n'a d'intérêt qu'avec le drapeau memory.history
+    # de l'agent.
+    record_episodes: false
+
 llm_clients:
   main:
     provider: {{ .LLMProvider }}
     model: ${{"{"}}{{ .LLMModelVar }}{{"}"}}
     api_key: ${{"{"}}{{ .LLMKeyVar }}{{"}"}}
     base_url: ${{"{"}}{{ .LLMBaseVar }}{{"}"}}
-{{ if .Audio }}
+    # Si ce modèle n'accepte PAS les images, décommentez la ligne suivante.
+    # Sans elle, une simple photo reçue en conversation fait échouer la
+    # requête ENTIÈRE (« no endpoints found that support image input »), pas
+    # seulement l'image. Déclarée, les pièces jointes sont décrites en texte
+    # au généraliste, et le spécialiste vision ci-dessous les regarde.
+    # vision: false
+
+  # Modèle multimodal du spécialiste vision : l'orchestrateur peut être
+  # texte-seul, c'est ici que les images sont réellement « vues ».
+  vision:
+    provider: {{ .LLMProvider }}
+    model: ${{"{"}}{{ .VisionModelVar }}{{"}"}}
+    api_key: ${{"{"}}{{ .LLMKeyVar }}{{"}"}}
+    base_url: ${{"{"}}{{ .LLMBaseVar }}{{"}"}}
+{{ if .Plugins }}
+  # Sous-agents fournis par les plugins. Le travail d'atelier — enchaîner
+  # des commandes, choisir un filtre, converger vers un fichier — demande
+  # plus de méthode qu'une réponse de conversation.
+  plugins:
+    provider: {{ .LLMProvider }}
+    model: ${{"{"}}{{ .PluginsModelVar }}{{"}"}}
+    api_key: ${{"{"}}{{ .LLMKeyVar }}{{"}"}}
+    base_url: ${{"{"}}{{ .LLMBaseVar }}{{"}"}}
+{{ end }}{{ if .Audio }}
   transcription:
     provider: {{ .LLMProvider }}
     model: ${{"{"}}{{ .AudioModelVar }}{{"}"}}
@@ -121,6 +173,14 @@ llm_clients:
     # votre fournisseur de complétion ne transcrit pas l'audio.
     base_url: ${{"{"}}{{ .LLMBaseVar }}{{"}"}}
 {{ end }}
+# Clients de génération d'images, référencés par
+# agents.<nom>.image_generation.client.
+image_clients:
+  image:
+    provider: openrouter
+    model: ${{"{"}}{{ .ImageModelVar }}{{"}"}}
+    api_key: ${{"{"}}{{ .LLMKeyVar }}{{"}"}}
+
 agents:
   main:
     type: orchestrator
@@ -134,12 +194,19 @@ agents:
     # demande dans la conversation.
     profile_link: true
 {{- end }}
-{{- if .Agents }}
     delegates:
+      - vision
+      - imagine
 {{- range .Agents }}
       - {{ .Name }}
 {{- end }}
-{{- end }}
+    # Rappels ponctuels : délivrer un texte à l'échéance.
+    reminders: true
+    # Tâches planifiées : faire TRAVAILLER l'agent à l'échéance. Pouvoir
+    # distinct du rappel, et bridé — pendant un tour planifié, les actions
+    # sensibles proposées sont ignorées, jamais exécutées sans humain
+    # devant l'écran.
+    scheduled_tasks: true
     memory:
       search: true
       remember: true
@@ -150,6 +217,37 @@ agents:
       tool_timeout: 30s
       max_tool_result_bytes: 16KiB
       max_tool_context_bytes: 64KiB
+  # Regarde les images et documents joints, et rapporte ce qu'ils
+  # contiennent. C'est ce qui permet à un généraliste texte-seul de
+  # répondre à « qu'est-ce qu'il y a sur cette photo ? ».
+  vision:
+    type: specialist
+    description: looks at the images and documents attached to the conversation and reports what they contain
+    client: vision
+    system_prompt:
+      file: {{ .PromptsDir }}/vision.md
+    limits:
+      max_sequential_tool_calls: 1
+      max_actions_per_turn: 1
+      tool_timeout: 30s
+      max_tool_result_bytes: 16KiB
+      max_tool_context_bytes: 32KiB
+
+  imagine:
+    type: specialist
+    description: generates images from text descriptions
+    client: main
+    system_prompt:
+      file: {{ .PromptsDir }}/imagine.md
+    image_generation:
+      client: image
+    limits:
+      max_sequential_tool_calls: 3
+      max_actions_per_turn: 2
+      # La génération d'une image dépasse largement une complétion.
+      tool_timeout: 60s
+      max_tool_result_bytes: 16KiB
+      max_tool_context_bytes: 32KiB
 {{ range .Agents }}
   {{ .Name }}:
     type: specialist
@@ -219,6 +317,17 @@ memory:
   policies:
     private_can_write_org: false
     org_readable_by_children: true
+  # Réorganisation nocturne : fusion des redondances et oubli des faits
+  # périmés, portée par portée. Sans elle, la mémoire s'accumule sans
+  # limite et la recherche se dégrade à mesure qu'elle grossit.
+  consolidation:
+    enabled: true
+    client: main
+    # 4h40, heure locale du serveur.
+    cron: "40 4 * * *"
+    # En dessous de ce nombre de souvenirs, une portée est laissée intacte :
+    # rien à gagner, et aucun appel au modèle dépensé.
+    min_memories: 10
 
 identities:
   roles:
@@ -242,6 +351,14 @@ identities:
         - todo.personal.write
         - todo.group.read
         - todo.group.write
+        - reminder.personal.read
+        - reminder.personal.write
+        - reminder.group.read
+        - reminder.group.write
+        - task.personal.read
+        - task.personal.write
+        - task.group.read
+        - task.group.write
     child:
       permissions:
         - memory.personal.read
@@ -251,6 +368,10 @@ identities:
         - calendar.personal.read
         - calendar.group.read
         - calendar.org.read
+        # Se poser un rappel est anodin ; planifier un travail récurrent de
+        # l'assistant est un autre pouvoir, réservé aux adultes.
+        - reminder.personal.read
+        - reminder.personal.write
         - todo.personal.read
         - todo.group.read
 {{- if .Schedule }}

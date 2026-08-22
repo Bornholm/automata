@@ -170,6 +170,13 @@ type initAnswers struct {
 	LLMModelVar string
 	LLMKeyVar   string
 	LLMBaseVar  string
+	// VisionModelVar sert le spécialiste vision : le modèle principal peut
+	// être texte-seul, celui-ci doit accepter les images.
+	VisionModelVar string
+	// ImageModelVar sert le spécialiste imagine (génération d'images).
+	ImageModelVar string
+	// PluginsModelVar sert les sous-agents fournis par les plugins.
+	PluginsModelVar string
 
 	Web        bool
 	WebAddr    string
@@ -336,7 +343,17 @@ func askLLM(w *wizard, a *initAnswers) {
 	a.LLMKeyVar = envVarName("main", "api", "key")
 	a.LLMBaseVar = envVarName("main", "base", "url")
 
+	// Trois rôles distincts, trois variables : voir une image, en produire
+	// une, faire travailler un sous-agent de plugin. La clé et l'URL sont
+	// partagées avec le client principal — c'est le même fournisseur.
+	a.VisionModelVar = envVarName("vision", "model")
+	a.ImageModelVar = envVarName("image", "model")
+	if a.Plugins {
+		a.PluginsModelVar = envVarName("plugins", "model")
+	}
+
 	fmt.Fprintf(w.out, "  le modèle et la clé seront lus dans ${%s} et ${%s}.\n", a.LLMModelVar, a.LLMKeyVar)
+	fmt.Fprintf(w.out, "  ${%s} doit accepter les images, ${%s} savoir en produire.\n", a.VisionModelVar, a.ImageModelVar)
 }
 
 func askOptions(w *wizard, a *initAnswers) {
@@ -564,6 +581,9 @@ func (a *initAnswers) collectEnvVars() {
 	add(a.LLMBaseVar)
 	add(a.AudioModelVar)
 	add(a.AudioKeyVar)
+	add(a.VisionModelVar)
+	add(a.ImageModelVar)
+	add(a.PluginsModelVar)
 
 	// Le chiffrement des contenus est référencé par la section storage,
 	// écrite sans condition.
