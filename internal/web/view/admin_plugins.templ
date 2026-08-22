@@ -37,7 +37,7 @@ templ AdminPlugins(page PluginsPage) {
 			}
 			for _, p := range page.Plugins {
 				<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
-					<div class="flex items-center gap-4 border-b border-line-2 px-5 py-3.5">
+					<div class="flex flex-wrap items-center gap-4 border-b border-line-2 px-5 py-3.5">
 						<div class="min-w-0">
 							<div class="flex items-center gap-2.5">
 								<span class="font-mono text-[15px] font-semibold text-ink">{ p.Name }</span>
@@ -140,7 +140,7 @@ templ OrgPluginsTab(orgID string, rows []PluginActivationRow, csrfToken string, 
 					}
 					</div>
 				}
-				<div class="flex items-center gap-3 px-5 py-3.5">
+				<div class="flex flex-wrap items-center gap-3 px-5 py-3.5">
 					<button type="submit" class="h-9 rounded-lg bg-brand px-3.5 text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
 					if saved {
 						<span class="text-[13px] font-medium text-ok-deep">Enregistré.</span>

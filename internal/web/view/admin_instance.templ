@@ -43,7 +43,7 @@ templ AdminInstance(page InstancePage) {
 			</div>
 			for _, section := range page.Sections {
 				<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
-					<div class="flex items-center gap-4 border-b border-line-2 px-5 py-3.5">
+					<div class="flex flex-wrap items-center gap-4 border-b border-line-2 px-5 py-3.5">
 						<div>
 							<div class="text-[15px] font-semibold text-ink">{ section.Title }</div>
 							if section.Detail != "" {

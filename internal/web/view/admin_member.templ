@@ -66,7 +66,7 @@ templ AdminMember(page MemberPage) {
 			if page.Token != nil {
 				@TokenPanel(*page.Token)
 			} else {
-				<form method="post" action={ templ.SafeURL("/admin/members/" + page.ID + "/token") } class="flex items-center gap-4 rounded-xl bg-ink px-4 md:px-7 py-6">
+				<form method="post" action={ templ.SafeURL("/admin/members/" + page.ID + "/token") } class="flex flex-col items-stretch gap-4 rounded-xl bg-ink px-4 py-6 sm:flex-row sm:items-center md:px-7">
 					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 					<div class="min-w-0 flex-1">
 						@Eyebrow("Jeton personnel de liaison", "text-brand-soft")

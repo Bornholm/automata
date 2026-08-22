@@ -246,7 +246,7 @@ func AdminPricing(page PricingPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></div><div class=\"flex gap-5\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></div><div class=\"flex flex-wrap gap-x-5 gap-y-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -254,7 +254,7 @@ func AdminPricing(page PricingPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"w-px bg-line-2\"></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"hidden w-px bg-line-2 sm:block\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -262,7 +262,7 @@ func AdminPricing(page PricingPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"w-px bg-line-2\"></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<div class=\"hidden w-px bg-line-2 sm:block\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -277,7 +277,7 @@ func AdminPricing(page PricingPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<div class=\"w-px bg-line-2\"></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<div class=\"hidden w-px bg-line-2 sm:block\"></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -379,7 +379,7 @@ func AdminPricing(page PricingPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			} else {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<div class=\"grid min-w-[680px] grid-cols-[1fr_1fr_1fr_1.2fr_auto] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Crédits</div><div>Prix</div><div>Pour mille</div><div>Marge</div><div></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<div class=\"overflow-x-auto\"><div class=\"grid min-w-[680px] grid-cols-[1fr_1fr_1fr_1.2fr_auto] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Crédits</div><div>Prix</div><div>Pour mille</div><div>Marge</div><div></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -391,7 +391,7 @@ func AdminPricing(page PricingPage) templ.Component {
 					var templ_7745c5c3_Var14 string
 					templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(FormatInt(pack.Credits))
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 158, Col: 76}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 159, Col: 76}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 					if templ_7745c5c3_Err != nil {
@@ -414,7 +414,7 @@ func AdminPricing(page PricingPage) templ.Component {
 					var templ_7745c5c3_Var15 string
 					templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(pack.PriceEUR)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 163, Col: 64}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 164, Col: 64}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 					if templ_7745c5c3_Err != nil {
@@ -427,7 +427,7 @@ func AdminPricing(page PricingPage) templ.Component {
 					var templ_7745c5c3_Var16 string
 					templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(pack.PerThousand)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 164, Col: 69}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 165, Col: 69}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 					if templ_7745c5c3_Err != nil {
@@ -462,7 +462,7 @@ func AdminPricing(page PricingPage) templ.Component {
 					var templ_7745c5c3_Var19 string
 					templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(pack.Margin)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 166, Col: 91}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 167, Col: 91}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 					if templ_7745c5c3_Err != nil {
@@ -480,7 +480,7 @@ func AdminPricing(page PricingPage) templ.Component {
 						var templ_7745c5c3_Var20 string
 						templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(pack.Recommended)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 168, Col: 91}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 169, Col: 91}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 						if templ_7745c5c3_Err != nil {
@@ -509,7 +509,7 @@ func AdminPricing(page PricingPage) templ.Component {
 							var templ_7745c5c3_Var21 string
 							templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 177, Col: 73}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 178, Col: 73}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 							if templ_7745c5c3_Err != nil {
@@ -522,7 +522,7 @@ func AdminPricing(page PricingPage) templ.Component {
 							var templ_7745c5c3_Var22 string
 							templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(FormatPlainInt(pack.ID))
 							if templ_7745c5c3_Err != nil {
-								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 178, Col: 74}
+								return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 179, Col: 74}
 							}
 							_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
 							if templ_7745c5c3_Err != nil {
@@ -540,7 +540,7 @@ func AdminPricing(page PricingPage) templ.Component {
 						var templ_7745c5c3_Var23 string
 						templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 183, Col: 72}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 184, Col: 72}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 						if templ_7745c5c3_Err != nil {
@@ -553,7 +553,7 @@ func AdminPricing(page PricingPage) templ.Component {
 						var templ_7745c5c3_Var24 string
 						templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(FormatPlainInt(pack.ID))
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 184, Col: 73}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 185, Col: 73}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 						if templ_7745c5c3_Err != nil {
@@ -569,144 +569,135 @@ func AdminPricing(page PricingPage) templ.Component {
 						return templ_7745c5c3_Err
 					}
 				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "</div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 49, "<form method=\"post\" action=\"/admin/pricing/packs\" class=\"flex items-end gap-3 border-t border-line-2 bg-panel px-5 py-4\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "<form method=\"post\" action=\"/admin/pricing/packs\" class=\"flex flex-wrap items-end gap-3 border-t border-line-2 bg-panel px-5 py-4\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var25 string
 			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 193, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 195, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\"> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Crédits</span> <input type=\"number\" name=\"credits\" min=\"1\" required class=\"h-[38px] w-[140px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Prix (€)</span> <input type=\"number\" name=\"price_eur\" min=\"0\" step=\"0.01\" required class=\"h-[38px] w-[120px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <button type=\"submit\" class=\"h-[38px] rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong\">Ajouter l'offre</button></form></div><form method=\"post\" action=\"/admin/pricing/settings\" class=\"w-full shrink-0 lg:w-[360px] rounded-[11px] border border-line-2 bg-white p-5.5\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\"> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Crédits</span> <input type=\"number\" name=\"credits\" min=\"1\" required class=\"h-[38px] w-[140px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Prix (€)</span> <input type=\"number\" name=\"price_eur\" min=\"0\" step=\"0.01\" required class=\"h-[38px] w-[120px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <button type=\"submit\" class=\"h-[38px] shrink-0 whitespace-nowrap rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong\">Ajouter l'offre</button></form></div><form method=\"post\" action=\"/admin/pricing/settings\" class=\"w-full shrink-0 lg:w-[360px] rounded-[11px] border border-line-2 bg-white p-5.5\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var26 string
 			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 206, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 208, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "\"><div class=\"mb-4 text-[15px] font-semibold text-ink\">Conversion et cadeaux</div><div class=\"flex flex-col gap-4\"><label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Coût couvert par un crédit ($)</span> <input type=\"text\" name=\"usd_per_credit\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "\"><div class=\"mb-4 text-[15px] font-semibold text-ink\">Conversion et cadeaux</div><div class=\"flex flex-col gap-4\"><label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Coût couvert par un crédit ($)</span> <input type=\"text\" name=\"usd_per_credit\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var27 string
 			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.USDPerCredit)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 211, Col: 73}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 213, Col: 73}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 52, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"> <span class=\"mt-1.5 block text-[13px] leading-snug text-text-4\">Plus il est bas, plus un même usage consomme de crédits.</span></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Taux € par $ <span class=\"font-normal text-text-4\">— estimation</span></span> <input type=\"text\" name=\"eur_per_usd\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"> <span class=\"mt-1.5 block text-[13px] leading-snug text-text-4\">Plus il est bas, plus un même usage consomme de crédits.</span></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Taux € par $ <span class=\"font-normal text-text-4\">— estimation</span></span> <input type=\"text\" name=\"eur_per_usd\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var28 string
 			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.EURPerUSD)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 216, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 218, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 53, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Marge visée (%)</span> <input type=\"text\" name=\"target_margin\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Marge visée (%)</span> <input type=\"text\" name=\"target_margin\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var29 string
 			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.TargetMargin)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 220, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 222, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 54, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"> <span class=\"mt-1.5 block text-[13px] leading-snug text-text-4\">Sert à calculer le prix conseillé des offres et à signaler celles qui passent en dessous. Prévoyez de la place : les crédits offerts et les coûts non rapportés ne sont facturés à personne.</span></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Crédits de bienvenue</span> <input type=\"number\" name=\"welcome_credits\" min=\"0\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"> <span class=\"mt-1.5 block text-[13px] leading-snug text-text-4\">Sert à calculer le prix conseillé des offres et à signaler celles qui passent en dessous. Prévoyez de la place : les crédits offerts et les coûts non rapportés ne sont facturés à personne.</span></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Crédits de bienvenue</span> <input type=\"number\" name=\"welcome_credits\" min=\"0\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var30 string
 			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(FormatPlainInt(page.WelcomeCredits))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 225, Col: 102}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 227, Col: 102}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Allocation mensuelle par défaut</span> <input type=\"number\" name=\"default_allowance\" min=\"0\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Allocation mensuelle par défaut</span> <input type=\"number\" name=\"default_allowance\" min=\"0\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var31 string
 			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(FormatPlainInt(page.DefaultAllowance))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 229, Col: 106}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 231, Col: 106}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 56, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"> <span class=\"mt-1.5 block text-[13px] leading-snug text-text-4\">Proposée à la création d'une organisation offerte.</span></label> <button type=\"submit\" class=\"h-[38px] rounded-lg bg-brand text-sm font-semibold text-white hover:bg-brand-strong\">Enregistrer</button></div></form></div><div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex items-center gap-4 border-b border-line-2 px-5 py-3.5\"><div class=\"text-[15px] font-semibold text-ink\">Tarifs de repli par modèle</div><div class=\"text-[13px] text-text-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"> <span class=\"mt-1.5 block text-[13px] leading-snug text-text-4\">Proposée à la création d'une organisation offerte.</span></label> <button type=\"submit\" class=\"h-[38px] rounded-lg bg-brand text-sm font-semibold text-white hover:bg-brand-strong\">Enregistrer</button></div></form></div><div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex flex-wrap items-center gap-4 border-b border-line-2 px-5 py-3.5\"><div class=\"text-[15px] font-semibold text-ink\">Tarifs de repli par modèle</div><div class=\"text-[13px] text-text-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var32 string
 			templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(page.EstimatedShare)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 239, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 241, Col: 63}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 57, "</div></div><div class=\"px-5 py-3 text-[13px] leading-normal text-text-3\">Quand un fournisseur ne rapporte pas le coût d'un appel, il est estimé depuis ses tokens avec ces tarifs, en dollars par million. Sans eux, l'appel serait décompté zéro crédit — et la consommation partirait en fuite. Un nom partiel couvre une famille entière : <span class=\"font-mono\">deepseek/</span> vaut pour tous ses modèles.</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "</div></div><div class=\"px-5 py-3 text-[13px] leading-normal text-text-3\">Quand un fournisseur ne rapporte pas le coût d'un appel, il est estimé depuis ses tokens avec ces tarifs, en dollars par million. Sans eux, l'appel serait décompté zéro crédit — et la consommation partirait en fuite. Un nom partiel couvre une famille entière : <span class=\"font-mono\">deepseek/</span> vaut pour tous ses modèles.</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if len(page.ModelPrices) > 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 58, "<div class=\"grid min-w-[560px] grid-cols-[2fr_1fr_1fr_auto] gap-4 border-y border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Modèle</div><div class=\"text-right\">Entrée / M</div><div class=\"text-right\">Sortie / M</div><div></div></div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<div class=\"overflow-x-auto\"><div class=\"grid min-w-[560px] grid-cols-[2fr_1fr_1fr_auto] gap-4 border-y border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4\"><div>Modèle</div><div class=\"text-right\">Entrée / M</div><div class=\"text-right\">Sortie / M</div><div></div></div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				for _, price := range page.ModelPrices {
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 59, "<div class=\"grid min-w-[560px] grid-cols-[2fr_1fr_1fr_auto] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0\"><div class=\"truncate font-mono text-sm text-text\">")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "<div class=\"grid min-w-[560px] grid-cols-[2fr_1fr_1fr_auto] items-center gap-4 border-b border-line-3 px-5 py-3 last:border-b-0\"><div class=\"truncate font-mono text-sm text-text\">")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var33 string
 					templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(price.Model)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 253, Col: 70}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 256, Col: 70}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "</div><div class=\"text-right font-mono text-sm text-text tabular-nums\">")
-					if templ_7745c5c3_Err != nil {
-						return templ_7745c5c3_Err
-					}
-					var templ_7745c5c3_Var34 string
-					templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(price.Input)
-					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 254, Col: 85}
-					}
-					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
@@ -714,152 +705,169 @@ func AdminPricing(page PricingPage) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
+					var templ_7745c5c3_Var34 string
+					templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(price.Input)
+					if templ_7745c5c3_Err != nil {
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 257, Col: 85}
+					}
+					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</div><div class=\"text-right font-mono text-sm text-text tabular-nums\">")
+					if templ_7745c5c3_Err != nil {
+						return templ_7745c5c3_Err
+					}
 					var templ_7745c5c3_Var35 string
 					templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(price.Output)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 255, Col: 86}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 258, Col: 86}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 62, "</div><form method=\"post\" action=\"/admin/pricing/models/delete\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "</div><form method=\"post\" action=\"/admin/pricing/models/delete\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var36 string
 					templ_7745c5c3_Var36, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 257, Col: 69}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 260, Col: 69}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var36)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 63, "\"> <input type=\"hidden\" name=\"model\" value=\"")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\"> <input type=\"hidden\" name=\"model\" value=\"")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 					var templ_7745c5c3_Var37 string
 					templ_7745c5c3_Var37, templ_7745c5c3_Err = templ.ResolveAttributeValue(price.Model)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 258, Col: 61}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 261, Col: 61}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var37)
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\"> <button type=\"submit\" class=\"text-[13px] font-medium text-crit\">Retirer</button></form></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "\"> <button type=\"submit\" class=\"text-[13px] font-medium text-crit\">Retirer</button></form></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
 				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "</div>")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 65, "<form method=\"post\" action=\"/admin/pricing/models\" class=\"flex flex-wrap items-end gap-3 border-t border-line-2 bg-panel px-5 py-4\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "<form method=\"post\" action=\"/admin/pricing/models\" class=\"flex flex-wrap items-end gap-3 border-t border-line-2 bg-panel px-5 py-4\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var38 string
 			templ_7745c5c3_Var38, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 265, Col: 66}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 269, Col: 66}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var38)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 66, "\"> <label class=\"block min-w-0 flex-1\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Modèle ou famille</span> <input type=\"text\" name=\"model\" required placeholder=\"deepseek/ ou openai/gpt-5\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Entrée ($/M)</span> <input type=\"text\" name=\"input\" required placeholder=\"0.14\" class=\"h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Sortie ($/M)</span> <input type=\"text\" name=\"output\" required placeholder=\"0.28\" class=\"h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand\"></label> <button type=\"submit\" class=\"h-[38px] rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong\">Enregistrer le tarif</button></form><div class=\"flex flex-wrap items-end gap-3 border-t border-line-3 px-5 py-4\"><div class=\"min-w-0 flex-1 text-[13px] leading-normal text-text-3\">Tarifs appliqués aux modèles absents de la grille. Ils sont volontairement supérieurs aux modèles économiques : une surestimation se voit et se corrige, une sous-estimation disparaît.</div><form method=\"post\" action=\"/admin/pricing/settings\" class=\"flex items-end gap-3\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\"> <label class=\"block min-w-0 flex-1\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Modèle ou famille</span> <input type=\"text\" name=\"model\" required placeholder=\"deepseek/ ou openai/gpt-5\" class=\"h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Entrée ($/M)</span> <input type=\"text\" name=\"input\" required placeholder=\"0.14\" class=\"h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Sortie ($/M)</span> <input type=\"text\" name=\"output\" required placeholder=\"0.28\" class=\"h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand\"></label> <button type=\"submit\" class=\"h-[38px] rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong\">Enregistrer le tarif</button></form><div class=\"flex flex-wrap items-end gap-3 border-t border-line-3 px-5 py-4\"><div class=\"min-w-0 flex-1 text-[13px] leading-normal text-text-3\">Tarifs appliqués aux modèles absents de la grille. Ils sont volontairement supérieurs aux modèles économiques : une surestimation se voit et se corrige, une sous-estimation disparaît.</div><form method=\"post\" action=\"/admin/pricing/settings\" class=\"flex flex-wrap items-end gap-3\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var39 string
 			templ_7745c5c3_Var39, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 283, Col: 67}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 287, Col: 67}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var39)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 67, "\"> <input type=\"hidden\" name=\"usd_per_credit\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\"> <input type=\"hidden\" name=\"usd_per_credit\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var40 string
 			templ_7745c5c3_Var40, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.USDPerCredit)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 284, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 288, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var40)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 68, "\"> <input type=\"hidden\" name=\"eur_per_usd\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\"> <input type=\"hidden\" name=\"eur_per_usd\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var41 string
 			templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.EURPerUSD)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 285, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 289, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var41)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 69, "\"> <input type=\"hidden\" name=\"welcome_credits\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\"> <input type=\"hidden\" name=\"welcome_credits\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var42 string
 			templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.ResolveAttributeValue(FormatPlainInt(page.WelcomeCredits))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 286, Col: 93}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 290, Col: 93}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var42)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 70, "\"> <input type=\"hidden\" name=\"default_allowance\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\"> <input type=\"hidden\" name=\"default_allowance\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var43 string
 			templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.ResolveAttributeValue(FormatPlainInt(page.DefaultAllowance))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 287, Col: 97}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 291, Col: 97}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var43)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 71, "\"> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Repli entrée ($/M)</span> <input type=\"text\" name=\"default_input\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "\"> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Repli entrée ($/M)</span> <input type=\"text\" name=\"default_input\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var44 string
 			templ_7745c5c3_Var44, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.DefaultInput)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 290, Col: 72}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 294, Col: 72}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var44)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\" class=\"h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Repli sortie ($/M)</span> <input type=\"text\" name=\"default_output\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 74, "\" class=\"h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Repli sortie ($/M)</span> <input type=\"text\" name=\"default_output\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var45 string
 			templ_7745c5c3_Var45, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.DefaultOutput)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 294, Col: 74}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_pricing.templ`, Line: 298, Col: 74}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var45)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 73, "\" class=\"h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <button type=\"submit\" class=\"h-[38px] rounded-lg border border-line px-4 text-sm font-medium text-text hover:bg-white\">Enregistrer</button></form></div></div></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 75, "\" class=\"h-[38px] w-[110px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <button type=\"submit\" class=\"h-[38px] rounded-lg border border-line px-4 text-sm font-medium text-text hover:bg-white\">Enregistrer</button></form></div></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

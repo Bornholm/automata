@@ -75,7 +75,7 @@ func AdminPlugins(page PluginsPage) templ.Component {
 				}
 			}
 			for _, p := range page.Plugins {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex items-center gap-4 border-b border-line-2 px-5 py-3.5\"><div class=\"min-w-0\"><div class=\"flex items-center gap-2.5\"><span class=\"font-mono text-[15px] font-semibold text-ink\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex flex-wrap items-center gap-4 border-b border-line-2 px-5 py-3.5\"><div class=\"min-w-0\"><div class=\"flex items-center gap-2.5\"><span class=\"font-mono text-[15px] font-semibold text-ink\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -437,7 +437,7 @@ func OrgPluginsTab(orgID string, rows []PluginActivationRow, csrfToken string, s
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<div class=\"flex items-center gap-3 px-5 py-3.5\"><button type=\"submit\" class=\"h-9 rounded-lg bg-brand px-3.5 text-sm font-semibold text-white hover:bg-brand-strong\">Enregistrer</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<div class=\"flex flex-wrap items-center gap-3 px-5 py-3.5\"><button type=\"submit\" class=\"h-9 rounded-lg bg-brand px-3.5 text-sm font-semibold text-white hover:bg-brand-strong\">Enregistrer</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

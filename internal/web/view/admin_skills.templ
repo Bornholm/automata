@@ -163,7 +163,7 @@ templ AdminSkillForm(page SkillFormPage) {
 			if !page.New {
 				<div class="flex max-w-[840px] flex-col gap-3 rounded-[11px] border border-line-2 bg-white p-5.5">
 					if page.Builtin {
-						<form method="post" action={ templ.SafeURL("/admin/skills/" + page.Name + "/restore") } class="flex items-center gap-3">
+						<form method="post" action={ templ.SafeURL("/admin/skills/" + page.Name + "/restore") } class="flex flex-wrap items-center gap-3">
 							<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 							<button type="submit" class="h-9 rounded-lg border border-line bg-white px-3.5 text-[13px] font-medium text-text hover:bg-bg">Restaurer la version d'origine</button>
 							if page.Edited {
@@ -173,7 +173,7 @@ templ AdminSkillForm(page SkillFormPage) {
 							}
 						</form>
 					}
-					<form method="post" action={ templ.SafeURL("/admin/skills/" + page.Name + "/delete") } class="flex items-center gap-3"
+					<form method="post" action={ templ.SafeURL("/admin/skills/" + page.Name + "/delete") } class="flex flex-wrap items-center gap-3"
 						onsubmit="return confirm('Supprimer cette compétence ?')">
 						<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 						<button type="submit" class="h-9 rounded-lg border border-line bg-white px-3.5 text-[13px] font-medium text-crit-deep hover:bg-crit-wash">Supprimer</button>

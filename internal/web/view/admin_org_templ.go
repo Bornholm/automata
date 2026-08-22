@@ -144,14 +144,14 @@ func orgTab(page OrgPage, tab string, label string) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if page.Tab == tab {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<span class=\"px-0.5 pb-3 text-sm font-semibold text-ink shadow-[inset_0_-2px_0_var(--color-brand)]\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<span class=\"shrink-0 whitespace-nowrap px-0.5 pb-3 text-sm font-semibold text-ink shadow-[inset_0_-2px_0_var(--color-brand)]\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_org.templ`, Line: 119, Col: 109}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_org.templ`, Line: 119, Col: 136}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {
@@ -175,14 +175,14 @@ func orgTab(page OrgPage, tab string, label string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" class=\"px-0.5 pb-3 text-sm font-medium text-text-3 hover:text-ink hover:no-underline\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "\" class=\"shrink-0 whitespace-nowrap px-0.5 pb-3 text-sm font-medium text-text-3 hover:text-ink hover:no-underline\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_org.templ`, Line: 121, Col: 163}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_org.templ`, Line: 121, Col: 190}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -301,7 +301,7 @@ func AdminOrg(page OrgPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div></div><div class=\"ml-auto flex gap-2.5\"><button type=\"button\" onclick=\"document.getElementById('grant-dialog').showModal()\" class=\"h-9 rounded-lg bg-brand px-3.5 text-sm font-semibold text-white hover:bg-brand-strong\">Offrir des crédits</button></div></div><div class=\"flex gap-6\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div></div><div class=\"ml-auto flex gap-2.5\"><button type=\"button\" onclick=\"document.getElementById('grant-dialog').showModal()\" class=\"h-9 rounded-lg bg-brand px-3.5 text-sm font-semibold text-white hover:bg-brand-strong\">Offrir des crédits</button></div></div><div class=\"-mx-4 flex gap-6 overflow-x-auto px-4 md:mx-0 md:px-0\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -601,7 +601,7 @@ func orgCreditsTab(page OrgPage) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\" class=\"flex items-start gap-4\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "\" class=\"flex flex-wrap items-start gap-4\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1191,7 +1191,7 @@ func grantDialog(page OrgPage) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "\"><div class=\"flex items-center gap-2.5 border-b border-line-2 px-5 py-4\"><div class=\"text-base font-semibold text-ink\">Offrir des crédits</div><button type=\"button\" onclick=\"document.getElementById('grant-dialog').close()\" class=\"ml-auto text-lg text-text-4\">×</button></div><div class=\"flex flex-col gap-3.5 p-5\"><label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Montant</span><div class=\"flex items-center gap-2\"><input type=\"number\" name=\"amount\" value=\"300\" min=\"1\" required class=\"h-[38px] w-[140px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"> <span class=\"text-sm text-text-3\">crédits</span></div></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Motif <span class=\"font-normal text-text-4\">— visible dans les mouvements</span></span> <input type=\"text\" name=\"label\" placeholder=\"Geste commercial — …\" required class=\"h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none placeholder:text-text-5 focus:border-brand\"></label></div><div class=\"flex gap-2.5 border-t border-line-3 px-5 py-4\"><button type=\"button\" onclick=\"document.getElementById('grant-dialog').close()\" class=\"h-[38px] flex-1 rounded-lg border border-line text-sm font-medium text-text hover:bg-panel\">Annuler</button> <button type=\"submit\" class=\"h-[38px] flex-1 rounded-lg bg-brand text-sm font-semibold text-white hover:bg-brand-strong\">Créditer</button></div></form></dialog>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 97, "\"><div class=\"flex flex-wrap items-center gap-2.5 border-b border-line-2 px-5 py-4\"><div class=\"text-base font-semibold text-ink\">Offrir des crédits</div><button type=\"button\" onclick=\"document.getElementById('grant-dialog').close()\" class=\"ml-auto text-lg text-text-4\">×</button></div><div class=\"flex flex-col gap-3.5 p-5\"><label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Montant</span><div class=\"flex items-center gap-2\"><input type=\"number\" name=\"amount\" value=\"300\" min=\"1\" required class=\"h-[38px] w-[140px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"> <span class=\"text-sm text-text-3\">crédits</span></div></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Motif <span class=\"font-normal text-text-4\">— visible dans les mouvements</span></span> <input type=\"text\" name=\"label\" placeholder=\"Geste commercial — …\" required class=\"h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none placeholder:text-text-5 focus:border-brand\"></label></div><div class=\"flex gap-2.5 border-t border-line-3 px-5 py-4\"><button type=\"button\" onclick=\"document.getElementById('grant-dialog').close()\" class=\"h-[38px] flex-1 rounded-lg border border-line text-sm font-medium text-text hover:bg-panel\">Annuler</button> <button type=\"submit\" class=\"h-[38px] flex-1 rounded-lg bg-brand text-sm font-semibold text-white hover:bg-brand-strong\">Créditer</button></div></form></dialog>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

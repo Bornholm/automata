@@ -132,7 +132,7 @@ templ AdminPlatforms(page PlatformsPage) {
 					</div>
 				</div>
 				<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
-					<div class="flex items-center gap-3.5 border-b border-line-2 px-5 py-3.5">
+					<div class="flex flex-wrap items-center gap-3.5 border-b border-line-2 px-5 py-3.5">
 						<div class="text-[15px] font-semibold text-ink">Canaux</div>
 						<div class="text-[13px] text-text-4">
 							@channelsSummary(page)
@@ -148,6 +148,7 @@ templ AdminPlatforms(page PlatformsPage) {
 							<button type="submit" class="h-8 whitespace-nowrap rounded-lg border border-line bg-white px-3 text-[13px] font-medium text-text hover:bg-panel">Générer un jeton de groupe</button>
 						</form>
 					</div>
+					<div class="overflow-x-auto">
 					<div class="grid min-w-[620px] grid-cols-[1.4fr_.8fr_1.2fr_1.1fr] gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4">
 						<div>Canal</div>
 						<div>Type</div>
@@ -174,6 +175,7 @@ templ AdminPlatforms(page PlatformsPage) {
 							</div>
 						</div>
 					}
+					</div>
 				</div>
 			</div>
 			if page.Pairing != "" {
@@ -201,7 +203,7 @@ templ pairingPlatformOption(page PlatformsPage, mode string, platformType string
 // la carte du compte, qui affiche le QR dès que le compte démarre.
 templ pairingPanel(page PlatformsPage) {
 	<div class="w-[396px] shrink-0 overflow-hidden rounded-xl border border-line bg-white shadow-[0_8px_24px_rgba(22,28,39,.1)]">
-		<div class="flex items-center gap-2.5 border-b border-line-2 px-5 py-4">
+		<div class="flex flex-wrap items-center gap-2.5 border-b border-line-2 px-5 py-4">
 			<div class="text-base font-semibold text-ink">Ajouter un compte</div>
 			<a href="/admin/platforms" class="ml-auto text-lg text-text-4 hover:no-underline">×</a>
 		</div>

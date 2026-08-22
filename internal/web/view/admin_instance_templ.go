@@ -90,7 +90,7 @@ func AdminInstance(page InstancePage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			for _, section := range page.Sections {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex items-center gap-4 border-b border-line-2 px-5 py-3.5\"><div><div class=\"text-[15px] font-semibold text-ink\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "<div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex flex-wrap items-center gap-4 border-b border-line-2 px-5 py-3.5\"><div><div class=\"text-[15px] font-semibold text-ink\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

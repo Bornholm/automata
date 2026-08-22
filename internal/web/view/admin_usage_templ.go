@@ -189,7 +189,7 @@ func AdminUsage(page UsagePage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" class=\"flex h-[38px] items-center rounded-lg border border-line px-4 text-sm font-medium text-text hover:bg-panel hover:no-underline\">Exporter en CSV</a></form><div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex items-center gap-4 border-b border-line-2 px-5 py-3.5\"><div class=\"text-[15px] font-semibold text-ink\">Détail</div><div class=\"text-[13px] text-text-4\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "\" class=\"flex h-[38px] items-center rounded-lg border border-line px-4 text-sm font-medium text-text hover:bg-panel hover:no-underline\">Exporter en CSV</a></form><div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex flex-wrap items-center gap-4 border-b border-line-2 px-5 py-3.5\"><div class=\"text-[15px] font-semibold text-ink\">Détail</div><div class=\"text-[13px] text-text-4\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
