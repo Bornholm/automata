@@ -90,11 +90,11 @@ templ marginFigure(label string, value string, valueClass string, hint string) {
 
 templ AdminPricing(page PricingPage) {
 	@AdminLayout("Tarification — Automata Admin", "pricing", page.Platforms, page.CSRFToken) {
-		<header class="border-b border-line-2 bg-white px-7 py-5.5">
+		<header class="border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5">
 			<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Tarification et conversion</h1>
 			<div class="mt-0.5 text-sm text-text-3">Ce que valent les crédits, ce qu'ils coûtent, ce qu'ils rapportent</div>
 		</header>
-		<div class="flex flex-col gap-5.5 p-7">
+		<div class="flex flex-col gap-5.5 p-4 md:p-7">
 			if page.Flash != "" {
 				<div class="rounded-lg bg-ok-wash px-4 py-2.5 text-sm text-ok-deep">{ page.Flash }</div>
 			}
@@ -136,7 +136,7 @@ templ AdminPricing(page PricingPage) {
 					<div class="mt-1 text-sm leading-normal text-text-2">Leur prix ne couvre pas le coût d'inférence qu'elles autorisent : chaque achat creuse le résultat. Le prix conseillé est indiqué en face de chacune.</div>
 				</div>
 			}
-			<div class="flex items-start gap-5">
+			<div class="flex flex-col items-stretch gap-5 lg:flex-row lg:items-start">
 				<div class="min-w-0 flex-1 overflow-hidden rounded-[11px] border border-line-2 bg-white">
 					<div class="flex items-baseline gap-3 border-b border-line-2 px-5 py-3.5">
 						<div class="text-[15px] font-semibold text-ink">Offres proposées au profil</div>
@@ -202,7 +202,7 @@ templ AdminPricing(page PricingPage) {
 						<button type="submit" class="h-[38px] rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong">Ajouter l'offre</button>
 					</form>
 				</div>
-				<form method="post" action="/admin/pricing/settings" class="w-[360px] shrink-0 rounded-[11px] border border-line-2 bg-white p-5.5">
+				<form method="post" action="/admin/pricing/settings" class="w-full shrink-0 lg:w-[360px] rounded-[11px] border border-line-2 bg-white p-5.5">
 					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 					<div class="mb-4 text-[15px] font-semibold text-ink">Conversion et cadeaux</div>
 					<div class="flex flex-col gap-4">

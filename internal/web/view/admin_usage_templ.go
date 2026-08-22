@@ -86,7 +86,7 @@ func AdminUsage(page UsagePage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"border-b border-line-2 bg-white px-7 py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Consommation et refacturation</h1><div class=\"mt-0.5 text-sm text-text-3\">Coûts d'inférence mesurés, tels que les fournisseurs les rapportent</div></header><div class=\"flex flex-col gap-5 p-7\"><form method=\"get\" action=\"/admin/usage\" class=\"flex flex-wrap items-end gap-4 rounded-[11px] border border-line-2 bg-white p-5\"><label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Du</span> <input type=\"date\" name=\"from\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Consommation et refacturation</h1><div class=\"mt-0.5 text-sm text-text-3\">Coûts d'inférence mesurés, tels que les fournisseurs les rapportent</div></header><div class=\"flex flex-col gap-5 p-4 md:p-7\"><form method=\"get\" action=\"/admin/usage\" class=\"flex flex-wrap items-end gap-4 rounded-[11px] border border-line-2 bg-white p-5\"><label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Du</span> <input type=\"date\" name=\"from\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

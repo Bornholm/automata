@@ -108,7 +108,7 @@ func AdminDashboard(page DashboardPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"border-b border-line-2 bg-white px-7 py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Tableau de bord</h1><div class=\"mt-0.5 text-sm text-text-3\">État du service et consommation de ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Tableau de bord</h1><div class=\"mt-0.5 text-sm text-text-3\">État du service et consommation de ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -121,7 +121,7 @@ func AdminDashboard(page DashboardPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div></header><div class=\"flex flex-col gap-5.5 p-7\"><div class=\"flex flex-wrap gap-4 rounded-[11px] border border-line-2 bg-white p-5.5\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div></header><div class=\"flex flex-col gap-5.5 p-4 md:p-7\"><div class=\"flex flex-wrap gap-4 rounded-[11px] border border-line-2 bg-white p-5.5\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -199,7 +199,7 @@ func AdminDashboard(page DashboardPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><div class=\"flex items-start gap-5\"><div class=\"min-w-0 flex-1 overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"border-b border-line-2 px-5 py-3.5 text-[15px] font-semibold text-ink\">À surveiller</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 11, "</div><div class=\"flex flex-col items-stretch gap-5 lg:flex-row lg:items-start\"><div class=\"min-w-0 flex-1 overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"border-b border-line-2 px-5 py-3.5 text-[15px] font-semibold text-ink\">À surveiller</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -283,7 +283,7 @@ func AdminDashboard(page DashboardPage) templ.Component {
 					}
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div><div class=\"w-[340px] shrink-0 rounded-[11px] border border-line-2 bg-white p-5.5\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "</div><div class=\"w-full shrink-0 lg:w-[340px] rounded-[11px] border border-line-2 bg-white p-5.5\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

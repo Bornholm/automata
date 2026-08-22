@@ -54,7 +54,7 @@ templ AdminMember(page MemberPage) {
 				}
 			</div>
 		</header>
-		<div class="flex flex-col gap-5.5 px-8 pb-8 pt-6">
+		<div class="flex flex-col gap-5.5 px-4 pb-6 pt-4 md:px-8 md:pb-8 md:pt-6">
 			if page.Flash != "" {
 				<div class="rounded-lg bg-ok-wash px-4 py-2.5 text-sm text-ok-deep">{ page.Flash }</div>
 			}
@@ -66,7 +66,7 @@ templ AdminMember(page MemberPage) {
 			if page.Token != nil {
 				@TokenPanel(*page.Token)
 			} else {
-				<form method="post" action={ templ.SafeURL("/admin/members/" + page.ID + "/token") } class="flex items-center gap-4 rounded-xl bg-ink px-7 py-6">
+				<form method="post" action={ templ.SafeURL("/admin/members/" + page.ID + "/token") } class="flex items-center gap-4 rounded-xl bg-ink px-4 md:px-7 py-6">
 					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 					<div class="min-w-0 flex-1">
 						@Eyebrow("Jeton personnel de liaison", "text-brand-soft")
@@ -75,7 +75,7 @@ templ AdminMember(page MemberPage) {
 					<button type="submit" class="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong">Générer un jeton</button>
 				</form>
 			}
-			<div class="flex items-start gap-5">
+			<div class="flex flex-col items-stretch gap-5 lg:flex-row lg:items-start">
 				<div class="flex-1 rounded-[11px] border border-line-2 bg-white p-5.5">
 					<div class="mb-4.5 text-[15px] font-semibold text-ink">Fiche du compte</div>
 					<form method="post" action={ templ.SafeURL("/admin/members/" + page.ID) } class="flex flex-col gap-4">

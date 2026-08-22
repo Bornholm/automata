@@ -65,7 +65,7 @@ func AdminSkills(page SkillsPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"flex items-center gap-4 border-b border-line-2 bg-white px-7 py-5.5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Compétences</h1><div class=\"mt-0.5 text-sm text-text-3\">Les modes opératoires que les agents chargent à la demande</div></div><a href=\"/admin/skills/new\" class=\"ml-auto flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline\">Nouvelle compétence</a></header><div class=\"p-7\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"flex items-center gap-4 border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Compétences</h1><div class=\"mt-0.5 text-sm text-text-3\">Les modes opératoires que les agents chargent à la demande</div></div><a href=\"/admin/skills/new\" class=\"ml-auto flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline\">Nouvelle compétence</a></header><div class=\"p-4 md:p-7\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -252,7 +252,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<header class=\"border-b border-line-2 bg-white px-7 py-5.5\"><div class=\"mb-2 text-[13px] text-text-4\"><a href=\"/admin/skills\">Compétences</a> / ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<header class=\"border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><div class=\"mb-2 text-[13px] text-text-4\"><a href=\"/admin/skills\">Compétences</a> / ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -300,7 +300,7 @@ func AdminSkillForm(page SkillFormPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</h1></header><div class=\"flex flex-col gap-5 p-7\"><form method=\"post\" action=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "</h1></header><div class=\"flex flex-col gap-5 p-4 md:p-7\"><form method=\"post\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

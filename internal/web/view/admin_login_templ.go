@@ -55,7 +55,7 @@ func AdminLogin(page LoginPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex min-h-screen items-center justify-center bg-ink p-8\"><div class=\"w-[372px] rounded-xl bg-white p-8\"><div class=\"mb-7 flex items-center gap-2.5\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"flex min-h-screen items-center justify-center bg-ink p-8\"><div class=\"w-full max-w-[372px] rounded-xl bg-white p-8\"><div class=\"mb-7 flex items-center gap-2.5\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

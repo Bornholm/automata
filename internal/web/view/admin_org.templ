@@ -124,9 +124,9 @@ templ orgTab(page OrgPage, tab string, label string) {
 
 templ AdminOrg(page OrgPage) {
 	@AdminLayout(page.Name+" — Automata Admin", "orgs", page.Platforms, page.CSRFToken) {
-		<header class="border-b border-line-2 bg-white px-7 pt-5">
+		<header class="border-b border-line-2 bg-white px-4 md:px-7 pt-5">
 			<div class="mb-2.5 text-[13px] text-text-4"><a href="/admin/orgs">Organisations</a> / <span class="text-text">{ page.Name }</span></div>
-			<div class="flex items-start gap-5">
+			<div class="flex flex-col items-stretch gap-5 lg:flex-row lg:items-start">
 				<div>
 					<div class="flex items-center gap-3">
 						<h1 class="text-2xl font-semibold leading-tight tracking-[-.015em] text-ink">{ page.Name }</h1>
@@ -156,7 +156,7 @@ templ AdminOrg(page OrgPage) {
 				@orgTab(page, "plugins", "Plugins")
 			</div>
 		</header>
-		<div class="p-7">
+		<div class="p-4 md:p-7">
 			if page.Flash != "" {
 				<div class="mb-4 rounded-lg bg-ok-wash px-4 py-2.5 text-sm text-ok-deep">{ page.Flash }</div>
 			}
@@ -186,7 +186,7 @@ templ AdminOrg(page OrgPage) {
 }
 
 templ orgCreditsTab(page OrgPage) {
-	<div class="flex items-start gap-5">
+	<div class="flex flex-col items-stretch gap-5 lg:flex-row lg:items-start">
 		<div class="flex min-w-0 flex-1 flex-col gap-4.5">
 			<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
 				<div class="flex items-center border-b border-line-2 px-5 py-3.5">
@@ -246,7 +246,7 @@ templ orgCreditsTab(page OrgPage) {
 				</form>
 			</div>
 		</div>
-		<div class="flex w-[330px] shrink-0 flex-col gap-4.5">
+		<div class="flex w-full shrink-0 lg:w-[330px] flex-col gap-4.5">
 			<div class="rounded-[11px] border border-line-2 bg-white p-5">
 				@Eyebrow("Solde actuel", "text-text-4")
 				<div class="mt-2.5 flex items-baseline gap-2">
@@ -338,7 +338,7 @@ templ orgChannelsTab(page OrgPage) {
 }
 
 templ grantDialog(page OrgPage) {
-	<dialog id="grant-dialog" class="m-auto w-[380px] rounded-xl border border-line bg-white p-0 shadow-[0_8px_24px_rgba(22,28,39,.1)] backdrop:bg-ink/40">
+	<dialog id="grant-dialog" class="m-auto w-[calc(100%-2rem)] max-w-[380px] rounded-xl border border-line bg-white p-0 shadow-[0_8px_24px_rgba(22,28,39,.1)] backdrop:bg-ink/40">
 		<form method="post" action={ templ.SafeURL("/admin/orgs/" + page.ID + "/grant") }>
 			<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 			<div class="flex items-center gap-2.5 border-b border-line-2 px-5 py-4">

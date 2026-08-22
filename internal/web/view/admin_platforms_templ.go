@@ -181,7 +181,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<header class=\"flex items-center border-b border-line-2 bg-white px-8 py-5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Canaux et plateformes</h1><div class=\"mt-0.5 text-sm text-text-3\">Comptes de messagerie de l'instance, partagés par toutes les organisations</div></div><a href=\"/admin/platforms?pairing=qr\" class=\"ml-auto flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline\">Ajouter un compte</a></header><div class=\"flex items-start gap-5.5 px-8 pb-8 pt-6\"><div class=\"flex min-w-0 flex-1 flex-col gap-5.5\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<header class=\"flex items-center border-b border-line-2 bg-white px-8 py-5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Canaux et plateformes</h1><div class=\"mt-0.5 text-sm text-text-3\">Comptes de messagerie de l'instance, partagés par toutes les organisations</div></div><a href=\"/admin/platforms?pairing=qr\" class=\"ml-auto flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline\">Ajouter un compte</a></header><div class=\"flex flex-col items-stretch gap-5.5 px-4 pb-6 pt-4 lg:flex-row lg:items-start md:px-8 md:pb-8 md:pt-6\"><div class=\"flex min-w-0 flex-1 flex-col gap-5.5\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -196,7 +196,7 @@ func AdminPlatforms(page PlatformsPage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 			for _, card := range page.Cards {
-				var templ_7745c5c3_Var7 = []any{"flex w-[240px] flex-col rounded-[11px] border bg-white p-4.5", templ.KV("border-warn", card.PairingQR != ""), templ.KV("border-line-2", card.PairingQR == "")}
+				var templ_7745c5c3_Var7 = []any{"flex w-full flex-col sm:w-[240px] rounded-[11px] border bg-white p-4.5", templ.KV("border-warn", card.PairingQR != ""), templ.KV("border-line-2", card.PairingQR == "")}
 				templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var7...)
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err

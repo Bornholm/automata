@@ -149,7 +149,7 @@ func TokenPanel(data TokenPanelData) templ.Component {
 			templ_7745c5c3_Var5 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"flex items-center gap-7 rounded-xl bg-ink px-7 py-6\"><div class=\"min-w-0 flex-1\"><div class=\"mb-3.5 flex items-center gap-2.5\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "<div class=\"flex items-center gap-7 rounded-xl bg-ink px-4 md:px-7 py-6\"><div class=\"min-w-0 flex-1\"><div class=\"mb-3.5 flex items-center gap-2.5\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -229,7 +229,7 @@ func TokenPanel(data TokenPanelData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div><div class=\"w-px self-stretch bg-ink-3\"></div><div class=\"flex w-[250px] shrink-0 flex-col gap-3\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "</div><div class=\"w-px self-stretch bg-ink-3\"></div><div class=\"flex w-full shrink-0 lg:w-[250px] flex-col gap-3\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

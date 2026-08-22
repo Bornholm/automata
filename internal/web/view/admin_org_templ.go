@@ -230,7 +230,7 @@ func AdminOrg(page OrgPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<header class=\"border-b border-line-2 bg-white px-7 pt-5\"><div class=\"mb-2.5 text-[13px] text-text-4\"><a href=\"/admin/orgs\">Organisations</a> / <span class=\"text-text\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<header class=\"border-b border-line-2 bg-white px-4 md:px-7 pt-5\"><div class=\"mb-2.5 text-[13px] text-text-4\"><a href=\"/admin/orgs\">Organisations</a> / <span class=\"text-text\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -243,7 +243,7 @@ func AdminOrg(page OrgPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</span></div><div class=\"flex items-start gap-5\"><div><div class=\"flex items-center gap-3\"><h1 class=\"text-2xl font-semibold leading-tight tracking-[-.015em] text-ink\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</span></div><div class=\"flex flex-col items-stretch gap-5 lg:flex-row lg:items-start\"><div><div class=\"flex items-center gap-3\"><h1 class=\"text-2xl font-semibold leading-tight tracking-[-.015em] text-ink\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -325,7 +325,7 @@ func AdminOrg(page OrgPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div></header><div class=\"p-7\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div></header><div class=\"p-4 md:p-7\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -447,7 +447,7 @@ func orgCreditsTab(page OrgPage) templ.Component {
 			templ_7745c5c3_Var12 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div class=\"flex items-start gap-5\"><div class=\"flex min-w-0 flex-1 flex-col gap-4.5\"><div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex items-center border-b border-line-2 px-5 py-3.5\"><div class=\"text-[15px] font-semibold text-ink\">Mouvements du portefeuille</div><a href=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<div class=\"flex flex-col items-stretch gap-5 lg:flex-row lg:items-start\"><div class=\"flex min-w-0 flex-1 flex-col gap-4.5\"><div class=\"overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex items-center border-b border-line-2 px-5 py-3.5\"><div class=\"text-[15px] font-semibold text-ink\">Mouvements du portefeuille</div><a href=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -700,7 +700,7 @@ func orgCreditsTab(page OrgPage) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "</div></div></form></div></div><div class=\"flex w-[330px] shrink-0 flex-col gap-4.5\"><div class=\"rounded-[11px] border border-line-2 bg-white p-5\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 51, "</div></div></form></div></div><div class=\"flex w-full shrink-0 lg:w-[330px] flex-col gap-4.5\"><div class=\"rounded-[11px] border border-line-2 bg-white p-5\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -1161,7 +1161,7 @@ func grantDialog(page OrgPage) templ.Component {
 			templ_7745c5c3_Var50 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "<dialog id=\"grant-dialog\" class=\"m-auto w-[380px] rounded-xl border border-line bg-white p-0 shadow-[0_8px_24px_rgba(22,28,39,.1)] backdrop:bg-ink/40\"><form method=\"post\" action=\"")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 94, "<dialog id=\"grant-dialog\" class=\"m-auto w-[calc(100%-2rem)] max-w-[380px] rounded-xl border border-line bg-white p-0 shadow-[0_8px_24px_rgba(22,28,39,.1)] backdrop:bg-ink/40\"><form method=\"post\" action=\"")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

@@ -26,14 +26,14 @@ type SkillsPage struct {
 
 templ AdminSkills(page SkillsPage) {
 	@AdminLayout("Compétences — Automata Admin", "skills", page.Platforms, page.CSRFToken) {
-		<header class="flex items-center gap-4 border-b border-line-2 bg-white px-7 py-5.5">
+		<header class="flex items-center gap-4 border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5">
 			<div>
 				<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Compétences</h1>
 				<div class="mt-0.5 text-sm text-text-3">Les modes opératoires que les agents chargent à la demande</div>
 			</div>
 			<a href="/admin/skills/new" class="ml-auto flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline">Nouvelle compétence</a>
 		</header>
-		<div class="p-7">
+		<div class="p-4 md:p-7">
 			if len(page.Skills) == 0 {
 				<div class="rounded-[11px] border border-dashed border-line bg-white px-8 py-14 text-center text-sm text-text-4">
 					Aucune compétence. Les compétences fournies par le projet sont semées au démarrage du service.
@@ -100,7 +100,7 @@ type SkillFormPage struct {
 
 templ AdminSkillForm(page SkillFormPage) {
 	@AdminLayout("Compétence — Automata Admin", "skills", page.Platforms, page.CSRFToken) {
-		<header class="border-b border-line-2 bg-white px-7 py-5.5">
+		<header class="border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5">
 			<div class="mb-2 text-[13px] text-text-4">
 				<a href="/admin/skills">Compétences</a> /
 				if page.New {
@@ -117,7 +117,7 @@ templ AdminSkillForm(page SkillFormPage) {
 				}
 			</h1>
 		</header>
-		<div class="flex flex-col gap-5 p-7">
+		<div class="flex flex-col gap-5 p-4 md:p-7">
 			<form method="post" action={ skillFormAction(page) } class="flex max-w-[840px] flex-col gap-4 rounded-[11px] border border-line-2 bg-white p-5.5">
 				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 				if page.Error != "" {

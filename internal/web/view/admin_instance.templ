@@ -33,11 +33,11 @@ type InstancePage struct {
 
 templ AdminInstance(page InstancePage) {
 	@AdminLayout("Paramètres d'instance — Automata Admin", "instance", page.Platforms, page.CSRFToken) {
-		<header class="border-b border-line-2 bg-white px-7 py-5.5">
+		<header class="border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5">
 			<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Paramètres d'instance</h1>
 			<div class="mt-0.5 text-sm text-text-3">La configuration effective de ce service — { page.Version }</div>
 		</header>
-		<div class="flex flex-col gap-5 p-7">
+		<div class="flex flex-col gap-5 p-4 md:p-7">
 			<div class="rounded-[11px] border border-brand-line bg-brand-wash-2 px-5 py-4 text-sm leading-normal text-brand-deep">
 				Ces réglages viennent du fichier de configuration et ne se modifient pas ici : les changer demande d'éditer le fichier puis de redémarrer le service. Ce qui se règle en ligne — comptes de messagerie, tarification, personnalisation des organisations — a son propre écran.
 			</div>
@@ -59,7 +59,7 @@ templ AdminInstance(page InstancePage) {
 					} else {
 						for _, row := range section.Rows {
 							<div class="flex items-baseline gap-4 border-b border-line-3 px-5 py-3 last:border-b-0">
-								<div class="w-[220px] shrink-0 font-mono text-sm text-text">{ row.Name }</div>
+								<div class="w-full shrink-0 font-mono sm:w-[220px] text-sm text-text">{ row.Name }</div>
 								<div class="min-w-0 flex-1">
 									<div class="text-sm text-text-2">{ row.Value }</div>
 									if row.Hint != "" {

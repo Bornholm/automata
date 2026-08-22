@@ -82,14 +82,14 @@ templ AdminPlatforms(page PlatformsPage) {
 			</div>
 			<a href="/admin/platforms?pairing=qr" class="ml-auto flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline">Ajouter un compte</a>
 		</header>
-		<div class="flex items-start gap-5.5 px-8 pb-8 pt-6">
+		<div class="flex flex-col items-stretch gap-5.5 px-4 pb-6 pt-4 lg:flex-row lg:items-start md:px-8 md:pb-8 md:pt-6">
 			<div class="flex min-w-0 flex-1 flex-col gap-5.5">
 				if page.FlashToken != nil {
 					@TokenPanel(*page.FlashToken)
 				}
 				<div class="flex flex-wrap gap-3.5">
 					for _, card := range page.Cards {
-						<div class={ "flex w-[240px] flex-col rounded-[11px] border bg-white p-4.5", templ.KV("border-warn", card.PairingQR != ""), templ.KV("border-line-2", card.PairingQR == "") }>
+						<div class={ "flex w-full flex-col sm:w-[240px] rounded-[11px] border bg-white p-4.5", templ.KV("border-warn", card.PairingQR != ""), templ.KV("border-line-2", card.PairingQR == "") }>
 							<div class="mb-3 flex items-center gap-2">
 								@PlatformBadge(card.Type, "size-6 rounded-[7px]", "text-[11px]")
 								<span class="truncate text-[15px] font-semibold text-ink">{ card.Name }</span>

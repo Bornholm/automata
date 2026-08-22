@@ -64,7 +64,7 @@ func AdminPlugins(page PluginsPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"border-b border-line-2 bg-white px-7 py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Plugins</h1><div class=\"mt-0.5 text-sm text-text-3\">Les extensions chargées par cette instance</div></header><div class=\"flex flex-col gap-5 p-7\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Plugins</h1><div class=\"mt-0.5 text-sm text-text-3\">Les extensions chargées par cette instance</div></header><div class=\"flex flex-col gap-5 p-4 md:p-7\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

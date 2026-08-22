@@ -210,7 +210,7 @@ func AdminPricing(page PricingPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<header class=\"border-b border-line-2 bg-white px-7 py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Tarification et conversion</h1><div class=\"mt-0.5 text-sm text-text-3\">Ce que valent les crédits, ce qu'ils coûtent, ce qu'ils rapportent</div></header><div class=\"flex flex-col gap-5.5 p-7\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "<header class=\"border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Tarification et conversion</h1><div class=\"mt-0.5 text-sm text-text-3\">Ce que valent les crédits, ce qu'ils coûtent, ce qu'ils rapportent</div></header><div class=\"flex flex-col gap-5.5 p-4 md:p-7\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -343,7 +343,7 @@ func AdminPricing(page PricingPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<div class=\"flex items-start gap-5\"><div class=\"min-w-0 flex-1 overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex items-baseline gap-3 border-b border-line-2 px-5 py-3.5\"><div class=\"text-[15px] font-semibold text-ink\">Offres proposées au profil</div><div class=\"text-[13px] text-text-4\">un crédit coûte ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<div class=\"flex flex-col items-stretch gap-5 lg:flex-row lg:items-start\"><div class=\"min-w-0 flex-1 overflow-hidden rounded-[11px] border border-line-2 bg-white\"><div class=\"flex items-baseline gap-3 border-b border-line-2 px-5 py-3.5\"><div class=\"text-[15px] font-semibold text-ink\">Offres proposées au profil</div><div class=\"text-[13px] text-text-4\">un crédit coûte ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -583,7 +583,7 @@ func AdminPricing(page PricingPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\"> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Crédits</span> <input type=\"number\" name=\"credits\" min=\"1\" required class=\"h-[38px] w-[140px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Prix (€)</span> <input type=\"number\" name=\"price_eur\" min=\"0\" step=\"0.01\" required class=\"h-[38px] w-[120px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <button type=\"submit\" class=\"h-[38px] rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong\">Ajouter l'offre</button></form></div><form method=\"post\" action=\"/admin/pricing/settings\" class=\"w-[360px] shrink-0 rounded-[11px] border border-line-2 bg-white p-5.5\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\"> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Crédits</span> <input type=\"number\" name=\"credits\" min=\"1\" required class=\"h-[38px] w-[140px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <label class=\"block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Prix (€)</span> <input type=\"number\" name=\"price_eur\" min=\"0\" step=\"0.01\" required class=\"h-[38px] w-[120px] rounded-lg border border-line px-3 font-mono text-sm outline-none focus:border-brand\"></label> <button type=\"submit\" class=\"h-[38px] rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong\">Ajouter l'offre</button></form></div><form method=\"post\" action=\"/admin/pricing/settings\" class=\"w-full shrink-0 lg:w-[360px] rounded-[11px] border border-line-2 bg-white p-5.5\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

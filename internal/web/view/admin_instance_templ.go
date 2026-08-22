@@ -72,7 +72,7 @@ func AdminInstance(page InstancePage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"border-b border-line-2 bg-white px-7 py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Paramètres d'instance</h1><div class=\"mt-0.5 text-sm text-text-3\">La configuration effective de ce service — ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<header class=\"border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Paramètres d'instance</h1><div class=\"mt-0.5 text-sm text-text-3\">La configuration effective de ce service — ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -85,7 +85,7 @@ func AdminInstance(page InstancePage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div></header><div class=\"flex flex-col gap-5 p-7\"><div class=\"rounded-[11px] border border-brand-line bg-brand-wash-2 px-5 py-4 text-sm leading-normal text-brand-deep\">Ces réglages viennent du fichier de configuration et ne se modifient pas ici : les changer demande d'éditer le fichier puis de redémarrer le service. Ce qui se règle en ligne — comptes de messagerie, tarification, personnalisation des organisations — a son propre écran.</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div></header><div class=\"flex flex-col gap-5 p-4 md:p-7\"><div class=\"rounded-[11px] border border-brand-line bg-brand-wash-2 px-5 py-4 text-sm leading-normal text-brand-deep\">Ces réglages viennent du fichier de configuration et ne se modifient pas ici : les changer demande d'éditer le fichier puis de redémarrer le service. Ce qui se règle en ligne — comptes de messagerie, tarification, personnalisation des organisations — a son propre écran.</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -173,14 +173,14 @@ func AdminInstance(page InstancePage) templ.Component {
 					}
 				} else {
 					for _, row := range section.Rows {
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"flex items-baseline gap-4 border-b border-line-3 px-5 py-3 last:border-b-0\"><div class=\"w-[220px] shrink-0 font-mono text-sm text-text\">")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<div class=\"flex items-baseline gap-4 border-b border-line-3 px-5 py-3 last:border-b-0\"><div class=\"w-full shrink-0 font-mono sm:w-[220px] text-sm text-text\">")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var8 string
 						templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(row.Name)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_instance.templ`, Line: 62, Col: 78}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/admin_instance.templ`, Line: 62, Col: 88}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
 						if templ_7745c5c3_Err != nil {

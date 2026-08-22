@@ -159,7 +159,7 @@ func AdminOrgs(page OrgsPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<header class=\"flex items-center gap-4 border-b border-line-2 bg-white px-7 py-5.5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Organisations</h1><div class=\"mt-0.5 text-sm text-text-3\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "<header class=\"flex items-center gap-4 border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Organisations</h1><div class=\"mt-0.5 text-sm text-text-3\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -180,7 +180,7 @@ func AdminOrgs(page OrgsPage) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" placeholder=\"Rechercher une organisation…\" class=\"h-9 w-[230px] rounded-lg border border-line bg-white px-3 text-sm text-text outline-none placeholder:text-text-4 focus:border-brand\"></form><a href=\"/admin/orgs/new\" class=\"flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline\">Créer une organisation</a></div></header><div class=\"p-7\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "\" placeholder=\"Rechercher une organisation…\" class=\"h-9 w-full max-w-[230px] rounded-lg border border-line bg-white px-3 text-sm text-text outline-none placeholder:text-text-4 focus:border-brand\"></form><a href=\"/admin/orgs/new\" class=\"flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline\">Créer une organisation</a></div></header><div class=\"p-4 md:p-7\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -423,7 +423,7 @@ func AdminOrgNew(page OrgNewPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<header class=\"border-b border-line-2 bg-white px-7 py-5.5\"><div class=\"mb-2 text-[13px] text-text-4\"><a href=\"/admin/orgs\">Organisations</a> / <span class=\"text-text\">Nouvelle organisation</span></div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Créer une organisation</h1></header><div class=\"p-7\"><form method=\"post\" action=\"/admin/orgs\" class=\"flex max-w-[560px] flex-col gap-4 rounded-[11px] border border-line-2 bg-white p-5.5\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<header class=\"border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5\"><div class=\"mb-2 text-[13px] text-text-4\"><a href=\"/admin/orgs\">Organisations</a> / <span class=\"text-text\">Nouvelle organisation</span></div><h1 class=\"text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink\">Créer une organisation</h1></header><div class=\"p-4 md:p-7\"><form method=\"post\" action=\"/admin/orgs\" class=\"flex max-w-[560px] flex-col gap-4 rounded-[11px] border border-line-2 bg-white p-5.5\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

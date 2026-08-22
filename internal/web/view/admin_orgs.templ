@@ -53,7 +53,7 @@ templ orgsSummary(page OrgsPage) {
 
 templ AdminOrgs(page OrgsPage) {
 	@AdminLayout("Organisations — Automata Admin", "orgs", page.Platforms, page.CSRFToken) {
-		<header class="flex items-center gap-4 border-b border-line-2 bg-white px-7 py-5.5">
+		<header class="flex items-center gap-4 border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5">
 			<div>
 				<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Organisations</h1>
 				<div class="mt-0.5 text-sm text-text-3">
@@ -63,12 +63,12 @@ templ AdminOrgs(page OrgsPage) {
 			<div class="ml-auto flex items-center gap-2.5">
 				<form method="get" action="/admin/orgs">
 					<input type="search" name="q" value={ page.Search } placeholder="Rechercher une organisation…"
-						class="h-9 w-[230px] rounded-lg border border-line bg-white px-3 text-sm text-text outline-none placeholder:text-text-4 focus:border-brand"/>
+						class="h-9 w-full max-w-[230px] rounded-lg border border-line bg-white px-3 text-sm text-text outline-none placeholder:text-text-4 focus:border-brand"/>
 				</form>
 				<a href="/admin/orgs/new" class="flex h-9 items-center rounded-lg bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong hover:no-underline">Créer une organisation</a>
 			</div>
 		</header>
-		<div class="p-7">
+		<div class="p-4 md:p-7">
 			if len(page.Rows) == 0 {
 				<div class="flex flex-col items-center gap-3 rounded-[11px] border border-dashed border-line bg-white px-8 py-14 text-center">
 					@Logo("size-9 rounded-[10px]", "text-lg")
@@ -128,11 +128,11 @@ type OrgNewPage struct {
 
 templ AdminOrgNew(page OrgNewPage) {
 	@AdminLayout("Créer une organisation — Automata Admin", "orgs", page.Platforms, page.CSRFToken) {
-		<header class="border-b border-line-2 bg-white px-7 py-5.5">
+		<header class="border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5">
 			<div class="mb-2 text-[13px] text-text-4"><a href="/admin/orgs">Organisations</a> / <span class="text-text">Nouvelle organisation</span></div>
 			<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Créer une organisation</h1>
 		</header>
-		<div class="p-7">
+		<div class="p-4 md:p-7">
 			<form method="post" action="/admin/orgs" class="flex max-w-[560px] flex-col gap-4 rounded-[11px] border border-line-2 bg-white p-5.5">
 				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
 				if page.Error != "" {

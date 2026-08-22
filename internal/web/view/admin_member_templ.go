@@ -224,7 +224,7 @@ func AdminMember(page MemberPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></header><div class=\"flex flex-col gap-5.5 px-8 pb-8 pt-6\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "</div></header><div class=\"flex flex-col gap-5.5 px-4 pb-6 pt-4 md:px-8 md:pb-8 md:pt-6\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -285,7 +285,7 @@ func AdminMember(page MemberPage) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" class=\"flex items-center gap-4 rounded-xl bg-ink px-7 py-6\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" class=\"flex items-center gap-4 rounded-xl bg-ink px-4 md:px-7 py-6\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -311,7 +311,7 @@ func AdminMember(page MemberPage) templ.Component {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"flex items-start gap-5\"><div class=\"flex-1 rounded-[11px] border border-line-2 bg-white p-5.5\"><div class=\"mb-4.5 text-[15px] font-semibold text-ink\">Fiche du compte</div><form method=\"post\" action=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"flex flex-col items-stretch gap-5 lg:flex-row lg:items-start\"><div class=\"flex-1 rounded-[11px] border border-line-2 bg-white p-5.5\"><div class=\"mb-4.5 text-[15px] font-semibold text-ink\">Fiche du compte</div><form method=\"post\" action=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
