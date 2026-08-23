@@ -328,6 +328,16 @@ memory:
     # En dessous de ce nombre de souvenirs, une portée est laissée intacte :
     # rien à gagner, et aucun appel au modèle dépensé.
     min_memories: 10
+    # Réflexion épisodique : la même passe relit les épisodes verbatim
+    # récents pour en dégager des habitudes ou préférences récurrentes
+    # jamais énoncées explicitement. Coûteuse en tokens et spéculative :
+    # désactivée par défaut.
+    reflection:
+      enabled: false
+      min_episodes: 5
+      # Âge (en jours) au-delà duquel un épisode déjà réfléchi est purgé.
+      # 0 : conservation illimitée.
+      retention_days: 0
 
 identities:
   roles:

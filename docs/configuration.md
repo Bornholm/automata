@@ -893,6 +893,10 @@ memory:
     client: main
     cron: "40 4 * * *"
     min_memories: 10
+    reflection:
+      enabled: false
+      min_episodes: 5
+      retention_days: 0
 ```
 
 Mémoire persistante, portée par Amoxtli. Le store garde le contenu, l'index
@@ -942,6 +946,25 @@ Le contenu des souvenirs transite vers le fournisseur du `client` déclaré
 (comme pour toute recherche mémoire) mais n'est jamais journalisé. Le
 compteur `memories_consolidated` de `/metrics` mesure les souvenirs
 supprimés (fusionnés ou oubliés).
+
+`reflection` ajoute à la même passe une réflexion épisodique : les épisodes
+verbatim récents (`conversation.compaction.record_episodes`) de chaque
+portée personnelle ou de groupe sont relus pour en dégager des habitudes ou
+préférences récurrentes que personne n'a jamais énoncées — ce que ni
+l'extraction de faits (un fragment à la fois) ni les insights (limités aux
+faits déjà extraits) ne peuvent voir. Au plus deux motifs par portée et par
+passe, formulés prudemment, exigeant plusieurs occurrences, mémorisés avec
+l'origine `episode_reflection` ; les épisodes sont lus, jamais modifiés.
+Une portée comptant moins de `min_episodes` épisodes nouveaux (5 par
+défaut) attend d'accumuler davantage de matière ; au-delà de 20 épisodes,
+la passe traite les plus anciens et rattrape le reste les nuits suivantes.
+C'est la production de souvenirs la plus spéculative et la plus coûteuse en
+tokens (du verbatim, pas des faits condensés) : désactivée par défaut.
+
+`retention_days` (0 par défaut : conservation illimitée) purge les épisodes
+plus vieux que cet âge, mais JAMAIS un épisode qu'aucune réflexion réussie
+n'a couvert — consolider avant d'oublier. Les compteurs `episode_patterns`
+et `episodes_purged` de `/metrics` mesurent la réflexion.
 
 ## conversation
 

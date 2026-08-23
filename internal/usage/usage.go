@@ -44,6 +44,7 @@ const (
 	ComponentAgent         = "agent"
 	ComponentCompaction    = "compaction"
 	ComponentConsolidation = "consolidation"
+	ComponentReflection    = "reflection"
 	ComponentTranscription = "transcription"
 )
 

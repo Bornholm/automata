@@ -425,6 +425,19 @@ memory:
     cron: "40 4 * * *"
     # En dessous de ce nombre de souvenirs, une portée est laissée intacte.
     min_memories: 10
+    # Réflexion épisodique : la même passe relit les épisodes verbatim
+    # récents (conversation.compaction.record_episodes) pour en dégager des
+    # habitudes ou préférences récurrentes jamais énoncées explicitement.
+    # Coûteuse en tokens (du verbatim) et spéculative : désactivée par
+    # défaut.
+    reflection:
+      enabled: false
+      # En dessous de ce nombre d'épisodes nouveaux, une portée attend
+      # d'accumuler davantage de matière.
+      min_episodes: 5
+      # Âge (en jours) au-delà duquel un épisode déjà couvert par une
+      # réflexion réussie est purgé. 0 : conservation illimitée.
+      retention_days: 0
 
 identities:
   roles:

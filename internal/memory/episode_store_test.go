@@ -172,3 +172,86 @@ func TestList_NeverReturnsEpisodes(t *testing.T) {
 		t.Errorf("List a retourné autre chose que le souvenir: %q", all[0].Content)
 	}
 }
+
+func TestListEpisodes_ReturnsScopesAndNeverMemories(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	if _, err := s.Remember(ctx, memory.NewMemory{
+		Content: "un souvenir ordinaire",
+		Scope:   model.ScopePersonal, ScopeID: "alice",
+		OrgID:            "home",
+		OwnerPrincipalID: "alice",
+		CreatedBy:        "alice",
+	}); err != nil {
+		t.Fatalf("Remember: %v", err)
+	}
+
+	recordTestEpisode(t, s, "premier fragment", model.ScopePersonal, "alice")
+	recordTestEpisode(t, s, "second fragment", model.ScopeGroup, "grp-1")
+
+	episodes, err := s.ListEpisodes(ctx)
+	if err != nil {
+		t.Fatalf("ListEpisodes: %v", err)
+	}
+	if len(episodes) != 2 {
+		t.Fatalf("ListEpisodes = %d entrée(s), attendu 2 : jamais de souvenir sémantique", len(episodes))
+	}
+
+	byContent := map[string]memory.Episode{}
+	for _, ep := range episodes {
+		byContent[ep.Content] = ep
+		if ep.OrgID != "home" {
+			t.Errorf("org_id = %q, attendu home", ep.OrgID)
+		}
+		if ep.CreatedAt.IsZero() {
+			t.Errorf("created_at absent pour %q", ep.ID)
+		}
+		if ep.ConversationID != "conv-1" {
+			t.Errorf("conversation_id = %q", ep.ConversationID)
+		}
+	}
+
+	first, ok := byContent["premier fragment"]
+	if !ok || first.Scope != model.ScopePersonal || first.ScopeID != "alice" {
+		t.Errorf("portée du premier fragment perdue: %+v", first)
+	}
+	second, ok := byContent["second fragment"]
+	if !ok || second.Scope != model.ScopeGroup || second.ScopeID != "grp-1" {
+		t.Errorf("portée du second fragment perdue: %+v", second)
+	}
+}
+
+func TestForgetEpisode_RemovesFromListAndSearch(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	kept := recordTestEpisode(t, s, "fragment conservé sur dokku", model.ScopePersonal, "alice")
+	doomed := recordTestEpisode(t, s, "fragment purgé sur dokku", model.ScopePersonal, "alice")
+
+	if err := s.ForgetEpisode(ctx, doomed.ID); err != nil {
+		t.Fatalf("ForgetEpisode: %v", err)
+	}
+
+	episodes, err := s.ListEpisodes(ctx)
+	if err != nil {
+		t.Fatalf("ListEpisodes: %v", err)
+	}
+	if len(episodes) != 1 || episodes[0].ID != kept.ID {
+		t.Fatalf("ListEpisodes après purge = %+v, attendu uniquement %q", episodes, kept.ID)
+	}
+
+	found, err := s.SearchEpisodes(ctx, memory.EpisodeQuery{
+		Text:  "dokku",
+		OrgID: "home",
+		Scope: model.ScopePersonal, ScopeID: "alice",
+	})
+	if err != nil {
+		t.Fatalf("SearchEpisodes: %v", err)
+	}
+	for _, ep := range found {
+		if ep.ID == doomed.ID {
+			t.Errorf("l'épisode purgé %q apparaît encore dans la recherche", doomed.ID)
+		}
+	}
+}

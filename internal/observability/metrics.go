@@ -50,6 +50,8 @@ type Metrics struct {
 	memoryRecalls            atomic.Int64
 	memoryInsights           atomic.Int64
 	memoriesConsolidated     atomic.Int64
+	episodePatterns          atomic.Int64
+	episodesPurged           atomic.Int64
 	deliveryErrors           atomic.Int64
 	toolResultsTruncated     atomic.Int64
 	profileLinks             atomic.Int64
@@ -417,6 +419,24 @@ func (m *Metrics) AddMemoriesConsolidated(n int) {
 	m.memoriesConsolidated.Add(int64(n))
 }
 
+// AddEpisodePatterns incrémente de n le compteur de motifs mémorisés par la
+// réflexion épisodique nocturne (internal/consolidation/reflection.go).
+func (m *Metrics) AddEpisodePatterns(n int) {
+	if m == nil || n <= 0 {
+		return
+	}
+	m.episodePatterns.Add(int64(n))
+}
+
+// AddEpisodesPurged incrémente de n le compteur d'épisodes supprimés par la
+// purge de rétention (internal/consolidation/reflection.go).
+func (m *Metrics) AddEpisodesPurged(n int) {
+	if m == nil || n <= 0 {
+		return
+	}
+	m.episodesPurged.Add(int64(n))
+}
+
 // IncCronOccurrence incrémente le compteur d'occurrences planifiées
 // déclenchées pour le schedule scheduleID.
 func (m *Metrics) IncCronOccurrence(scheduleID string) {
@@ -498,6 +518,8 @@ func (m *Metrics) Snapshot() map[string]any {
 		"memory_recalls":              m.memoryRecalls.Load(),
 		"memory_insights":             m.memoryInsights.Load(),
 		"memories_consolidated":       m.memoriesConsolidated.Load(),
+		"episode_patterns":            m.episodePatterns.Load(),
+		"episodes_purged":             m.episodesPurged.Load(),
 		"delivery_errors":             m.deliveryErrors.Load(),
 		"profile_links":               m.profileLinks.Load(),
 		"wallet_debits":               m.walletDebits.Load(),

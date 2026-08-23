@@ -331,6 +331,16 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 				return fmt.Errorf("registry: construction du consolidateur mémoire: %w", err)
 			}
 
+			if cfg.Memory.Consolidation.Reflection.Enabled {
+				consolidator = consolidator.WithEpisodes(memRes.store, cfg.Memory.Consolidation.Reflection)
+				if !cfg.Conversation.Compaction.RecordEpisodes {
+					// Pas une erreur : des épisodes enregistrés par le
+					// passé restent réfléchissables, mais sans
+					// record_episodes aucun nouveau n'arrivera jamais.
+					logger.Warn("registry: memory.consolidation.reflection activée sans conversation.compaction.record_episodes, aucun nouvel épisode ne sera enregistré")
+				}
+			}
+
 			wg.Add(1)
 			go func() {
 				defer wg.Done()

@@ -120,6 +120,12 @@ type Consolidator struct {
 	logger      *slog.Logger
 	metrics     *observability.Metrics
 	now         func() time.Time
+
+	// Réflexion épisodique (reflection.go), optionnelle : nil tant que
+	// WithEpisodes n'a pas été appelé.
+	episodes    memory.EpisodeMaintenance
+	minEpisodes int
+	retention   int
 }
 
 // New construit un Consolidator à partir de la configuration
@@ -161,6 +167,20 @@ func New(db *persistence.DB, store memory.Store, client llm.ChatCompletionClient
 // WithClock remplace l'horloge (tests).
 func (c *Consolidator) WithClock(now func() time.Time) *Consolidator {
 	c.now = now
+	return c
+}
+
+// WithEpisodes active la réflexion épisodique
+// (memory.consolidation.reflection) : à chaque passe, après la
+// consolidation des faits, les épisodes récents de chaque portée sont relus
+// pour en dégager des motifs récurrents (voir reflection.go).
+func (c *Consolidator) WithEpisodes(episodes memory.EpisodeMaintenance, cfg config.MemoryReflection) *Consolidator {
+	c.episodes = episodes
+	c.minEpisodes = cfg.MinEpisodes
+	if c.minEpisodes <= 0 {
+		c.minEpisodes = defaultMinEpisodes
+	}
+	c.retention = cfg.RetentionDays
 	return c
 }
 
@@ -219,6 +239,15 @@ func (c *Consolidator) Tick(ctx context.Context) error {
 
 	if err := c.Consolidate(ctx); err != nil {
 		return err
+	}
+
+	// La réflexion épisodique partage l'échéance de la consolidation mais
+	// jamais son verdict : un échec est journalisé et retentera à la
+	// prochaine occurrence cron — chaque portée garde son propre ancrage
+	// (reflection.go), la fenêtre manquée sera simplement rattrapée. Faire
+	// échouer le tick rejouerait toute la passe chaque minute.
+	if err := c.Reflect(ctx); err != nil {
+		c.logger.ErrorContext(ctx, "consolidation: échec de la réflexion épisodique", "error", err)
 	}
 
 	return c.recordRun(ctx, now)

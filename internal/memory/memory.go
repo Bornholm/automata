@@ -51,7 +51,9 @@ type NewMemory struct {
 	// vide pour l'outil conversationnel remember, "compaction" pour
 	// l'extraction de faits durables (internal/conversation.Compactor),
 	// "consolidation" pour une fusion produite par la réorganisation
-	// périodique (internal/consolidation). Toujours décidée par
+	// périodique (internal/consolidation), "reflection" pour un insight de
+	// cette même réorganisation, "episode_reflection" pour un motif observé
+	// par la réflexion épisodique nocturne. Toujours décidée par
 	// l'application, jamais par le LLM.
 	Origin string
 }

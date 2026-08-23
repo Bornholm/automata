@@ -831,6 +831,32 @@ type MemoryConsolidation struct {
 	// consolidée : en dessous, elle est laissée intacte (rien à gagner, et
 	// aucun appel LLM). 0 applique le défaut (10).
 	MinMemories int `yaml:"min_memories"`
+	// Reflection décrit la réflexion épisodique adossée à la même passe
+	// nocturne.
+	Reflection MemoryReflection `yaml:"reflection"`
+}
+
+// MemoryReflection décrit la réflexion épisodique
+// (internal/consolidation/reflection.go) : une seconde phase de la passe de
+// consolidation qui relit les épisodes verbatim récents, portée par portée,
+// pour en dégager des motifs récurrents jamais énoncés explicitement
+// (habitudes, préférences implicites), mémorisés comme souvenirs
+// sémantiques d'origine "episode_reflection". Les épisodes sont lus, jamais
+// modifiés. Désactivée par défaut : c'est la production de souvenirs la
+// plus spéculative, et la plus coûteuse en tokens (du verbatim, pas des
+// faits condensés).
+type MemoryReflection struct {
+	Enabled bool `yaml:"enabled"`
+	// MinEpisodes est le nombre d'épisodes nouveaux à partir duquel une
+	// portée est soumise à réflexion : en dessous, elle attend d'accumuler
+	// davantage de matière (un motif exige plusieurs occurrences), sans
+	// appel LLM. 0 applique le défaut (5).
+	MinEpisodes int `yaml:"min_episodes"`
+	// RetentionDays est l'âge, en jours, au-delà duquel un épisode DÉJÀ
+	// COUVERT par une réflexion réussie est purgé — consolider avant
+	// d'oublier. 0 (défaut) désactive toute purge : les épisodes sont
+	// conservés sans limite.
+	RetentionDays int `yaml:"retention_days"`
 }
 
 // MemoryStore décrit le stockage principal de la mémoire.

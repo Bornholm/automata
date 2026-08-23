@@ -11,6 +11,8 @@ import (
 
 	"github.com/bornholm/amoxtli"
 	amoxtliindex "github.com/bornholm/amoxtli/index"
+	amoxtliingest "github.com/bornholm/amoxtli/ingest"
+	amoxtlimodel "github.com/bornholm/amoxtli/model"
 
 	"github.com/bornholm/automata/internal/model"
 )
@@ -44,7 +46,7 @@ const episodeIDMetadataKey = "episode_id"
 const episodeKind = "episode"
 
 // Episode est un fragment de conversation mémorisé verbatim, restitué par
-// SearchEpisodes.
+// SearchEpisodes et ListEpisodes.
 type Episode struct {
 	ID             string
 	Content        string
@@ -53,6 +55,16 @@ type Episode struct {
 	// premier et du dernier message).
 	From time.Time
 	To   time.Time
+	// OrgID, Scope et ScopeID restituent la portée d'enregistrement : la
+	// réflexion épisodique (internal/consolidation) en a besoin pour
+	// regrouper les épisodes sans jamais mélanger deux portées.
+	OrgID   model.OrgID
+	Scope   model.Scope
+	ScopeID model.ScopeID
+	// CreatedAt est l'horodatage d'enregistrement de l'épisode (distinct de
+	// From/To, qui datent les messages couverts) : c'est lui qui borne les
+	// fenêtres de réflexion et les décisions de purge.
+	CreatedAt time.Time
 }
 
 // NewEpisode décrit l'enregistrement d'un fragment de conversation. Comme
@@ -81,8 +93,8 @@ type EpisodeQuery struct {
 
 // EpisodeStore est l'interface applicative de la mémoire épisodique,
 // implémentée par AmoxtliStore. Volontairement minimale : pas de
-// suppression exposée — les épisodes ne sont réorganisés par aucun
-// mécanisme, seul un nettoyage de rétention pourra un jour en supprimer.
+// suppression exposée ici — les épisodes ne sont jamais réorganisés, seule
+// la maintenance interne (EpisodeMaintenance) peut en purger.
 type EpisodeStore interface {
 	// RecordEpisode enregistre un fragment et attend la fin de son
 	// indexation avant de retourner.
@@ -90,6 +102,22 @@ type EpisodeStore interface {
 	// SearchEpisodes retourne les épisodes correspondant à query.Text dans
 	// la portée exacte décrite par query.
 	SearchEpisodes(ctx context.Context, query EpisodeQuery) ([]Episode, error)
+}
+
+// EpisodeMaintenance est l'interface de maintenance de la mémoire
+// épisodique, distincte d'EpisodeStore pour la même raison que Store.List :
+// ses méthodes ignorent volontairement le cloisonnement par portée et ne
+// doivent JAMAIS être exposées, directement ou indirectement, à un agent
+// LLM ou à un utilisateur. Seule la réflexion épisodique et la purge de
+// rétention (internal/consolidation) s'en servent.
+type EpisodeMaintenance interface {
+	// ListEpisodes retourne TOUS les épisodes de l'instance, toutes portées
+	// confondues, avec leurs métadonnées de portée et d'horodatage.
+	ListEpisodes(ctx context.Context) ([]Episode, error)
+	// ForgetEpisode supprime définitivement l'épisode identifié par id. Les
+	// épisodes ne sont jamais réécrits ni fusionnés : la purge de rétention
+	// est la seule suppression légitime.
+	ForgetEpisode(ctx context.Context, id string) error
 }
 
 // episodeSource construit l'URL source synthétique associée à id.
@@ -181,6 +209,10 @@ func (s *AmoxtliStore) RecordEpisode(ctx context.Context, ep NewEpisode) (Episod
 		ConversationID: ep.ConversationID,
 		From:           ep.From,
 		To:             ep.To,
+		OrgID:          ep.OrgID,
+		Scope:          ep.Scope,
+		ScopeID:        ep.ScopeID,
+		CreatedAt:      now,
 	}, nil
 }
 
@@ -223,17 +255,94 @@ func (s *AmoxtliStore) SearchEpisodes(ctx context.Context, query EpisodeQuery) (
 			return nil, err
 		}
 
-		episodes = append(episodes, Episode{
-			ID:             id,
-			Content:        content,
-			ConversationID: model.ConversationID(metadata["conversation_id"]),
-			From:           parseMetadataTime(metadata["from"]),
-			To:             parseMetadataTime(metadata["to"]),
-		})
+		episodes = append(episodes, episodeFromMetadata(id, content, metadata))
 	}
 
 	return episodes, nil
 }
+
+// episodeFromMetadata reconstruit un Episode depuis le contenu restitué et
+// les métadonnées du document, en tolérant les horodatages absents (zéro) :
+// une borne manquante ne doit pas faire échouer la restitution.
+func episodeFromMetadata(id, content string, metadata map[string]string) Episode {
+	return Episode{
+		ID:             id,
+		Content:        content,
+		ConversationID: model.ConversationID(metadata["conversation_id"]),
+		From:           parseMetadataTime(metadata["from"]),
+		To:             parseMetadataTime(metadata["to"]),
+		OrgID:          model.OrgID(metadata["org_id"]),
+		Scope:          model.Scope(metadata["scope"]),
+		ScopeID:        model.ScopeID(metadata["scope_id"]),
+		CreatedAt:      parseMetadataTime(metadata["created_at"]),
+	}
+}
+
+// ListEpisodes implémente EpisodeMaintenance. Même mécanique que
+// Store.List : le store documentaire est parcouru page par page en filtrant
+// sur le préfixe des URL sources synthétiques des épisodes — le seul moyen
+// exposé par amoxtli d'énumérer exhaustivement des documents. Voir
+// l'avertissement de l'interface : aucune restriction de portée ici.
+func (s *AmoxtliStore) ListEpisodes(ctx context.Context) ([]Episode, error) {
+	manager := s.codex.Manager()
+
+	pattern := sourceScheme + "://" + episodeHost + "/"
+
+	var episodes []Episode
+
+	for page := 0; ; page++ {
+		p := page
+		limit := listPageSize
+		documents, _, err := manager.QueryDocuments(ctx, amoxtliingest.QueryDocumentsOptions{
+			Page:          &p,
+			Limit:         &limit,
+			SourcePattern: &pattern,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("memory: énumération des épisodes (page %d): %w", page, err)
+		}
+
+		for _, doc := range documents {
+			id, ok := episodeIDFromSource(doc.Source())
+			if !ok {
+				continue
+			}
+
+			raw, err := doc.Content()
+			if err != nil {
+				return nil, fmt.Errorf("memory: lecture du contenu de l'épisode %q: %w", id, err)
+			}
+
+			var metadata map[string]string
+			if rawMeta := amoxtlimodel.Metadata(doc); rawMeta != nil {
+				metadata = stringMetadata(rawMeta)
+			}
+
+			episodes = append(episodes, episodeFromMetadata(id, stripIDPrefix(string(raw), id), metadata))
+		}
+
+		if len(documents) < listPageSize {
+			return episodes, nil
+		}
+	}
+}
+
+// ForgetEpisode implémente EpisodeMaintenance. Même mécanique que Forget :
+// amoxtli n'expose la suppression que par URL source.
+func (s *AmoxtliStore) ForgetEpisode(ctx context.Context, id string) error {
+	source, err := episodeSource(id)
+	if err != nil {
+		return err
+	}
+
+	if err := s.codex.DeleteBySource(ctx, source); err != nil {
+		return fmt.Errorf("memory: suppression de l'épisode %q: %w", id, err)
+	}
+
+	return nil
+}
+
+var _ EpisodeMaintenance = (*AmoxtliStore)(nil)
 
 // parseMetadataTime décode un horodatage RFC 3339 de métadonnée, en
 // tolérant l'absence (zéro) : une borne manquante ne doit pas faire échouer

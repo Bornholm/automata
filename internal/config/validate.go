@@ -1024,6 +1024,26 @@ func validateMemory(cfg *Config) []error {
 		}
 	}
 
+	reflection := consolidation.Reflection
+	if reflection.MinEpisodes < 0 {
+		errs = append(errs, fmt.Errorf("memory.consolidation.reflection.min_episodes: ne peut pas être négatif (valeur actuelle: %d)", reflection.MinEpisodes))
+	}
+	if reflection.RetentionDays < 0 {
+		errs = append(errs, fmt.Errorf("memory.consolidation.reflection.retention_days: ne peut pas être négatif (valeur actuelle: %d)", reflection.RetentionDays))
+	}
+	if reflection.Enabled && !consolidation.Enabled {
+		// La réflexion est une phase de la passe de consolidation : sans
+		// elle, rien ne la déclencherait jamais.
+		errs = append(errs, fmt.Errorf("memory.consolidation.reflection.enabled: requiert memory.consolidation.enabled"))
+	}
+	if reflection.RetentionDays > 0 && !reflection.Enabled {
+		// La purge ne supprime jamais un épisode qu'aucune réflexion
+		// réussie n'a couvert : sans réflexion, elle ne purgerait jamais
+		// rien — mieux vaut le dire que laisser croire à une rétention
+		// active.
+		errs = append(errs, fmt.Errorf("memory.consolidation.reflection.retention_days: sans effet lorsque memory.consolidation.reflection.enabled est faux"))
+	}
+
 	return errs
 }
 
