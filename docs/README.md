@@ -45,7 +45,10 @@ section de `configuration.md` correspondant à ce que vous voulez activer.
 
 - Pas de haute disponibilité. Une seule instance à la fois, sans verrouillage
   distribué.
-- Pas de chiffrement au repos. La base contient du texte en clair, et les
-  images reçues si vous les conservez.
+- Pas de chiffrement de la machine. Les contenus personnels (messages,
+  résumés, rappels, pièces jointes, souvenirs) sont chiffrés au repos dès
+  que `storage.encryption_key` est renseignée, ce qui protège une base
+  volée ou une sauvegarde égarée — pas un serveur compromis, qui détient
+  la clé. L'index de recherche de la mémoire reste en clair par nécessité.
 - Un seul transport de messagerie livré, WhatsApp via go-courier.
 - Un seul transport MCP, HTTP. Pas de serveur MCP lancé en sous-processus.

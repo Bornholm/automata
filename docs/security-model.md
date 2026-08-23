@@ -314,15 +314,27 @@ verts (`go test ./...`, `go test -race ./...`).
   instances d'Automata partageant la même base SQLite ne sont pas
   supportées ; `sqlDB.SetMaxOpenConns(1)` sérialise les écritures au sein
   d'un seul processus, pas entre processus.
-- **Propositions d'action et mémoire non chiffrées au repos** : la base
-  SQLite applicative et le store mémoire Amoxtli contiennent du texte en
-  clair. La restriction de permissions apportée en A.5 réduit la surface
-  d'exposition (accès local uniquement, propriétaire du processus) mais ne
-  remplace pas un chiffrement au repos, hors périmètre de cette phase.
-- **Pièces jointes conservées en clair dans la base** : la table
-  `message_attachments` stocke les octets bruts des images et documents reçus,
-  afin de pouvoir les rejouer dans l'historique remis au modèle. C'est une
-  décision explicite d'exploitation, à connaître pour trois raisons :
+- **Chiffrement au repos partiel** : `storage.encryption_key` scelle les
+  contenus personnels — messages, résumés de conversation, rappels, pièces
+  jointes et leurs légendes côté base applicative ; contenu des documents
+  et des images côté mémoire Amoxtli, avec la même clé. Restent en clair,
+  dans la base applicative, les **propositions d'action** et les **tâches
+  planifiées** : leurs charges utiles ne passent pas par le chiffrement
+  des contenus. Restent en clair, à dessein, l'enveloppe requêtable
+  (identifiants, horodatages, portées) et le dictionnaire de termes de
+  l'index `memory.bleve` — chiffrer des termes indexés casserait la
+  recherche. La restriction de permissions apportée en A.5 (accès local,
+  propriétaire du processus) reste la protection de ce résidu.
+
+  Le chiffrement protège une base volée, une sauvegarde égarée, un disque
+  revendu. Il ne protège pas un processus compromis ni un accès root
+  pendant que le service tourne : la clé y est.
+- **Pièces jointes conservées dans la base** : la table
+  `message_attachments` stocke les octets des images et documents reçus,
+  afin de pouvoir les rejouer dans l'historique remis au modèle. Ils sont
+  chiffrés comme les autres contenus quand `storage.encryption_key` est
+  renseignée, en clair sinon. C'est une décision explicite d'exploitation,
+  à connaître pour trois raisons :
   - ce sont des **données personnelles**, souvent plus sensibles qu'un
     message texte (photo d'un lieu, d'un document, d'une personne) ; la
     sauvegarde de `/data/app.sqlite` les emporte avec elle ;

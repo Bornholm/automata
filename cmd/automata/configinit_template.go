@@ -128,11 +128,12 @@ conversation:
     # fusionne et purge les périmés.
     extract_facts: true
     max_facts: 5
-    # record_episodes conserverait le fragment condensé VERBATIM dans le
-    # store mémoire, qui n'est PAS chiffré au repos contrairement à la base
-    # applicative. Laissé désactivé : l'activer suppose d'accepter ce
-    # stockage en clair, et n'a d'intérêt qu'avec le drapeau memory.history
-    # de l'agent.
+    # record_episodes conserve le fragment condensé VERBATIM dans le store
+    # mémoire. Son contenu y est chiffré au repos avec la même clé que la
+    # base applicative ; seuls les métadonnées et le dictionnaire de termes
+    # de l'index de recherche restent en clair — chiffrer des termes
+    # indexés casserait la recherche. Laissé désactivé faute d'usage : les
+    # épisodes ne servent qu'avec le drapeau memory.history de l'agent.
     record_episodes: false
 
 llm_clients:
