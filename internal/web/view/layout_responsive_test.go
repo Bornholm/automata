@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/a-h/templ"
 	"github.com/bornholm/automata/internal/web/view"
 )
 
@@ -39,9 +40,6 @@ func TestAdminLayout_NavigationAdaptsToSmallScreens(t *testing.T) {
 		// sans JavaScript.
 		"<details",
 		"<summary",
-		// « md:contents » efface le menu en tant que boîte sur écran large :
-		// ses entrées redeviennent la colonne de navigation.
-		"md:contents",
 		// Le bouton n'existe que sur téléphone.
 		"md:hidden",
 	} {
@@ -56,14 +54,41 @@ func TestAdminLayout_NavigationAdaptsToSmallScreens(t *testing.T) {
 		t.Error("la barre latérale impose une largeur fixe sans point de rupture")
 	}
 
-	// La déconnexion doit rester atteignable depuis un téléphone : elle vit
-	// dans le menu, pas dans un pied masqué sous le point de rupture.
+	// La déconnexion doit rester atteignable depuis un téléphone : le bloc
+	// qui la porte est masqué par défaut, et révélé par l'ouverture du
+	// menu. Sans cette classe, il resterait invisible sur petit écran.
 	logout := strings.Index(html, "/admin/logout")
 	if logout < 0 {
 		t.Fatal("le bouton de déconnexion a disparu du gabarit")
 	}
-	if closing := strings.Index(html, "</details>"); closing >= 0 && closing < logout {
-		t.Error("la déconnexion est hors du menu : inatteignable sur téléphone")
+	if !strings.Contains(html[:logout], "group-has-[details[open]]:flex") {
+		t.Error("la déconnexion n'est pas révélée par le menu : inatteignable sur téléphone")
+	}
+}
+
+// Régression du 2026-08-23 : la navigation avait disparu sur grand écran.
+// Elle vivait DANS le <details>, rendu visible par un « md:contents » —
+// mais les navigateurs masquent désormais le contenu d'un <details> fermé
+// quelle que soit sa valeur de display (::details-content). La navigation
+// doit donc vivre hors du <details>, qui ne porte plus que le bouton.
+func TestAdminLayout_NavigationStaysVisibleOnDesktop(t *testing.T) {
+	html := render(t, "AdminLayout")
+
+	closing := strings.Index(html, "</details>")
+	if closing < 0 {
+		t.Fatal("le menu escamotable a disparu du gabarit")
+	}
+
+	if nav := strings.Index(html, "<nav"); nav < closing {
+		t.Error("la navigation est enfermée dans le <details> : escamotée sur grand écran")
+	}
+	if logout := strings.Index(html, "/admin/logout"); logout < closing {
+		t.Error("le pied de la barre est enfermé dans le <details> : escamoté sur grand écran")
+	}
+
+	// Et elle s'affiche inconditionnellement à partir du point de rupture.
+	if !strings.Contains(html, "group-has-[details[open]]:flex md:mt-0 md:flex") {
+		t.Error("la navigation n'est pas dépliée d'office sur grand écran")
 	}
 }
 
@@ -77,4 +102,15 @@ func TestAdminLayout_ContentNeverScrollsThePage(t *testing.T) {
 	if !strings.Contains(html, "overflow-x-hidden") {
 		t.Error("le contenu peut déborder et décaler la page entière")
 	}
+}
+
+// render_ rend un composant quelconque en chaîne.
+func render_(t *testing.T, component templ.Component) string {
+	t.Helper()
+
+	var b strings.Builder
+	if err := component.Render(context.Background(), &b); err != nil {
+		t.Fatalf("rendu: %v", err)
+	}
+	return b.String()
 }

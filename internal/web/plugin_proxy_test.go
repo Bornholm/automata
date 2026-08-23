@@ -143,13 +143,17 @@ func TestPluginProxy_HiddenWhenInactive(t *testing.T) {
 // La sandbox de l'iframe est une garantie de sécurité : sa disparition
 // serait une régression, pas un détail de style.
 func TestProfileIframe_IsSandboxed(t *testing.T) {
-	page := view.ProfilePage{
+	// Depuis le 2026-08-23, l'interface d'un plugin a son propre onglet :
+	// c'est cette page qui porte l'iframe.
+	echo := view.ProfilePluginUI{Name: "echo", Title: "echo", Src: "/p/abc/plugins/echo/ui/"}
+	page := view.ProfilePluginPage{
 		LinkID:    "abc",
-		PluginUIs: []view.ProfilePluginUI{{Name: "echo", Title: "echo", Src: "/p/abc/plugins/echo/ui/"}},
+		Current:   echo,
+		PluginUIs: []view.ProfilePluginUI{echo},
 	}
 
 	var sb strings.Builder
-	if err := view.ProfileHome(page).Render(context.Background(), &sb); err != nil {
+	if err := view.ProfilePlugin(page).Render(context.Background(), &sb); err != nil {
 		t.Fatalf("rendu: %v", err)
 	}
 	html := sb.String()

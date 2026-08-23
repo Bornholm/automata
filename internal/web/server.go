@@ -216,6 +216,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("GET /admin/usage.csv", admin(s.handleUsageCSV))
 
 	mux.HandleFunc("GET /plugins/{name}/oauth/callback", s.handlePluginOAuthCallback)
+	mux.HandleFunc("GET /p/{link}/plugins/{name}", s.handleProfilePluginPage)
 	mux.HandleFunc("GET /p/{link}/plugins/{name}/ui/{path...}", s.handleProfilePluginUI)
 	mux.HandleFunc("POST /p/{link}/plugins/{name}/ui/{path...}", s.handleProfilePluginUI)
 	mux.HandleFunc("GET /p/{link}", s.handleProfile)

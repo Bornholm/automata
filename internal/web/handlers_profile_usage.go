@@ -27,6 +27,12 @@ func (s *Server) handleProfileUsage(w http.ResponseWriter, r *http.Request) {
 		Shared: true,
 	}
 
+	plugins, ok := s.profilePluginUIs(w, r, member)
+	if !ok {
+		return
+	}
+	page.PluginUIs = plugins
+
 	txOK := s.withTx(w, r, func(tx *sql.Tx) error {
 		rate := s.creditRate(r.Context(), tx)
 

@@ -6,31 +6,70 @@ package view
 // durée avant d'être chiffré ; le chiffre reste présent, en mono et en
 // second plan (annotation des maquettes).
 
-// ProfileNav relie les pages du profil pendant la validité de la session
-// courte. Ma consommation et Confidentialité sont des lots ultérieurs.
-templ profileNav(linkID string, active string) {
-	<div class="mt-6 flex gap-4 border-t border-line-3 pt-4">
-		if active == "profile" {
-			<span class="text-sm font-semibold text-ink">Profil</span>
-		} else {
-			<a href={ templ.SafeURL("/p/" + linkID) } class="text-sm font-medium text-brand">Profil</a>
+// ProfileTab est une entrée de la navigation du profil.
+type ProfileTab struct {
+	Label  string
+	Href   string
+	Active bool
+}
+
+// ProfileTabs assemble les pages fixes du profil, puis un onglet par
+// plugin doté d'une interface. La liste n'a pas de longueur connue à
+// l'avance : une organisation active autant de plugins qu'elle veut, et
+// quatre libellés côte à côte débordaient déjà d'un écran de téléphone.
+func ProfileTabs(linkID string, active string, plugins []ProfilePluginUI) []ProfileTab {
+	base := "/p/" + linkID
+	tabs := []ProfileTab{
+		{Label: "Profil", Href: base, Active: active == "profile"},
+		{Label: "Crédits", Href: base + "/credits", Active: active == "credits"},
+		{Label: "Ma consommation", Href: base + "/usage", Active: active == "usage"},
+		{Label: "Confidentialité", Href: base + "/privacy", Active: active == "privacy"},
+	}
+	for _, plugin := range plugins {
+		tabs = append(tabs, ProfileTab{
+			Label:  plugin.Title,
+			Href:   base + "/plugins/" + plugin.Name,
+			Active: active == "plugin:"+plugin.Name,
+		})
+	}
+	return tabs
+}
+
+// activeTabLabel nomme la page courante : c'est ce que le menu fermé
+// montre, pour qu'une personne sache où elle est avant de l'ouvrir.
+func activeTabLabel(tabs []ProfileTab) string {
+	for _, tab := range tabs {
+		if tab.Active {
+			return tab.Label
 		}
-		if active == "credits" {
-			<span class="text-sm font-semibold text-ink">Crédits</span>
-		} else {
-			<a href={ templ.SafeURL("/p/" + linkID + "/credits") } class="text-sm font-medium text-brand">Crédits</a>
-		}
-		if active == "usage" {
-			<span class="text-sm font-semibold text-ink">Ma consommation</span>
-		} else {
-			<a href={ templ.SafeURL("/p/" + linkID + "/usage") } class="text-sm font-medium text-brand">Ma consommation</a>
-		}
-		if active == "privacy" {
-			<span class="text-sm font-semibold text-ink">Confidentialité</span>
-		} else {
-			<a href={ templ.SafeURL("/p/" + linkID + "/privacy") } class="text-sm font-medium text-brand">Confidentialité</a>
-		}
-	</div>
+	}
+	return "Navigation"
+}
+
+// profileNav relie les pages du profil pendant la validité de la session
+// courte. Le menu se déplie au lieu de s'étaler : le nombre d'onglets
+// dépend des plugins activés, une rangée de liens finirait par déborder.
+templ profileNav(linkID string, active string, plugins []ProfilePluginUI) {
+	{{ tabs := ProfileTabs(linkID, active, plugins) }}
+	<details class="group mt-6 border-t border-line-3">
+		<summary class="flex cursor-pointer list-none items-center gap-2 py-2.5 [&::-webkit-details-marker]:hidden">
+			<span class="truncate text-sm font-semibold text-ink">{ activeTabLabel(tabs) }</span>
+			<span class="ml-auto flex size-9 shrink-0 items-center justify-center rounded-[10px] text-text-3 group-open:bg-panel" aria-label="Menu">
+				<svg viewBox="0 0 20 20" class="size-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+					<path d="M3 6h14M3 10h14M3 14h14"></path>
+				</svg>
+			</span>
+		</summary>
+		<nav class="flex flex-col gap-0.5 pb-2">
+			for _, tab := range tabs {
+				if tab.Active {
+					<span class="rounded-[9px] bg-panel px-3 py-2.5 text-sm font-semibold text-ink">{ tab.Label }</span>
+				} else {
+					<a href={ templ.SafeURL(tab.Href) } class="rounded-[9px] px-3 py-2.5 text-sm font-medium text-brand hover:bg-panel hover:no-underline">{ tab.Label }</a>
+				}
+			}
+		</nav>
+	</details>
 }
 
 // --- PRO-01 — Mon profil ---
@@ -57,8 +96,8 @@ type ProfilePage struct {
 	Channels []ProfileChannel
 
 	// PluginUIs : plugins actifs pour l'organisation du membre et dotés
-	// d'une interface, rendus en iframe SANDBOXÉE (origine opaque : le
-	// document du plugin n'accède ni aux cookies ni au DOM de la page).
+	// d'une interface. Chacun a son onglet et sa page (ProfilePlugin) ;
+	// ici, ils ne servent qu'à peupler la navigation.
 	PluginUIs []ProfilePluginUI
 }
 
@@ -80,8 +119,17 @@ templ ProfileHome(page ProfilePage) {
 				if page.Error != "" {
 					<div class="mt-4 rounded-lg bg-crit-wash px-3.5 py-2.5 text-sm text-crit-deep">{ page.Error }</div>
 				}
-				<input type="text" name="code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required autofocus placeholder="······"
-					class="mt-5 h-14 w-full rounded-[10px] border border-brand-line-2 bg-brand-wash-2 text-center font-mono text-[22px] font-bold tracking-[.5em] text-ink outline-none placeholder:text-text-5 focus:border-brand"/>
+				<input
+					type="text"
+					name="code"
+					inputmode="numeric"
+					pattern="[0-9]{6}"
+					maxlength="6"
+					required
+					autofocus
+					placeholder="······"
+					class="mt-5 h-14 w-full rounded-[10px] border border-brand-line-2 bg-brand-wash-2 text-center font-mono text-[22px] font-bold tracking-[.5em] text-ink outline-none placeholder:text-text-5 focus:border-brand"
+				/>
 				<button type="submit" class="mt-4 h-12 w-full rounded-[10px] bg-brand text-base font-semibold text-white hover:bg-brand-strong">Valider</button>
 			</form>
 			<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/email") } class="mt-3.5 text-center">
@@ -112,8 +160,14 @@ templ ProfileHome(page ProfilePage) {
 						if page.Error != "" {
 							<div class="mt-3 rounded-lg bg-crit-wash px-3 py-2 text-[13px] text-crit-deep">{ page.Error }</div>
 						}
-						<input type="email" name="email" value={ page.Email } required placeholder="vous@exemple.fr"
-							class="mt-3.5 h-12 w-full rounded-[10px] border border-brand-line-2 bg-white px-3.5 text-base text-ink outline-none placeholder:text-text-5 focus:border-brand"/>
+						<input
+							type="email"
+							name="email"
+							value={ page.Email }
+							required
+							placeholder="vous@exemple.fr"
+							class="mt-3.5 h-12 w-full rounded-[10px] border border-brand-line-2 bg-white px-3.5 text-base text-ink outline-none placeholder:text-text-5 focus:border-brand"
+						/>
 						if page.MailConfigured {
 							<button type="submit" class="mt-2.5 h-12 w-full rounded-[10px] bg-brand text-base font-semibold text-white hover:bg-brand-strong">Recevoir un code</button>
 						} else {
@@ -139,15 +193,7 @@ templ ProfileHome(page ProfilePage) {
 					</div>
 				}
 			</div>
-			for _, plugin := range page.PluginUIs {
-				<div class="mt-6">
-					@Eyebrow(plugin.Title, "text-text-4")
-					<div class="mt-3 overflow-hidden rounded-[11px] border border-line-2 bg-white">
-						<iframe src={ plugin.Src } title={ plugin.Title } sandbox="allow-forms allow-scripts" class="block h-[420px] w-full border-0"></iframe>
-					</div>
-				</div>
-			}
-			@profileNav(page.LinkID, "profile")
+			@profileNav(page.LinkID, "profile", page.PluginUIs)
 		}
 	}
 }
@@ -183,6 +229,7 @@ type CreditsPage struct {
 	LinkID    string
 	Header    ProfileHeader
 	CSRFToken string
+	PluginUIs []ProfilePluginUI
 
 	// State : ok | low | empty | offered.
 	State       string
@@ -192,10 +239,10 @@ type CreditsPage struct {
 	BalanceHint string // durée parlée, toujours avant le chiffre
 
 	// Offerte.
-	Allowance  int64
+	Allowance   int64
 	UsedCredits int64
-	NextReset  string // « le 1ᵉʳ septembre »
-	Split      []UsageSplit
+	NextReset   string // « le 1ᵉʳ septembre »
+	Split       []UsageSplit
 
 	// Payante.
 	AutoTopUp       bool
@@ -388,7 +435,32 @@ templ ProfileCredits(page CreditsPage) {
 					</div>
 				}
 		}
-		@profileNav(page.LinkID, "credits")
+		@profileNav(page.LinkID, "credits", page.PluginUIs)
+	}
+}
+
+// --- Interface d'un plugin ---
+
+// ProfilePluginPage rend l'interface d'un plugin dans son propre onglet.
+// L'iframe est SANDBOXÉE sans allow-same-origin (origine opaque : le
+// document du plugin n'accède ni aux cookies ni au DOM de la page). Elle
+// occupe la hauteur disponible parce qu'elle est désormais seule sur la
+// page — cousue sous le profil, elle était réduite à une lucarne.
+type ProfilePluginPage struct {
+	LinkID  string
+	Header  ProfileHeader
+	Current ProfilePluginUI
+	// PluginUIs : tous les plugins, pour la navigation.
+	PluginUIs []ProfilePluginUI
+}
+
+templ ProfilePlugin(page ProfilePluginPage) {
+	@ProfileLayout(page.Current.Title+" — Automata", page.Header) {
+		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">{ page.Current.Title }</h1>
+		<div class="mt-5 overflow-hidden rounded-[11px] border border-line-2 bg-white">
+			<iframe src={ page.Current.Src } title={ page.Current.Title } sandbox="allow-forms allow-scripts" class="block h-[560px] w-full border-0"></iframe>
+		</div>
+		@profileNav(page.LinkID, "plugin:"+page.Current.Name, page.PluginUIs)
 	}
 }
 
@@ -487,8 +559,9 @@ type UsageMonth struct {
 }
 
 type ProfileUsagePage struct {
-	LinkID string
-	Header ProfileHeader
+	LinkID    string
+	Header    ProfileHeader
+	PluginUIs []ProfilePluginUI
 
 	// Summary énonce l'usage du mois en langage humain, avant tout chiffre.
 	Summary string
@@ -551,6 +624,6 @@ templ ProfileUsage(page ProfileUsagePage) {
 				Ces chiffres couvrent toute votre organisation, pas seulement vous : les crédits sont partagés.
 			</div>
 		}
-		@profileNav(page.LinkID, "usage")
+		@profileNav(page.LinkID, "usage", page.PluginUIs)
 	}
 }

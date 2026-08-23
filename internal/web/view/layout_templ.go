@@ -208,6 +208,13 @@ func adminNavLinks(active string) templ.Component {
 // — il ne resterait rien au contenu. Elle devient un bandeau avec un menu
 // déroulant, construit avec <details> : le navigateur sait ouvrir et fermer
 // tout seul, sans une ligne de JavaScript.
+//
+// La navigation vit HORS du <details>, qui ne porte que le bouton. Les
+// navigateurs masquent désormais le contenu d'un <details> fermé même
+// lorsqu'il est en display:contents — un « md:contents » sur le <details>
+// escamotait donc toute la navigation sur grand écran. L'ouverture est
+// relayée par :has() depuis la barre, ce qui laisse le desktop afficher la
+// navigation inconditionnellement.
 func AdminLayout(title string, active string, platforms []SidebarPlatform, csrfToken string) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -241,7 +248,7 @@ func AdminLayout(title string, active string, platforms []SidebarPlatform, csrfT
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"flex min-h-screen flex-col md:flex-row\"><aside class=\"flex w-full shrink-0 flex-col gap-3 bg-ink px-3.5 py-3 md:w-[216px] md:gap-6 md:py-5\"><details class=\"group md:contents\"><summary class=\"flex cursor-pointer list-none items-center gap-2.5 px-2 [&::-webkit-details-marker]:hidden\"><div class=\"flex size-[26px] items-center justify-center rounded-[7px] bg-brand font-mono text-[13px] font-bold text-white\">a</div><div class=\"text-[15px] font-semibold text-white\">Automata</div><div class=\"ml-auto hidden font-mono text-[9px] font-bold tracking-[.08em] text-sidebar-muted md:block\">ADMIN</div><span class=\"ml-auto flex size-9 items-center justify-center rounded-[7px] text-sidebar-text group-open:bg-ink-3 md:hidden\" aria-label=\"Menu\"><svg viewBox=\"0 0 20 20\" class=\"size-5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M3 6h14M3 10h14M3 14h14\"></path></svg></span></summary><nav class=\"mt-2 flex flex-col gap-0.5 md:mt-0\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<div class=\"flex min-h-screen flex-col md:flex-row\"><aside class=\"group flex w-full shrink-0 flex-col gap-3 bg-ink px-3.5 py-3 md:w-[216px] md:gap-6 md:py-5\"><details class=\"md:contents\"><summary class=\"flex cursor-pointer list-none items-center gap-2.5 px-2 md:cursor-default [&::-webkit-details-marker]:hidden\"><div class=\"flex size-[26px] items-center justify-center rounded-[7px] bg-brand font-mono text-[13px] font-bold text-white\">a</div><div class=\"text-[15px] font-semibold text-white\">Automata</div><div class=\"ml-auto hidden font-mono text-[9px] font-bold tracking-[.08em] text-sidebar-muted md:block\">ADMIN</div><span class=\"ml-auto flex size-9 items-center justify-center rounded-[7px] text-sidebar-text group-has-[details[open]]:bg-ink-3 md:hidden\" aria-label=\"Menu\"><svg viewBox=\"0 0 20 20\" class=\"size-5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.8\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M3 6h14M3 10h14M3 14h14\"></path></svg></span></summary></details><nav class=\"mt-2 hidden flex-col gap-0.5 group-has-[details[open]]:flex md:mt-0 md:flex\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -249,7 +256,7 @@ func AdminLayout(title string, active string, platforms []SidebarPlatform, csrfT
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</nav><div class=\"mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-ink-3 px-2.5 py-3 md:mt-auto md:flex-col md:items-stretch md:gap-2\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</nav><div class=\"mt-2 hidden flex-wrap items-center gap-x-4 gap-y-2 border-t border-ink-3 px-2.5 py-3 group-has-[details[open]]:flex md:mt-auto md:flex md:flex-col md:items-stretch md:gap-2\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -265,7 +272,7 @@ func AdminLayout(title string, active string, platforms []SidebarPlatform, csrfT
 				var templ_7745c5c3_Var11 string
 				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(p.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/layout.templ`, Line: 96, Col: 60}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/layout.templ`, Line: 104, Col: 59}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
 				if templ_7745c5c3_Err != nil {
@@ -283,13 +290,13 @@ func AdminLayout(title string, active string, platforms []SidebarPlatform, csrfT
 			var templ_7745c5c3_Var12 string
 			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(csrfToken)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/layout.templ`, Line: 100, Col: 63}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/layout.templ`, Line: 108, Col: 62}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\"> <button type=\"submit\" class=\"text-[13px] text-sidebar-muted hover:text-sidebar-text\">Se déconnecter</button></form></div></details></aside><!-- overflow-x-hidden est une ceinture : un écran dont un bloc déborde\n\t\t\t     doit le faire défiler dans SON conteneur, jamais décaler la page\n\t\t\t     entière. Sans cela, l'en-tête et le titre glissent hors du cadre\n\t\t\t     et la lecture devient impossible au doigt. --><main class=\"min-w-0 flex-1 overflow-x-hidden bg-panel\"><div id=\"admin-content\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\"> <button type=\"submit\" class=\"text-[13px] text-sidebar-muted hover:text-sidebar-text\">Se déconnecter</button></form></div></aside><!-- overflow-x-hidden est une ceinture : un écran dont un bloc déborde\n\t\t\t     doit le faire défiler dans SON conteneur, jamais décaler la page\n\t\t\t     entière. Sans cela, l'en-tête et le titre glissent hors du cadre\n\t\t\t     et la lecture devient impossible au doigt. --><main class=\"min-w-0 flex-1 overflow-x-hidden bg-panel\"><div id=\"admin-content\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -369,7 +376,7 @@ func ProfileLayout(title string, header ProfileHeader) templ.Component {
 			var templ_7745c5c3_Var15 string
 			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(header.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/layout.templ`, Line: 135, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/layout.templ`, Line: 142, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 			if templ_7745c5c3_Err != nil {
@@ -382,7 +389,7 @@ func ProfileLayout(title string, header ProfileHeader) templ.Component {
 			var templ_7745c5c3_Var16 string
 			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(header.Organization)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/layout.templ`, Line: 136, Col: 68}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/layout.templ`, Line: 143, Col: 68}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 			if templ_7745c5c3_Err != nil {
@@ -400,7 +407,7 @@ func ProfileLayout(title string, header ProfileHeader) templ.Component {
 				var templ_7745c5c3_Var17 string
 				templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(itoa(header.MinutesLeft))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/layout.templ`, Line: 139, Col: 78}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/layout.templ`, Line: 146, Col: 78}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 				if templ_7745c5c3_Err != nil {

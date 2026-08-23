@@ -191,27 +191,11 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		page.Error = "Ce code ne correspond pas. Vérifiez les six chiffres, ou renvoyez-en un."
 	}
 
-	// Interfaces des plugins actifs pour l'organisation du membre.
-	if endpoint, ok := s.pluginManager.(PluginUIEndpoint); ok && s.pluginManager != nil {
-		var enabled []string
-		if ok := s.withTx(w, r, func(tx *sql.Tx) error {
-			var err error
-			enabled, err = s.pluginActivations.EnabledPlugins(r.Context(), tx, member.OrgID)
-			return err
-		}); !ok {
-			return
-		}
-		for _, name := range enabled {
-			if _, _, hasUI := endpoint.UIEndpoint(name); !hasUI {
-				continue
-			}
-			page.PluginUIs = append(page.PluginUIs, view.ProfilePluginUI{
-				Name:  name,
-				Title: name,
-				Src:   "/p/" + page.LinkID + "/plugins/" + name + "/ui/",
-			})
-		}
+	plugins, ok := s.profilePluginUIs(w, r, member)
+	if !ok {
+		return
 	}
+	page.PluginUIs = plugins
 
 	var channels []view.OrgChannelRow
 	if ok := s.withTx(w, r, func(tx *sql.Tx) error {
@@ -234,6 +218,74 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.render(w, r, http.StatusOK, view.ProfileHome(page))
+}
+
+// profilePluginUIs liste les plugins actifs pour l'organisation du membre
+// et dotés d'une interface. Chaque page du profil en a besoin : ils
+// forment des onglets, donc ils doivent apparaître partout, pas seulement
+// là où ils sont affichés.
+func (s *Server) profilePluginUIs(w http.ResponseWriter, r *http.Request, member persistence.Member) ([]view.ProfilePluginUI, bool) {
+	endpoint, ok := s.pluginManager.(PluginUIEndpoint)
+	if !ok || s.pluginManager == nil {
+		return nil, true
+	}
+
+	var enabled []string
+	if ok := s.withTx(w, r, func(tx *sql.Tx) error {
+		var err error
+		enabled, err = s.pluginActivations.EnabledPlugins(r.Context(), tx, member.OrgID)
+		return err
+	}); !ok {
+		return nil, false
+	}
+
+	linkID := r.PathValue("link")
+	uis := make([]view.ProfilePluginUI, 0, len(enabled))
+	for _, name := range enabled {
+		if _, _, hasUI := endpoint.UIEndpoint(name); !hasUI {
+			continue
+		}
+		uis = append(uis, view.ProfilePluginUI{
+			Name:  name,
+			Title: name,
+			Src:   "/p/" + linkID + "/plugins/" + name + "/ui/",
+		})
+	}
+	return uis, true
+}
+
+// handleProfilePluginPage rend l'onglet d'un plugin. Un plugin inactif ou
+// sans interface n'a pas d'onglet : sa page n'existe pas non plus.
+func (s *Server) handleProfilePluginPage(w http.ResponseWriter, r *http.Request) {
+	member, minutes, ok := s.resolveProfile(w, r)
+	if !ok {
+		return
+	}
+
+	plugins, ok := s.profilePluginUIs(w, r, member)
+	if !ok {
+		return
+	}
+
+	name := r.PathValue("name")
+	current, found := view.ProfilePluginUI{}, false
+	for _, plugin := range plugins {
+		if plugin.Name == name {
+			current, found = plugin, true
+			break
+		}
+	}
+	if !found {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.render(w, r, http.StatusOK, view.ProfilePlugin(view.ProfilePluginPage{
+		LinkID:    r.PathValue("link"),
+		Header:    s.profileHeader(r, member, minutes),
+		Current:   current,
+		PluginUIs: plugins,
+	}))
 }
 
 // handleProfileEmail enregistre l'adresse et envoie le code (PRO-01).
@@ -347,6 +399,12 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 		CSRFToken:     s.csrfToken(w, r),
 		StripeEnabled: s.stripe != nil,
 	}
+
+	plugins, ok := s.profilePluginUIs(w, r, member)
+	if !ok {
+		return
+	}
+	page.PluginUIs = plugins
 
 	switch {
 	case r.URL.Query().Get("paid") == "1":

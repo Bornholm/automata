@@ -27,6 +27,12 @@ func (s *Server) handleProfilePrivacy(w http.ResponseWriter, r *http.Request) {
 		CSRFToken: s.csrfToken(w, r),
 	}
 
+	plugins, ok := s.profilePluginUIs(w, r, member)
+	if !ok {
+		return
+	}
+	page.PluginUIs = plugins
+
 	if s.privacy != nil {
 		// L'inventaire vient de l'export lui-même : ce que la page annonce
 		// est exactement ce que le fichier contient.
