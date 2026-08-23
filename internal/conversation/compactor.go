@@ -281,7 +281,7 @@ func (c *Compactor) recordEpisode(ctx context.Context, conv model.Conversation, 
 				to = ts
 			}
 		}
-		fmt.Fprintf(&b, "[%s] %s: %s\n", stamp, c.speakerLabel(m), m.Content)
+		fmt.Fprintf(&b, "[%s] %s: %s\n", stamp, c.speakerLabel(m), redactProfileLinks(m.Content))
 	}
 
 	_, err := c.episodes.RecordEpisode(ctx, memory.NewEpisode{
@@ -339,7 +339,7 @@ func (c *Compactor) extractFacts(ctx context.Context, identity model.ExecutionId
 
 	var b strings.Builder
 	for _, m := range batch {
-		fmt.Fprintf(&b, "%s (%s): %s\n", m.Role, m.PrincipalID, m.Content)
+		fmt.Fprintf(&b, "%s (%s): %s\n", m.Role, m.PrincipalID, redactProfileLinks(m.Content))
 	}
 
 	response, err := c.client.ChatCompletion(ctx,
@@ -435,7 +435,7 @@ func (c *Compactor) summarize(ctx context.Context, previous string, batch []pers
 
 	b.WriteString("## Nouveaux messages à intégrer\n\n")
 	for _, m := range batch {
-		fmt.Fprintf(&b, "%s (%s): %s\n", m.Role, m.PrincipalID, m.Content)
+		fmt.Fprintf(&b, "%s (%s): %s\n", m.Role, m.PrincipalID, redactProfileLinks(m.Content))
 	}
 
 	fmt.Fprintf(&b, "\nLongueur maximale du résumé : %d caractères.", c.maxSummaryChars)

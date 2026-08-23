@@ -236,7 +236,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		if err != nil {
 			return err
 		}
-		summary = summaryRecord.Summary
+		summary = redactProfileLinks(summaryRecord.Summary)
 
 		records, err := h.messages.ListRecentByConversationAfterRowID(ctx, tx, conv.ID, summaryRecord.LastMessageRowID, h.historyLimit)
 		if err != nil {
@@ -461,8 +461,11 @@ func toAgentHistory(records []persistence.Message) []agent.Message {
 	history := make([]agent.Message, 0, len(records))
 	for _, m := range records {
 		history = append(history, agent.Message{
-			Role:    m.Role,
-			Content: m.Content,
+			Role: m.Role,
+			// Les liens de profil sont caviardés : ce sont des secrets à
+			// usage unique, et le modèle les recopie au lieu d'en
+			// demander un neuf (voir redact.go).
+			Content: redactProfileLinks(m.Content),
 		})
 	}
 	return history

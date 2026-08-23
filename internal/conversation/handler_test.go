@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,5 +183,58 @@ func TestHandler_GroupAuthorAttribution(t *testing.T) {
 	}
 	if got := byContent["message de bob"]; got != model.PrincipalID("bob") {
 		t.Errorf("principal_id du message de bob = %q, attendu bob", got)
+	}
+}
+
+// Incident de production du 2026-08-23 : l'orchestrateur a cessé d'appeler
+// open_profile_link et s'est mis à recopier un lien vu dans l'historique,
+// périmé depuis une heure. Un lien de profil est un secret à usage unique :
+// il ne doit pas revenir au modèle au tour suivant, ni y revenir
+// indéfiniment ensuite.
+func TestHandler_ProfileLinksNeverReturnToTheModel(t *testing.T) {
+	db := openTestDB(t)
+
+	const link = "https://automata.example.fr/p/cw2vj0.bq7yaptagka09h9mnt7c"
+
+	a := &recordingAgent{}
+	a.replyFunc = func(req agent.Request) string {
+		return "Voici le lien vers ton profil : " + link + "\n\nIl est valable 15 minutes."
+	}
+	h := conversation.NewHandler(db, a, nil, 0, audio.Config{}, nil, false, nil)
+
+	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
+	conv := testConversation(model.ConversationID("conv-link"), "chan-1")
+	ctx := context.Background()
+
+	// Premier tour : l'agent répond avec un lien.
+	if _, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "envoie-moi mon profil")); err != nil {
+		t.Fatalf("Handle (1): %v", err)
+	}
+	// Second tour : ce lien ne doit plus figurer dans le contexte.
+	if _, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "et mon solde ?")); err != nil {
+		t.Fatalf("Handle (2): %v", err)
+	}
+
+	lastReq := a.requests[len(a.requests)-1]
+	if len(lastReq.History) == 0 {
+		t.Fatal("historique vide au second tour")
+	}
+
+	for _, m := range lastReq.History {
+		if strings.Contains(m.Content, "cw2vj0") || strings.Contains(m.Content, "bq7yaptagka09h9mnt7c") {
+			t.Errorf("un lien de profil est revenu au modèle: %q", m.Content)
+		}
+	}
+
+	// Le modèle doit tout de même savoir qu'un lien a été donné, sans quoi
+	// il ne comprendrait pas la suite de l'échange.
+	var mentioned bool
+	for _, m := range lastReq.History {
+		if strings.Contains(m.Content, "lien de profil") {
+			mentioned = true
+		}
+	}
+	if !mentioned {
+		t.Error("le caviardage a effacé jusqu'à la trace du lien")
 	}
 }
