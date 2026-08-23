@@ -232,7 +232,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	step("moteur d'actions prêt")
 
-	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, pluginProvider, skillsProvider, metrics, logger)
+	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, pluginProvider, newPluginEventStoreResolver(pluginManager, db), skillsProvider, metrics, logger)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
@@ -503,7 +503,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 // réutilisé tel quel par internal/scheduler pour exécuter les tâches
 // planifiées (PLAN.md §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, skillsProvider agent.SkillsProvider, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, eventStores agent.EventStoreResolver, skillsProvider agent.SkillsProvider, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
 	memoryTools := buildMemoryTools(cfg, authorizer, memStore, metrics)
 
 	// Outil open_profile_link : disponible dès que le serveur web est
@@ -537,6 +537,10 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		// (voir Run) : les agents qui déclarent scheduled_tasks peuvent donc
 		// réellement en programmer.
 		Tasks: true,
+		// Un plugin actif peut tenir le magasin des rappels d'un membre à
+		// la place de la table — un agenda CalDAV, par exemple. Les tâches
+		// planifiées n'y vont jamais : voir ReminderTools.Events.
+		Events: eventStores,
 	}
 
 	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, profileTools, tenants, mcpManager, pluginProvider, skillsProvider, metrics, logger)

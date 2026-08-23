@@ -47,6 +47,16 @@ What the host enforces — do not fight it, design with it:
 - **Identity comes from the host.** `CallContext` designates the org and
   member; trigger events are re-checked against activation and
   membership before anything runs.
+- **A plugin may hold the event store.** Set `provides_event_store` and
+  implement `PutEvent`/`DeleteEvent`/`ListEvents`, and the reminders of
+  every member whose configuration carries
+  `pluginsdk.EventStoreConfigKey: true` live in your backend instead of
+  the host's table. You own the text and the schedule; the host keeps the
+  delivery. Announce a due occurrence with a `TriggerEvent` whose
+  `deliver_text` is set — it is sent to the member word for word, with no
+  sub-agent turn. Recurrence travels as a 5-field cron expression, the
+  host's dialect everywhere: translate it, and refuse with `is_error`
+  what your backend cannot express rather than storing an approximation.
 - **Per-plugin isolation.** The host binds each broker connection to the
   plugin that established it: you can only ever see your own configs and
   secrets, and only for organizations that activated you.

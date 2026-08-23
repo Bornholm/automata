@@ -3,6 +3,7 @@ package plugin
 import (
 	"context"
 	"database/sql"
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -191,4 +192,69 @@ func TestTriggerRouter_RejectsUndesignatedTargets(t *testing.T) {
 	if runner.count() != 0 {
 		t.Fatalf("%d exécution(s) pour des cibles non désignées, attendu 0", runner.count())
 	}
+}
+
+// Un texte de livraison verbatim part tel quel, sans tour de modèle. Un
+// pense-bête que la personne a écrit elle-même ne doit être ni reformulé
+// ni payé au prix d'un appel de LLM.
+func TestTriggerRouter_DeliversVerbatimWithoutRunningTheAgent(t *testing.T) {
+	router, runner, sender, _ := newTestRouter(t, config.Plugins{})
+
+	evt := testEvent("evt-verbatim")
+	evt.DeliverText = "Sortir les poubelles"
+	router.handle(context.Background(), "echo", evt)
+
+	waitFor(t, func() bool { sender.mu.Lock(); defer sender.mu.Unlock(); return len(sender.sent) == 1 })
+	time.Sleep(50 * time.Millisecond)
+
+	if runner.count() != 0 {
+		t.Errorf("%d exécution(s) de sous-agent pour une livraison verbatim, attendu 0", runner.count())
+	}
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if got := messageText(t, sender.sent[0]); got != "Sortir les poubelles" {
+		t.Errorf("texte livré %q, attendu le texte verbatim", got)
+	}
+}
+
+// Le texte verbatim ne court-circuite AUCUN garde-fou : il passe par le
+// même dédoublonnage et les mêmes vérifications d'appartenance.
+func TestTriggerRouter_VerbatimKeepsTheGuards(t *testing.T) {
+	router, _, sender, _ := newTestRouter(t, config.Plugins{})
+
+	evt := testEvent("evt-verbatim-dup")
+	evt.DeliverText = "Sortir les poubelles"
+	router.handle(context.Background(), "echo", evt)
+	router.handle(context.Background(), "echo", evt)
+
+	waitFor(t, func() bool { sender.mu.Lock(); defer sender.mu.Unlock(); return len(sender.sent) == 1 })
+	time.Sleep(50 * time.Millisecond)
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if len(sender.sent) != 1 {
+		t.Fatalf("%d envoi(s) pour un même id, attendu 1", len(sender.sent))
+	}
+}
+
+// messageText lit la première partie d'un message sortant.
+func messageText(t *testing.T, msg courier.Message) string {
+	t.Helper()
+
+	parts := msg.Parts()
+	if len(parts) == 0 {
+		t.Fatal("message sans partie")
+	}
+	reader, err := parts[0].Reader(context.Background())
+	if err != nil {
+		t.Fatalf("lecture de la partie: %v", err)
+	}
+	defer reader.Close()
+
+	raw, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("lecture de la partie: %v", err)
+	}
+	return string(raw)
 }

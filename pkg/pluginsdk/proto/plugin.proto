@@ -17,6 +17,18 @@ service AutomataPlugin {
   // when the descriptor sets supports_files.
   rpc PutFile(stream PutFileChunk) returns (PutFileResult);
   rpc GetFile(GetFileRequest) returns (stream FileChunk);
+  // PutEvent, DeleteEvent and ListEvents let a plugin stand in for the
+  // host's own scheduled-event storage: when it provides one, a member's
+  // reminders live in the plugin's backend (a CalDAV calendar, say)
+  // instead of the reminders table. The host only calls them when the
+  // descriptor sets provides_event_store.
+  //
+  // The plugin owns the schedule and the text; the host keeps the
+  // delivery, and learns that an occurrence is due through a
+  // TriggerEvent carrying deliver_text.
+  rpc PutEvent(PutEventRequest) returns (PutEventResponse);
+  rpc DeleteEvent(DeleteEventRequest) returns (DeleteEventResponse);
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse);
 }
 
 // AutomataHostService is served by the host over the gRPC broker. Note the
@@ -54,6 +66,17 @@ message PluginDescriptor {
   // and that the sub-agent may be given the host-side file tools. A plugin
   // leaving it false is never called on those RPCs.
   bool supports_files = 7;
+  // provides_event_store tells the host the plugin implements
+  // PutEvent/DeleteEvent/ListEvents, and that it takes over the storage
+  // of scheduled events for the members who configured it. A plugin
+  // leaving it false is never called on those RPCs.
+  //
+  // Taking over is per member, not per organization: the host uses the
+  // plugin only for members whose configuration says so, and falls back
+  // to its own table for everyone else. Two plugins claiming the store
+  // for the same member is a configuration error; the host takes the
+  // first in activation order and logs the collision.
+  bool provides_event_store = 8;
 }
 
 message SubAgentDescriptor {
@@ -170,6 +193,67 @@ message FileMetadata {
   uint64 size = 3;
 }
 
+// ScheduledEvent is one entry of a plugin-provided event store: the text
+// to deliver and when to deliver it. It carries no delivery state
+// (channel, attempts, sent or not) — that stays host-side, out of the
+// user's calendar.
+message ScheduledEvent {
+  // id is the plugin's own identifier, opaque to the host. Empty when the
+  // host asks for a creation; PutEvent answers with the assigned one.
+  string id = 1;
+  // text is delivered to the member as is. Private content.
+  string text = 2;
+  // fire_at_unix is the next occurrence, in UTC seconds.
+  int64 fire_at_unix = 3;
+  // recurrence is a standard 5-field cron expression, empty for a one-off
+  // event. The host speaks cron everywhere; a plugin whose backend uses
+  // another dialect (an iCalendar RRULE, say) translates it, and refuses
+  // with is_error what it cannot express rather than storing an
+  // approximation.
+  string recurrence = 4;
+  // timezone is the IANA name recurrence is evaluated in.
+  string timezone = 5;
+}
+
+message PutEventRequest {
+  CallContext ctx = 1;
+  // event.id empty creates, set updates.
+  ScheduledEvent event = 2;
+}
+message PutEventResponse {
+  string id = 1;
+  // is_error marks a business failure (backend unreachable, recurrence
+  // not expressible). The host surfaces it and does NOT fall back to its
+  // own table: an event silently scattered across two stores is worse
+  // than a refusal the user can see.
+  bool is_error = 2;
+  string error_text = 3;
+}
+
+message DeleteEventRequest {
+  CallContext ctx = 1;
+  string id = 2;
+}
+message DeleteEventResponse {
+  // found is false when the id designates nothing — not an error.
+  bool found = 1;
+  bool is_error = 2;
+  string error_text = 3;
+}
+
+message ListEventsRequest {
+  CallContext ctx = 1;
+  // from_unix and to_unix bound the window, in UTC seconds. to_unix 0
+  // means no upper bound.
+  int64 from_unix = 2;
+  int64 to_unix = 3;
+}
+message ListEventsResponse {
+  repeated ScheduledEvent events = 1;
+  bool is_error = 2;
+  string error_text = 3;
+}
+
 message WatchTriggersRequest {}
 
 // TriggerEvent asks the host to run the plugin's sub-agent for a member.
@@ -189,6 +273,14 @@ message TriggerEvent {
   int64 occurred_at_unix = 6;
   // attributes must not carry private content: they may be logged.
   map<string, string> attributes = 7;
+  // deliver_text, when non-empty, is sent to the member's channel word
+  // for word: no sub-agent turn, no LLM, no rewording, and agent_input is
+  // ignored. It is what a due reminder needs — running a model over a
+  // note the user wrote themselves would cost a call and reword it.
+  //
+  // Being a message to a human it may carry private content, so unlike
+  // agent_input it is never logged and has no language constraint.
+  string deliver_text = 8;
 }
 
 // member_id == "" addresses the organization-level entry.

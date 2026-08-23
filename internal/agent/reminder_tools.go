@@ -55,6 +55,17 @@ type ReminderTools struct {
 	// exécutera. Voir migration 0007.
 	AgentName string
 
+	// Events, non nil, permet à un plugin actif de tenir le magasin des
+	// rappels d'un membre à la place de la table reminders — un agenda
+	// CalDAV, par exemple. La résolution se fait membre par membre, à
+	// chaque appel : voir event_store.go.
+	//
+	// Les tâches planifiées n'y vont JAMAIS. Une tâche n'est pas un
+	// événement d'agenda : c'est une consigne donnée à un agent, dont le
+	// texte est une instruction et non quelque chose qu'on lit dans son
+	// calendrier.
+	Events EventStoreResolver
+
 	// Now permet aux tests de fixer l'horloge ; nil vaut time.Now.
 	Now func() time.Time
 
@@ -158,6 +169,14 @@ func (t ReminderTools) newCreateReminderTool(identity model.ExecutionIdentity) l
 				return llm.NewToolResult(fmt.Sprintf("reminder creation refused: %v", err)), nil
 			}
 
+			// Magasin délégué : le rappel part chez le plugin, et rien
+			// n'est écrit en base. Pas de repli en cas de panne — un
+			// rappel silencieusement éparpillé entre deux magasins est
+			// pire qu'un refus que la personne voit passer.
+			if store := t.eventStore(ctx, string(identity.OrgID), string(identity.PrincipalID)); store != nil {
+				return t.createInEventStore(ctx, store, message, fireAt, recurrence, timezone)
+			}
+
 			rem := persistence.Reminder{
 				ID:             persistence.ReminderID(uuid.NewString()),
 				OrgID:          identity.OrgID,
@@ -225,6 +244,12 @@ func (t ReminderTools) newListRemindersTool(identity model.ExecutionIdentity) ll
 				return llm.NewToolResult(fmt.Sprintf("listing refused: %v", err)), nil
 			}
 
+			// Le magasin délégué ne remplace pas la liste, il s'y ajoute :
+			// les rappels créés en base avant que l'agenda ne soit branché
+			// y restent, et vont bel et bien partir. Les cacher les
+			// rendrait à la fois invisibles et inannulables.
+			store := t.eventStore(ctx, string(identity.OrgID), string(identity.PrincipalID))
+
 			var reminders []persistence.Reminder
 			err := t.DB.WithTx(ctx, func(tx *sql.Tx) error {
 				var err error
@@ -235,7 +260,16 @@ func (t ReminderTools) newListRemindersTool(identity model.ExecutionIdentity) ll
 				return llm.NewToolResult(fmt.Sprintf("could not list the reminders: %v", err)), nil
 			}
 
-			if len(reminders) == 0 {
+			var events []ScheduledEvent
+			if store != nil {
+				now := t.now()
+				events, err = store.List(ctx, now, now.Add(reminderMaxHorizon))
+				if err != nil {
+					return llm.NewToolResult(fmt.Sprintf("could not list the reminders: %v", err)), nil
+				}
+			}
+
+			if len(reminders) == 0 && len(events) == 0 {
 				// Formulation prudente : la liste ne contient que ce qui
 				// reste à venir. Un « aucun rappel » sec a déjà conduit
 				// l'assistant à affirmer n'avoir jamais rien programmé,
@@ -245,12 +279,22 @@ func (t ReminderTools) newListRemindersTool(identity model.ExecutionIdentity) ll
 
 			var b strings.Builder
 			b.WriteString("Pending reminders:\n")
-			for i, rem := range reminders {
+			line := 0
+			for _, rem := range reminders {
+				line++
 				if rem.Recurrence != "" {
-					fmt.Fprintf(&b, "%d. [id: %s] repeating (%s, %s), next occurrence %s — %s\n", i+1, rem.ID, rem.Recurrence, rem.Timezone, rem.FireAt, rem.Message)
+					fmt.Fprintf(&b, "%d. [id: %s] repeating (%s, %s), next occurrence %s — %s\n", line, rem.ID, rem.Recurrence, rem.Timezone, rem.FireAt, rem.Message)
 					continue
 				}
-				fmt.Fprintf(&b, "%d. [id: %s] %s — %s\n", i+1, rem.ID, rem.FireAt, rem.Message)
+				fmt.Fprintf(&b, "%d. [id: %s] %s — %s\n", line, rem.ID, rem.FireAt, rem.Message)
+			}
+			for _, ev := range events {
+				line++
+				if ev.Recurrence != "" {
+					fmt.Fprintf(&b, "%d. [id: %s] repeating (%s, %s), next occurrence %s — %s\n", line, ev.ID, ev.Recurrence, ev.Timezone, ev.FireAt.Format(time.RFC3339), ev.Text)
+					continue
+				}
+				fmt.Fprintf(&b, "%d. [id: %s] %s — %s\n", line, ev.ID, ev.FireAt.Format(time.RFC3339), ev.Text)
 			}
 
 			return llm.NewToolResult(strings.TrimSpace(b.String())), nil
@@ -276,6 +320,12 @@ func (t ReminderTools) newCancelReminderTool(identity model.ExecutionIdentity) l
 				return llm.NewToolResult(fmt.Sprintf("reminder cancellation refused: %v", err)), nil
 			}
 
+			// L'identifiant décide du magasin, pas l'inverse : on cherche
+			// d'abord en base, puis dans le magasin délégué. L'ordre
+			// importe — un rappel créé avant le branchement de l'agenda
+			// doit rester annulable.
+			store := t.eventStore(ctx, string(identity.OrgID), string(identity.PrincipalID))
+
 			var outcome string
 			err := t.DB.WithTx(ctx, func(tx *sql.Tx) error {
 				rem, found, err := t.Repo.FindByID(ctx, tx, persistence.ReminderID(id))
@@ -289,7 +339,9 @@ func (t ReminderTools) newCancelReminderTool(identity model.ExecutionIdentity) l
 				// nature évite en outre qu'une tâche planifiée disparaisse
 				// par un cancel_reminder.
 				if !found || rem.ConversationID != identity.ConversationID || rem.Kind != persistence.ReminderKindMessage {
-					outcome = fmt.Sprintf("no pending reminder with id %q in this conversation.", id)
+					// Inconnu en base : c'est peut-être un événement du
+					// magasin délégué. outcome reste vide, la suite s'en
+					// charge hors transaction.
 					return nil
 				}
 
@@ -307,6 +359,21 @@ func (t ReminderTools) newCancelReminderTool(identity model.ExecutionIdentity) l
 			})
 			if err != nil {
 				return llm.NewToolResult(fmt.Sprintf("could not cancel the reminder: %v", err)), nil
+			}
+
+			if outcome == "" {
+				if store == nil {
+					return llm.NewToolResult(fmt.Sprintf("no pending reminder with id %q in this conversation.", id)), nil
+				}
+
+				deleted, err := store.Delete(ctx, id)
+				if err != nil {
+					return llm.NewToolResult(fmt.Sprintf("could not cancel the reminder: %v", err)), nil
+				}
+				if !deleted {
+					return llm.NewToolResult(fmt.Sprintf("no pending reminder with id %q in this conversation.", id)), nil
+				}
+				return llm.NewToolResult(fmt.Sprintf("Reminder %q cancelled.", id)), nil
 			}
 
 			return llm.NewToolResult(outcome), nil

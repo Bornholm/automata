@@ -26,6 +26,9 @@ const (
 	AutomataPlugin_WatchTriggers_FullMethodName = "/automata.plugin.v1.AutomataPlugin/WatchTriggers"
 	AutomataPlugin_PutFile_FullMethodName       = "/automata.plugin.v1.AutomataPlugin/PutFile"
 	AutomataPlugin_GetFile_FullMethodName       = "/automata.plugin.v1.AutomataPlugin/GetFile"
+	AutomataPlugin_PutEvent_FullMethodName      = "/automata.plugin.v1.AutomataPlugin/PutEvent"
+	AutomataPlugin_DeleteEvent_FullMethodName   = "/automata.plugin.v1.AutomataPlugin/DeleteEvent"
+	AutomataPlugin_ListEvents_FullMethodName    = "/automata.plugin.v1.AutomataPlugin/ListEvents"
 )
 
 // AutomataPluginClient is the client API for AutomataPlugin service.
@@ -47,6 +50,18 @@ type AutomataPluginClient interface {
 	// when the descriptor sets supports_files.
 	PutFile(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[PutFileChunk, PutFileResult], error)
 	GetFile(ctx context.Context, in *GetFileRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FileChunk], error)
+	// PutEvent, DeleteEvent and ListEvents let a plugin stand in for the
+	// host's own scheduled-event storage: when it provides one, a member's
+	// reminders live in the plugin's backend (a CalDAV calendar, say)
+	// instead of the reminders table. The host only calls them when the
+	// descriptor sets provides_event_store.
+	//
+	// The plugin owns the schedule and the text; the host keeps the
+	// delivery, and learns that an occurrence is due through a
+	// TriggerEvent carrying deliver_text.
+	PutEvent(ctx context.Context, in *PutEventRequest, opts ...grpc.CallOption) (*PutEventResponse, error)
+	DeleteEvent(ctx context.Context, in *DeleteEventRequest, opts ...grpc.CallOption) (*DeleteEventResponse, error)
+	ListEvents(ctx context.Context, in *ListEventsRequest, opts ...grpc.CallOption) (*ListEventsResponse, error)
 }
 
 type automataPluginClient struct {
@@ -148,6 +163,36 @@ func (c *automataPluginClient) GetFile(ctx context.Context, in *GetFileRequest, 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AutomataPlugin_GetFileClient = grpc.ServerStreamingClient[FileChunk]
 
+func (c *automataPluginClient) PutEvent(ctx context.Context, in *PutEventRequest, opts ...grpc.CallOption) (*PutEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutEventResponse)
+	err := c.cc.Invoke(ctx, AutomataPlugin_PutEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *automataPluginClient) DeleteEvent(ctx context.Context, in *DeleteEventRequest, opts ...grpc.CallOption) (*DeleteEventResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteEventResponse)
+	err := c.cc.Invoke(ctx, AutomataPlugin_DeleteEvent_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *automataPluginClient) ListEvents(ctx context.Context, in *ListEventsRequest, opts ...grpc.CallOption) (*ListEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListEventsResponse)
+	err := c.cc.Invoke(ctx, AutomataPlugin_ListEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AutomataPluginServer is the server API for AutomataPlugin service.
 // All implementations must embed UnimplementedAutomataPluginServer
 // for forward compatibility.
@@ -167,6 +212,18 @@ type AutomataPluginServer interface {
 	// when the descriptor sets supports_files.
 	PutFile(grpc.ClientStreamingServer[PutFileChunk, PutFileResult]) error
 	GetFile(*GetFileRequest, grpc.ServerStreamingServer[FileChunk]) error
+	// PutEvent, DeleteEvent and ListEvents let a plugin stand in for the
+	// host's own scheduled-event storage: when it provides one, a member's
+	// reminders live in the plugin's backend (a CalDAV calendar, say)
+	// instead of the reminders table. The host only calls them when the
+	// descriptor sets provides_event_store.
+	//
+	// The plugin owns the schedule and the text; the host keeps the
+	// delivery, and learns that an occurrence is due through a
+	// TriggerEvent carrying deliver_text.
+	PutEvent(context.Context, *PutEventRequest) (*PutEventResponse, error)
+	DeleteEvent(context.Context, *DeleteEventRequest) (*DeleteEventResponse, error)
+	ListEvents(context.Context, *ListEventsRequest) (*ListEventsResponse, error)
 	mustEmbedUnimplementedAutomataPluginServer()
 }
 
@@ -197,6 +254,15 @@ func (UnimplementedAutomataPluginServer) PutFile(grpc.ClientStreamingServer[PutF
 }
 func (UnimplementedAutomataPluginServer) GetFile(*GetFileRequest, grpc.ServerStreamingServer[FileChunk]) error {
 	return status.Error(codes.Unimplemented, "method GetFile not implemented")
+}
+func (UnimplementedAutomataPluginServer) PutEvent(context.Context, *PutEventRequest) (*PutEventResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutEvent not implemented")
+}
+func (UnimplementedAutomataPluginServer) DeleteEvent(context.Context, *DeleteEventRequest) (*DeleteEventResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteEvent not implemented")
+}
+func (UnimplementedAutomataPluginServer) ListEvents(context.Context, *ListEventsRequest) (*ListEventsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListEvents not implemented")
 }
 func (UnimplementedAutomataPluginServer) mustEmbedUnimplementedAutomataPluginServer() {}
 func (UnimplementedAutomataPluginServer) testEmbeddedByValue()                        {}
@@ -320,6 +386,60 @@ func _AutomataPlugin_GetFile_Handler(srv interface{}, stream grpc.ServerStream) 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AutomataPlugin_GetFileServer = grpc.ServerStreamingServer[FileChunk]
 
+func _AutomataPlugin_PutEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataPluginServer).PutEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataPlugin_PutEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataPluginServer).PutEvent(ctx, req.(*PutEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AutomataPlugin_DeleteEvent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteEventRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataPluginServer).DeleteEvent(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataPlugin_DeleteEvent_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataPluginServer).DeleteEvent(ctx, req.(*DeleteEventRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AutomataPlugin_ListEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataPluginServer).ListEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataPlugin_ListEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataPluginServer).ListEvents(ctx, req.(*ListEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AutomataPlugin_ServiceDesc is the grpc.ServiceDesc for AutomataPlugin service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -342,6 +462,18 @@ var AutomataPlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CallTool",
 			Handler:    _AutomataPlugin_CallTool_Handler,
+		},
+		{
+			MethodName: "PutEvent",
+			Handler:    _AutomataPlugin_PutEvent_Handler,
+		},
+		{
+			MethodName: "DeleteEvent",
+			Handler:    _AutomataPlugin_DeleteEvent_Handler,
+		},
+		{
+			MethodName: "ListEvents",
+			Handler:    _AutomataPlugin_ListEvents_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

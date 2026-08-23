@@ -212,6 +212,19 @@ func (r *TriggerRouter) handle(ctx context.Context, pluginName string, event *pr
 }
 
 func (r *TriggerRouter) execute(ctx context.Context, pluginName string, member persistence.Member, event *proto.TriggerEvent, logCtx []any) {
+	// Livraison verbatim : un texte que la personne a écrit elle-même —
+	// un rappel échu, typiquement — part tel quel. Le faire passer par le
+	// sous-agent coûterait un appel de modèle et le reformulerait, ce qui
+	// est exactement ce qu'un pense-bête ne doit pas subir.
+	//
+	// DeliverText est du contenu privé : il n'apparaît jamais dans les
+	// journaux, seulement le fait qu'il y en avait un.
+	if event.DeliverText != "" {
+		r.logger.InfoContext(ctx, "plugin: livraison verbatim d'un déclencheur", logCtx...)
+		r.send(ctx, member, event.DeliverText, logCtx)
+		return
+	}
+
 	identity, conversation := r.buildIdentity(member)
 
 	execCtx, cancel := context.WithTimeout(ctx, triggerExecutionTimeout)

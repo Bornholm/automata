@@ -77,8 +77,19 @@ type PluginDescriptor struct {
 	// and that the sub-agent may be given the host-side file tools. A plugin
 	// leaving it false is never called on those RPCs.
 	SupportsFiles bool `protobuf:"varint,7,opt,name=supports_files,json=supportsFiles,proto3" json:"supports_files,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// provides_event_store tells the host the plugin implements
+	// PutEvent/DeleteEvent/ListEvents, and that it takes over the storage
+	// of scheduled events for the members who configured it. A plugin
+	// leaving it false is never called on those RPCs.
+	//
+	// Taking over is per member, not per organization: the host uses the
+	// plugin only for members whose configuration says so, and falls back
+	// to its own table for everyone else. Two plugins claiming the store
+	// for the same member is a configuration error; the host takes the
+	// first in activation order and logs the collision.
+	ProvidesEventStore bool `protobuf:"varint,8,opt,name=provides_event_store,json=providesEventStore,proto3" json:"provides_event_store,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *PluginDescriptor) Reset() {
@@ -156,6 +167,13 @@ func (x *PluginDescriptor) GetHasTriggers() bool {
 func (x *PluginDescriptor) GetSupportsFiles() bool {
 	if x != nil {
 		return x.SupportsFiles
+	}
+	return false
+}
+
+func (x *PluginDescriptor) GetProvidesEventStore() bool {
+	if x != nil {
+		return x.ProvidesEventStore
 	}
 	return false
 }
@@ -1103,6 +1121,448 @@ func (x *FileMetadata) GetSize() uint64 {
 	return 0
 }
 
+// ScheduledEvent is one entry of a plugin-provided event store: the text
+// to deliver and when to deliver it. It carries no delivery state
+// (channel, attempts, sent or not) — that stays host-side, out of the
+// user's calendar.
+type ScheduledEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id is the plugin's own identifier, opaque to the host. Empty when the
+	// host asks for a creation; PutEvent answers with the assigned one.
+	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// text is delivered to the member as is. Private content.
+	Text string `protobuf:"bytes,2,opt,name=text,proto3" json:"text,omitempty"`
+	// fire_at_unix is the next occurrence, in UTC seconds.
+	FireAtUnix int64 `protobuf:"varint,3,opt,name=fire_at_unix,json=fireAtUnix,proto3" json:"fire_at_unix,omitempty"`
+	// recurrence is a standard 5-field cron expression, empty for a one-off
+	// event. The host speaks cron everywhere; a plugin whose backend uses
+	// another dialect (an iCalendar RRULE, say) translates it, and refuses
+	// with is_error what it cannot express rather than storing an
+	// approximation.
+	Recurrence string `protobuf:"bytes,4,opt,name=recurrence,proto3" json:"recurrence,omitempty"`
+	// timezone is the IANA name recurrence is evaluated in.
+	Timezone      string `protobuf:"bytes,5,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ScheduledEvent) Reset() {
+	*x = ScheduledEvent{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ScheduledEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ScheduledEvent) ProtoMessage() {}
+
+func (x *ScheduledEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ScheduledEvent.ProtoReflect.Descriptor instead.
+func (*ScheduledEvent) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ScheduledEvent) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ScheduledEvent) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+func (x *ScheduledEvent) GetFireAtUnix() int64 {
+	if x != nil {
+		return x.FireAtUnix
+	}
+	return 0
+}
+
+func (x *ScheduledEvent) GetRecurrence() string {
+	if x != nil {
+		return x.Recurrence
+	}
+	return ""
+}
+
+func (x *ScheduledEvent) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+type PutEventRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ctx   *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
+	// event.id empty creates, set updates.
+	Event         *ScheduledEvent `protobuf:"bytes,2,opt,name=event,proto3" json:"event,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutEventRequest) Reset() {
+	*x = PutEventRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutEventRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutEventRequest) ProtoMessage() {}
+
+func (x *PutEventRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutEventRequest.ProtoReflect.Descriptor instead.
+func (*PutEventRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *PutEventRequest) GetCtx() *CallContext {
+	if x != nil {
+		return x.Ctx
+	}
+	return nil
+}
+
+func (x *PutEventRequest) GetEvent() *ScheduledEvent {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+type PutEventResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// is_error marks a business failure (backend unreachable, recurrence
+	// not expressible). The host surfaces it and does NOT fall back to its
+	// own table: an event silently scattered across two stores is worse
+	// than a refusal the user can see.
+	IsError       bool   `protobuf:"varint,2,opt,name=is_error,json=isError,proto3" json:"is_error,omitempty"`
+	ErrorText     string `protobuf:"bytes,3,opt,name=error_text,json=errorText,proto3" json:"error_text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutEventResponse) Reset() {
+	*x = PutEventResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutEventResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutEventResponse) ProtoMessage() {}
+
+func (x *PutEventResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutEventResponse.ProtoReflect.Descriptor instead.
+func (*PutEventResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *PutEventResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PutEventResponse) GetIsError() bool {
+	if x != nil {
+		return x.IsError
+	}
+	return false
+}
+
+func (x *PutEventResponse) GetErrorText() string {
+	if x != nil {
+		return x.ErrorText
+	}
+	return ""
+}
+
+type DeleteEventRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ctx           *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteEventRequest) Reset() {
+	*x = DeleteEventRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEventRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEventRequest) ProtoMessage() {}
+
+func (x *DeleteEventRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEventRequest.ProtoReflect.Descriptor instead.
+func (*DeleteEventRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *DeleteEventRequest) GetCtx() *CallContext {
+	if x != nil {
+		return x.Ctx
+	}
+	return nil
+}
+
+func (x *DeleteEventRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type DeleteEventResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// found is false when the id designates nothing — not an error.
+	Found         bool   `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`
+	IsError       bool   `protobuf:"varint,2,opt,name=is_error,json=isError,proto3" json:"is_error,omitempty"`
+	ErrorText     string `protobuf:"bytes,3,opt,name=error_text,json=errorText,proto3" json:"error_text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteEventResponse) Reset() {
+	*x = DeleteEventResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteEventResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteEventResponse) ProtoMessage() {}
+
+func (x *DeleteEventResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteEventResponse.ProtoReflect.Descriptor instead.
+func (*DeleteEventResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *DeleteEventResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *DeleteEventResponse) GetIsError() bool {
+	if x != nil {
+		return x.IsError
+	}
+	return false
+}
+
+func (x *DeleteEventResponse) GetErrorText() string {
+	if x != nil {
+		return x.ErrorText
+	}
+	return ""
+}
+
+type ListEventsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ctx   *CallContext           `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
+	// from_unix and to_unix bound the window, in UTC seconds. to_unix 0
+	// means no upper bound.
+	FromUnix      int64 `protobuf:"varint,2,opt,name=from_unix,json=fromUnix,proto3" json:"from_unix,omitempty"`
+	ToUnix        int64 `protobuf:"varint,3,opt,name=to_unix,json=toUnix,proto3" json:"to_unix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEventsRequest) Reset() {
+	*x = ListEventsRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEventsRequest) ProtoMessage() {}
+
+func (x *ListEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEventsRequest.ProtoReflect.Descriptor instead.
+func (*ListEventsRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ListEventsRequest) GetCtx() *CallContext {
+	if x != nil {
+		return x.Ctx
+	}
+	return nil
+}
+
+func (x *ListEventsRequest) GetFromUnix() int64 {
+	if x != nil {
+		return x.FromUnix
+	}
+	return 0
+}
+
+func (x *ListEventsRequest) GetToUnix() int64 {
+	if x != nil {
+		return x.ToUnix
+	}
+	return 0
+}
+
+type ListEventsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Events        []*ScheduledEvent      `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
+	IsError       bool                   `protobuf:"varint,2,opt,name=is_error,json=isError,proto3" json:"is_error,omitempty"`
+	ErrorText     string                 `protobuf:"bytes,3,opt,name=error_text,json=errorText,proto3" json:"error_text,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListEventsResponse) Reset() {
+	*x = ListEventsResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListEventsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListEventsResponse) ProtoMessage() {}
+
+func (x *ListEventsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListEventsResponse.ProtoReflect.Descriptor instead.
+func (*ListEventsResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ListEventsResponse) GetEvents() []*ScheduledEvent {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *ListEventsResponse) GetIsError() bool {
+	if x != nil {
+		return x.IsError
+	}
+	return false
+}
+
+func (x *ListEventsResponse) GetErrorText() string {
+	if x != nil {
+		return x.ErrorText
+	}
+	return ""
+}
+
 type WatchTriggersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1111,7 +1571,7 @@ type WatchTriggersRequest struct {
 
 func (x *WatchTriggersRequest) Reset() {
 	*x = WatchTriggersRequest{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[17]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1123,7 +1583,7 @@ func (x *WatchTriggersRequest) String() string {
 func (*WatchTriggersRequest) ProtoMessage() {}
 
 func (x *WatchTriggersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[17]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1136,7 +1596,7 @@ func (x *WatchTriggersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchTriggersRequest.ProtoReflect.Descriptor instead.
 func (*WatchTriggersRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{17}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{24}
 }
 
 // TriggerEvent asks the host to run the plugin's sub-agent for a member.
@@ -1156,14 +1616,22 @@ type TriggerEvent struct {
 	AgentInput     string `protobuf:"bytes,5,opt,name=agent_input,json=agentInput,proto3" json:"agent_input,omitempty"`
 	OccurredAtUnix int64  `protobuf:"varint,6,opt,name=occurred_at_unix,json=occurredAtUnix,proto3" json:"occurred_at_unix,omitempty"`
 	// attributes must not carry private content: they may be logged.
-	Attributes    map[string]string `protobuf:"bytes,7,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	Attributes map[string]string `protobuf:"bytes,7,rep,name=attributes,proto3" json:"attributes,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// deliver_text, when non-empty, is sent to the member's channel word
+	// for word: no sub-agent turn, no LLM, no rewording, and agent_input is
+	// ignored. It is what a due reminder needs — running a model over a
+	// note the user wrote themselves would cost a call and reword it.
+	//
+	// Being a message to a human it may carry private content, so unlike
+	// agent_input it is never logged and has no language constraint.
+	DeliverText   string `protobuf:"bytes,8,opt,name=deliver_text,json=deliverText,proto3" json:"deliver_text,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TriggerEvent) Reset() {
 	*x = TriggerEvent{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[18]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1175,7 +1643,7 @@ func (x *TriggerEvent) String() string {
 func (*TriggerEvent) ProtoMessage() {}
 
 func (x *TriggerEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[18]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1188,7 +1656,7 @@ func (x *TriggerEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerEvent.ProtoReflect.Descriptor instead.
 func (*TriggerEvent) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{18}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *TriggerEvent) GetId() string {
@@ -1240,6 +1708,13 @@ func (x *TriggerEvent) GetAttributes() map[string]string {
 	return nil
 }
 
+func (x *TriggerEvent) GetDeliverText() string {
+	if x != nil {
+		return x.DeliverText
+	}
+	return ""
+}
+
 // member_id == "" addresses the organization-level entry.
 type GetConfigRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -1251,7 +1726,7 @@ type GetConfigRequest struct {
 
 func (x *GetConfigRequest) Reset() {
 	*x = GetConfigRequest{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[19]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1263,7 +1738,7 @@ func (x *GetConfigRequest) String() string {
 func (*GetConfigRequest) ProtoMessage() {}
 
 func (x *GetConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[19]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1276,7 +1751,7 @@ func (x *GetConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConfigRequest.ProtoReflect.Descriptor instead.
 func (*GetConfigRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{19}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetConfigRequest) GetOrgId() string {
@@ -1303,7 +1778,7 @@ type GetConfigResponse struct {
 
 func (x *GetConfigResponse) Reset() {
 	*x = GetConfigResponse{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[20]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1315,7 +1790,7 @@ func (x *GetConfigResponse) String() string {
 func (*GetConfigResponse) ProtoMessage() {}
 
 func (x *GetConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[20]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1328,7 +1803,7 @@ func (x *GetConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetConfigResponse.ProtoReflect.Descriptor instead.
 func (*GetConfigResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{20}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetConfigResponse) GetConfigJson() string {
@@ -1356,7 +1831,7 @@ type SaveConfigRequest struct {
 
 func (x *SaveConfigRequest) Reset() {
 	*x = SaveConfigRequest{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[21]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1368,7 +1843,7 @@ func (x *SaveConfigRequest) String() string {
 func (*SaveConfigRequest) ProtoMessage() {}
 
 func (x *SaveConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[21]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1381,7 +1856,7 @@ func (x *SaveConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveConfigRequest.ProtoReflect.Descriptor instead.
 func (*SaveConfigRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{21}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *SaveConfigRequest) GetOrgId() string {
@@ -1413,7 +1888,7 @@ type SaveConfigResponse struct {
 
 func (x *SaveConfigResponse) Reset() {
 	*x = SaveConfigResponse{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[22]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1425,7 +1900,7 @@ func (x *SaveConfigResponse) String() string {
 func (*SaveConfigResponse) ProtoMessage() {}
 
 func (x *SaveConfigResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[22]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1438,7 +1913,7 @@ func (x *SaveConfigResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveConfigResponse.ProtoReflect.Descriptor instead.
 func (*SaveConfigResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{22}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{29}
 }
 
 type ListConfigsRequest struct {
@@ -1449,7 +1924,7 @@ type ListConfigsRequest struct {
 
 func (x *ListConfigsRequest) Reset() {
 	*x = ListConfigsRequest{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[23]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1461,7 +1936,7 @@ func (x *ListConfigsRequest) String() string {
 func (*ListConfigsRequest) ProtoMessage() {}
 
 func (x *ListConfigsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[23]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1474,7 +1949,7 @@ func (x *ListConfigsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConfigsRequest.ProtoReflect.Descriptor instead.
 func (*ListConfigsRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{23}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{30}
 }
 
 type ListConfigsResponse struct {
@@ -1487,7 +1962,7 @@ type ListConfigsResponse struct {
 
 func (x *ListConfigsResponse) Reset() {
 	*x = ListConfigsResponse{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[24]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1499,7 +1974,7 @@ func (x *ListConfigsResponse) String() string {
 func (*ListConfigsResponse) ProtoMessage() {}
 
 func (x *ListConfigsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[24]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1512,7 +1987,7 @@ func (x *ListConfigsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListConfigsResponse.ProtoReflect.Descriptor instead.
 func (*ListConfigsResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{24}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ListConfigsResponse) GetEntries() []*ConfigEntry {
@@ -1533,7 +2008,7 @@ type ConfigEntry struct {
 
 func (x *ConfigEntry) Reset() {
 	*x = ConfigEntry{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[25]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1545,7 +2020,7 @@ func (x *ConfigEntry) String() string {
 func (*ConfigEntry) ProtoMessage() {}
 
 func (x *ConfigEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[25]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1558,7 +2033,7 @@ func (x *ConfigEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConfigEntry.ProtoReflect.Descriptor instead.
 func (*ConfigEntry) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{25}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ConfigEntry) GetOrgId() string {
@@ -1593,7 +2068,7 @@ type GetSecretRequest struct {
 
 func (x *GetSecretRequest) Reset() {
 	*x = GetSecretRequest{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[26]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1605,7 +2080,7 @@ func (x *GetSecretRequest) String() string {
 func (*GetSecretRequest) ProtoMessage() {}
 
 func (x *GetSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[26]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1618,7 +2093,7 @@ func (x *GetSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSecretRequest.ProtoReflect.Descriptor instead.
 func (*GetSecretRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{26}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetSecretRequest) GetOrgId() string {
@@ -1652,7 +2127,7 @@ type GetSecretResponse struct {
 
 func (x *GetSecretResponse) Reset() {
 	*x = GetSecretResponse{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[27]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1664,7 +2139,7 @@ func (x *GetSecretResponse) String() string {
 func (*GetSecretResponse) ProtoMessage() {}
 
 func (x *GetSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[27]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1677,7 +2152,7 @@ func (x *GetSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSecretResponse.ProtoReflect.Descriptor instead.
 func (*GetSecretResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{27}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetSecretResponse) GetValue() string {
@@ -1706,7 +2181,7 @@ type SetSecretRequest struct {
 
 func (x *SetSecretRequest) Reset() {
 	*x = SetSecretRequest{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[28]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1718,7 +2193,7 @@ func (x *SetSecretRequest) String() string {
 func (*SetSecretRequest) ProtoMessage() {}
 
 func (x *SetSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[28]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1731,7 +2206,7 @@ func (x *SetSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSecretRequest.ProtoReflect.Descriptor instead.
 func (*SetSecretRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{28}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *SetSecretRequest) GetOrgId() string {
@@ -1770,7 +2245,7 @@ type SetSecretResponse struct {
 
 func (x *SetSecretResponse) Reset() {
 	*x = SetSecretResponse{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[29]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1782,7 +2257,7 @@ func (x *SetSecretResponse) String() string {
 func (*SetSecretResponse) ProtoMessage() {}
 
 func (x *SetSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[29]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1795,7 +2270,7 @@ func (x *SetSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSecretResponse.ProtoReflect.Descriptor instead.
 func (*SetSecretResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{29}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{36}
 }
 
 type DeleteSecretRequest struct {
@@ -1809,7 +2284,7 @@ type DeleteSecretRequest struct {
 
 func (x *DeleteSecretRequest) Reset() {
 	*x = DeleteSecretRequest{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[30]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1821,7 +2296,7 @@ func (x *DeleteSecretRequest) String() string {
 func (*DeleteSecretRequest) ProtoMessage() {}
 
 func (x *DeleteSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[30]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1834,7 +2309,7 @@ func (x *DeleteSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSecretRequest.ProtoReflect.Descriptor instead.
 func (*DeleteSecretRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{30}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *DeleteSecretRequest) GetOrgId() string {
@@ -1866,7 +2341,7 @@ type DeleteSecretResponse struct {
 
 func (x *DeleteSecretResponse) Reset() {
 	*x = DeleteSecretResponse{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[31]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1878,7 +2353,7 @@ func (x *DeleteSecretResponse) String() string {
 func (*DeleteSecretResponse) ProtoMessage() {}
 
 func (x *DeleteSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[31]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1891,7 +2366,7 @@ func (x *DeleteSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSecretResponse.ProtoReflect.Descriptor instead.
 func (*DeleteSecretResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{31}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{38}
 }
 
 // Notify sends an application-authored message (no LLM involved) to the
@@ -1907,7 +2382,7 @@ type NotifyRequest struct {
 
 func (x *NotifyRequest) Reset() {
 	*x = NotifyRequest{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[32]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1919,7 +2394,7 @@ func (x *NotifyRequest) String() string {
 func (*NotifyRequest) ProtoMessage() {}
 
 func (x *NotifyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[32]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1932,7 +2407,7 @@ func (x *NotifyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyRequest.ProtoReflect.Descriptor instead.
 func (*NotifyRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{32}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *NotifyRequest) GetOrgId() string {
@@ -1964,7 +2439,7 @@ type NotifyResponse struct {
 
 func (x *NotifyResponse) Reset() {
 	*x = NotifyResponse{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[33]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1976,7 +2451,7 @@ func (x *NotifyResponse) String() string {
 func (*NotifyResponse) ProtoMessage() {}
 
 func (x *NotifyResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[33]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1989,7 +2464,7 @@ func (x *NotifyResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotifyResponse.ProtoReflect.Descriptor instead.
 func (*NotifyResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{33}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{40}
 }
 
 var File_pkg_pluginsdk_proto_plugin_proto protoreflect.FileDescriptor
@@ -1997,7 +2472,7 @@ var File_pkg_pluginsdk_proto_plugin_proto protoreflect.FileDescriptor
 const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\n" +
 	" pkg/pluginsdk/proto/plugin.proto\x12\x12automata.plugin.v1\"\x11\n" +
-	"\x0fDescribeRequest\"\x9e\x02\n" +
+	"\x0fDescribeRequest\"\xd0\x02\n" +
 	"\x10PluginDescriptor\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12 \n" +
@@ -2005,7 +2480,8 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\tsub_agent\x18\x04 \x01(\v2&.automata.plugin.v1.SubAgentDescriptorR\bsubAgent\x12+\n" +
 	"\x11permission_domain\x18\x05 \x01(\tR\x10permissionDomain\x12!\n" +
 	"\fhas_triggers\x18\x06 \x01(\bR\vhasTriggers\x12%\n" +
-	"\x0esupports_files\x18\a \x01(\bR\rsupportsFiles\"\x96\x01\n" +
+	"\x0esupports_files\x18\a \x01(\bR\rsupportsFiles\x120\n" +
+	"\x14provides_event_store\x18\b \x01(\bR\x12providesEventStore\"\x96\x01\n" +
 	"\x12SubAgentDescriptor\x12#\n" +
 	"\rsystem_prompt\x18\x01 \x01(\tR\fsystemPrompt\x12 \n" +
 	"\vdescription\x18\x02 \x01(\tR\vdescription\x129\n" +
@@ -2064,8 +2540,42 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\fFileMetadata\x12\x1a\n" +
 	"\bfilename\x18\x01 \x01(\tR\bfilename\x12\x1b\n" +
 	"\tmime_type\x18\x02 \x01(\tR\bmimeType\x12\x12\n" +
-	"\x04size\x18\x03 \x01(\x04R\x04size\"\x16\n" +
-	"\x14WatchTriggersRequest\"\xc2\x02\n" +
+	"\x04size\x18\x03 \x01(\x04R\x04size\"\x92\x01\n" +
+	"\x0eScheduledEvent\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04text\x18\x02 \x01(\tR\x04text\x12 \n" +
+	"\ffire_at_unix\x18\x03 \x01(\x03R\n" +
+	"fireAtUnix\x12\x1e\n" +
+	"\n" +
+	"recurrence\x18\x04 \x01(\tR\n" +
+	"recurrence\x12\x1a\n" +
+	"\btimezone\x18\x05 \x01(\tR\btimezone\"~\n" +
+	"\x0fPutEventRequest\x121\n" +
+	"\x03ctx\x18\x01 \x01(\v2\x1f.automata.plugin.v1.CallContextR\x03ctx\x128\n" +
+	"\x05event\x18\x02 \x01(\v2\".automata.plugin.v1.ScheduledEventR\x05event\"\\\n" +
+	"\x10PutEventResponse\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x19\n" +
+	"\bis_error\x18\x02 \x01(\bR\aisError\x12\x1d\n" +
+	"\n" +
+	"error_text\x18\x03 \x01(\tR\terrorText\"W\n" +
+	"\x12DeleteEventRequest\x121\n" +
+	"\x03ctx\x18\x01 \x01(\v2\x1f.automata.plugin.v1.CallContextR\x03ctx\x12\x0e\n" +
+	"\x02id\x18\x02 \x01(\tR\x02id\"e\n" +
+	"\x13DeleteEventResponse\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x12\x19\n" +
+	"\bis_error\x18\x02 \x01(\bR\aisError\x12\x1d\n" +
+	"\n" +
+	"error_text\x18\x03 \x01(\tR\terrorText\"|\n" +
+	"\x11ListEventsRequest\x121\n" +
+	"\x03ctx\x18\x01 \x01(\v2\x1f.automata.plugin.v1.CallContextR\x03ctx\x12\x1b\n" +
+	"\tfrom_unix\x18\x02 \x01(\x03R\bfromUnix\x12\x17\n" +
+	"\ato_unix\x18\x03 \x01(\x03R\x06toUnix\"\x8a\x01\n" +
+	"\x12ListEventsResponse\x12:\n" +
+	"\x06events\x18\x01 \x03(\v2\".automata.plugin.v1.ScheduledEventR\x06events\x12\x19\n" +
+	"\bis_error\x18\x02 \x01(\bR\aisError\x12\x1d\n" +
+	"\n" +
+	"error_text\x18\x03 \x01(\tR\terrorText\"\x16\n" +
+	"\x14WatchTriggersRequest\"\xe5\x02\n" +
 	"\fTriggerEvent\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
 	"\x06org_id\x18\x02 \x01(\tR\x05orgId\x12\x1b\n" +
@@ -2076,7 +2586,8 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\x10occurred_at_unix\x18\x06 \x01(\x03R\x0eoccurredAtUnix\x12P\n" +
 	"\n" +
 	"attributes\x18\a \x03(\v20.automata.plugin.v1.TriggerEvent.AttributesEntryR\n" +
-	"attributes\x1a=\n" +
+	"attributes\x12!\n" +
+	"\fdeliver_text\x18\b \x01(\tR\vdeliverText\x1a=\n" +
 	"\x0fAttributesEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"F\n" +
@@ -2123,7 +2634,7 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
 	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\"\x10\n" +
-	"\x0eNotifyResponse2\xee\x04\n" +
+	"\x0eNotifyResponse2\x82\a\n" +
 	"\x0eAutomataPlugin\x12U\n" +
 	"\bDescribe\x12#.automata.plugin.v1.DescribeRequest\x1a$.automata.plugin.v1.PluginDescriptor\x12[\n" +
 	"\n" +
@@ -2132,7 +2643,11 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\bCallTool\x12!.automata.plugin.v1.CallToolInput\x1a\".automata.plugin.v1.CallToolOutput\x12]\n" +
 	"\rWatchTriggers\x12(.automata.plugin.v1.WatchTriggersRequest\x1a .automata.plugin.v1.TriggerEvent0\x01\x12P\n" +
 	"\aPutFile\x12 .automata.plugin.v1.PutFileChunk\x1a!.automata.plugin.v1.PutFileResult(\x01\x12N\n" +
-	"\aGetFile\x12\".automata.plugin.v1.GetFileRequest\x1a\x1d.automata.plugin.v1.FileChunk0\x012\x94\x05\n" +
+	"\aGetFile\x12\".automata.plugin.v1.GetFileRequest\x1a\x1d.automata.plugin.v1.FileChunk0\x01\x12U\n" +
+	"\bPutEvent\x12#.automata.plugin.v1.PutEventRequest\x1a$.automata.plugin.v1.PutEventResponse\x12^\n" +
+	"\vDeleteEvent\x12&.automata.plugin.v1.DeleteEventRequest\x1a'.automata.plugin.v1.DeleteEventResponse\x12[\n" +
+	"\n" +
+	"ListEvents\x12%.automata.plugin.v1.ListEventsRequest\x1a&.automata.plugin.v1.ListEventsResponse2\x94\x05\n" +
 	"\x13AutomataHostService\x12X\n" +
 	"\tGetConfig\x12$.automata.plugin.v1.GetConfigRequest\x1a%.automata.plugin.v1.GetConfigResponse\x12[\n" +
 	"\n" +
@@ -2155,7 +2670,7 @@ func file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP() []byte {
 	return file_pkg_pluginsdk_proto_plugin_proto_rawDescData
 }
 
-var file_pkg_pluginsdk_proto_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 35)
+var file_pkg_pluginsdk_proto_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
 var file_pkg_pluginsdk_proto_plugin_proto_goTypes = []any{
 	(*DescribeRequest)(nil),      // 0: automata.plugin.v1.DescribeRequest
 	(*PluginDescriptor)(nil),     // 1: automata.plugin.v1.PluginDescriptor
@@ -2174,24 +2689,31 @@ var file_pkg_pluginsdk_proto_plugin_proto_goTypes = []any{
 	(*GetFileRequest)(nil),       // 14: automata.plugin.v1.GetFileRequest
 	(*FileChunk)(nil),            // 15: automata.plugin.v1.FileChunk
 	(*FileMetadata)(nil),         // 16: automata.plugin.v1.FileMetadata
-	(*WatchTriggersRequest)(nil), // 17: automata.plugin.v1.WatchTriggersRequest
-	(*TriggerEvent)(nil),         // 18: automata.plugin.v1.TriggerEvent
-	(*GetConfigRequest)(nil),     // 19: automata.plugin.v1.GetConfigRequest
-	(*GetConfigResponse)(nil),    // 20: automata.plugin.v1.GetConfigResponse
-	(*SaveConfigRequest)(nil),    // 21: automata.plugin.v1.SaveConfigRequest
-	(*SaveConfigResponse)(nil),   // 22: automata.plugin.v1.SaveConfigResponse
-	(*ListConfigsRequest)(nil),   // 23: automata.plugin.v1.ListConfigsRequest
-	(*ListConfigsResponse)(nil),  // 24: automata.plugin.v1.ListConfigsResponse
-	(*ConfigEntry)(nil),          // 25: automata.plugin.v1.ConfigEntry
-	(*GetSecretRequest)(nil),     // 26: automata.plugin.v1.GetSecretRequest
-	(*GetSecretResponse)(nil),    // 27: automata.plugin.v1.GetSecretResponse
-	(*SetSecretRequest)(nil),     // 28: automata.plugin.v1.SetSecretRequest
-	(*SetSecretResponse)(nil),    // 29: automata.plugin.v1.SetSecretResponse
-	(*DeleteSecretRequest)(nil),  // 30: automata.plugin.v1.DeleteSecretRequest
-	(*DeleteSecretResponse)(nil), // 31: automata.plugin.v1.DeleteSecretResponse
-	(*NotifyRequest)(nil),        // 32: automata.plugin.v1.NotifyRequest
-	(*NotifyResponse)(nil),       // 33: automata.plugin.v1.NotifyResponse
-	nil,                          // 34: automata.plugin.v1.TriggerEvent.AttributesEntry
+	(*ScheduledEvent)(nil),       // 17: automata.plugin.v1.ScheduledEvent
+	(*PutEventRequest)(nil),      // 18: automata.plugin.v1.PutEventRequest
+	(*PutEventResponse)(nil),     // 19: automata.plugin.v1.PutEventResponse
+	(*DeleteEventRequest)(nil),   // 20: automata.plugin.v1.DeleteEventRequest
+	(*DeleteEventResponse)(nil),  // 21: automata.plugin.v1.DeleteEventResponse
+	(*ListEventsRequest)(nil),    // 22: automata.plugin.v1.ListEventsRequest
+	(*ListEventsResponse)(nil),   // 23: automata.plugin.v1.ListEventsResponse
+	(*WatchTriggersRequest)(nil), // 24: automata.plugin.v1.WatchTriggersRequest
+	(*TriggerEvent)(nil),         // 25: automata.plugin.v1.TriggerEvent
+	(*GetConfigRequest)(nil),     // 26: automata.plugin.v1.GetConfigRequest
+	(*GetConfigResponse)(nil),    // 27: automata.plugin.v1.GetConfigResponse
+	(*SaveConfigRequest)(nil),    // 28: automata.plugin.v1.SaveConfigRequest
+	(*SaveConfigResponse)(nil),   // 29: automata.plugin.v1.SaveConfigResponse
+	(*ListConfigsRequest)(nil),   // 30: automata.plugin.v1.ListConfigsRequest
+	(*ListConfigsResponse)(nil),  // 31: automata.plugin.v1.ListConfigsResponse
+	(*ConfigEntry)(nil),          // 32: automata.plugin.v1.ConfigEntry
+	(*GetSecretRequest)(nil),     // 33: automata.plugin.v1.GetSecretRequest
+	(*GetSecretResponse)(nil),    // 34: automata.plugin.v1.GetSecretResponse
+	(*SetSecretRequest)(nil),     // 35: automata.plugin.v1.SetSecretRequest
+	(*SetSecretResponse)(nil),    // 36: automata.plugin.v1.SetSecretResponse
+	(*DeleteSecretRequest)(nil),  // 37: automata.plugin.v1.DeleteSecretRequest
+	(*DeleteSecretResponse)(nil), // 38: automata.plugin.v1.DeleteSecretResponse
+	(*NotifyRequest)(nil),        // 39: automata.plugin.v1.NotifyRequest
+	(*NotifyResponse)(nil),       // 40: automata.plugin.v1.NotifyResponse
+	nil,                          // 41: automata.plugin.v1.TriggerEvent.AttributesEntry
 }
 var file_pkg_pluginsdk_proto_plugin_proto_depIdxs = []int32{
 	2,  // 0: automata.plugin.v1.PluginDescriptor.sub_agent:type_name -> automata.plugin.v1.SubAgentDescriptor
@@ -2202,41 +2724,52 @@ var file_pkg_pluginsdk_proto_plugin_proto_depIdxs = []int32{
 	5,  // 5: automata.plugin.v1.PutFileMetadata.ctx:type_name -> automata.plugin.v1.CallContext
 	5,  // 6: automata.plugin.v1.GetFileRequest.ctx:type_name -> automata.plugin.v1.CallContext
 	16, // 7: automata.plugin.v1.FileChunk.metadata:type_name -> automata.plugin.v1.FileMetadata
-	34, // 8: automata.plugin.v1.TriggerEvent.attributes:type_name -> automata.plugin.v1.TriggerEvent.AttributesEntry
-	25, // 9: automata.plugin.v1.ListConfigsResponse.entries:type_name -> automata.plugin.v1.ConfigEntry
-	0,  // 10: automata.plugin.v1.AutomataPlugin.Describe:input_type -> automata.plugin.v1.DescribeRequest
-	3,  // 11: automata.plugin.v1.AutomataPlugin.Initialize:input_type -> automata.plugin.v1.InitializeRequest
-	7,  // 12: automata.plugin.v1.AutomataPlugin.ListTools:input_type -> automata.plugin.v1.ListToolsInput
-	9,  // 13: automata.plugin.v1.AutomataPlugin.CallTool:input_type -> automata.plugin.v1.CallToolInput
-	17, // 14: automata.plugin.v1.AutomataPlugin.WatchTriggers:input_type -> automata.plugin.v1.WatchTriggersRequest
-	11, // 15: automata.plugin.v1.AutomataPlugin.PutFile:input_type -> automata.plugin.v1.PutFileChunk
-	14, // 16: automata.plugin.v1.AutomataPlugin.GetFile:input_type -> automata.plugin.v1.GetFileRequest
-	19, // 17: automata.plugin.v1.AutomataHostService.GetConfig:input_type -> automata.plugin.v1.GetConfigRequest
-	21, // 18: automata.plugin.v1.AutomataHostService.SaveConfig:input_type -> automata.plugin.v1.SaveConfigRequest
-	23, // 19: automata.plugin.v1.AutomataHostService.ListConfigs:input_type -> automata.plugin.v1.ListConfigsRequest
-	26, // 20: automata.plugin.v1.AutomataHostService.GetSecret:input_type -> automata.plugin.v1.GetSecretRequest
-	28, // 21: automata.plugin.v1.AutomataHostService.SetSecret:input_type -> automata.plugin.v1.SetSecretRequest
-	30, // 22: automata.plugin.v1.AutomataHostService.DeleteSecret:input_type -> automata.plugin.v1.DeleteSecretRequest
-	32, // 23: automata.plugin.v1.AutomataHostService.Notify:input_type -> automata.plugin.v1.NotifyRequest
-	1,  // 24: automata.plugin.v1.AutomataPlugin.Describe:output_type -> automata.plugin.v1.PluginDescriptor
-	4,  // 25: automata.plugin.v1.AutomataPlugin.Initialize:output_type -> automata.plugin.v1.InitializeResponse
-	8,  // 26: automata.plugin.v1.AutomataPlugin.ListTools:output_type -> automata.plugin.v1.ListToolsOutput
-	10, // 27: automata.plugin.v1.AutomataPlugin.CallTool:output_type -> automata.plugin.v1.CallToolOutput
-	18, // 28: automata.plugin.v1.AutomataPlugin.WatchTriggers:output_type -> automata.plugin.v1.TriggerEvent
-	13, // 29: automata.plugin.v1.AutomataPlugin.PutFile:output_type -> automata.plugin.v1.PutFileResult
-	15, // 30: automata.plugin.v1.AutomataPlugin.GetFile:output_type -> automata.plugin.v1.FileChunk
-	20, // 31: automata.plugin.v1.AutomataHostService.GetConfig:output_type -> automata.plugin.v1.GetConfigResponse
-	22, // 32: automata.plugin.v1.AutomataHostService.SaveConfig:output_type -> automata.plugin.v1.SaveConfigResponse
-	24, // 33: automata.plugin.v1.AutomataHostService.ListConfigs:output_type -> automata.plugin.v1.ListConfigsResponse
-	27, // 34: automata.plugin.v1.AutomataHostService.GetSecret:output_type -> automata.plugin.v1.GetSecretResponse
-	29, // 35: automata.plugin.v1.AutomataHostService.SetSecret:output_type -> automata.plugin.v1.SetSecretResponse
-	31, // 36: automata.plugin.v1.AutomataHostService.DeleteSecret:output_type -> automata.plugin.v1.DeleteSecretResponse
-	33, // 37: automata.plugin.v1.AutomataHostService.Notify:output_type -> automata.plugin.v1.NotifyResponse
-	24, // [24:38] is the sub-list for method output_type
-	10, // [10:24] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	5,  // 8: automata.plugin.v1.PutEventRequest.ctx:type_name -> automata.plugin.v1.CallContext
+	17, // 9: automata.plugin.v1.PutEventRequest.event:type_name -> automata.plugin.v1.ScheduledEvent
+	5,  // 10: automata.plugin.v1.DeleteEventRequest.ctx:type_name -> automata.plugin.v1.CallContext
+	5,  // 11: automata.plugin.v1.ListEventsRequest.ctx:type_name -> automata.plugin.v1.CallContext
+	17, // 12: automata.plugin.v1.ListEventsResponse.events:type_name -> automata.plugin.v1.ScheduledEvent
+	41, // 13: automata.plugin.v1.TriggerEvent.attributes:type_name -> automata.plugin.v1.TriggerEvent.AttributesEntry
+	32, // 14: automata.plugin.v1.ListConfigsResponse.entries:type_name -> automata.plugin.v1.ConfigEntry
+	0,  // 15: automata.plugin.v1.AutomataPlugin.Describe:input_type -> automata.plugin.v1.DescribeRequest
+	3,  // 16: automata.plugin.v1.AutomataPlugin.Initialize:input_type -> automata.plugin.v1.InitializeRequest
+	7,  // 17: automata.plugin.v1.AutomataPlugin.ListTools:input_type -> automata.plugin.v1.ListToolsInput
+	9,  // 18: automata.plugin.v1.AutomataPlugin.CallTool:input_type -> automata.plugin.v1.CallToolInput
+	24, // 19: automata.plugin.v1.AutomataPlugin.WatchTriggers:input_type -> automata.plugin.v1.WatchTriggersRequest
+	11, // 20: automata.plugin.v1.AutomataPlugin.PutFile:input_type -> automata.plugin.v1.PutFileChunk
+	14, // 21: automata.plugin.v1.AutomataPlugin.GetFile:input_type -> automata.plugin.v1.GetFileRequest
+	18, // 22: automata.plugin.v1.AutomataPlugin.PutEvent:input_type -> automata.plugin.v1.PutEventRequest
+	20, // 23: automata.plugin.v1.AutomataPlugin.DeleteEvent:input_type -> automata.plugin.v1.DeleteEventRequest
+	22, // 24: automata.plugin.v1.AutomataPlugin.ListEvents:input_type -> automata.plugin.v1.ListEventsRequest
+	26, // 25: automata.plugin.v1.AutomataHostService.GetConfig:input_type -> automata.plugin.v1.GetConfigRequest
+	28, // 26: automata.plugin.v1.AutomataHostService.SaveConfig:input_type -> automata.plugin.v1.SaveConfigRequest
+	30, // 27: automata.plugin.v1.AutomataHostService.ListConfigs:input_type -> automata.plugin.v1.ListConfigsRequest
+	33, // 28: automata.plugin.v1.AutomataHostService.GetSecret:input_type -> automata.plugin.v1.GetSecretRequest
+	35, // 29: automata.plugin.v1.AutomataHostService.SetSecret:input_type -> automata.plugin.v1.SetSecretRequest
+	37, // 30: automata.plugin.v1.AutomataHostService.DeleteSecret:input_type -> automata.plugin.v1.DeleteSecretRequest
+	39, // 31: automata.plugin.v1.AutomataHostService.Notify:input_type -> automata.plugin.v1.NotifyRequest
+	1,  // 32: automata.plugin.v1.AutomataPlugin.Describe:output_type -> automata.plugin.v1.PluginDescriptor
+	4,  // 33: automata.plugin.v1.AutomataPlugin.Initialize:output_type -> automata.plugin.v1.InitializeResponse
+	8,  // 34: automata.plugin.v1.AutomataPlugin.ListTools:output_type -> automata.plugin.v1.ListToolsOutput
+	10, // 35: automata.plugin.v1.AutomataPlugin.CallTool:output_type -> automata.plugin.v1.CallToolOutput
+	25, // 36: automata.plugin.v1.AutomataPlugin.WatchTriggers:output_type -> automata.plugin.v1.TriggerEvent
+	13, // 37: automata.plugin.v1.AutomataPlugin.PutFile:output_type -> automata.plugin.v1.PutFileResult
+	15, // 38: automata.plugin.v1.AutomataPlugin.GetFile:output_type -> automata.plugin.v1.FileChunk
+	19, // 39: automata.plugin.v1.AutomataPlugin.PutEvent:output_type -> automata.plugin.v1.PutEventResponse
+	21, // 40: automata.plugin.v1.AutomataPlugin.DeleteEvent:output_type -> automata.plugin.v1.DeleteEventResponse
+	23, // 41: automata.plugin.v1.AutomataPlugin.ListEvents:output_type -> automata.plugin.v1.ListEventsResponse
+	27, // 42: automata.plugin.v1.AutomataHostService.GetConfig:output_type -> automata.plugin.v1.GetConfigResponse
+	29, // 43: automata.plugin.v1.AutomataHostService.SaveConfig:output_type -> automata.plugin.v1.SaveConfigResponse
+	31, // 44: automata.plugin.v1.AutomataHostService.ListConfigs:output_type -> automata.plugin.v1.ListConfigsResponse
+	34, // 45: automata.plugin.v1.AutomataHostService.GetSecret:output_type -> automata.plugin.v1.GetSecretResponse
+	36, // 46: automata.plugin.v1.AutomataHostService.SetSecret:output_type -> automata.plugin.v1.SetSecretResponse
+	38, // 47: automata.plugin.v1.AutomataHostService.DeleteSecret:output_type -> automata.plugin.v1.DeleteSecretResponse
+	40, // 48: automata.plugin.v1.AutomataHostService.Notify:output_type -> automata.plugin.v1.NotifyResponse
+	32, // [32:49] is the sub-list for method output_type
+	15, // [15:32] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_pkg_pluginsdk_proto_plugin_proto_init() }
@@ -2258,7 +2791,7 @@ func file_pkg_pluginsdk_proto_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_pluginsdk_proto_plugin_proto_rawDesc), len(file_pkg_pluginsdk_proto_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   35,
+			NumMessages:   42,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
