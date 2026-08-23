@@ -9,7 +9,7 @@ import (
 
 // Les plugins activés pour l'organisation sont des onglets du profil, au
 // même rang que les pages fixes. Le nombre d'onglets n'est pas borné :
-// c'est pourquoi la navigation se déplie au lieu de s'étaler en rangée.
+// c'est pourquoi la rangée défile dans son conteneur.
 func TestProfileNav_ListsPluginsAsTabs(t *testing.T) {
 	plugins := []view.ProfilePluginUI{
 		{Name: "email", Title: "Courriel", Src: "/p/abc/plugins/email/ui/"},
@@ -57,8 +57,12 @@ func TestProfilePages_AllCarryTheNavigation(t *testing.T) {
 		if !strings.Contains(html, "/p/abc/plugins/email") {
 			t.Errorf("page %s : l'onglet du plugin est absent de la navigation", name)
 		}
-		if !strings.Contains(html, "<summary") {
-			t.Errorf("page %s : la navigation dépliante a disparu", name)
+		// Les destinations sont visibles d'emblée : c'est ce qui distingue
+		// la barre d'onglets du menu déroulant qu'elle a remplacé.
+		for _, label := range []string{"Profil", "Crédits", "Ma consommation", "Confidentialité"} {
+			if !strings.Contains(html, ">"+label+"<") {
+				t.Errorf("page %s : l'onglet %q n'est pas affiché", name, label)
+			}
 		}
 	}
 }

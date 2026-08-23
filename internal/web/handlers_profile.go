@@ -247,7 +247,7 @@ func (s *Server) profilePluginUIs(w http.ResponseWriter, r *http.Request, member
 		}
 		uis = append(uis, view.ProfilePluginUI{
 			Name:  name,
-			Title: name,
+			Title: upperFirst(name),
 			Src:   "/p/" + linkID + "/plugins/" + name + "/ui/",
 		})
 	}
@@ -343,6 +343,17 @@ func lowerFirst(s string) string {
 		return s
 	}
 	return string(unicode.ToLower(r)) + s[size:]
+}
+
+// upperFirst met la première lettre en majuscule. Le nom d'un plugin est
+// un identifiant technique en minuscules ; en onglet, il voisine des
+// libellés rédigés (« Crédits », « Confidentialité ») où il détonnerait.
+func upperFirst(s string) string {
+	r, size := utf8.DecodeRuneInString(s)
+	if r == utf8.RuneError {
+		return s
+	}
+	return string(unicode.ToUpper(r)) + s[size:]
 }
 
 // handleProfileEmailVerify vérifie le code à six chiffres (PRO-01b).

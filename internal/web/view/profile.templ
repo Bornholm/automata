@@ -35,41 +35,24 @@ func ProfileTabs(linkID string, active string, plugins []ProfilePluginUI) []Prof
 	return tabs
 }
 
-// activeTabLabel nomme la page courante : c'est ce que le menu fermé
-// montre, pour qu'une personne sache où elle est avant de l'ouvrir.
-func activeTabLabel(tabs []ProfileTab) string {
-	for _, tab := range tabs {
-		if tab.Active {
-			return tab.Label
-		}
-	}
-	return "Navigation"
-}
-
 // profileNav relie les pages du profil pendant la validité de la session
-// courte. Le menu se déplie au lieu de s'étaler : le nombre d'onglets
-// dépend des plugins activés, une rangée de liens finirait par déborder.
+// courte. C'est la même barre d'onglets que l'administration : les
+// destinations restent lisibles et cliquables d'un seul geste, là où un
+// menu déroulant demandait de l'ouvrir avant de savoir ce qu'il contenait.
+//
+// Le nombre d'onglets suit les plugins activés par l'organisation : la
+// rangée défile DANS son conteneur (le débordement ne décale jamais la
+// page), et les libellés ne se coupent pas.
 templ profileNav(linkID string, active string, plugins []ProfilePluginUI) {
-	{{ tabs := ProfileTabs(linkID, active, plugins) }}
-	<details class="group mt-6 border-t border-line-3">
-		<summary class="flex cursor-pointer list-none items-center gap-2 py-2.5 [&::-webkit-details-marker]:hidden">
-			<span class="truncate text-sm font-semibold text-ink">{ activeTabLabel(tabs) }</span>
-			<span class="ml-auto flex size-9 shrink-0 items-center justify-center rounded-[10px] text-text-3 group-open:bg-panel" aria-label="Menu">
-				<svg viewBox="0 0 20 20" class="size-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
-					<path d="M3 6h14M3 10h14M3 14h14"></path>
-				</svg>
-			</span>
-		</summary>
-		<nav class="flex flex-col gap-0.5 pb-2">
-			for _, tab := range tabs {
-				if tab.Active {
-					<span class="rounded-[9px] bg-panel px-3 py-2.5 text-sm font-semibold text-ink">{ tab.Label }</span>
-				} else {
-					<a href={ templ.SafeURL(tab.Href) } class="rounded-[9px] px-3 py-2.5 text-sm font-medium text-brand hover:bg-panel hover:no-underline">{ tab.Label }</a>
-				}
+	<div class="-mx-5.5 mb-5 flex gap-5 overflow-x-auto border-b border-line-3 px-5.5">
+		for _, tab := range ProfileTabs(linkID, active, plugins) {
+			if tab.Active {
+				<span class="shrink-0 whitespace-nowrap px-0.5 pb-2.5 text-sm font-semibold text-ink shadow-[inset_0_-2px_0_var(--color-brand)]">{ tab.Label }</span>
+			} else {
+				<a href={ templ.SafeURL(tab.Href) } class="shrink-0 whitespace-nowrap px-0.5 pb-2.5 text-sm font-medium text-text-3 hover:text-ink hover:no-underline">{ tab.Label }</a>
 			}
-		</nav>
-	</details>
+		}
+	</div>
 }
 
 // --- PRO-01 — Mon profil ---
@@ -140,6 +123,7 @@ templ ProfileHome(page ProfilePage) {
 			</form>
 			<div class="mt-6 rounded-[11px] bg-panel p-3.5 text-sm leading-normal text-text-3">Vous pouvez fermer cette page : Automata vous renverra un lien si besoin, il suffit de le lui demander dans votre conversation.</div>
 		} else {
+			@profileNav(page.LinkID, "profile", page.PluginUIs)
 			<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Votre profil</h1>
 			if page.EmailState == "verified" {
 				<p class="mt-2 text-[15px] leading-normal text-text-3">Votre adresse de secours est en place.</p>
@@ -193,7 +177,6 @@ templ ProfileHome(page ProfilePage) {
 					</div>
 				}
 			</div>
-			@profileNav(page.LinkID, "profile", page.PluginUIs)
 		}
 	}
 }
@@ -303,6 +286,7 @@ templ payButton(page CreditsPage, label string) {
 
 templ ProfileCredits(page CreditsPage) {
 	@ProfileLayout("Vos crédits — Automata", page.Header) {
+		@profileNav(page.LinkID, "credits", page.PluginUIs)
 		if page.Notice != "" {
 			if page.NoticeTone == "ok" {
 				<div class="mb-4 rounded-xl border border-ok-line bg-ok-wash-2 px-4 py-3 text-[15px] leading-snug text-ok-deeper">{ page.Notice }</div>
@@ -435,7 +419,6 @@ templ ProfileCredits(page CreditsPage) {
 					</div>
 				}
 		}
-		@profileNav(page.LinkID, "credits", page.PluginUIs)
 	}
 }
 
@@ -456,11 +439,11 @@ type ProfilePluginPage struct {
 
 templ ProfilePlugin(page ProfilePluginPage) {
 	@ProfileLayout(page.Current.Title+" — Automata", page.Header) {
+		@profileNav(page.LinkID, "plugin:"+page.Current.Name, page.PluginUIs)
 		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">{ page.Current.Title }</h1>
 		<div class="mt-5 overflow-hidden rounded-[11px] border border-line-2 bg-white">
 			<iframe src={ page.Current.Src } title={ page.Current.Title } sandbox="allow-forms allow-scripts" class="block h-[560px] w-full border-0"></iframe>
 		</div>
-		@profileNav(page.LinkID, "plugin:"+page.Current.Name, page.PluginUIs)
 	}
 }
 
@@ -573,6 +556,7 @@ type ProfileUsagePage struct {
 
 templ ProfileUsage(page ProfileUsagePage) {
 	@ProfileLayout("Ma consommation — Automata", page.Header) {
+		@profileNav(page.LinkID, "usage", page.PluginUIs)
 		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Ma consommation</h1>
 		<p class="mt-2 text-[15px] leading-normal text-text-3">{ page.Summary }</p>
 		if len(page.Split) > 0 {
@@ -624,6 +608,5 @@ templ ProfileUsage(page ProfileUsagePage) {
 				Ces chiffres couvrent toute votre organisation, pas seulement vous : les crédits sont partagés.
 			</div>
 		}
-		@profileNav(page.LinkID, "usage", page.PluginUIs)
 	}
 }
