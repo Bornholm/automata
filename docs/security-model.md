@@ -329,6 +329,14 @@ verts (`go test ./...`, `go test -race ./...`).
   Le chiffrement protège une base volée, une sauvegarde égarée, un disque
   revendu. Il ne protège pas un processus compromis ni un accès root
   pendant que le service tourne : la clé y est.
+
+  Un membre peut en outre **confier le stockage de ses rappels à un
+  plugin** — un agenda CalDAV, typiquement (voir
+  [plugins-caldav.md](plugins-caldav.md)). Leur texte quitte alors la base
+  chiffrée et vit chez ce fournisseur, en clair, sous ses conditions et
+  ses sauvegardes. C'est un choix explicite de la personne, pris dans son
+  profil devant un avertissement qui le dit ; l'exploitant ne peut pas le
+  prendre à sa place, et il ne s'applique à personne d'autre.
 - **Pièces jointes conservées dans la base** : la table
   `message_attachments` stocke les octets des images et documents reçus,
   afin de pouvoir les rejouer dans l'historique remis au modèle. Ils sont
