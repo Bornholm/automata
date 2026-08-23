@@ -203,12 +203,22 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 				return nil, fmt.Errorf("agent: délégué %q (référencé par agents.%s.delegates) introuvable dans le registre", delegateName, name)
 			}
 
-			specialists[delegateName] = NewAgentSpecialist(delegateName, delegateAgent)
-			// Ce que sait faire le délégué, tel qu'il le déclare : c'est
-			// cette phrase que lira le modèle sur l'outil de délégation.
-			if delegateCfg, ok := cfg.Agents[delegateName]; ok && delegateCfg.Description != "" {
-				specialistDescriptions[delegateName] = delegateCfg.Description
+			specialist := NewAgentSpecialist(delegateName, delegateAgent)
+
+			if delegateCfg, ok := cfg.Agents[delegateName]; ok {
+				// Un spécialiste qui n'a rien à faire sans pièce jointe
+				// n'est pas sollicité quand le tour n'en porte aucune.
+				specialist = specialist.WithRequiredAttachments(delegateCfg.RequiresAttachments)
+
+				// Ce que sait faire le délégué, tel qu'il le déclare :
+				// c'est cette phrase que lira le modèle sur l'outil de
+				// délégation.
+				if delegateCfg.Description != "" {
+					specialistDescriptions[delegateName] = delegateCfg.Description
+				}
 			}
+
+			specialists[delegateName] = specialist
 		}
 
 		orchestrator := NewOrchestratorAgent(clients[name], prompts[name], name, specialists, agentCfg.Limits.MaxSequentialToolCalls).

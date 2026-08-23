@@ -81,3 +81,19 @@ type failingAgent struct {
 func (f failingAgent) Execute(ctx context.Context, req agent.Request) (agent.Result, error) {
 	return agent.Result{}, f.err
 }
+
+// Un spécialiste qui ne sait travailler que sur des pièces jointes le
+// déclare, et l'orchestrateur s'en sert pour ne pas l'appeler à vide.
+func TestAgentSpecialist_DeclaresAttachmentDependency(t *testing.T) {
+	s := agent.NewAgentSpecialist("vision", &recordingAgent{})
+
+	if s.RequiresAttachments() {
+		t.Error("un spécialiste est autonome par défaut")
+	}
+
+	if !s.WithRequiredAttachments(true).RequiresAttachments() {
+		t.Error("la dépendance déclarée n'est pas rapportée")
+	}
+
+	var _ delegation.AttachmentDependent = s
+}

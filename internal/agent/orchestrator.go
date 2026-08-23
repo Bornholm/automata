@@ -340,6 +340,15 @@ func newDelegationTool(agentID, description string, specialist delegation.Specia
 		recentFiles = nil
 	}
 
+	// Un spécialiste qui ne sait travailler que sur des pièces jointes est
+	// refusé quand le tour n'en porte aucune. La question ne lui est même
+	// pas posée : sollicité à vide, un modèle multimodal invente ce qu'il
+	// aurait vu (voir delegation.AttachmentDependent).
+	dependent := false
+	if capable, ok := specialist.(delegation.AttachmentDependent); ok {
+		dependent = capable.RequiresAttachments()
+	}
+
 	// Un spécialiste ne garde aucun état d'une délégation à l'autre : le
 	// re-solliciter dans le même tour le fait repartir de zéro, pour le
 	// même coût. Vu en production, trois délégations d'affilée ont épuisé
@@ -380,6 +389,17 @@ func newDelegationTool(agentID, description string, specialist delegation.Specia
 						constraints = append(constraints, s)
 					}
 				}
+			}
+
+			if dependent && len(attachments) == 0 && len(recentFiles) == 0 {
+				if logger != nil {
+					logger.InfoContext(ctx, "agent: délégation refusée faute de pièce jointe", "agent", agentID)
+				}
+
+				return llm.NewToolResult(fmt.Sprintf(
+					"erreur: le spécialiste %q ne peut travailler que sur une image ou un document, et ce tour n'en porte aucun. "+
+						"Ne décris rien que tu n'aies pas vu : demande à la personne d'envoyer le fichier, ou réponds à sa question sans lui.",
+					agentID)), nil
 			}
 
 			if delegations.Add(1) > maxSameAgentDelegations {

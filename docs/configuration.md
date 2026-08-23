@@ -564,6 +564,7 @@ Détaillé dans [agents.md](agents.md). Résumé des champs :
 | `scheduled_tasks` | Expose les outils de tâches planifiées (l'agent travaille à l'échéance). Orchestrateur seulement |
 | `mcp_servers` | Serveurs MCP autorisés. Spécialiste seulement |
 | `image_generation.client` | Donne l'outil `generate_image` (entrée d'`image_clients`). Spécialiste seulement |
+| `requires_attachments` | Ce spécialiste est inutile sans pièce jointe : l'orchestrateur ne le sollicite pas quand le tour n'en porte aucune. Spécialiste seulement. Voir ci-dessous |
 | `capabilities` | Permissions applicatives de l'agent |
 | `limits` | Plafonds d'exécution, tous obligatoires |
 
@@ -585,6 +586,35 @@ Internet en temps réel ») plutôt qu'appeler un outil dont il ignore la
 portée — le spécialiste est là, opérationnel, et n'est jamais sollicité.
 Formulez-la à la troisième personne, en complétant « le spécialiste `x`, qui
 … ». Sans effet sur un orchestrateur, qui n'est le délégué de personne.
+
+### requires_attachments
+
+Un spécialiste qui ne sait travailler que sur une image ou un document — le
+lecteur d'images, un transcripteur — n'a rien à répondre quand le tour n'en
+porte aucun. Le déclarer ici fait refuser la délégation **avant** de
+l'exécuter : l'orchestrateur reçoit un résultat d'outil qui le lui dit, et
+aucun appel au modèle n'est facturé.
+
+```yaml
+agents:
+  vision:
+    type: specialist
+    client: vision
+    requires_attachments: true
+```
+
+Ce refus n'est pas une précaution de confort. Sollicité sans image, un
+modèle multimodal ne constate pas qu'il ne voit rien : il complète la
+description la plus plausible. En production le 2026-08-23, un « Mon
+profil » ambigu a déclenché une délégation à vide, et la vision a décrit un
+petit-déjeuner entièrement inventé, que l'orchestrateur a relayé de bonne
+foi. Le prompt du spécialiste porte la même consigne en ceinture, mais
+elle demande au modèle qui invente de constater lui-même son invention :
+c'est au code de ne pas poser une question dont il sait qu'elle est sans
+matière.
+
+L'orchestrateur ne connaît aucun spécialiste par son nom — il interroge une
+capacité déclarée, comme pour les fichiers de l'historique.
 
 ### image_generation
 

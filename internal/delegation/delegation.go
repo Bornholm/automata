@@ -83,6 +83,26 @@ type FileCapable interface {
 	SupportsFiles() bool
 }
 
+// AttachmentDependent est implémentée par les spécialistes qui n'ont rien
+// à faire sans pièce jointe : un lecteur d'images sans image, un
+// transcripteur sans document. L'orchestrateur s'en sert pour refuser la
+// délégation AVANT de l'exécuter — il interroge une capacité déclarée, il
+// ne connaît aucun spécialiste par son nom.
+//
+// Sans ce refus, un tel spécialiste reçoit un objectif en texte seul et
+// n'a rien pour y répondre : un modèle multimodal sollicité sans image
+// complète alors la description la plus plausible au lieu de constater
+// qu'il ne voit rien. Vu en production le 2026-08-23 — « Mon profil » a
+// déclenché une délégation vers la vision, qui a décrit un petit-déjeuner
+// entièrement inventé, relayé de bonne foi par l'orchestrateur. Aucun
+// prompt ne corrige cela de façon fiable : c'est au code de ne pas poser
+// une question dont il sait qu'elle n'a pas de matière.
+type AttachmentDependent interface {
+	// RequiresAttachments indique que le spécialiste est inutile sans
+	// pièce jointe à examiner.
+	RequiresAttachments() bool
+}
+
 // ProposedAction décrit une action que le spécialiste propose mais n'exécute
 // pas lui-même (PLAN.md §6.4). Depuis la Phase 15, elle porte tout ce qui
 // est nécessaire pour qu'internal/action.Engine puisse persister un

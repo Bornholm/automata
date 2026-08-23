@@ -651,10 +651,18 @@ type Agent struct {
 	// L'exécution est en lecture seule stricte : les actions sensibles
 	// proposées pendant un tour planifié sont ignorées, jamais exécutées
 	// sans humain devant l'écran.
-	ScheduledTasks bool        `yaml:"scheduled_tasks"`
-	MCPServers     []string    `yaml:"mcp_servers"`
-	Capabilities   []string    `yaml:"capabilities"`
-	Limits         AgentLimits `yaml:"limits"`
+	ScheduledTasks bool `yaml:"scheduled_tasks"`
+	// RequiresAttachments déclare un spécialiste inutile sans pièce jointe
+	// (un lecteur d'images, un transcripteur de documents). L'orchestrateur
+	// refuse alors de le solliciter quand le tour n'en porte aucune, au
+	// lieu de le laisser répondre à vide — un modèle multimodal sans image
+	// invente ce qu'il aurait vu.
+	//
+	// Sans effet sur un orchestrateur, qui n'est le délégué de personne.
+	RequiresAttachments bool        `yaml:"requires_attachments"`
+	MCPServers          []string    `yaml:"mcp_servers"`
+	Capabilities        []string    `yaml:"capabilities"`
+	Limits              AgentLimits `yaml:"limits"`
 }
 
 // ImageGeneration relie un agent à un client de génération d'images.

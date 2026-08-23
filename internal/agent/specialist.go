@@ -18,12 +18,28 @@ import (
 type AgentSpecialist struct {
 	agentID string
 	agent   Agent
+	// requiresAttachments : ce spécialiste n'a rien à examiner sans pièce
+	// jointe, et l'orchestrateur doit refuser la délégation plutôt que de
+	// le faire répondre à vide (voir delegation.AttachmentDependent).
+	requiresAttachments bool
 }
 
 // NewAgentSpecialist construit un AgentSpecialist ciblant agentID, en
 // déléguant l'exécution à a.
 func NewAgentSpecialist(agentID string, a Agent) *AgentSpecialist {
 	return &AgentSpecialist{agentID: agentID, agent: a}
+}
+
+// WithRequiredAttachments déclare que ce spécialiste est inutile sans
+// pièce jointe (agents.<nom>.requires_attachments).
+func (s *AgentSpecialist) WithRequiredAttachments(required bool) *AgentSpecialist {
+	s.requiresAttachments = required
+	return s
+}
+
+// RequiresAttachments implémente delegation.AttachmentDependent.
+func (s *AgentSpecialist) RequiresAttachments() bool {
+	return s.requiresAttachments
 }
 
 // Execute implémente delegation.Specialist. Le contexte transmis au

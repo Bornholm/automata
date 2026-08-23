@@ -325,6 +325,10 @@ func validateAgents(cfg *Config) []error {
 			}
 		}
 
+		if agent.RequiresAttachments && agent.Type != AgentTypeSpecialist {
+			errs = append(errs, fmt.Errorf("%s.requires_attachments: réservé aux agents specialist (l'orchestrateur reçoit les pièces jointes, il ne les réclame pas)", prefix))
+		}
+
 		for _, server := range agent.MCPServers {
 			if _, ok := cfg.MCPServers[server]; !ok {
 				errs = append(errs, fmt.Errorf("%s.mcp_servers: serveur mcp inconnu %q", prefix, server))

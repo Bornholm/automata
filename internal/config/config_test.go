@@ -650,6 +650,47 @@ func TestLoad_InvalidAgentLimitNegative(t *testing.T) {
 	}
 }
 
+// requires_attachments décrit un délégué qu'on peut choisir de ne pas
+// solliciter. L'orchestrateur, lui, reçoit les pièces jointes du tour sans
+// les réclamer : le drapeau n'y a aucun sens et doit être rejeté plutôt
+// qu'ignoré en silence.
+func TestLoad_RequiresAttachmentsRejectedOnOrchestrator(t *testing.T) {
+	setBaseEnv(t)
+
+	content := strings.Replace(baseYAML,
+		"    type: orchestrator\n    client: main",
+		"    type: orchestrator\n    requires_attachments: true\n    client: main", 1)
+	path := writeYAML(t, content)
+
+	_, err := config.Load(path)
+	if err == nil {
+		t.Fatal("Load: erreur attendue pour requires_attachments sur un orchestrateur")
+	}
+
+	if !strings.Contains(err.Error(), "requires_attachments") {
+		t.Errorf("erreur = %v, attendu mention de requires_attachments", err)
+	}
+}
+
+// Sur un spécialiste, en revanche, il est légitime.
+func TestLoad_RequiresAttachmentsAcceptedOnSpecialist(t *testing.T) {
+	setBaseEnv(t)
+
+	content := strings.Replace(baseYAML,
+		"  agenda:\n    type: specialist",
+		"  agenda:\n    type: specialist\n    requires_attachments: true", 1)
+	path := writeYAML(t, content)
+
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatalf("Load: erreur inattendue: %v", err)
+	}
+
+	if !cfg.Agents["agenda"].RequiresAttachments {
+		t.Error("requires_attachments n'a pas été chargé")
+	}
+}
+
 func TestLoad_CoalesceWindowTooLarge(t *testing.T) {
 	setBaseEnv(t)
 

@@ -226,6 +226,10 @@ agents:
     client: vision
     system_prompt:
       file: {{ .PromptsDir }}/vision.md
+    # Sans image, ce spécialiste n'a rien à examiner : l'orchestrateur ne le
+    # sollicite pas. Sollicité à vide, un modèle multimodal décrit une image
+    # qui n'existe pas au lieu de constater qu'il ne voit rien.
+    requires_attachments: true
     limits:
       max_sequential_tool_calls: 1
       max_actions_per_turn: 1
