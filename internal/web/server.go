@@ -207,8 +207,6 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /admin/skills/{name}/restore", admin(s.handleSkillRestore))
 
 	mux.HandleFunc("GET /admin/plugins", admin(s.handlePlugins))
-	mux.HandleFunc("GET /admin/orgs/{id}/plugins/{name}/ui/{path...}", admin(s.handleAdminPluginUI))
-	mux.HandleFunc("POST /admin/orgs/{id}/plugins/{name}/ui/{path...}", admin(s.handleAdminPluginUI))
 	mux.HandleFunc("POST /admin/plugins/{name}/restart", admin(s.handlePluginRestart))
 	mux.HandleFunc("POST /admin/orgs/{id}/plugins", admin(s.handleOrgPlugins))
 	mux.HandleFunc("GET /admin/instance", admin(s.handleInstance))
@@ -216,9 +214,13 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("GET /admin/usage.csv", admin(s.handleUsageCSV))
 
 	mux.HandleFunc("GET /plugins/{name}/oauth/callback", s.handlePluginOAuthCallback)
+	// Interfaces des plugins : une seule porte pour l'opérateur et pour
+	// les membres, authentifiée par le jeton du chemin — une iframe
+	// sandbouclée ne transporte aucun cookie.
+	mux.HandleFunc("GET /plugin-ui/{token}/{path...}", s.handlePluginUI)
+	mux.HandleFunc("POST /plugin-ui/{token}/{path...}", s.handlePluginUI)
+
 	mux.HandleFunc("GET /p/{link}/plugins/{name}", s.handleProfilePluginPage)
-	mux.HandleFunc("GET /p/{link}/plugins/{name}/ui/{path...}", s.handleProfilePluginUI)
-	mux.HandleFunc("POST /p/{link}/plugins/{name}/ui/{path...}", s.handleProfilePluginUI)
 	mux.HandleFunc("GET /p/{link}", s.handleProfile)
 	mux.HandleFunc("GET /p/{link}/credits", s.handleProfileCredits)
 	mux.HandleFunc("POST /p/{link}/email", s.handleProfileEmail)

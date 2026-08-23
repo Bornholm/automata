@@ -1537,7 +1537,14 @@ Ce que l'hôte garantit, quel que soit le plugin :
 - l'interface d'un plugin est servie par un port local fermé (jeton connu
   du seul reverse proxy) et rendue dans une iframe *sandbox* sans
   `allow-same-origin` : le document du plugin n'accède ni aux cookies ni au
-  DOM de l'application ;
+  DOM de l'application. Cette origine opaque a une conséquence à connaître :
+  le navigateur traite le cadre comme tiers et ne lui transmet aucun cookie.
+  Les requêtes de l'iframe sont donc authentifiées par un **jeton signé
+  porté par le chemin** (`/plugin-ui/<jeton>/…`), émis au rendu de la page
+  pour une vue, une organisation, un membre et un plugin précis, et valable
+  une heure. Un jeton ne décide de rien : l'activation du plugin et
+  l'existence de l'organisation sont revérifiées à chaque requête, si bien
+  qu'une désactivation coupe l'interface immédiatement ;
 - les rafales de déclencheurs sont bornées (`triggers.*`) — abandon compté,
   jamais de file illimitée.
 

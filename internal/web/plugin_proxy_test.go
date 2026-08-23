@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -69,13 +70,16 @@ func TestPluginProxy_InjectsContractAndStripsCookies(t *testing.T) {
 	backendURL, _ := url.Parse(backend.URL)
 	port := portOf(t, backendURL)
 
-	server, ts, client := testServer(t)
+	server, ts, _ := testServer(t)
 	server.pluginManager = &fakePluginManager{port: port, token: "jeton-ui-secret"}
-	linkPath := seedPluginProfile(t, server)
+	seedPluginProfile(t, server)
 
-	// Ouvre la session de profil puis l'interface du plugin.
-	openProfileLink(t, ts, client, linkPath).Body.Close()
-	resp, err := client.Get(ts.URL + linkPath + "/plugins/echo/ui/settings")
+	uiPath := pluginUIPrefix + server.pluginUIToken(pluginViewMember, "org-a", "cam", "echo", server.now())
+
+	// SANS cookie, délibérément : une iframe sandbouclée n'en transporte
+	// aucun. C'est la régression du 2026-08-23 — le proxy rendait alors
+	// « ce lien a déjà servi » à l'intérieur du cadre.
+	resp, err := (&http.Client{}).Get(ts.URL + uiPath + "/settings")
 	if err != nil {
 		t.Fatalf("GET interface: %v", err)
 	}
@@ -92,7 +96,7 @@ func TestPluginProxy_InjectsContractAndStripsCookies(t *testing.T) {
 		"X-Automata-Member-Id":        "cam",
 		"X-Automata-View":             "member",
 		"X-Automata-Ui-Token":         "jeton-ui-secret",
-		"X-Automata-Plugin-Base-Path": linkPath + "/plugins/echo/ui/",
+		"X-Automata-Plugin-Base-Path": uiPath + "/",
 	} {
 		if got.Get(header) != want {
 			t.Errorf("%s = %q, attendu %q", header, got.Get(header), want)
@@ -122,11 +126,13 @@ func TestPluginProxy_HiddenWhenInactive(t *testing.T) {
 
 	seedOrg(t, server, persistence.Organization{ID: "org-b", DisplayName: "Org B"}, 0)
 	seedMember(t, server, persistence.Member{ID: "zoe", OrgID: "org-b", DisplayName: "Zoé", Role: "member"})
-	linkPath := createProfileLink(t, server, "zoe", 15*time.Minute)
 
-	openProfileLink(t, ts, client, linkPath).Body.Close()
+	// Le jeton est valide : c'est l'activation, revérifiée à chaque
+	// requête, qui doit refuser. Un plugin désactivé après l'émission
+	// devient injoignable sur-le-champ.
+	uiPath := pluginUIPrefix + server.pluginUIToken(pluginViewMember, "org-b", "zoe", "echo", server.now())
 
-	resp, err := client.Get(ts.URL + linkPath + "/plugins/echo/ui/")
+	resp, err := client.Get(ts.URL + uiPath + "/")
 	if err != nil {
 		t.Fatalf("GET interface: %v", err)
 	}
@@ -181,9 +187,9 @@ var _ = io.Discard
 // chemins d'UI de plugin, et rien d'autre.
 func TestIsPluginUIPath(t *testing.T) {
 	exempt := []string{
-		"/admin/orgs/org-a/plugins/email/ui/",
-		"/admin/orgs/org-a/plugins/email/ui/save",
-		"/admin/orgs/org-a/plugins/email/ui/oauth/callback",
+		"/plugin-ui/jeton/",
+		"/plugin-ui/jeton/save",
+		"/plugin-ui/jeton/oauth/callback",
 	}
 	for _, path := range exempt {
 		if !isPluginUIPath(path) {
@@ -197,7 +203,10 @@ func TestIsPluginUIPath(t *testing.T) {
 		"/admin/plugins/email/restart",
 		"/admin/orgs",
 		"/admin/pricing/settings",
-		"/admin/orgs/org-a/plugins/email/ui/../../../grant",
+		"/plugin-ui/jeton/../../admin/grant",
+		// Un jeton sans rien derrière ne désigne aucune interface.
+		"/plugin-ui/jeton",
+		"/plugin-ui//save",
 	}
 	for _, path := range protected {
 		if isPluginUIPath(path) {
@@ -222,5 +231,75 @@ func TestIsLoopbackAddr(t *testing.T) {
 		if isLoopbackAddr(addr) {
 			t.Errorf("%q ne doit pas être prise pour une boucle locale", addr)
 		}
+	}
+}
+
+// Un jeton d'interface ne vaut que pour ce qu'il désigne. Sans ces refus,
+// il suffirait d'un jeton quelconque pour atteindre n'importe quelle
+// interface de n'importe quelle organisation.
+func TestPluginUIToken_ScopeIsEnforced(t *testing.T) {
+	backendHit := false
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendHit = true
+	}))
+	defer backend.Close()
+	backendURL, _ := url.Parse(backend.URL)
+
+	server, ts, _ := testServer(t)
+	server.pluginManager = &fakePluginManager{port: portOf(t, backendURL), token: "t"}
+	seedPluginProfile(t, server)
+
+	now := server.now()
+	valid := server.pluginUIToken(pluginViewMember, "org-a", "cam", "echo", now)
+
+	cases := map[string]string{
+		// Émis pour un autre plugin : le nom voyage DANS le jeton, il ne
+		// peut pas être changé en chemin.
+		"autre plugin": server.pluginUIToken(pluginViewMember, "org-a", "cam", "autre", now),
+		// Émis il y a plus longtemps que sa durée de vie.
+		"périmé": server.pluginUIToken(pluginViewMember, "org-a", "cam", "echo", now.Add(-pluginUITokenTTL-time.Minute)),
+		// Signature invalide : un octet modifié suffit.
+		"falsifié": valid[:len(valid)-3] + "AAA",
+		// Pas un jeton du tout.
+		"informe": "n-importe-quoi",
+	}
+
+	for name, token := range cases {
+		resp, err := (&http.Client{}).Get(ts.URL + pluginUIPrefix + token + "/")
+		if err != nil {
+			t.Fatalf("%s: GET: %v", name, err)
+		}
+		resp.Body.Close()
+
+		if resp.StatusCode != http.StatusNotFound {
+			t.Errorf("jeton %s servi en %d, attendu 404", name, resp.StatusCode)
+		}
+	}
+
+	if backendHit {
+		t.Error("le port du plugin a été contacté avec un jeton hors de sa portée")
+	}
+}
+
+// Un jeton de profil ne devient pas un accès d'opérateur, et
+// réciproquement : la vue est scellée dans le jeton.
+func TestPluginUIToken_ViewIsSealed(t *testing.T) {
+	server, _, _ := testServer(t)
+	now := server.now()
+
+	token := server.pluginUIToken(pluginViewMember, "org-a", "cam", "echo", now)
+	view, orgID, memberID, name, ok := server.parsePluginUIToken(token, now)
+	if !ok {
+		t.Fatal("un jeton fraîchement émis doit être accepté")
+	}
+	if view != pluginViewMember || orgID != "org-a" || memberID != "cam" || name != "echo" {
+		t.Errorf("jeton mal relu: %q %q %q %q", view, orgID, memberID, name)
+	}
+
+	// Un cookie de session signé par la même clé n'est pas un jeton
+	// d'interface : le « kind » les sépare.
+	session := server.signer.sign(sessionPayload("profile", "cam/lien", now.Add(time.Hour)))
+	if _, _, _, _, ok := server.parsePluginUIToken(base64.RawURLEncoding.EncodeToString([]byte(session)), now); ok {
+		t.Error("un cookie de session a été accepté comme jeton d'interface")
 	}
 }

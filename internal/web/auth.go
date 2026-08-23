@@ -24,6 +24,13 @@ const (
 	adminCookieName   = "automata_admin"
 	profileCookieName = "automata_profile"
 	csrfCookieName    = "automata_csrf"
+
+	// pluginUITokenTTL borne la vie d'un jeton d'interface de plugin. Une
+	// heure suffit à consulter un écran ; passé ce délai, recharger la
+	// page en produit un neuf. Le jeton voyage dans un CHEMIN d'URL, et
+	// une URL se retrouve dans les journaux du reverse proxy : sa durée
+	// se compte en minutes, jamais en heures de session opérateur.
+	pluginUITokenTTL = time.Hour
 )
 
 // signer signe et vérifie les valeurs de cookies : payload |
@@ -153,6 +160,61 @@ func HashPassword(password string) (string, error) {
 		return "", fmt.Errorf("web: hachage du mot de passe: %w", err)
 	}
 	return string(hash), nil
+}
+
+// Jeton d'interface de plugin : ce qui authentifie les requêtes d'une
+// iframe de plugin, à la place du cookie.
+//
+// L'iframe est sandboxée SANS allow-same-origin — le document du plugin
+// obtient une origine opaque, et n'accède donc ni au DOM ni aux cookies de
+// l'application. Le revers : le navigateur traite ce contexte comme tiers
+// et n'envoie AUCUN cookie SameSite=Lax avec ses requêtes. Le proxy ne
+// pouvait donc pas reconnaître la personne, et rendait l'écran « ce lien a
+// déjà servi » à l'intérieur du cadre (constaté en production le
+// 2026-08-23).
+//
+// Le jeton porte l'identité que le cookie ne peut plus porter : la vue
+// (opérateur ou membre), l'organisation, le membre et le PLUGIN visé — un
+// jeton ne vaut que pour l'interface pour laquelle il a été émis. Il vit
+// dans le chemin et non en paramètre de requête, pour la même raison que
+// l'organisation avant lui : une navigation relative du document du
+// plugin — un lien, un formulaire — reste sous le préfixe et conserve son
+// contexte, là où un « ?token= » se perdrait au premier POST.
+//
+// Émettre ce jeton ne décide de rien : l'activation du plugin et
+// l'existence de l'organisation restent vérifiées à CHAQUE requête
+// proxifiée. Un plugin désactivé entre-temps devient injoignable, jeton
+// valide ou non.
+func (s *Server) pluginUIToken(view, orgID, memberID, name string, now time.Time) string {
+	subject := view + "/" + orgID + "/" + memberID + "/" + name
+	payload := sessionPayload("plugin-ui", subject, now.Add(pluginUITokenTTL))
+	return base64.RawURLEncoding.EncodeToString([]byte(s.signer.sign(payload)))
+}
+
+// parsePluginUIToken vérifie un jeton et rend ce qu'il porte.
+func (s *Server) parsePluginUIToken(token string, now time.Time) (view, orgID, memberID, name string, ok bool) {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", "", "", "", false
+	}
+
+	subject, _, valid := s.signer.parseSession(string(raw), "plugin-ui", now)
+	if !valid {
+		return "", "", "", "", false
+	}
+
+	parts := strings.SplitN(subject, "/", 4)
+	if len(parts) != 4 {
+		return "", "", "", "", false
+	}
+	if parts[0] != pluginViewAdmin && parts[0] != pluginViewMember {
+		return "", "", "", "", false
+	}
+	if parts[3] == "" {
+		return "", "", "", "", false
+	}
+
+	return parts[0], parts[1], parts[2], parts[3], true
 }
 
 // setSessionCookie pose un cookie de session signé. Secure est laissé au

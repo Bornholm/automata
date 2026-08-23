@@ -239,7 +239,7 @@ func (s *Server) profilePluginUIs(w http.ResponseWriter, r *http.Request, member
 		return nil, false
 	}
 
-	linkID := r.PathValue("link")
+	now := s.now()
 	uis := make([]view.ProfilePluginUI, 0, len(enabled))
 	for _, name := range enabled {
 		if _, _, hasUI := endpoint.UIEndpoint(name); !hasUI {
@@ -248,7 +248,9 @@ func (s *Server) profilePluginUIs(w http.ResponseWriter, r *http.Request, member
 		uis = append(uis, view.ProfilePluginUI{
 			Name:  name,
 			Title: upperFirst(name),
-			Src:   "/p/" + linkID + "/plugins/" + name + "/ui/",
+			// L'iframe s'authentifie par ce jeton : sandbouclée, elle ne
+			// transporte pas le cookie de profil.
+			Src: pluginUIPrefix + s.pluginUIToken(pluginViewMember, member.OrgID, member.ID, name, now) + "/",
 		})
 	}
 	return uis, true

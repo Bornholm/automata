@@ -22,19 +22,34 @@ import (
 // jeton. La protection vient de la session (admin ou lien de profil), du
 // jeton d'UI et de la sandbox.
 
+// Vues d'une interface de plugin : l'opérateur depuis l'administration, un
+// membre depuis son profil. Elles ne diffèrent que par ce que le proxy
+// vérifie avant de relayer, et par les en-têtes d'identité transmis.
+const (
+	pluginViewAdmin  = "admin"
+	pluginViewMember = "member"
+	// pluginViewPublic ne dessert que le retour OAuth : aucune identité,
+	// aucun jeton, un seul chemin atteignable.
+	pluginViewPublic = "public"
+
+	// pluginUIPrefix préfixe toutes les interfaces de plugins, quelle que
+	// soit la vue : un seul chemin à reconnaître pour l'exemption CSRF, un
+	// seul endroit où l'authentification par jeton s'applique.
+	pluginUIPrefix = "/plugin-ui/"
+)
+
 // isPluginUIPath reconnaît les chemins servis par le reverse proxy des
 // interfaces de plugins, seuls exemptés du contrôle CSRF de
 // l'application (voir le commentaire de tête).
 func isPluginUIPath(path string) bool {
-	if !strings.HasPrefix(path, "/admin/orgs/") {
+	if !strings.HasPrefix(path, pluginUIPrefix) {
 		return false
 	}
-	_, rest, found := strings.Cut(strings.TrimPrefix(path, "/admin/orgs/"), "/plugins/")
-	if !found {
-		return false
-	}
-	_, uiPath, found := strings.Cut(rest, "/ui/")
-	return found && !strings.Contains(uiPath, "..")
+
+	// Un jeton seul ne suffit pas : le chemin doit désigner quelque chose
+	// dans l'interface du plugin, et jamais remonter hors du préfixe.
+	token, uiPath, found := strings.Cut(strings.TrimPrefix(path, pluginUIPrefix), "/")
+	return found && token != "" && !strings.Contains(uiPath, "..")
 }
 
 // PluginUIEndpoint est la part du gestionnaire de plugins dont le proxy a
@@ -44,57 +59,56 @@ type PluginUIEndpoint interface {
 	UIEndpoint(name string) (port uint32, token string, ok bool)
 }
 
-// handleAdminPluginUI proxifie l'interface d'un plugin pour l'opérateur.
-// L'organisation vit dans le CHEMIN, pas en paramètre de requête : une
-// navigation relative du document du plugin (formulaire, lien) reste sous
-// le préfixe et conserve donc son contexte — un ?org= se perdrait au
-// premier POST.
-func (s *Server) handleAdminPluginUI(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("name")
-	orgID := r.PathValue("id")
+// handlePluginUI proxifie l'interface d'un plugin, pour l'opérateur comme
+// pour un membre. L'identité vient du jeton du chemin (voir
+// Server.pluginUIToken) : les cookies n'atteignent pas une iframe
+// sandbouclée. Le jeton dit QUI et QUOI ; les droits, eux, sont revérifiés
+// ici à chaque requête — un plugin désactivé ou une organisation disparue
+// rendent l'interface injoignable, jeton valide ou non.
+func (s *Server) handlePluginUI(w http.ResponseWriter, r *http.Request) {
+	token := r.PathValue("token")
 
-	exists := false
-	if ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		_, found, err := s.orgs.FindByID(r.Context(), tx, orgID)
-		exists = found
-		return err
-	}); !ok {
-		return
-	}
-	if !exists {
-		http.NotFound(w, r)
-		return
-	}
-
-	s.proxyPluginUI(w, r, name, orgID, "", "admin", "/admin/orgs/"+orgID+"/plugins/"+name+"/ui")
-}
-
-// handleProfilePluginUI proxifie l'interface d'un plugin pour un membre,
-// derrière la session de profil. Le plugin doit être ACTIF pour
-// l'organisation du membre : sinon la page n'existe pas.
-func (s *Server) handleProfilePluginUI(w http.ResponseWriter, r *http.Request) {
-	member, _, ok := s.resolveProfile(w, r)
+	view, orgID, memberID, name, ok := s.parsePluginUIToken(token, s.now())
 	if !ok {
-		return
-	}
-
-	name := r.PathValue("name")
-
-	enabled := false
-	if ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		var err error
-		enabled, err = s.pluginActivations.IsEnabled(r.Context(), tx, name, member.OrgID)
-		return err
-	}); !ok {
-		return
-	}
-	if !enabled {
 		http.NotFound(w, r)
 		return
 	}
 
-	base := "/p/" + r.PathValue("link") + "/plugins/" + name + "/ui"
-	s.proxyPluginUI(w, r, name, member.OrgID, member.ID, "member", base)
+	switch view {
+	case pluginViewAdmin:
+		exists := false
+		if ok := s.withTx(w, r, func(tx *sql.Tx) error {
+			_, found, err := s.orgs.FindByID(r.Context(), tx, orgID)
+			exists = found
+			return err
+		}); !ok {
+			return
+		}
+		if !exists {
+			http.NotFound(w, r)
+			return
+		}
+
+	case pluginViewMember:
+		enabled := false
+		if ok := s.withTx(w, r, func(tx *sql.Tx) error {
+			var err error
+			enabled, err = s.pluginActivations.IsEnabled(r.Context(), tx, name, orgID)
+			return err
+		}); !ok {
+			return
+		}
+		if !enabled {
+			http.NotFound(w, r)
+			return
+		}
+
+	default:
+		http.NotFound(w, r)
+		return
+	}
+
+	s.proxyPluginUI(w, r, name, orgID, memberID, view, pluginUIPrefix+token)
 }
 
 // handlePluginOAuthCallback relaie le retour d'un fournisseur OAuth vers
@@ -105,7 +119,7 @@ func (s *Server) handleProfilePluginUI(w http.ResponseWriter, r *http.Request) {
 // flux repose sur le paramètre state, généré et vérifié par le plugin.
 func (s *Server) handlePluginOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	s.proxyPluginUI(w, r, name, "", "", "public", "/plugins/"+name+"/oauth")
+	s.proxyPluginUI(w, r, name, "", "", pluginViewPublic, "/plugins/"+name+"/oauth")
 }
 
 // proxyPluginUI relaie la requête vers le serveur HTTP embarqué du plugin.
@@ -130,7 +144,7 @@ func (s *Server) proxyPluginUI(w http.ResponseWriter, r *http.Request, name, org
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
 	uiPath := "/" + r.PathValue("path")
-	if view == "public" {
+	if view == pluginViewPublic {
 		// La route publique ne dessert que le retour OAuth, rien d'autre.
 		uiPath = "/oauth/callback"
 	}

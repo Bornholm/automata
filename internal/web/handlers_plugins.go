@@ -187,7 +187,9 @@ func (s *Server) pluginActivationRows(r *http.Request, tx *sql.Tx, orgID string)
 		}
 		if endpoint != nil {
 			if _, _, hasUI := endpoint.UIEndpoint(st.Name); hasUI {
-				row.UISrc = "/admin/orgs/" + orgID + "/plugins/" + st.Name + "/ui/"
+				// Même raison que côté profil : l'iframe est sandbouclée,
+				// aucun cookie ne l'accompagne, le jeton porte l'identité.
+				row.UISrc = pluginUIPrefix + s.pluginUIToken(pluginViewAdmin, orgID, "", st.Name, s.now()) + "/"
 			}
 		}
 		rows = append(rows, row)
