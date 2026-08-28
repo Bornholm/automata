@@ -205,6 +205,15 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		persistedContent = text
 	}
 
+	// Un lien partagé (carte de prévisualisation) n'apporte aucun fichier :
+	// sans annotation, l'agent le confond avec un envoi de média et lance un
+	// traitement voué à ne rien trouver. Persisté avec le message, pour que
+	// l'historique garde la distinction dans les tours suivants.
+	if notice := media.LinkSharesNotice(courier.LinkPreviews(msg), len(attachments) > 0); notice != "" {
+		text = strings.TrimSpace(text + notice)
+		persistedContent = text
+	}
+
 	// Compaction éventuelle AVANT le chargement de l'historique, pour que le
 	// résumé mis à jour serve immédiatement. Jamais bloquant : un échec (LLM
 	// de résumé indisponible, etc.) est journalisé et le tour continue avec
