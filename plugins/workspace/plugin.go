@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -214,17 +215,32 @@ func (p *Plugin) runCommand(ctx context.Context, in *proto.CallToolInput) (*prot
 // bac à sable réseau (policy « fetch », clé distincte). L'URL est validée
 // ici contre la liste blanche de l'exploitant AVANT d'atteindre LeaSH.
 func (p *Plugin) downloadVideo(ctx context.Context, in *proto.CallToolInput) (*proto.CallToolOutput, error) {
+	// Le schéma nomme le paramètre « url », mais un modèle en invente
+	// volontiers une variante (video_url, link…) et l'outil paraît alors
+	// cassé alors qu'il n'a rien reçu. On accepte les synonymes plutôt que
+	// de renvoyer une erreur que le modèle interprète comme une panne.
 	var args struct {
-		URL  string `json:"url"`
-		Name string `json:"name"`
+		URL      string `json:"url"`
+		VideoURL string `json:"video_url"`
+		Link     string `json:"link"`
+		Name     string `json:"name"`
+		Output   string `json:"output"`
 	}
 	if in.ArgumentsJson != "" {
 		if err := json.Unmarshal([]byte(in.ArgumentsJson), &args); err != nil {
-			return errorOutput("invalid parameters"), nil
+			return errorOutput("invalid parameters: pass {\"url\": \"https://...\"}"), nil
 		}
 	}
 
-	target, err := validateDownloadURL(args.URL, downloadDomains())
+	rawURL := cmp.Or(args.URL, args.VideoURL, args.Link)
+	if rawURL == "" {
+		return errorOutput("the 'url' parameter is required: pass {\"url\": \"https://...\"}"), nil
+	}
+	if args.Name == "" {
+		args.Name = args.Output
+	}
+
+	target, err := validateDownloadURL(rawURL, downloadDomains())
 	if err != nil {
 		// Journaliser le REFUS, pas l'URL (contenu utilisateur) : sans
 		// cette trace, un téléchargement refusé est indiscernable d'un

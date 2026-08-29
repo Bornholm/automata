@@ -3,10 +3,12 @@ package plugin
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"time"
 	"unicode/utf8"
 
@@ -150,11 +152,24 @@ func (m *Manager) CallTool(ctx context.Context, pluginName, toolName string, cal
 	})
 	duration := time.Since(started)
 
-	// Identifiants et compteurs seulement : jamais les arguments ni le
-	// résultat, qui peuvent porter des contenus privés.
-	slog.InfoContext(ctx, "plugin: appel d'outil",
-		"plugin", pluginName, "tool", toolName,
-		"duration", duration.String(), "error", err != nil)
+	// Identifiants et compteurs seulement : jamais les valeurs des
+	// arguments ni le résultat, qui peuvent porter des contenus privés.
+	//
+	// is_error distingue l'échec MÉTIER de l'échec de transport : sans
+	// lui, un outil qui refuse poliment est indiscernable d'un outil qui
+	// réussit, et l'exploitant ne voit rien. Les NOMS des arguments
+	// accompagnent un échec : ils viennent du schéma, pas de
+	// l'utilisateur, et c'est ce qui révèle un modèle qui se trompe de
+	// paramètre — cause déjà observée d'un outil « en panne ».
+	logCtx := []any{"plugin", pluginName, "tool", toolName,
+		"duration", duration.String(), "error", err != nil}
+	if err == nil {
+		logCtx = append(logCtx, "is_error", out.IsError)
+		if out.IsError {
+			logCtx = append(logCtx, "argument_keys", argumentKeys(argsJSON))
+		}
+	}
+	slog.InfoContext(ctx, "plugin: appel d'outil", logCtx...)
 
 	if err != nil {
 		return "", false, fmt.Errorf("appel de %s.%s: %w", pluginName, toolName, err)
@@ -166,6 +181,23 @@ func (m *Manager) CallTool(ctx context.Context, pluginName, toolName string, cal
 	}
 
 	return text, out.IsError, nil
+}
+
+// argumentKeys extrait les NOMS des arguments d'un appel, triés. Jamais
+// les valeurs : les noms viennent du schéma de l'outil, les valeurs de
+// l'utilisateur.
+func argumentKeys(argsJSON string) []string {
+	var args map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return []string{"<illisible>"}
+	}
+
+	keys := make([]string, 0, len(args))
+	for key := range args {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // toolTimeout applique le timeout demandé par le plugin, borné par
