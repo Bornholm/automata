@@ -164,11 +164,17 @@ func TestProfileIframe_IsSandboxed(t *testing.T) {
 	}
 	html := sb.String()
 
-	if !strings.Contains(html, `sandbox="allow-forms allow-scripts"`) {
+	// allow-downloads (2026-08-29) : un téléchargement exige un geste de
+	// l'utilisateur, et le contenu vient d'UI de plugins proxifiées et
+	// authentifiées — c'est ce qui permet l'archive zip du plugin pages.
+	if !strings.Contains(html, `sandbox="allow-forms allow-scripts allow-downloads"`) {
 		t.Error("iframe sans sandbox, ou sandbox affaiblie")
 	}
 	if strings.Contains(html, "allow-same-origin") {
 		t.Error("allow-same-origin donnerait au plugin l'accès aux cookies de l'application")
+	}
+	if strings.Contains(html, "allow-popups") {
+		t.Error("allow-popups laisserait une UI de plugin ouvrir des fenêtres hors sandbox")
 	}
 }
 

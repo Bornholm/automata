@@ -429,6 +429,11 @@ templ ProfileCredits(page CreditsPage) {
 // document du plugin n'accède ni aux cookies ni au DOM de la page). Elle
 // occupe la hauteur disponible parce qu'elle est désormais seule sur la
 // page — cousue sous le profil, elle était réduite à une lucarne.
+// allow-downloads : un téléchargement exige un geste de l'utilisateur et
+// le contenu vient d'UI de plugins déjà proxifiées et authentifiées —
+// c'est ce qui permet au plugin pages de servir l'archive d'un espace.
+// allow-popups reste refusé : pas de target="_blank" dans une UI de
+// plugin.
 type ProfilePluginPage struct {
 	LinkID  string
 	Header  ProfileHeader
@@ -442,7 +447,7 @@ templ ProfilePlugin(page ProfilePluginPage) {
 		@profileNav(page.LinkID, "plugin:"+page.Current.Name, page.PluginUIs)
 		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">{ page.Current.Title }</h1>
 		<div class="mt-5 overflow-hidden rounded-[11px] border border-line-2 bg-white">
-			<iframe src={ page.Current.Src } title={ page.Current.Title } sandbox="allow-forms allow-scripts" class="block h-[560px] w-full border-0"></iframe>
+			<iframe src={ page.Current.Src } title={ page.Current.Title } sandbox="allow-forms allow-scripts allow-downloads" class="block h-[560px] w-full border-0"></iframe>
 		</div>
 	}
 }

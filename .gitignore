@@ -28,3 +28,4 @@
 /bin
 # Binaires de plugins compilés localement (make build-plugins les range dans local/plugins/)
 plugins/email/email
+plugins/pages/pages

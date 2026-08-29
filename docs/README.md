@@ -19,6 +19,7 @@ seul sur des expressions cron.
 | [plugins-email.md](plugins-email.md) | Plugin de boîte mail : connexion Gmail, courriels entrants |
 | [plugins-caldav.md](plugins-caldav.md) | Plugin d'agenda : rappels rangés dans un agenda CalDAV |
 | [plugins-workspace.md](plugins-workspace.md) | Plugin d'atelier de fichiers : retouche vidéo et image en bac à sable |
+| [plugins-pages.md](plugins-pages.md) | Plugin de pages web : brouillons par membre, publication confirmée sous lien public court |
 | [skills.md](skills.md) | Bibliothèque de compétences : modes opératoires chargés à la demande par les agents |
 | [security-model.md](security-model.md) | Modèle de menace, frontières de confiance, limitations assumées |
 | [integration-inventory.md](integration-inventory.md) | API réelles de go-courier, genai et Amoxtli, et leurs manques |
