@@ -34,6 +34,12 @@ import (
 // nécessaire").
 const defaultHistoryLimit = 20
 
+// compactionBudget borne la compaction et ses annexes (épisode, faits) :
+// deux à trois appels LLM, observés sous 30 s en fonctionnement normal. Le
+// tour entier n'a que cinq minutes — la compaction n'a pas le droit de les
+// manger.
+const compactionBudget = 90 * time.Second
+
 const contentKindText = "text"
 
 // persistedVoiceNotePlaceholder est le contenu neutre persisté en base pour
@@ -218,8 +224,17 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 	// résumé mis à jour serve immédiatement. Jamais bloquant : un échec (LLM
 	// de résumé indisponible, etc.) est journalisé et le tour continue avec
 	// le résumé précédent — au pire, l'historique déborde comme avant.
+	//
+	// Budget de temps PROPRE : la compaction et ses annexes (épisode,
+	// extraction de faits) font des appels LLM avec le contexte du tour, et
+	// un fournisseur qui pend n'est pas une erreur — sans cette borne, une
+	// extraction restée muette a déjà consommé les cinq minutes du tour
+	// entier, avant même l'enregistrement du message entrant.
 	if h.compactor != nil {
-		if err := h.compactor.CompactIfNeeded(ctx, identity, conv); err != nil {
+		compactCtx, cancel := context.WithTimeout(ctx, compactionBudget)
+		err := h.compactor.CompactIfNeeded(compactCtx, identity, conv)
+		cancel()
+		if err != nil {
 			h.logger.WarnContext(ctx, "conversation: compaction de l'historique en échec, tour poursuivi sans",
 				"conversation_id", conv.ID, "error", err)
 		}

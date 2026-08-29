@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bornholm/genai/llm"
 	"github.com/bornholm/go-courier"
 
 	"github.com/bornholm/automata/internal/agent"
@@ -77,6 +78,58 @@ func testMessage(from, content string) courier.Message {
 		courier.NewUser(courier.UserID(from), from),
 		courier.WithMessageMainPart(content),
 	)
+}
+
+// deadlineRecordingClient note si l'appel LLM reçoit une échéance.
+type deadlineRecordingClient struct {
+	called      bool
+	hadDeadline bool
+	deadline    time.Time
+}
+
+func (c *deadlineRecordingClient) ChatCompletion(ctx context.Context, _ ...llm.ChatCompletionOptionFunc) (llm.ChatCompletionResponse, error) {
+	c.called = true
+	c.deadline, c.hadDeadline = ctx.Deadline()
+	return llm.NewChatCompletionResponse(llm.NewMessage(llm.RoleAssistant, "résumé"), llm.NewChatCompletionUsage(1, 1, 2)), nil
+}
+
+// La compaction reçoit un budget de temps PROPRE : ses appels LLM (résumé,
+// épisode, extraction de faits) partent sinon avec le contexte du tour, et
+// un fournisseur resté muet a déjà consommé les cinq minutes du tour entier
+// — avant même l'enregistrement du message entrant (incident du
+// 2026-08-29). Le client doit donc voir une échéance même quand le contexte
+// du tour n'en porte aucune.
+func TestHandler_CompactionHasItsOwnDeadline(t *testing.T) {
+	db := openTestDB(t)
+
+	client := &deadlineRecordingClient{}
+	compactor := conversation.NewCompactor(db, client, 1, 0, nil, nil)
+
+	a := &recordingAgent{}
+	h := conversation.NewHandler(db, a, nil, 1, audio.Config{}, nil, false, nil).WithCompactor(compactor)
+
+	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
+	conv := testConversation(model.ConversationID("conv-a"), "chan-a")
+	ctx := context.Background()
+
+	// Premier tour : deux messages persistés (user + assistant) — le seuil
+	// de compaction (historyLimit × 2) est atteint pour le tour suivant.
+	if _, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "premier message")); err != nil {
+		t.Fatalf("Handle (1): %v", err)
+	}
+	if _, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "second message")); err != nil {
+		t.Fatalf("Handle (2): %v", err)
+	}
+
+	if !client.called {
+		t.Fatal("la compaction n'a pas eu lieu : le test ne prouve rien")
+	}
+	if !client.hadDeadline {
+		t.Fatal("l'appel LLM de compaction doit porter une échéance propre")
+	}
+	if remaining := time.Until(client.deadline); remaining > 2*time.Minute {
+		t.Errorf("échéance trop lointaine (%s) : le budget du tour reste exposé", remaining)
+	}
 }
 
 func TestHandler_HistoryIsolatedPerConversation(t *testing.T) {
