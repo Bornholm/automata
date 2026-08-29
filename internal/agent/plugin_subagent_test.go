@@ -149,6 +149,56 @@ func TestPluginSubAgent_WriteToolProposesInsteadOfExecuting(t *testing.T) {
 	}
 }
 
+// Le protocole de confirmation est dicté par l'HÔTE, pas par le prompt du
+// plugin : sans cette consigne, un modèle invente sa propre phrase
+// (« réponds "oui, supprime" ») et affirme ensuite une suppression qui
+// n'a jamais eu lieu — vu en production le 2026-08-29.
+func TestPluginSubAgent_HostDictatesTheConfirmationProtocol(t *testing.T) {
+	caller := &fakePluginCaller{result: "ok"}
+
+	var systemPrompt string
+	client := &fakeCompletionClient{
+		responseFunc: func(_ int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			for _, m := range opts.Messages {
+				if m.Role() == llm.RoleSystem {
+					systemPrompt = m.Content()
+				}
+			}
+			return scriptedFinalResponse("Fini."), nil
+		},
+	}
+
+	// testPluginSpec expose email_send, non read_only.
+	subAgent := agent.NewPluginSubAgent(testPluginSpec(), client, caller, 0, nil)
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID: "email", Goal: "Say hello", Identity: pluginTestIdentity(),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	for _, fragment := range []string{"CONFIRMATION PROTOCOL", "confirmer", "NEVER invent your own confirmation phrase"} {
+		if !strings.Contains(systemPrompt, fragment) {
+			t.Errorf("le prompt système doit porter %q", fragment)
+		}
+	}
+
+	// Un plugin sans outil d'écriture n'est pas encombré de la consigne.
+	readOnlySpec := testPluginSpec()
+	readOnlySpec.Tools = []agent.PluginToolSpec{
+		{Name: "email_read", Description: "Read an email.", SchemaJSON: `{"type":"object"}`, ReadOnly: true},
+	}
+	systemPrompt = ""
+	readOnlyAgent := agent.NewPluginSubAgent(readOnlySpec, client, caller, 0, nil)
+	if _, err := readOnlyAgent.Execute(context.Background(), delegation.Request{
+		AgentID: "email", Goal: "Read", Identity: pluginTestIdentity(),
+	}); err != nil {
+		t.Fatalf("Execute (read-only): %v", err)
+	}
+	if strings.Contains(systemPrompt, "CONFIRMATION PROTOCOL") {
+		t.Error("un plugin en lecture seule n'a pas besoin du protocole de confirmation")
+	}
+}
+
 // Une réponse vide en PLEIN travail relance la boucle au lieu de la
 // conclure : la conclusion interdit les outils, donc conclure trop tôt
 // abandonne le travail en cours — vu en production, un sous-agent muet au

@@ -138,6 +138,8 @@ const pagesSystemPrompt = "You are a web page builder. You create and edit small
 	"6. After meaningful changes, call preview_space and give the user the private preview link so they can check the draft " +
 	"on their phone before publishing. The preview needs no confirmation; it is temporary and for their eyes only.\n" +
 	"7. After publish_space is confirmed, give the user the public URL exactly as returned.\n\n" +
+	"To delete a space or take it offline, CALL delete_space or unpublish_space — describing the deletion in text deletes nothing, " +
+	"and the host handles the confirmation. Never claim a space was deleted, published or taken offline: say it awaits the user's confirmation.\n\n" +
 	"Keep pages self-contained (relative links only), accessible and mobile-first. " +
 	"If the user asks for something impossible here (forms with a backend, logins, payments), say so plainly and offer the static alternative."
 

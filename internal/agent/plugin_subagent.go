@@ -209,11 +209,21 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 		}
 	}
 
+	// Le protocole de confirmation est dicté par l'HÔTE, jamais laissé au
+	// prompt d'un plugin : un plugin peut l'oublier, et un modèle qui ne
+	// le lit nulle part invente le sien. Vu en production : le sous-agent
+	// a répondu « réponds "oui, supprime" et c'est exécuté » sans jamais
+	// appeler delete_space, puis a affirmé la suppression faite.
+	basePrompt := a.spec.SystemPrompt
+	if a.hasWriteTools() {
+		basePrompt += "\n\n" + confirmationProtocolPrompt
+	}
+
 	// Le catalogue et load_skill se montent INCONDITIONNELLEMENT dès que
 	// la bibliothèque a quelque chose pour ce plugin — contrairement aux
 	// outils fichiers ci-dessus, qui dépendent de ce que l'hôte sait
 	// servir. Charger une compétence ne coûte ni appel LLM ni réseau.
-	systemPrompt, tools := appendSkills(ctx, a.skills, agentName, a.spec.SystemPrompt, tools)
+	systemPrompt, tools := appendSkills(ctx, a.skills, agentName, basePrompt, tools)
 
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
@@ -501,6 +511,30 @@ func (a *PluginSubAgent) newAttachFileTool(req delegation.Request, collector *me
 		},
 	).WithReadOnlyHint(true)
 }
+
+// hasWriteTools indique si le plugin expose au moins un outil soumis à
+// confirmation.
+func (a *PluginSubAgent) hasWriteTools() bool {
+	for _, spec := range a.spec.Tools {
+		if !spec.ReadOnly {
+			return true
+		}
+	}
+	return false
+}
+
+// confirmationProtocolPrompt part vers le modèle : anglais uniquement.
+// Cette consigne est ajoutée par l'HÔTE au prompt de tout plugin exposant
+// des outils d'écriture — aucun plugin ne peut la retirer.
+const confirmationProtocolPrompt = "CONFIRMATION PROTOCOL — this is enforced by the host and you cannot change it:\n" +
+	"- To make ANY change, you must CALL the corresponding tool. Describing a change in text does nothing at all.\n" +
+	"- Tools that modify or delete something are never executed during your turn: calling one records a proposal, " +
+	"and the host itself asks the user to reply \"confirmer\". That message is sent by the host, not by you.\n" +
+	"- NEVER invent your own confirmation phrase (\"reply yes\", \"say delete\", \"answer OK\"): such an answer executes NOTHING, " +
+	"and the user is left believing something happened. Only the host's \"confirmer\" executes a recorded proposal.\n" +
+	"- NEVER state or imply that a change has been made, deleted, published or saved. You cannot know that: " +
+	"execution happens after your turn, once the user confirms. Say what you have PROPOSED and that it awaits their confirmation.\n" +
+	"- If the user asks for a destructive change, call the tool anyway: the confirmation step is the host's job, not a reason to hesitate."
 
 // visionSystemPrompt part vers le modèle : anglais uniquement. Il vise la
 // réponse dont l'agent a besoin — des coordonnées exploitables par une
