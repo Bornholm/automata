@@ -149,6 +149,59 @@ func TestPluginSubAgent_WriteToolProposesInsteadOfExecuting(t *testing.T) {
 	}
 }
 
+// Une réponse vide en PLEIN travail relance la boucle au lieu de la
+// conclure : la conclusion interdit les outils, donc conclure trop tôt
+// abandonne le travail en cours — vu en production, un sous-agent muet au
+// troisième appel rendait un rapport au lieu d'écrire les fichiers, alors
+// que l'appel suivant passait très bien.
+func TestPluginSubAgent_EmptyReplyRetriesWithToolsStillOpen(t *testing.T) {
+	caller := &fakePluginCaller{result: "ok"}
+
+	var sawRetryInstruction bool
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			switch turn {
+			case 0:
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "email_read", `{"id":"INBOX:1"}`)), nil
+			case 1:
+				// Le modèle rend une réponse vide en plein milieu.
+				return scriptedFinalResponse(""), nil
+			case 2:
+				for _, m := range opts.Messages {
+					if strings.Contains(m.Content(), "previous reply was empty") {
+						sawRetryInstruction = true
+					}
+				}
+				// La relance permet de REPRENDRE le travail aux outils.
+				return scriptedToolCallResponse(llm.NewToolCall("c2", "email_read", `{"id":"INBOX:2"}`)), nil
+			default:
+				return scriptedFinalResponse("Deux emails lus."), nil
+			}
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(testPluginSpec(), client, caller, 0, nil)
+
+	result, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "email",
+		Goal:     "Read the inbox",
+		Identity: pluginTestIdentity(),
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if result.Summary != "Deux emails lus." {
+		t.Errorf("résumé = %q : la relance doit laisser le tour aboutir", result.Summary)
+	}
+	if len(caller.calls) != 2 {
+		t.Errorf("%d appel(s) d'outil, attendu 2 : les outils doivent rester ouverts après la relance", len(caller.calls))
+	}
+	if !sawRetryInstruction {
+		t.Error("la consigne de relance doit être injectée dans la conversation")
+	}
+}
+
 // Rappeler un outil d'écriture avec les mêmes arguments ne duplique pas
 // l'action dans le plan : observé en production, publish_space proposé
 // trois fois dans le même tour par un modèle qui ne comprenait pas

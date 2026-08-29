@@ -362,6 +362,16 @@ func concludeToolLoop(ctx context.Context, client llm.ChatCompletionClient, mess
 // dessein.
 const deliverWarning = 40 * time.Second
 
+// maxEmptyReplyRetries borne les relances après réponse vide dans un même
+// tour : au-delà, le modèle est vraiment en panne et la conclusion (qui
+// sait désactiver le raisonnement) prend le relais.
+const maxEmptyReplyRetries = 2
+
+// emptyReplyRetryInstruction part vers le modèle : anglais uniquement.
+const emptyReplyRetryInstruction = "Your previous reply was empty. Continue the task now: " +
+	"either call the next tool you need, or give your final answer as plain text. " +
+	"Do not think out loud — reply with the tool call or the answer."
+
 // deliverNowInstruction part vers le modèle : anglais uniquement.
 // Volontairement générique — elle sert tous les agents, pas seulement ceux
 // qui produisent des fichiers.
@@ -412,6 +422,9 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 		usedBytes   int64
 		totalCalls  int
 		warned      bool
+		// emptyRetries compte les relances après réponse vide : voir le
+		// commentaire au point de relance.
+		emptyRetries int
 	)
 
 	for iteration := range maxIterations {
@@ -485,6 +498,23 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 					logger.WarnContext(ctx, "agent: réponse vide du modèle", "agent", agentName,
 						"iterations", iteration+1, "tool_calls", totalCalls,
 						"raw_bytes", len(raw), "cleaned_bytes", len(text))
+				}
+
+				// Relancer AVANT de conclure : la conclusion interdit les
+				// outils, donc le travail en cours s'arrête net — vu en
+				// production, un sous-agent muet au troisième appel rendait
+				// un rapport au lieu d'écrire les fichiers demandés, alors
+				// que le même modèle répondait très bien à l'appel suivant.
+				// La relance garde les outils ouverts ; la conclusion reste
+				// le filet une fois les relances épuisées.
+				if emptyRetries < maxEmptyReplyRetries {
+					emptyRetries++
+					messages = append(messages, llm.NewMessage(llm.RoleUser, emptyReplyRetryInstruction))
+					if logger != nil {
+						logger.InfoContext(ctx, "agent: relance après réponse vide",
+							"agent", agentName, "attempt", emptyRetries, "iterations", iteration+1)
+					}
+					continue
 				}
 
 				return concludeToolLoop(ctx, client, messages, tools, "réponse vide du modèle", ErrEmptyReply,
