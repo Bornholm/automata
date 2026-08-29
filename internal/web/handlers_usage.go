@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
 )
 
@@ -30,7 +31,7 @@ var usageDimensions = []struct{ Value, Label string }{
 
 // usageQuery lit les filtres de la requête : période et dimensions.
 func usageQuery(r *http.Request, now time.Time) (from, to time.Time, dimensions []string) {
-	from, to = monthBounds(now)
+	from, to = core.MonthBounds(now)
 
 	if raw := r.URL.Query().Get("from"); raw != "" {
 		if parsed, err := time.Parse("2006-01-02", raw); err == nil {
@@ -61,12 +62,12 @@ func usageQuery(r *http.Request, now time.Time) (from, to time.Time, dimensions 
 
 // usageRows agrège la consommation et convertit les coûts en crédits.
 func (s *Server) usageRows(r *http.Request, tx *sql.Tx, from, to time.Time, dimensions []string) ([]view.UsageRow, view.UsagePage, error) {
-	aggregates, err := s.usage.AggregateUsage(r.Context(), tx, from, to, dimensions, persistence.UsageFilter{})
+	aggregates, err := s.Usage.AggregateUsage(r.Context(), tx, from, to, dimensions, persistence.UsageFilter{})
 	if err != nil {
 		return nil, view.UsagePage{}, err
 	}
 
-	rate := s.creditRate(r.Context(), tx)
+	rate := s.CreditRate(r.Context(), tx)
 
 	var (
 		rows    []view.UsageRow
@@ -79,7 +80,7 @@ func (s *Server) usageRows(r *http.Request, tx *sql.Tx, from, to time.Time, dime
 			Keys:       agg.Keys,
 			Calls:      agg.Calls,
 			Tokens:     agg.TotalTokens,
-			Credits:    s.usageCredits(agg.CostAmount, rate),
+			Credits:    s.UsageCredits(agg.CostAmount, rate),
 			CostUSD:    fmt.Sprintf("%.4f $", agg.CostAmount),
 			Unreported: agg.Calls - agg.ReportedCalls,
 		}
@@ -98,11 +99,11 @@ func (s *Server) usageRows(r *http.Request, tx *sql.Tx, from, to time.Time, dime
 
 // handleUsage — ADM-06.
 func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
-	from, to, dimensions := usageQuery(r, s.now())
+	from, to, dimensions := usageQuery(r, s.Now())
 
 	page := view.UsagePage{
-		Platforms: s.sidebarPlatforms(),
-		CSRFToken: s.csrfToken(w, r),
+		Platforms: s.SidebarPlatforms(),
+		CSRFToken: s.CSRFToken(w, r),
 		From:      from.Format("2006-01-02"),
 		To:        to.Format("2006-01-02"),
 	}
@@ -122,7 +123,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
 		rows, totals, err := s.usageRows(r, tx, from, to, dimensions)
 		if err != nil {
 			return err
@@ -140,7 +141,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		if len(dimensions) > 0 && dimensions[0] == "org" {
 			for i := range page.Rows {
 				if id := page.Rows[i].Keys[0]; id != "" {
-					page.Rows[i].Keys[0] = s.orgDisplayName(r.Context(), tx, id)
+					page.Rows[i].Keys[0] = s.OrgDisplayName(r.Context(), tx, id)
 				}
 			}
 		}
@@ -157,15 +158,15 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	page.ExportURL = "/admin/usage.csv?" + query.Encode()
 
-	s.render(w, r, http.StatusOK, view.AdminUsage(page))
+	s.Render(w, r, http.StatusOK, view.AdminUsage(page))
 }
 
 // handleUsageCSV exporte l'agrégation courante, filtres compris.
 func (s *Server) handleUsageCSV(w http.ResponseWriter, r *http.Request) {
-	from, to, dimensions := usageQuery(r, s.now())
+	from, to, dimensions := usageQuery(r, s.Now())
 
 	var rows []view.UsageRow
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
 		rows, _, err = s.usageRows(r, tx, from, to, dimensions)
 		return err

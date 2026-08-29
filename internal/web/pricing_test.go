@@ -6,6 +6,7 @@ import (
 	"net/url"
 
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/core"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -69,7 +70,7 @@ func TestTrimFloat_KeepsInputReadable(t *testing.T) {
 // La marge d'une offre doit être calculable avant publication : c'est ce
 // qui distingue un tarif viable d'un tarif qui creuse le résultat.
 func TestPricing_UnitMarginAndRecommendedPrice(t *testing.T) {
-	p := pricing{USDPerCredit: 0.001, EURPerUSD: 0.92, TargetMargin: 60}
+	p := core.Pricing{USDPerCredit: 0.001, EURPerUSD: 0.92, TargetMargin: 60}
 
 	// Un crédit coûte 0,00092 € ; vendu 0,00795 € (4 400 crédits à 35 €),
 	// la marge est d'environ 88 %.
@@ -108,7 +109,7 @@ func TestPricing_UnitMarginAndRecommendedPrice(t *testing.T) {
 // le plus petit prix affichable. La marge est alors meilleure que visée,
 // ce qui est le bon sens du compromis.
 func TestPricing_RecommendedPriceNeverFallsBelowOneEuro(t *testing.T) {
-	p := pricing{USDPerCredit: 0.001, EURPerUSD: 0.92, TargetMargin: 60}
+	p := core.Pricing{USDPerCredit: 0.001, EURPerUSD: 0.92, TargetMargin: 60}
 
 	if got := p.RecommendedPrice(100); got != 1 {
 		t.Errorf("prix conseillé pour 100 crédits = %.2f €, attendu 1 €", got)
@@ -121,7 +122,7 @@ func TestPricing_RecommendedPriceNeverFallsBelowOneEuro(t *testing.T) {
 }
 
 func TestPricing_UnitMarginRejectsMeaninglessOffers(t *testing.T) {
-	p := pricing{USDPerCredit: 0.001, EURPerUSD: 0.92, TargetMargin: 60}
+	p := core.Pricing{USDPerCredit: 0.001, EURPerUSD: 0.92, TargetMargin: 60}
 
 	if _, ok := p.UnitMargin(0, 35); ok {
 		t.Error("une offre sans crédit n'a pas de marge calculable")
@@ -153,9 +154,9 @@ func TestPricingPackCreate_ComputesThePriceWhenLeftEmpty(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 
 	var packs []persistence.CreditPack
-	if err := srv.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	if err := srv.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		var err error
-		packs, err = srv.pricingRepo.ListPacks(context.Background(), tx)
+		packs, err = srv.PricingRepo.ListPacks(context.Background(), tx)
 		return err
 	}); err != nil {
 		t.Fatalf("relecture des offres: %v", err)
@@ -194,9 +195,9 @@ func TestPricingPackCreate_KeepsAnExplicitPrice(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 
 	var packs []persistence.CreditPack
-	if err := srv.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	if err := srv.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		var err error
-		packs, err = srv.pricingRepo.ListPacks(context.Background(), tx)
+		packs, err = srv.PricingRepo.ListPacks(context.Background(), tx)
 		return err
 	}); err != nil {
 		t.Fatalf("relecture des offres: %v", err)

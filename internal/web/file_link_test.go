@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/core"
 )
 
 // seedFileLinkOrg active un plugin pour une organisation et rend un
@@ -21,7 +22,7 @@ func seedFileLinkOrg(t *testing.T, server *Server, files map[string][]byte) {
 	seedMember(t, server, persistence.Member{ID: "cam", OrgID: "org-a", DisplayName: "Camille", Role: "member"})
 
 	now := time.Now().UTC()
-	err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		return persistence.NewPluginActivationRepository().Upsert(context.Background(), tx, persistence.PluginActivation{
 			PluginName: "workspace", OrgID: "org-a", Enabled: true, CreatedAt: now, UpdatedAt: now,
 		})
@@ -30,17 +31,17 @@ func seedFileLinkOrg(t *testing.T, server *Server, files map[string][]byte) {
 		t.Fatalf("activation: %v", err)
 	}
 
-	server.pluginManager = &fakePluginManager{files: files, mimeType: "video/mp4"}
+	server.PluginMgr = &fakePluginManager{files: files, mimeType: "video/mp4"}
 }
 
 // mintLink fabrique un lien pour le serveur de test.
 func mintLink(t *testing.T, server *Server, path string) string {
 	t.Helper()
 
-	url, _, err := FileLinkMinter(server.cfg.Web.SessionSecret, "")(
+	url, _, err := core.FileLinkMinter(server.Cfg.Web.SessionSecret, "")(
 		"workspace", "org-a", "cam", path)
 	if err != nil {
-		t.Fatalf("FileLinkMinter: %v", err)
+		t.Fatalf("core.FileLinkMinter: %v", err)
 	}
 
 	return url
@@ -95,7 +96,7 @@ func TestFileLink_RefusesExpiredToken(t *testing.T) {
 	link := mintLink(t, server, "dino.mp4")
 
 	// L'horloge du serveur avance au-delà de la durée de vie du lien.
-	server.now = func() time.Time { return time.Now().Add(fileLinkTTL + time.Minute) }
+	server.Now = func() time.Time { return time.Now().Add(core.FileLinkTTL + time.Minute) }
 
 	resp, err := http.Get(ts.URL + link)
 	if err != nil {
@@ -117,7 +118,7 @@ func TestFileLink_RefusesWhenPluginDisabled(t *testing.T) {
 	link := mintLink(t, server, "dino.mp4")
 
 	now := time.Now().UTC()
-	err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		return persistence.NewPluginActivationRepository().Upsert(context.Background(), tx, persistence.PluginActivation{
 			PluginName: "workspace", OrgID: "org-a", Enabled: false, CreatedAt: now, UpdatedAt: now,
 		})
@@ -161,10 +162,10 @@ func TestFileLink_RefusesTokenOfAnotherKind(t *testing.T) {
 	seedFileLinkOrg(t, server, map[string][]byte{"dino.mp4": []byte("x")})
 
 	// Un lien d'aperçu de brouillon, signé du même secret.
-	preview, _, err := DraftPreviewMinter(server.cfg.Web.SessionSecret, "")(
+	preview, _, err := core.DraftPreviewMinter(server.Cfg.Web.SessionSecret, "")(
 		"workspace", "org-a", "cam", "dino.mp4")
 	if err != nil {
-		t.Fatalf("DraftPreviewMinter: %v", err)
+		t.Fatalf("core.DraftPreviewMinter: %v", err)
 	}
 	token := strings.Trim(strings.TrimPrefix(preview, "/d/"), "/")
 

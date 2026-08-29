@@ -170,7 +170,7 @@ func TestSkillRestoreBuiltin(t *testing.T) {
 
 	// Le semis est le geste du démarrage (internal/registry) : on le
 	// rejoue ici pour disposer d'une compétence fournie par le projet.
-	if err := skills.Seed(context.Background(), server.db, nil); err != nil {
+	if err := skills.Seed(context.Background(), server.DB, nil); err != nil {
 		t.Fatalf("Seed: %v", err)
 	}
 

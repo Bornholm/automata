@@ -12,18 +12,14 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/a-h/templ"
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
-	"github.com/bornholm/automata/internal/platform"
-	"github.com/bornholm/automata/internal/privacy"
-	"github.com/bornholm/automata/internal/secretbox"
+	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
-	"github.com/bornholm/automata/internal/weblink"
 )
 
 //go:embed assets
@@ -33,139 +29,19 @@ var assetsFS embed.FS
 // serveur, même politique d'arrêt.
 const shutdownTimeout = 5 * time.Second
 
-// MailSender envoie un code de vérification de courriel (PRO-01). Nil =
-// envoi non configuré : la vérification est proposée mais désactivée.
-type MailSender interface {
-	SendVerificationCode(ctx context.Context, email, code string) error
-}
-
-// Server est le serveur web d'administration et de profil.
+// Server assemble le routeur et le serveur HTTP. Tout ce qu'il partage
+// avec les écrans vit dans core.Deps, qu'il embarque : les handlers y
+// accèdent sous les mêmes noms, quel que soit leur paquet.
 type Server struct {
+	*core.Deps
+
 	httpServer *http.Server
-
-	db     *persistence.DB
-	cfg    *config.Config
-	logger *slog.Logger
-	now    func() time.Time
-	signer signer
-	mail   MailSender
-
-	stripe  *stripeClient
-	secrets *secretbox.Box
-	// platformManager, s'il est renseigné, porte l'état réel des comptes
-	// de messagerie et applique leurs changements à chaud (pilier 2).
-	platformManager PlatformManager
-	// validatePlatform vérifie qu'une configuration de compte produit bien
-	// un fournisseur, avant de l'enregistrer : sans ce contrôle, un champ
-	// mal nommé donne un compte qui ne démarrera jamais, et l'erreur
-	// n'apparaît que dans les journaux.
-	validatePlatform func(providerType string, config map[string]any) error
-	// privacy sert l'export et la suppression des données personnelles ;
-	// nil désactive l'écran de confidentialité.
-	privacy PrivacyService
-	// pluginManager, s'il est renseigné, porte l'état des plugins et le
-	// redémarrage manuel.
-	pluginManager PluginManager
-	// purchases, s'il est renseigné, confirme les achats dans la
-	// conversation privée de l'acheteur.
-	purchases PurchaseNotifier
-	limiter   *loginLimiter
-	reveals   *revealStash
-	codes     *codeStore
-
-	orgs              *persistence.OrganizationRepository
-	members           *persistence.MemberRepository
-	linkTokens        *persistence.LinkTokenRepository
-	wallet            *persistence.WalletRepository
-	profileLinks      *persistence.ProfileLinkRepository
-	usage             *persistence.UsageRecordRepository
-	platforms         *persistence.PlatformRepository
-	orgSettings       *persistence.OrgSettingsRepository
-	pluginActivations *persistence.PluginActivationRepository
-	skills            *persistence.SkillRepository
-	pricingRepo       *persistence.PricingRepository
-	modelPrices       *persistence.ModelPriceRepository
-	bindings          *persistence.ChannelBindingRepository
-	pluginObjects     *persistence.PluginObjectRepository
-	pluginSites       *persistence.PluginPublicSiteRepository
-	llmClients        *persistence.LLMClientRepository
-	orgClients        *persistence.OrgAgentClientRepository
-	// llmBox scelle les clés d'API du catalogue de modèles. Nil si le
-	// secret de session est inexploitable : les écrans du catalogue
-	// refusent alors d'écrire plutôt que d'enregistrer une clé en clair.
-	llmBox *secretbox.Box
-}
-
-// PlatformManager est la vue qu'a le serveur web du gestionnaire de
-// comptes de messagerie (internal/platform) : lire l'état, et demander
-// l'application immédiate d'un changement.
-// PrivacyService est la vue qu'a le serveur du service de confidentialité
-// (internal/privacy).
-type PrivacyService interface {
-	Export(ctx context.Context, memberID string) (privacy.Export, error)
-	Delete(ctx context.Context, memberID string) (privacy.DeletionReport, error)
-	DeleteOrganization(ctx context.Context, orgID string) (privacy.OrgDeletionReport, error)
-}
-
-type PlatformManager interface {
-	Statuses() map[string]platform.Status
-	Wake()
 }
 
 // NewServer construit le serveur décrit par cfg.Web. mail peut être nil
 // (aucun provider d'envoi configuré).
-func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *slog.Logger) *Server {
-	if logger == nil {
-		logger = slog.Default()
-	}
-
-	s := &Server{
-		db:      db,
-		cfg:     cfg,
-		logger:  logger,
-		now:     time.Now,
-		signer:  signer{secret: []byte(cfg.Web.SessionSecret)},
-		mail:    mail,
-		limiter: &loginLimiter{},
-		reveals: newRevealStash(),
-		codes:   newCodeStore(),
-
-		orgs:              persistence.NewOrganizationRepository(),
-		members:           persistence.NewMemberRepository(),
-		linkTokens:        persistence.NewLinkTokenRepository(),
-		wallet:            persistence.NewWalletRepository(),
-		profileLinks:      persistence.NewProfileLinkRepository(),
-		usage:             persistence.NewUsageRecordRepository(),
-		platforms:         persistence.NewPlatformRepository(),
-		orgSettings:       persistence.NewOrgSettingsRepository(),
-		pricingRepo:       persistence.NewPricingRepository(),
-		modelPrices:       persistence.NewModelPriceRepository(),
-		bindings:          persistence.NewChannelBindingRepository(),
-		pluginActivations: persistence.NewPluginActivationRepository(),
-		skills:            persistence.NewSkillRepository(),
-		pluginObjects:     persistence.NewPluginObjectRepository(),
-		pluginSites:       persistence.NewPluginPublicSiteRepository(),
-		llmClients:        persistence.NewLLMClientRepository(),
-		orgClients:        persistence.NewOrgAgentClientRepository(),
-	}
-
-	// Même dérivation que celle du catalogue côté registry : les deux
-	// ouvrent les mêmes clés scellées.
-	if box, err := secretbox.NewLLMClients(cfg.Web.SessionSecret); err == nil {
-		s.llmBox = box
-	} else {
-		logger.Warn("web: catalogue de modèles en lecture seule", "error", err)
-	}
-
-	// La clé de chiffrement des secrets dérive du secret de session : la
-	// configuration des comptes de messagerie porte des mots de passe.
-	if box, err := secretbox.New(cfg.Web.SessionSecret); err == nil {
-		s.secrets = box
-	}
-
-	if cfg.Web.Stripe.Enabled() {
-		s.stripe = newStripeClient(cfg.Web.Stripe.SecretKey, cfg.Web.Stripe.EffectiveTaxCode())
-	}
+func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, logger *slog.Logger) *Server {
+	s := &Server{Deps: core.NewDeps(cfg, db, mail, logger)}
 
 	mux := http.NewServeMux()
 
@@ -287,43 +163,36 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 // WithPluginManager branche le gestionnaire de plugins : sans lui,
 // l'écran des plugins affiche une liste vide et l'activation par
 // organisation est masquée.
-func (s *Server) WithPluginManager(manager PluginManager) *Server {
-	s.pluginManager = manager
+func (s *Server) WithPluginManager(manager core.PluginManager) *Server {
+	s.PluginMgr = manager
 	return s
 }
 
 // WithPlatformManager branche le gestionnaire de comptes de messagerie :
 // sans lui, l'écran des plateformes affiche la configuration enregistrée
 // mais aucun état de connexion.
-func (s *Server) WithPlatformManager(manager PlatformManager) *Server {
-	s.platformManager = manager
+func (s *Server) WithPlatformManager(manager core.PlatformManager) *Server {
+	s.PlatformMgr = manager
 	return s
 }
 
 // WithPlatformValidator branche la vérification des configurations de
 // comptes de messagerie.
 func (s *Server) WithPlatformValidator(validate func(providerType string, config map[string]any) error) *Server {
-	s.validatePlatform = validate
+	s.ValidatePlatform = validate
 	return s
-}
-
-// PurchaseNotifier porte la confirmation d'un achat jusqu'à la
-// conversation privée de l'acheteur. Le serveur web ne connaît pas les
-// plateformes de messagerie : l'envoi est implémenté par le registre.
-type PurchaseNotifier interface {
-	NotifyPurchase(ctx context.Context, memberID string, credits, balance int64) error
 }
 
 // WithPurchaseNotifier branche la confirmation conversationnelle des
 // achats : sans lui, un paiement crédite le portefeuille en silence.
-func (s *Server) WithPurchaseNotifier(notifier PurchaseNotifier) *Server {
-	s.purchases = notifier
+func (s *Server) WithPurchaseNotifier(notifier core.PurchaseNotifier) *Server {
+	s.Purchases = notifier
 	return s
 }
 
 // WithPrivacy branche le service de confidentialité (PRO-04).
-func (s *Server) WithPrivacy(service PrivacyService) *Server {
-	s.privacy = service
+func (s *Server) WithPrivacy(service core.PrivacyService) *Server {
+	s.Privacy = service
 	return s
 }
 
@@ -338,7 +207,7 @@ func (s *Server) Run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 
 	go func() {
-		s.logger.InfoContext(ctx, "web: serveur démarré", "addr", s.httpServer.Addr)
+		s.Logger.InfoContext(ctx, "web: serveur démarré", "addr", s.httpServer.Addr)
 
 		// Une écoute en boucle locale dans un conteneur n'est joignable
 		// par personne : ni le proxy de l'hôte, ni la sonde de démarrage,
@@ -346,7 +215,7 @@ func (s *Server) Run(ctx context.Context) error {
 		// Le signaler ici est la seule occasion de relier la cause à
 		// l'effet.
 		if inContainer() && isLoopbackAddr(s.httpServer.Addr) {
-			s.logger.WarnContext(ctx, "web: écoute en boucle locale dans un conteneur, injoignable depuis l'extérieur",
+			s.Logger.WarnContext(ctx, "web: écoute en boucle locale dans un conteneur, injoignable depuis l'extérieur",
 				"addr", s.httpServer.Addr, "attendu", "0.0.0.0:<port>")
 		}
 		if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -374,20 +243,20 @@ func (s *Server) Run(ctx context.Context) error {
 
 // render écrit un composant templ, en journalisant l'échec éventuel (une
 // connexion coupée en cours d'écriture n'est pas une panne).
-func (s *Server) render(w http.ResponseWriter, r *http.Request, status int, component templ.Component) {
+func (s *Server) Render(w http.ResponseWriter, r *http.Request, status int, component templ.Component) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	if err := component.Render(r.Context(), w); err != nil {
-		s.logger.ErrorContext(r.Context(), "web: échec du rendu d'une vue", "path", r.URL.Path, "error", err)
+		s.Logger.ErrorContext(r.Context(), "web: échec du rendu d'une vue", "path", r.URL.Path, "error", err)
 	}
 }
 
 // withTx exécute fn dans une transaction et journalise l'erreur ; retourne
 // false si le handler doit s'interrompre (une réponse 500 a été envoyée).
-func (s *Server) withTx(w http.ResponseWriter, r *http.Request, fn func(tx *sql.Tx) error) bool {
-	err := s.db.WithTx(r.Context(), fn)
+func (s *Server) WithTx(w http.ResponseWriter, r *http.Request, fn func(tx *sql.Tx) error) bool {
+	err := s.DB.WithTx(r.Context(), fn)
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "web: échec d'un accès à la base", "path", r.URL.Path, "error", err)
+		s.Logger.ErrorContext(r.Context(), "web: échec d'un accès à la base", "path", r.URL.Path, "error", err)
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return false
 	}
@@ -397,16 +266,16 @@ func (s *Server) withTx(w http.ResponseWriter, r *http.Request, fn func(tx *sql.
 // sidebarPlatforms liste les comptes de messagerie enregistrés, pour la
 // sidebar : l'état vivant du gestionnaire, jamais le fichier — les comptes
 // se gèrent en ligne.
-func (s *Server) sidebarPlatforms() []view.SidebarPlatform {
-	if s.platformManager == nil {
+func (s *Server) SidebarPlatforms() []view.SidebarPlatform {
+	if s.PlatformMgr == nil {
 		return nil
 	}
 
 	var platforms []view.SidebarPlatform
-	for name, status := range s.platformManager.Statuses() {
+	for name, status := range s.PlatformMgr.Statuses() {
 		platforms = append(platforms, view.SidebarPlatform{
 			Type: status.Type,
-			Name: platformDisplayName(status.Type, name),
+			Name: core.PlatformDisplayName(status.Type, name),
 		})
 	}
 	slices.SortFunc(platforms, func(a, b view.SidebarPlatform) int {
@@ -414,118 +283,6 @@ func (s *Server) sidebarPlatforms() []view.SidebarPlatform {
 	})
 
 	return platforms
-}
-
-// revealStash conserve quelques secondes les secrets à afficher une seule
-// fois (jeton fraîchement généré, lien de profil) entre le POST qui les
-// crée et le GET qui les affiche (schéma POST-redirect-GET : sans ce
-// détour, rafraîchir la page rejouerait la génération). Un secret est
-// consommé à la première lecture ou expire au bout de 2 minutes ; tout
-// reste en mémoire, rien n'est jamais écrit en clair.
-type revealStash struct {
-	mu      sync.Mutex
-	entries map[string]revealEntry
-}
-
-type revealEntry struct {
-	value   revealValue
-	expires time.Time
-}
-
-// revealValue porte les formes d'affichage d'un secret fraîchement créé.
-type revealValue struct {
-	Clear   string
-	Display string
-}
-
-func newRevealStash() *revealStash {
-	return &revealStash{entries: map[string]revealEntry{}}
-}
-
-const revealTTL = 2 * time.Minute
-
-func (s *revealStash) put(value revealValue, now time.Time) (key string, err error) {
-	key, err = weblink.RandomCrockford(16)
-	if err != nil {
-		return "", err
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for k, e := range s.entries {
-		if now.After(e.expires) {
-			delete(s.entries, k)
-		}
-	}
-	s.entries[key] = revealEntry{value: value, expires: now.Add(revealTTL)}
-
-	return key, nil
-}
-
-func (s *revealStash) pop(key string, now time.Time) (revealValue, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	entry, ok := s.entries[key]
-	delete(s.entries, key)
-	if !ok || now.After(entry.expires) {
-		return revealValue{}, false
-	}
-
-	return entry.value, true
-}
-
-// codeStore conserve en mémoire les codes de vérification de courriel en
-// attente (PRO-01) : un par membre, 10 minutes. Un redémarrage du worker
-// les efface — la personne redemande simplement un code.
-type codeStore struct {
-	mu      sync.Mutex
-	entries map[string]codeEntry
-}
-
-type codeEntry struct {
-	email   string
-	code    string
-	expires time.Time
-}
-
-func newCodeStore() *codeStore {
-	return &codeStore{entries: map[string]codeEntry{}}
-}
-
-const codeTTL = 10 * time.Minute
-
-func (s *codeStore) put(memberID, email, code string, now time.Time) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.entries[memberID] = codeEntry{email: email, code: code, expires: now.Add(codeTTL)}
-}
-
-// pending retourne l'adresse en cours de vérification pour le membre.
-func (s *codeStore) pending(memberID string, now time.Time) (email string, ok bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	entry, found := s.entries[memberID]
-	if !found || now.After(entry.expires) {
-		return "", false
-	}
-	return entry.email, true
-}
-
-// verify consomme le code s'il correspond.
-func (s *codeStore) verify(memberID, code string, now time.Time) (email string, ok bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	entry, found := s.entries[memberID]
-	if !found || now.After(entry.expires) || entry.code != code {
-		return "", false
-	}
-	delete(s.entries, memberID)
-
-	return entry.email, true
 }
 
 // isLoopbackAddr indique si l'adresse d'écoute est restreinte à la boucle
@@ -549,3 +306,15 @@ func inContainer() bool {
 	_, err := os.Stat("/.dockerenv")
 	return err == nil
 }
+
+// DraftPreviewMinter et FileLinkMinter sont réexportées depuis core : le
+// registre ne connaît que le paquet web, et le secret de signature reste
+// capturé dans la closure sans traverser internal/plugin.
+var (
+	DraftPreviewMinter = core.DraftPreviewMinter
+	FileLinkMinter     = core.FileLinkMinter
+)
+
+// HashPassword produit l'empreinte bcrypt attendue par web.admin
+// (commande « automata web hash-password »).
+var HashPassword = core.HashPassword

@@ -8,26 +8,27 @@ import (
 	"strings"
 
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
 )
 
 // handlePricing — ADM-08.
 func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
-	now := s.now()
-	from, to := monthBounds(now)
+	now := s.Now()
+	from, to := core.MonthBounds(now)
 
 	page := view.PricingPage{
-		Platforms: s.sidebarPlatforms(),
-		CSRFToken: s.csrfToken(w, r),
+		Platforms: s.SidebarPlatforms(),
+		CSRFToken: s.CSRFToken(w, r),
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		p, err := s.pricing(r.Context(), tx)
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		p, err := s.Pricing(r.Context(), tx)
 		if err != nil {
 			return err
 		}
 
-		m, err := s.computeMargin(r.Context(), tx, p, from, to)
+		m, err := s.ComputeMargin(r.Context(), tx, p, from, to)
 		if err != nil {
 			return err
 		}
@@ -61,7 +62,7 @@ func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
 			page.Margin.Ratio = "aucune recette sur la période"
 		}
 
-		prices, err := s.modelPrices.List(r.Context(), tx)
+		prices, err := s.ModelPrices.List(r.Context(), tx)
 		if err != nil {
 			return err
 		}
@@ -123,7 +124,7 @@ func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
 		page.Flash = "Réglages enregistrés. Ils s'appliquent aux prochains débits et aux pages de crédits."
 	}
 
-	s.render(w, r, http.StatusOK, view.AdminPricing(page))
+	s.Render(w, r, http.StatusOK, view.AdminPricing(page))
 }
 
 // trimFloat rend un nombre sans zéros inutiles, pour un champ de saisie.
@@ -155,32 +156,32 @@ func (s *Server) handlePricingPackCreate(w http.ResponseWriter, r *http.Request)
 		price = parsed
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
 		if rawPrice == "" {
-			p, err := s.pricing(r.Context(), tx)
+			p, err := s.Pricing(r.Context(), tx)
 			if err != nil {
 				return err
 			}
 			price = p.RecommendedPrice(credits)
 		}
 
-		packs, err := s.pricingRepo.ListPacks(r.Context(), tx)
+		packs, err := s.PricingRepo.ListPacks(r.Context(), tx)
 		if err != nil {
 			return err
 		}
 
-		return s.pricingRepo.InsertPack(r.Context(), tx, persistence.CreditPack{
+		return s.PricingRepo.InsertPack(r.Context(), tx, persistence.CreditPack{
 			Credits:   credits,
 			PriceEUR:  price,
 			Position:  len(packs),
-			CreatedAt: s.now(),
+			CreatedAt: s.Now(),
 		})
 	})
 	if !ok {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: offre de crédits ajoutée",
+	s.Logger.InfoContext(r.Context(), "web: offre de crédits ajoutée",
 		"credits", credits, "price_computed", rawPrice == "")
 	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
 }
@@ -193,8 +194,8 @@ func (s *Server) handlePricingPackDelete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		return s.pricingRepo.DeletePack(r.Context(), tx, id)
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		return s.PricingRepo.DeletePack(r.Context(), tx, id)
 	})
 	if !ok {
 		return
@@ -211,11 +212,11 @@ func (s *Server) handlePricingPackFeature(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		if err := s.pricingRepo.ClearFeatured(r.Context(), tx); err != nil {
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		if err := s.PricingRepo.ClearFeatured(r.Context(), tx); err != nil {
 			return err
 		}
-		return s.pricingRepo.SetFeatured(r.Context(), tx, id)
+		return s.PricingRepo.SetFeatured(r.Context(), tx, id)
 	})
 	if !ok {
 		return
@@ -226,9 +227,9 @@ func (s *Server) handlePricingPackFeature(w http.ResponseWriter, r *http.Request
 
 // handlePricingSettings enregistre les réglages de conversion.
 func (s *Server) handlePricingSettings(w http.ResponseWriter, r *http.Request) {
-	now := s.now()
+	now := s.Now()
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
 		for key, raw := range map[string]string{
 			persistence.SettingUSDPerCredit:       r.PostFormValue("usd_per_credit"),
 			persistence.SettingEURPerUSD:          r.PostFormValue("eur_per_usd"),
@@ -247,7 +248,7 @@ func (s *Server) handlePricingSettings(w http.ResponseWriter, r *http.Request) {
 			if _, err := strconv.ParseFloat(value, 64); err != nil {
 				continue
 			}
-			if err := s.pricingRepo.SetSetting(r.Context(), tx, key, value, now); err != nil {
+			if err := s.PricingRepo.SetSetting(r.Context(), tx, key, value, now); err != nil {
 				return err
 			}
 		}
@@ -258,7 +259,7 @@ func (s *Server) handlePricingSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: réglages de tarification enregistrés")
+	s.Logger.InfoContext(r.Context(), "web: réglages de tarification enregistrés")
 	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
 }
 
@@ -273,19 +274,19 @@ func (s *Server) handleModelPriceUpsert(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		return s.modelPrices.Upsert(r.Context(), tx, persistence.ModelPrice{
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		return s.ModelPrices.Upsert(r.Context(), tx, persistence.ModelPrice{
 			Model:            model,
 			InputPerMillion:  input,
 			OutputPerMillion: output,
-			UpdatedAt:        s.now(),
+			UpdatedAt:        s.Now(),
 		})
 	})
 	if !ok {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: tarif de modèle enregistré", "model", model)
+	s.Logger.InfoContext(r.Context(), "web: tarif de modèle enregistré", "model", model)
 	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
 }
 
@@ -297,8 +298,8 @@ func (s *Server) handleModelPriceDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		return s.modelPrices.Delete(r.Context(), tx, model)
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		return s.ModelPrices.Delete(r.Context(), tx, model)
 	})
 	if !ok {
 		return

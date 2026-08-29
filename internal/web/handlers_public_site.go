@@ -67,9 +67,9 @@ func (s *Server) handlePublicSite(w http.ResponseWriter, r *http.Request) {
 		site      persistence.PluginPublicSite
 		siteFound bool
 	)
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		site, siteFound, err = s.pluginSites.FindBySlug(r.Context(), tx, slug)
+		site, siteFound, err = s.PluginSites.FindBySlug(r.Context(), tx, slug)
 		return err
 	})
 	if !ok {
@@ -95,7 +95,7 @@ func (s *Server) handleDraftPreviewRoot(w http.ResponseWriter, r *http.Request) 
 // remise dans son canal privé, jamais listée. Un jeton expiré ou forgé
 // donne un 404 indistinct.
 func (s *Server) handleDraftPreview(w http.ResponseWriter, r *http.Request) {
-	pluginName, orgID, memberID, collection, ok := s.parseDraftPreviewToken(r.PathValue("token"), s.now())
+	pluginName, orgID, memberID, collection, ok := s.ParseDraftPreviewToken(r.PathValue("token"), s.Now())
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -128,11 +128,11 @@ func (s *Server) servePluginObject(w http.ResponseWriter, r *http.Request, plugi
 		object persistence.PluginObject
 		found  bool
 	)
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
 		// Désactiver le plugin pour l'organisation coupe ses pages : la
 		// désactivation est le coupe-circuit de l'opérateur. Le contenu
 		// reste en base, la réactivation ressuscite les liens.
-		enabled, err := s.pluginActivations.IsEnabled(r.Context(), tx, pluginName, orgID)
+		enabled, err := s.PluginActivations.IsEnabled(r.Context(), tx, pluginName, orgID)
 		if err != nil {
 			return err
 		}
@@ -140,7 +140,7 @@ func (s *Server) servePluginObject(w http.ResponseWriter, r *http.Request, plugi
 			return nil
 		}
 
-		object, found, err = s.pluginObjects.Get(r.Context(), tx, pluginName, orgID, memberID, collection, filePath)
+		object, found, err = s.PluginObjects.Get(r.Context(), tx, pluginName, orgID, memberID, collection, filePath)
 		return err
 	})
 	if !ok {

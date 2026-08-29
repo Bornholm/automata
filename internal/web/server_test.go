@@ -16,6 +16,7 @@ import (
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
 	"github.com/bornholm/automata/internal/weblink"
 )
@@ -86,7 +87,7 @@ func csrfFrom(t *testing.T, client *http.Client, base string) string {
 
 	u, _ := url.Parse(base)
 	for _, cookie := range client.Jar.Cookies(u) {
-		if cookie.Name == csrfCookieName {
+		if cookie.Name == core.CSRFCookieName {
 			return cookie.Value
 		}
 	}
@@ -131,16 +132,16 @@ func body(t *testing.T, resp *http.Response) string {
 func seedOrg(t *testing.T, s *Server, org persistence.Organization, credits int64) {
 	t.Helper()
 
-	err := s.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	err := s.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		if org.CreatedAt.IsZero() {
 			org.CreatedAt = time.Now()
 			org.UpdatedAt = org.CreatedAt
 		}
-		if err := s.orgs.Insert(context.Background(), tx, org, false); err != nil {
+		if err := s.Orgs.Insert(context.Background(), tx, org, false); err != nil {
 			return err
 		}
 		if credits != 0 {
-			return s.wallet.Insert(context.Background(), tx, persistence.WalletEntry{
+			return s.Wallet.Insert(context.Background(), tx, persistence.WalletEntry{
 				OrgID: org.ID, Kind: persistence.WalletKindWelcome,
 				Label: "Crédits de bienvenue", Amount: credits, CreatedAt: time.Now(),
 			})
@@ -155,12 +156,12 @@ func seedOrg(t *testing.T, s *Server, org persistence.Organization, credits int6
 func seedMember(t *testing.T, s *Server, member persistence.Member) {
 	t.Helper()
 
-	err := s.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	err := s.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		if member.CreatedAt.IsZero() {
 			member.CreatedAt = time.Now()
 			member.UpdatedAt = member.CreatedAt
 		}
-		return s.members.Insert(context.Background(), tx, member, false)
+		return s.Members.Insert(context.Background(), tx, member, false)
 	})
 	if err != nil {
 		t.Fatalf("seedMember: %v", err)
@@ -299,8 +300,8 @@ func TestMemberToken_RegenerationRevokesPrevious(t *testing.T) {
 	}
 
 	var firstHash string
-	_ = server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
-		token, _, err := server.linkTokens.LatestByMember(context.Background(), tx, "cam")
+	_ = server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
+		token, _, err := server.LinkTokens.LatestByMember(context.Background(), tx, "cam")
 		firstHash = token.TokenHash
 		return err
 	})
@@ -309,9 +310,9 @@ func TestMemberToken_RegenerationRevokesPrevious(t *testing.T) {
 		t.Fatalf("POST jeton 2: %v", err)
 	}
 
-	_ = server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	_ = server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		// L'ancien jeton ne doit plus être consommable.
-		_, found, err := server.linkTokens.FindPendingByHash(context.Background(), tx, firstHash, time.Now())
+		_, found, err := server.LinkTokens.FindPendingByHash(context.Background(), tx, firstHash, time.Now())
 		if err != nil {
 			return err
 		}
@@ -330,8 +331,8 @@ func createProfileLink(t *testing.T, s *Server, memberID string, expiresIn time.
 	if err != nil {
 		t.Fatalf("NewProfileLink: %v", err)
 	}
-	err = s.db.WithTx(context.Background(), func(tx *sql.Tx) error {
-		return s.profileLinks.Insert(context.Background(), tx, persistence.ProfileLink{
+	err = s.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
+		return s.ProfileLinks.Insert(context.Background(), tx, persistence.ProfileLink{
 			ID: id, MemberID: memberID, TokenHash: secretHash,
 			Status:    persistence.ProfileLinkStatusPending,
 			ExpiresAt: time.Now().Add(expiresIn), CreatedAt: time.Now(),
@@ -466,9 +467,9 @@ func TestOrgGrant_AppendsLedgerEntry(t *testing.T) {
 	}
 
 	var balance int64
-	_ = server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	_ = server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		var err error
-		balance, err = server.wallet.Balance(context.Background(), tx, "org-a")
+		balance, err = server.Wallet.Balance(context.Background(), tx, "org-a")
 		return err
 	})
 	if balance != 800 {

@@ -83,7 +83,7 @@ func TestOrgSubtitleCountsBoundChannels(t *testing.T) {
 // elle, canaux et membres compris ; le nom se retape pour confirmer.
 func TestOrgDelete(t *testing.T) {
 	server, ts, client := testServer(t)
-	server.WithPrivacy(privacy.New(server.db, nil, nil))
+	server.WithPrivacy(privacy.New(server.DB, nil, nil))
 	login(t, ts, client)
 
 	if _, err := client.Get(ts.URL + "/admin/orgs/new"); err != nil {
@@ -99,15 +99,15 @@ func TestOrgDelete(t *testing.T) {
 	resp.Body.Close()
 	orgID := path.Base(resp.Request.URL.Path)
 
-	now := server.now()
-	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
-		if err := server.members.Insert(context.Background(), tx, persistence.Member{
+	now := server.Now()
+	if err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
+		if err := server.Members.Insert(context.Background(), tx, persistence.Member{
 			ID: "m-test", OrgID: orgID, DisplayName: "Témoin",
 			Role: persistence.MemberRoleMember, CreatedAt: now, UpdatedAt: now,
 		}, false); err != nil {
 			return err
 		}
-		return server.bindings.Upsert(context.Background(), tx, persistence.ChannelBinding{
+		return server.Bindings.Upsert(context.Background(), tx, persistence.ChannelBinding{
 			Provider: "whatsapp", ChannelID: "120000000000000001@g.us", OrgID: orgID,
 			Kind: "group", Scope: "group", DisplayName: "Canal du doublon", CreatedAt: now,
 		})
@@ -139,8 +139,8 @@ func TestOrgDelete(t *testing.T) {
 		t.Error("l'organisation aurait dû être supprimée")
 	}
 
-	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
-		members, err := server.members.ListByOrg(context.Background(), tx, orgID)
+	if err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
+		members, err := server.Members.ListByOrg(context.Background(), tx, orgID)
 		if err != nil {
 			return err
 		}
@@ -148,7 +148,7 @@ func TestOrgDelete(t *testing.T) {
 			t.Errorf("%d membre(s) survivent à l'organisation", len(members))
 		}
 
-		bound, err := server.bindings.ListByOrg(context.Background(), tx, orgID)
+		bound, err := server.Bindings.ListByOrg(context.Background(), tx, orgID)
 		if err != nil {
 			return err
 		}
@@ -167,9 +167,9 @@ func orgExists(t *testing.T, server *Server, orgID string) bool {
 	t.Helper()
 
 	var found bool
-	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	if err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		var err error
-		_, found, err = server.orgs.FindByID(context.Background(), tx, orgID)
+		_, found, err = server.Orgs.FindByID(context.Background(), tx, orgID)
 		return err
 	}); err != nil {
 		t.Fatalf("lecture de l'organisation: %v", err)
@@ -186,14 +186,14 @@ func TestOrgPageShowsBoundChannels(t *testing.T) {
 	server, ts, client := testServer(t)
 	login(t, ts, client)
 
-	now := server.now()
-	if err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
-		if err := server.orgs.Insert(context.Background(), tx, persistence.Organization{
+	now := server.Now()
+	if err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
+		if err := server.Orgs.Insert(context.Background(), tx, persistence.Organization{
 			ID: "atelier", DisplayName: "atelier", CreatedAt: now, UpdatedAt: now,
 		}, false); err != nil {
 			return err
 		}
-		return server.bindings.Upsert(context.Background(), tx, persistence.ChannelBinding{
+		return server.Bindings.Upsert(context.Background(), tx, persistence.ChannelBinding{
 			Provider: "whatsapp", ChannelID: "120000000000000001@g.us", OrgID: "atelier",
 			Kind: "group", Scope: "group", DisplayName: "atelier IA", CreatedAt: now,
 		})

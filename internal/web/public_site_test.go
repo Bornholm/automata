@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/core"
 )
 
 // seedPublicSite publie une petite page pour org-a/cam sous le slug donné.
@@ -21,7 +22,7 @@ func seedPublicSite(t *testing.T, server *Server, slug string, enabled bool) {
 	seedMember(t, server, persistence.Member{ID: "cam", OrgID: "org-a", DisplayName: "Camille", Role: "member"})
 
 	now := time.Now().UTC()
-	err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		ctx := context.Background()
 		if err := persistence.NewPluginActivationRepository().Upsert(ctx, tx, persistence.PluginActivation{
 			PluginName: "pages", OrgID: "org-a", Enabled: enabled, CreatedAt: now, UpdatedAt: now,
@@ -187,7 +188,7 @@ func seedDraft(t *testing.T, server *Server, enabled bool) {
 	seedMember(t, server, persistence.Member{ID: "cam", OrgID: "org-a", DisplayName: "Camille", Role: "member"})
 
 	now := time.Now().UTC()
-	err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		ctx := context.Background()
 		if err := persistence.NewPluginActivationRepository().Upsert(ctx, tx, persistence.PluginActivation{
 			PluginName: "pages", OrgID: "org-a", Enabled: enabled, CreatedAt: now, UpdatedAt: now,
@@ -213,12 +214,12 @@ func TestDraftPreview_ServesTheDraftBehindASignedToken(t *testing.T) {
 	seedDraft(t, server, true)
 	client := noRedirectClient()
 
-	mint := DraftPreviewMinter(server.cfg.Web.SessionSecret, server.cfg.Web.BaseURL)
+	mint := core.DraftPreviewMinter(server.Cfg.Web.SessionSecret, server.Cfg.Web.BaseURL)
 	url, _, err := mint("pages", "org-a", "cam", "spaces/demo/draft")
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	token := strings.TrimSuffix(strings.TrimPrefix(url, server.cfg.Web.BaseURL+"/d/"), "/")
+	token := strings.TrimSuffix(strings.TrimPrefix(url, server.Cfg.Web.BaseURL+"/d/"), "/")
 
 	// Racine sans slash : redirection, comme la route publique.
 	resp, err := client.Get(ts.URL + "/d/" + token)
@@ -247,9 +248,9 @@ func TestDraftPreview_ServesTheDraftBehindASignedToken(t *testing.T) {
 	}
 
 	// Jeton expiré : 404 indistinct.
-	sig := signer{secret: []byte(server.cfg.Web.SessionSecret)}
-	expired := base64.RawURLEncoding.EncodeToString([]byte(sig.sign(
-		sessionPayload("draft-preview", "pages/org-a/cam/spaces/demo/draft", time.Now().Add(-time.Minute)))))
+	sig := core.NewSigner(server.Cfg.Web.SessionSecret)
+	expired := base64.RawURLEncoding.EncodeToString([]byte(sig.Sign(
+		core.SessionPayload("draft-preview", "pages/org-a/cam/spaces/demo/draft", time.Now().Add(-time.Minute)))))
 	resp, err = client.Get(ts.URL + "/d/" + expired + "/")
 	if err != nil {
 		t.Fatalf("GET expiré: %v", err)
@@ -260,8 +261,8 @@ func TestDraftPreview_ServesTheDraftBehindASignedToken(t *testing.T) {
 	}
 
 	// Jeton forgé (mauvais secret) : 404 aussi.
-	forged := base64.RawURLEncoding.EncodeToString([]byte(signer{secret: []byte("mauvais-secret-de-32-octets-....")}.sign(
-		sessionPayload("draft-preview", "pages/org-a/cam/spaces/demo/draft", time.Now().Add(time.Hour)))))
+	forged := base64.RawURLEncoding.EncodeToString([]byte(core.NewSigner("mauvais-secret-de-32-octets-....").Sign(
+		core.SessionPayload("draft-preview", "pages/org-a/cam/spaces/demo/draft", time.Now().Add(time.Hour)))))
 	resp, err = client.Get(ts.URL + "/d/" + forged + "/")
 	if err != nil {
 		t.Fatalf("GET forgé: %v", err)
@@ -277,12 +278,12 @@ func TestDraftPreview_DisabledPluginIs404(t *testing.T) {
 	server, ts, _ := testServer(t)
 	seedDraft(t, server, false)
 
-	mint := DraftPreviewMinter(server.cfg.Web.SessionSecret, server.cfg.Web.BaseURL)
+	mint := core.DraftPreviewMinter(server.Cfg.Web.SessionSecret, server.Cfg.Web.BaseURL)
 	url, _, err := mint("pages", "org-a", "cam", "spaces/demo/draft")
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	token := strings.TrimSuffix(strings.TrimPrefix(url, server.cfg.Web.BaseURL+"/d/"), "/")
+	token := strings.TrimSuffix(strings.TrimPrefix(url, server.Cfg.Web.BaseURL+"/d/"), "/")
 
 	resp, err := noRedirectClient().Get(ts.URL + "/d/" + token + "/")
 	if err != nil {

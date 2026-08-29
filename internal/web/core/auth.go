@@ -1,4 +1,4 @@
-package web
+package core
 
 import (
 	"crypto/hmac"
@@ -18,36 +18,42 @@ import (
 // courte pour un profil ouvert par lien temporaire (visite de 1 à 3
 // minutes, compteur affiché dans l'en-tête).
 const (
-	adminSessionTTL   = 12 * time.Hour
-	profileSessionTTL = 15 * time.Minute
+	AdminSessionTTL   = 12 * time.Hour
+	ProfileSessionTTL = 15 * time.Minute
 
-	adminCookieName   = "automata_admin"
-	profileCookieName = "automata_profile"
-	csrfCookieName    = "automata_csrf"
+	AdminCookieName   = "automata_admin"
+	ProfileCookieName = "automata_profile"
+	CSRFCookieName    = "automata_csrf"
 
-	// pluginUITokenTTL borne la vie d'un jeton d'interface de plugin. Une
+	// PluginUITokenTTL borne la vie d'un jeton d'interface de plugin. Une
 	// heure suffit à consulter un écran ; passé ce délai, recharger la
 	// page en produit un neuf. Le jeton voyage dans un CHEMIN d'URL, et
 	// une URL se retrouve dans les journaux du reverse proxy : sa durée
 	// se compte en minutes, jamais en heures de session opérateur.
-	pluginUITokenTTL = time.Hour
+	PluginUITokenTTL = time.Hour
 )
 
-// signer signe et vérifie les valeurs de cookies : payload |
+// Signer signe et vérifie les valeurs de cookies : payload |
 // base64url(HMAC-SHA256(secret, payload)). Aucun état serveur : la session
 // tient dans le cookie, l'expiration dans le payload signé.
-type signer struct {
+type Signer struct {
 	secret []byte
 }
 
-func (s signer) sign(payload string) string {
+// NewSigner construit un signeur à partir du secret de session : le secret
+// reste encapsulé, personne ne le relit depuis un autre paquet.
+func NewSigner(secret string) Signer {
+	return Signer{secret: []byte(secret)}
+}
+
+func (s Signer) Sign(payload string) string {
 	mac := hmac.New(sha256.New, s.secret)
 	mac.Write([]byte(payload))
 	return payload + "|" + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
 // verify retourne le payload si la signature est valide.
-func (s signer) verify(value string) (string, bool) {
+func (s Signer) Verify(value string) (string, bool) {
 	i := strings.LastIndexByte(value, '|')
 	if i < 0 {
 		return "", false
@@ -64,17 +70,17 @@ func (s signer) verify(value string) (string, bool) {
 	return payload, true
 }
 
-// sessionPayload compose « <kind>:<subject>:<expiration unix> » (le
+// SessionPayload compose « <kind>:<subject>:<expiration unix> » (le
 // point-virgule est interdit dans une valeur de cookie). kind distingue
 // les sessions admin des sessions de profil : un cookie signé de l'une ne
 // vaut jamais pour l'autre.
-func sessionPayload(kind, subject string, expires time.Time) string {
+func SessionPayload(kind, subject string, expires time.Time) string {
 	return kind + ":" + base64.RawURLEncoding.EncodeToString([]byte(subject)) + ":" + strconv.FormatInt(expires.Unix(), 10)
 }
 
 // parseSession vérifie kind et l'expiration, et retourne le sujet.
-func (s signer) parseSession(value, kind string, now time.Time) (subject string, expires time.Time, ok bool) {
-	payload, valid := s.verify(value)
+func (s Signer) ParseSession(value, kind string, now time.Time) (subject string, expires time.Time, ok bool) {
+	payload, valid := s.Verify(value)
 	if !valid {
 		return "", time.Time{}, false
 	}
@@ -101,11 +107,11 @@ func (s signer) parseSession(value, kind string, now time.Time) (subject string,
 	return string(rawSubject), expires, true
 }
 
-// loginLimiter borne les tentatives de connexion opérateur en mémoire :
+// LoginLimiter borne les tentatives de connexion opérateur en mémoire :
 // 5 échecs par fenêtre de 15 minutes, toutes origines confondues (un seul
 // compte opérateur existe — inutile de distinguer par IP derrière un
 // reverse proxy).
-type loginLimiter struct {
+type LoginLimiter struct {
 	mu       sync.Mutex
 	failures []time.Time
 }
@@ -116,7 +122,7 @@ const (
 )
 
 // remaining retourne le nombre de tentatives restantes à now.
-func (l *loginLimiter) remaining(now time.Time) int {
+func (l *LoginLimiter) Remaining(now time.Time) int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -132,23 +138,23 @@ func (l *loginLimiter) remaining(now time.Time) int {
 }
 
 // recordFailure enregistre un échec et retourne les tentatives restantes.
-func (l *loginLimiter) recordFailure(now time.Time) int {
+func (l *LoginLimiter) RecordFailure(now time.Time) int {
 	l.mu.Lock()
 	l.failures = append(l.failures, now)
 	l.mu.Unlock()
 
-	return l.remaining(now)
+	return l.Remaining(now)
 }
 
 // reset efface les échecs (connexion réussie).
-func (l *loginLimiter) reset() {
+func (l *LoginLimiter) Reset() {
 	l.mu.Lock()
 	l.failures = nil
 	l.mu.Unlock()
 }
 
-// checkPassword compare le mot de passe au hachage bcrypt configuré.
-func checkPassword(hash, password string) bool {
+// CheckPassword compare le mot de passe au hachage bcrypt configuré.
+func CheckPassword(hash, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
@@ -185,17 +191,17 @@ func HashPassword(password string) (string, error) {
 // l'existence de l'organisation restent vérifiées à CHAQUE requête
 // proxifiée. Un plugin désactivé entre-temps devient injoignable, jeton
 // valide ou non.
-func (s *Server) pluginUIToken(view, orgID, memberID, name string, now time.Time) string {
+func (s *Deps) PluginUIToken(view, orgID, memberID, name string, now time.Time) string {
 	subject := view + "/" + orgID + "/" + memberID + "/" + name
-	payload := sessionPayload("plugin-ui", subject, now.Add(pluginUITokenTTL))
-	return base64.RawURLEncoding.EncodeToString([]byte(s.signer.sign(payload)))
+	payload := SessionPayload("plugin-ui", subject, now.Add(PluginUITokenTTL))
+	return base64.RawURLEncoding.EncodeToString([]byte(s.Signer.Sign(payload)))
 }
 
-// draftPreviewTTL borne la vie d'un lien de prévisualisation de brouillon
-// (route /d/). Même raisonnement que pluginUITokenTTL : le jeton voyage
+// DraftPreviewTTL borne la vie d'un lien de prévisualisation de brouillon
+// (route /d/). Même raisonnement que PluginUITokenTTL : le jeton voyage
 // dans un chemin d'URL, donc dans les journaux du reverse proxy — une
 // heure pour regarder son brouillon, puis l'agent en refait un.
-const draftPreviewTTL = time.Hour
+const DraftPreviewTTL = time.Hour
 
 // DraftPreviewMinter retourne la fabrique de liens de prévisualisation,
 // construite sur les seuls secret de session et URL de base : le service
@@ -204,7 +210,7 @@ const draftPreviewTTL = time.Hour
 // plugin/org/membre/collection ; seuls les trois premiers segments sont
 // sans « / », la collection récupère le reste au découpage.
 func DraftPreviewMinter(sessionSecret, baseURL string) func(pluginName, orgID, memberID, collection string) (url string, expiresAt time.Time, err error) {
-	sig := signer{secret: []byte(sessionSecret)}
+	sig := Signer{secret: []byte(sessionSecret)}
 	base := strings.TrimRight(baseURL, "/")
 
 	return func(pluginName, orgID, memberID, collection string) (string, time.Time, error) {
@@ -217,23 +223,23 @@ func DraftPreviewMinter(sessionSecret, baseURL string) func(pluginName, orgID, m
 			return "", time.Time{}, fmt.Errorf("web: collection de prévisualisation vide")
 		}
 
-		expires := time.Now().Add(draftPreviewTTL)
+		expires := time.Now().Add(DraftPreviewTTL)
 		subject := pluginName + "/" + orgID + "/" + memberID + "/" + collection
-		payload := sessionPayload("draft-preview", subject, expires)
-		token := base64.RawURLEncoding.EncodeToString([]byte(sig.sign(payload)))
+		payload := SessionPayload("draft-preview", subject, expires)
+		token := base64.RawURLEncoding.EncodeToString([]byte(sig.Sign(payload)))
 		return base + "/d/" + token + "/", expires, nil
 	}
 }
 
 // parseDraftPreviewToken vérifie un jeton de prévisualisation et rend ce
 // qu'il désigne.
-func (s *Server) parseDraftPreviewToken(token string, now time.Time) (pluginName, orgID, memberID, collection string, ok bool) {
+func (s *Deps) ParseDraftPreviewToken(token string, now time.Time) (pluginName, orgID, memberID, collection string, ok bool) {
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
 		return "", "", "", "", false
 	}
 
-	subject, _, valid := s.signer.parseSession(string(raw), "draft-preview", now)
+	subject, _, valid := s.Signer.ParseSession(string(raw), "draft-preview", now)
 	if !valid {
 		return "", "", "", "", false
 	}
@@ -246,15 +252,15 @@ func (s *Server) parseDraftPreviewToken(token string, now time.Time) (pluginName
 	return parts[0], parts[1], parts[2], parts[3], true
 }
 
-// fileLinkTTL borne la vie d'un lien de téléchargement (route /f/). Vingt-
+// FileLinkTTL borne la vie d'un lien de téléchargement (route /f/). Vingt-
 // quatre heures, alignées sur la durée de vie d'un espace de travail : un
 // lien plus long désignerait un fichier déjà effacé, un lien plus court
 // serait mort au réveil de celui qui l'a reçu la veille au soir.
 //
-// C'est plus large que draftPreviewTTL, et le jeton voyage dans les mêmes
+// C'est plus large que DraftPreviewTTL, et le jeton voyage dans les mêmes
 // journaux de reverse proxy. Le compromis tient à ce qu'il ouvre : UN
 // chemin précis, dans l'espace de travail d'UN membre, et rien d'autre.
-const fileLinkTTL = 24 * time.Hour
+const FileLinkTTL = 24 * time.Hour
 
 // FileLinkMinter retourne la fabrique de liens de téléchargement, sur le
 // modèle de DraftPreviewMinter : une closure qui capture le secret, remise
@@ -265,7 +271,7 @@ const fileLinkTTL = 24 * time.Hour
 // premiers segments sont sans « / », le chemin récupère le reste au
 // découpage — un fichier peut vivre dans un sous-répertoire.
 func FileLinkMinter(sessionSecret, baseURL string) func(pluginName, orgID, memberID, path string) (url string, expiresAt time.Time, err error) {
-	sig := signer{secret: []byte(sessionSecret)}
+	sig := Signer{secret: []byte(sessionSecret)}
 	base := strings.TrimRight(baseURL, "/")
 
 	return func(pluginName, orgID, memberID, path string) (string, time.Time, error) {
@@ -278,10 +284,10 @@ func FileLinkMinter(sessionSecret, baseURL string) func(pluginName, orgID, membe
 			return "", time.Time{}, fmt.Errorf("web: chemin de fichier vide")
 		}
 
-		expires := time.Now().Add(fileLinkTTL)
+		expires := time.Now().Add(FileLinkTTL)
 		subject := pluginName + "/" + orgID + "/" + memberID + "/" + path
-		payload := sessionPayload("file-link", subject, expires)
-		token := base64.RawURLEncoding.EncodeToString([]byte(sig.sign(payload)))
+		payload := SessionPayload("file-link", subject, expires)
+		token := base64.RawURLEncoding.EncodeToString([]byte(sig.Sign(payload)))
 
 		return base + "/f/" + token, expires, nil
 	}
@@ -289,13 +295,13 @@ func FileLinkMinter(sessionSecret, baseURL string) func(pluginName, orgID, membe
 
 // parseFileLinkToken vérifie un jeton de téléchargement et rend ce qu'il
 // désigne.
-func (s *Server) parseFileLinkToken(token string, now time.Time) (pluginName, orgID, memberID, path string, ok bool) {
+func (s *Deps) ParseFileLinkToken(token string, now time.Time) (pluginName, orgID, memberID, path string, ok bool) {
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
 		return "", "", "", "", false
 	}
 
-	subject, _, valid := s.signer.parseSession(string(raw), "file-link", now)
+	subject, _, valid := s.Signer.ParseSession(string(raw), "file-link", now)
 	if !valid {
 		return "", "", "", "", false
 	}
@@ -309,13 +315,13 @@ func (s *Server) parseFileLinkToken(token string, now time.Time) (pluginName, or
 }
 
 // parsePluginUIToken vérifie un jeton et rend ce qu'il porte.
-func (s *Server) parsePluginUIToken(token string, now time.Time) (view, orgID, memberID, name string, ok bool) {
+func (s *Deps) ParsePluginUIToken(token string, now time.Time) (view, orgID, memberID, name string, ok bool) {
 	raw, err := base64.RawURLEncoding.DecodeString(token)
 	if err != nil {
 		return "", "", "", "", false
 	}
 
-	subject, _, valid := s.signer.parseSession(string(raw), "plugin-ui", now)
+	subject, _, valid := s.Signer.ParseSession(string(raw), "plugin-ui", now)
 	if !valid {
 		return "", "", "", "", false
 	}
@@ -324,7 +330,7 @@ func (s *Server) parsePluginUIToken(token string, now time.Time) (view, orgID, m
 	if len(parts) != 4 {
 		return "", "", "", "", false
 	}
-	if parts[0] != pluginViewAdmin && parts[0] != pluginViewMember {
+	if parts[0] != PluginViewAdmin && parts[0] != PluginViewMember {
 		return "", "", "", "", false
 	}
 	if parts[3] == "" {
@@ -334,11 +340,11 @@ func (s *Server) parsePluginUIToken(token string, now time.Time) (view, orgID, m
 	return parts[0], parts[1], parts[2], parts[3], true
 }
 
-// setSessionCookie pose un cookie de session signé. Secure est laissé au
+// SetSessionCookie pose un cookie de session signé. Secure est laissé au
 // soin du reverse proxy TLS (l'adresse d'écoute est locale) ; SameSite
 // Lax couvre les POST de même site tout en laissant l'ouverture des liens
 // de profil depuis la messagerie fonctionner.
-func setSessionCookie(w http.ResponseWriter, name, value string, expires time.Time) {
+func SetSessionCookie(w http.ResponseWriter, name, value string, expires time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    value,
@@ -349,8 +355,8 @@ func setSessionCookie(w http.ResponseWriter, name, value string, expires time.Ti
 	})
 }
 
-// clearSessionCookie efface un cookie de session.
-func clearSessionCookie(w http.ResponseWriter, name string) {
+// ClearSessionCookie efface un cookie de session.
+func ClearSessionCookie(w http.ResponseWriter, name string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    "",

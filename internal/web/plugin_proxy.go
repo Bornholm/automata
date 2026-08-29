@@ -68,7 +68,7 @@ type PluginUIEndpoint interface {
 func (s *Server) handlePluginUI(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
 
-	view, orgID, memberID, name, ok := s.parsePluginUIToken(token, s.now())
+	view, orgID, memberID, name, ok := s.ParsePluginUIToken(token, s.Now())
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -77,8 +77,8 @@ func (s *Server) handlePluginUI(w http.ResponseWriter, r *http.Request) {
 	switch view {
 	case pluginViewAdmin:
 		exists := false
-		if ok := s.withTx(w, r, func(tx *sql.Tx) error {
-			_, found, err := s.orgs.FindByID(r.Context(), tx, orgID)
+		if ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+			_, found, err := s.Orgs.FindByID(r.Context(), tx, orgID)
 			exists = found
 			return err
 		}); !ok {
@@ -91,9 +91,9 @@ func (s *Server) handlePluginUI(w http.ResponseWriter, r *http.Request) {
 
 	case pluginViewMember:
 		enabled := false
-		if ok := s.withTx(w, r, func(tx *sql.Tx) error {
+		if ok := s.WithTx(w, r, func(tx *sql.Tx) error {
 			var err error
-			enabled, err = s.pluginActivations.IsEnabled(r.Context(), tx, name, orgID)
+			enabled, err = s.PluginActivations.IsEnabled(r.Context(), tx, name, orgID)
 			return err
 		}); !ok {
 			return
@@ -124,12 +124,12 @@ func (s *Server) handlePluginOAuthCallback(w http.ResponseWriter, r *http.Reques
 
 // proxyPluginUI relaie la requête vers le serveur HTTP embarqué du plugin.
 func (s *Server) proxyPluginUI(w http.ResponseWriter, r *http.Request, name, orgID, memberID, view, basePath string) {
-	if s.pluginManager == nil {
+	if s.PluginMgr == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	endpoint, ok := s.pluginManager.(PluginUIEndpoint)
+	endpoint, ok := s.PluginMgr.(PluginUIEndpoint)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -163,7 +163,7 @@ func (s *Server) proxyPluginUI(w http.ResponseWriter, r *http.Request, name, org
 		req.Header.Set("X-Automata-UI-Token", token)
 		// L'URL publique de l'instance : le plugin en a besoin pour
 		// composer une URL de redirection OAuth enregistrable.
-		req.Header.Set("X-Automata-Base-Url", strings.TrimSuffix(s.cfg.Web.BaseURL, "/"))
+		req.Header.Set("X-Automata-Base-Url", strings.TrimSuffix(s.Cfg.Web.BaseURL, "/"))
 	}
 
 	proxy.ModifyResponse = func(resp *http.Response) error {
@@ -180,7 +180,7 @@ func (s *Server) proxyPluginUI(w http.ResponseWriter, r *http.Request, name, org
 	}
 
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		s.logger.WarnContext(r.Context(), "web: interface de plugin injoignable", "plugin", name, "error", err)
+		s.Logger.WarnContext(r.Context(), "web: interface de plugin injoignable", "plugin", name, "error", err)
 		http.Error(w, "interface du plugin indisponible", http.StatusBadGateway)
 	}
 

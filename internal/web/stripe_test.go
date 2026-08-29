@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/core"
 )
 
 const testWebhookSecret = "whsec_test_secret"
@@ -37,7 +38,7 @@ const completedPayload = `{"type":"checkout.session.completed","data":{"object":
 func TestVerifyStripeSignature_AcceptsValidEvent(t *testing.T) {
 	now := time.Now()
 
-	event, err := verifyStripeSignature([]byte(completedPayload), signedHeader(completedPayload, now, testWebhookSecret), testWebhookSecret, now)
+	event, err := core.VerifyStripeSignature([]byte(completedPayload), signedHeader(completedPayload, now, testWebhookSecret), testWebhookSecret, now)
 	if err != nil {
 		t.Fatalf("signature valide refusée: %v", err)
 	}
@@ -71,7 +72,7 @@ func TestVerifyStripeSignature_RejectsForgedOrStaleEvents(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := verifyStripeSignature([]byte(tc.payload), tc.header, testWebhookSecret, now); err == nil {
+			if _, err := core.VerifyStripeSignature([]byte(tc.payload), tc.header, testWebhookSecret, now); err == nil {
 				t.Error("événement accepté alors qu'il aurait dû être refusé")
 			}
 		})
@@ -95,10 +96,10 @@ func TestCheckoutSession_SendsTaxCode(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newStripeClient("sk_test", "txcd_10103000")
-	client.baseURL = server.URL
+	client := core.NewStripeClient("sk_test", "txcd_10103000")
+	client.WithBaseURL(server.URL)
 
-	checkoutURL, err := client.checkoutSession(context.Background(), "acme", "cam", 4400, 35, "https://exemple/ok", "https://exemple/ko")
+	checkoutURL, err := client.CheckoutSession(context.Background(), "acme", "cam", 4400, 35, "https://exemple/ok", "https://exemple/ko")
 	if err != nil {
 		t.Fatalf("création de session: %v", err)
 	}
@@ -143,9 +144,9 @@ func TestCheckout_ReturnLinkSurvivesTheOriginalLink(t *testing.T) {
 	defer stripeAPI.Close()
 
 	server, ts, client := testServer(t)
-	server.cfg.Web.BaseURL = ts.URL
-	server.stripe = newStripeClient("sk_test", "txcd_10000000")
-	server.stripe.baseURL = stripeAPI.URL
+	server.Cfg.Web.BaseURL = ts.URL
+	server.Stripe = core.NewStripeClient("sk_test", "txcd_10000000")
+	server.Stripe.WithBaseURL(stripeAPI.URL)
 
 	seedOrg(t, server, persistence.Organization{ID: "org-a", DisplayName: "Org A"}, 3000)
 	seedMember(t, server, persistence.Member{ID: "cam", OrgID: "org-a", DisplayName: "Camille", Role: "member"})
@@ -216,8 +217,8 @@ func (n *notifierEspion) NotifyPurchase(_ context.Context, memberID string, cred
 // seule fois — un événement rejoué ne doit pas la répéter.
 func TestStripeWebhook_ConfirmsPurchaseToBuyer(t *testing.T) {
 	server, ts, _ := testServer(t)
-	server.cfg.Web.Stripe.WebhookSecret = testWebhookSecret
-	server.stripe = newStripeClient("sk_test", "")
+	server.Cfg.Web.Stripe.WebhookSecret = testWebhookSecret
+	server.Stripe = core.NewStripeClient("sk_test", "")
 
 	espion := &notifierEspion{}
 	server.WithPurchaseNotifier(espion)

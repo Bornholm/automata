@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
 )
 
@@ -24,7 +25,7 @@ func (s *Server) handleProfilePrivacy(w http.ResponseWriter, r *http.Request) {
 	page := view.PrivacyPage{
 		LinkID:    r.PathValue("link"),
 		Header:    s.profileHeader(r, member, minutes),
-		CSRFToken: s.csrfToken(w, r),
+		CSRFToken: s.CSRFToken(w, r),
 	}
 
 	plugins, ok := s.profilePluginUIs(w, r, member)
@@ -33,10 +34,10 @@ func (s *Server) handleProfilePrivacy(w http.ResponseWriter, r *http.Request) {
 	}
 	page.PluginUIs = plugins
 
-	if s.privacy != nil {
+	if s.Privacy != nil {
 		// L'inventaire vient de l'export lui-même : ce que la page annonce
 		// est exactement ce que le fichier contient.
-		if export, err := s.privacy.Export(r.Context(), member.ID); err == nil {
+		if export, err := s.Privacy.Export(r.Context(), member.ID); err == nil {
 			page.Items = []view.PrivacyItem{
 				{
 					Title:  "Vos conversations privées",
@@ -67,7 +68,7 @@ func (s *Server) handleProfilePrivacy(w http.ResponseWriter, r *http.Request) {
 		page.Error = "Pour supprimer vos données, écrivez exactement " + deletionConfirmation + "."
 	}
 
-	s.render(w, r, http.StatusOK, view.ProfilePrivacy(page))
+	s.Render(w, r, http.StatusOK, view.ProfilePrivacy(page))
 }
 
 // countLabel accorde un décompte (« 1 souvenir », « 12 souvenirs »).
@@ -84,14 +85,14 @@ func (s *Server) handleProfileExport(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if s.privacy == nil {
+	if s.Privacy == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	export, err := s.privacy.Export(r.Context(), member.ID)
+	export, err := s.Privacy.Export(r.Context(), member.ID)
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "web: export des données impossible", "member_id", member.ID, "error", err)
+		s.Logger.ErrorContext(r.Context(), "web: export des données impossible", "member_id", member.ID, "error", err)
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
@@ -102,10 +103,10 @@ func (s *Server) handleProfileExport(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(export); err != nil {
-		s.logger.ErrorContext(r.Context(), "web: écriture de l'export", "member_id", member.ID, "error", err)
+		s.Logger.ErrorContext(r.Context(), "web: écriture de l'export", "member_id", member.ID, "error", err)
 	}
 
-	s.logger.InfoContext(r.Context(), "web: données exportées", "member_id", member.ID)
+	s.Logger.InfoContext(r.Context(), "web: données exportées", "member_id", member.ID)
 }
 
 // handleProfileDelete efface les données personnelles après confirmation.
@@ -114,11 +115,11 @@ func (s *Server) handleProfileDelete(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !checkCSRF(r) {
+	if !core.CheckCSRF(r) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
 	}
-	if s.privacy == nil {
+	if s.Privacy == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -129,17 +130,17 @@ func (s *Server) handleProfileDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := s.privacy.Delete(r.Context(), member.ID)
+	report, err := s.Privacy.Delete(r.Context(), member.ID)
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "web: suppression des données impossible", "member_id", member.ID, "error", err)
+		s.Logger.ErrorContext(r.Context(), "web: suppression des données impossible", "member_id", member.ID, "error", err)
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: données personnelles supprimées",
+	s.Logger.InfoContext(r.Context(), "web: données personnelles supprimées",
 		"member_id", member.ID, "messages", report.Messages, "memories", report.Memories)
 
-	s.render(w, r, http.StatusOK, view.ProfilePrivacy(view.PrivacyPage{
+	s.Render(w, r, http.StatusOK, view.ProfilePrivacy(view.PrivacyPage{
 		LinkID:  r.PathValue("link"),
 		Header:  s.profileHeader(r, member, minutes),
 		Deleted: true,

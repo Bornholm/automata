@@ -12,6 +12,7 @@ import (
 
 	"github.com/bornholm/automata/internal/llmclients"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
 )
 
@@ -43,18 +44,18 @@ var llmEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
 // handleLLMClients liste le catalogue.
 func (s *Server) handleLLMClients(w http.ResponseWriter, r *http.Request) {
 	page := view.LLMClientsPage{
-		Platforms: s.sidebarPlatforms(),
-		CSRFToken: s.csrfToken(w, r),
+		Platforms: s.SidebarPlatforms(),
+		CSRFToken: s.CSRFToken(w, r),
 	}
 
-	if s.llmBox == nil {
+	if s.LLMBox == nil {
 		page.Error = "Le catalogue est en lecture seule : le secret de session ne permet pas d'ouvrir les clés enregistrées."
 	}
 
 	var rows []persistence.LLMClient
-	if !s.withTx(w, r, func(tx *sql.Tx) error {
+	if !s.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		rows, err = s.llmClients.List(r.Context(), tx, "")
+		rows, err = s.LLMClients.List(r.Context(), tx, "")
 		return err
 	}) {
 		return
@@ -64,9 +65,9 @@ func (s *Server) handleLLMClients(w http.ResponseWriter, r *http.Request) {
 	// sont eux qui disent à quoi sert réellement chaque entrée du
 	// catalogue — le fichier de configuration ne les connaît plus.
 	var instanceDefaults map[string]string
-	if !s.withTx(w, r, func(tx *sql.Tx) error {
+	if !s.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		instanceDefaults, err = s.orgClients.ListByOrg(r.Context(), tx, "")
+		instanceDefaults, err = s.OrgClients.ListByOrg(r.Context(), tx, "")
 		return err
 	}) {
 		return
@@ -81,7 +82,7 @@ func (s *Server) handleLLMClients(w http.ResponseWriter, r *http.Request) {
 
 	// Les rôles de l'instance, éditables sur cette même page : c'est ici
 	// que se décide quel modèle sert chaque agent par défaut.
-	if !s.withTx(w, r, func(tx *sql.Tx) error {
+	if !s.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
 		page.Roles, err = s.modelRoleRows(r.Context(), tx, "")
 		return err
@@ -101,14 +102,14 @@ func (s *Server) handleLLMClients(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	s.render(w, r, http.StatusOK, view.AdminLLMClients(page))
+	s.Render(w, r, http.StatusOK, view.AdminLLMClients(page))
 }
 
 // handleLLMClientNewForm affiche le formulaire de création.
 func (s *Server) handleLLMClientNewForm(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, http.StatusOK, view.AdminLLMClientForm(view.LLMClientFormPage{
-		Platforms: s.sidebarPlatforms(),
-		CSRFToken: s.csrfToken(w, r),
+	s.Render(w, r, http.StatusOK, view.AdminLLMClientForm(view.LLMClientFormPage{
+		Platforms: s.SidebarPlatforms(),
+		CSRFToken: s.CSRFToken(w, r),
 		New:       true,
 		Kind:      persistence.LLMClientKindLLM,
 		Vision:    true,
@@ -123,7 +124,7 @@ func (s *Server) llmClientForm(r *http.Request, isNew bool) view.LLMClientFormPa
 	}
 
 	return view.LLMClientFormPage{
-		Platforms:       s.sidebarPlatforms(),
+		Platforms:       s.SidebarPlatforms(),
 		New:             isNew,
 		Name:            strings.TrimSpace(r.PostFormValue("name")),
 		Kind:            kind,
@@ -182,26 +183,26 @@ func (s *Server) sealedKey(raw, existing string) (string, error) {
 	if strings.TrimSpace(raw) == "" {
 		return existing, nil
 	}
-	if s.llmBox == nil {
+	if s.LLMBox == nil {
 		return "", fmt.Errorf("le secret de session ne permet pas de sceller une clé")
 	}
 
-	return s.llmBox.Seal(strings.TrimSpace(raw))
+	return s.LLMBox.Seal(strings.TrimSpace(raw))
 }
 
 // handleLLMClientCreate enregistre un nouveau client.
 func (s *Server) handleLLMClientCreate(w http.ResponseWriter, r *http.Request) {
-	if !checkCSRF(r) {
+	if !core.CheckCSRF(r) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
 	}
 
 	form := s.llmClientForm(r, true)
-	form.CSRFToken = s.csrfToken(w, r)
+	form.CSRFToken = s.CSRFToken(w, r)
 
 	fail := func(status int, message string) {
 		form.Error = message
-		s.render(w, r, status, view.AdminLLMClientForm(form))
+		s.Render(w, r, status, view.AdminLLMClientForm(form))
 	}
 
 	if !llmClientNamePattern.MatchString(form.Name) {
@@ -219,10 +220,10 @@ func (s *Server) handleLLMClientCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := s.now()
+	now := s.Now()
 	var exists bool
-	if !s.withTx(w, r, func(tx *sql.Tx) error {
-		_, found, err := s.llmClients.Get(r.Context(), tx, form.Name)
+	if !s.WithTx(w, r, func(tx *sql.Tx) error {
+		_, found, err := s.LLMClients.Get(r.Context(), tx, form.Name)
 		if err != nil {
 			return err
 		}
@@ -231,7 +232,7 @@ func (s *Server) handleLLMClientCreate(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 
-		return s.llmClients.Upsert(r.Context(), tx, persistence.LLMClient{
+		return s.LLMClients.Upsert(r.Context(), tx, persistence.LLMClient{
 			Name:            form.Name,
 			Kind:            form.Kind,
 			Provider:        form.Provider,
@@ -252,7 +253,7 @@ func (s *Server) handleLLMClientCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: modèle créé",
+	s.Logger.InfoContext(r.Context(), "web: modèle créé",
 		"client", form.Name, "provider", form.Provider, "model", form.Model)
 
 	http.Redirect(w, r, "/admin/llm-clients", http.StatusFound)
@@ -269,12 +270,12 @@ func (s *Server) handleLLMClientForm(w http.ResponseWriter, r *http.Request) {
 		found bool
 		uses  []persistence.OrgAgentClient
 	)
-	if !s.withTx(w, r, func(tx *sql.Tx) error {
+	if !s.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		if row, found, err = s.llmClients.Get(r.Context(), tx, name); err != nil || !found {
+		if row, found, err = s.LLMClients.Get(r.Context(), tx, name); err != nil || !found {
 			return err
 		}
-		uses, err = s.orgClients.UsedBy(r.Context(), tx, name)
+		uses, err = s.OrgClients.UsedBy(r.Context(), tx, name)
 		return err
 	}) {
 		return
@@ -285,8 +286,8 @@ func (s *Server) handleLLMClientForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page := view.LLMClientFormPage{
-		Platforms:       s.sidebarPlatforms(),
-		CSRFToken:       s.csrfToken(w, r),
+		Platforms:       s.SidebarPlatforms(),
+		CSRFToken:       s.CSRFToken(w, r),
 		Name:            row.Name,
 		Kind:            row.Kind,
 		Provider:        row.Provider,
@@ -300,7 +301,7 @@ func (s *Server) handleLLMClientForm(w http.ResponseWriter, r *http.Request) {
 		UsedBy:          s.llmClientUses(name, uses),
 	}
 
-	s.render(w, r, http.StatusOK, view.AdminLLMClientForm(page))
+	s.Render(w, r, http.StatusOK, view.AdminLLMClientForm(page))
 }
 
 // llmClientUses énumère ce qui retient un client : les rôles de
@@ -326,7 +327,7 @@ func (s *Server) llmClientUses(name string, orgUses []persistence.OrgAgentClient
 
 // handleLLMClientUpdate enregistre les modifications d'un client existant.
 func (s *Server) handleLLMClientUpdate(w http.ResponseWriter, r *http.Request) {
-	if !checkCSRF(r) {
+	if !core.CheckCSRF(r) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
 	}
@@ -337,9 +338,9 @@ func (s *Server) handleLLMClientUpdate(w http.ResponseWriter, r *http.Request) {
 		existing persistence.LLMClient
 		found    bool
 	)
-	if !s.withTx(w, r, func(tx *sql.Tx) error {
+	if !s.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		existing, found, err = s.llmClients.Get(r.Context(), tx, name)
+		existing, found, err = s.LLMClients.Get(r.Context(), tx, name)
 		return err
 	}) {
 		return
@@ -350,7 +351,7 @@ func (s *Server) handleLLMClientUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	form := s.llmClientForm(r, false)
-	form.CSRFToken = s.csrfToken(w, r)
+	form.CSRFToken = s.CSRFToken(w, r)
 	form.Name = name
 	// Le nom et l'usage sont figés à la création : le formulaire ne les
 	// poste pas, on garde ceux de la base.
@@ -360,7 +361,7 @@ func (s *Server) handleLLMClientUpdate(w http.ResponseWriter, r *http.Request) {
 	fail := func(status int, message string) {
 		form.Error = message
 		form.UsedBy = s.llmClientUses(name, nil)
-		s.render(w, r, status, view.AdminLLMClientForm(form))
+		s.Render(w, r, status, view.AdminLLMClientForm(form))
 	}
 
 	if message := validateLLMClientForm(form); message != "" {
@@ -381,15 +382,15 @@ func (s *Server) handleLLMClientUpdate(w http.ResponseWriter, r *http.Request) {
 	existing.ReasoningEffort = form.ReasoningEffort
 	existing.Vision = form.Vision
 	existing.ExtraFields = form.ExtraFields
-	existing.UpdatedAt = s.now()
+	existing.UpdatedAt = s.Now()
 
-	if !s.withTx(w, r, func(tx *sql.Tx) error {
-		return s.llmClients.Upsert(r.Context(), tx, existing)
+	if !s.WithTx(w, r, func(tx *sql.Tx) error {
+		return s.LLMClients.Upsert(r.Context(), tx, existing)
 	}) {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: modèle modifié",
+	s.Logger.InfoContext(r.Context(), "web: modèle modifié",
 		"client", name, "provider", existing.Provider, "model", existing.Model)
 
 	http.Redirect(w, r, "/admin/llm-clients/"+name+"?saved=1", http.StatusFound)
@@ -432,12 +433,12 @@ var roleLabels = map[string][2]string{
 // lui-même, et il n'y a pas de niveau au-dessus (Default reste vide, un
 // rôle sans choix est en alerte).
 func (s *Server) modelRoleRows(ctx context.Context, tx *sql.Tx, orgID string) ([]view.OrgModelRole, error) {
-	catalog, err := s.llmClients.List(ctx, tx, "")
+	catalog, err := s.LLMClients.List(ctx, tx, "")
 	if err != nil {
 		return nil, err
 	}
 
-	chosen, err := s.orgClients.ListByOrg(ctx, tx, orgID)
+	chosen, err := s.OrgClients.ListByOrg(ctx, tx, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -447,7 +448,7 @@ func (s *Server) modelRoleRows(ctx context.Context, tx *sql.Tx, orgID string) ([
 	// le choix.
 	instanceDefaults := chosen
 	if orgID != "" {
-		if instanceDefaults, err = s.orgClients.ListByOrg(ctx, tx, ""); err != nil {
+		if instanceDefaults, err = s.OrgClients.ListByOrg(ctx, tx, ""); err != nil {
 			return nil, err
 		}
 	}
@@ -459,7 +460,7 @@ func (s *Server) modelRoleRows(ctx context.Context, tx *sql.Tx, orgID string) ([
 		byKind[row.Kind] = append(byKind[row.Kind], view.OrgModelOption{Name: row.Name, Model: row.Model})
 	}
 
-	roleNames := llmclients.Roles(s.cfg)
+	roleNames := llmclients.Roles(s.Cfg)
 	roles := make([]view.OrgModelRole, 0, len(roleNames))
 	for _, role := range roleNames {
 		entry := view.OrgModelRole{
@@ -488,7 +489,7 @@ func (s *Server) modelRoleRows(ctx context.Context, tx *sql.Tx, orgID string) ([
 			entry.Label, entry.Hint = labels[0], labels[1]
 		default:
 			entry.Label = "Agent " + role
-			entry.Hint = s.cfg.Agents[role].Description
+			entry.Hint = s.Cfg.Agents[role].Description
 			if entry.Hint == "" {
 				entry.Hint = "Agent déclaré dans la configuration de l'instance."
 			}
@@ -514,7 +515,7 @@ func (s *Server) modelRoleRows(ctx context.Context, tx *sql.Tx, orgID string) ([
 // champ laissé sur « défaut de l'instance » efface la surcharge : une
 // organisation ne garde jamais un choix qu'elle n'a plus exprimé.
 func (s *Server) handleOrgModels(w http.ResponseWriter, r *http.Request) {
-	if !checkCSRF(r) {
+	if !core.CheckCSRF(r) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
 	}
@@ -525,7 +526,7 @@ func (s *Server) handleOrgModels(w http.ResponseWriter, r *http.Request) {
 // handleInstanceModels enregistre les défauts d'instance : mêmes règles que
 // pour une organisation, org_id vide.
 func (s *Server) handleInstanceModels(w http.ResponseWriter, r *http.Request) {
-	if !checkCSRF(r) {
+	if !core.CheckCSRF(r) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
 	}
@@ -542,11 +543,11 @@ func (s *Server) saveModelRoles(w http.ResponseWriter, r *http.Request, orgID, r
 		return
 	}
 
-	now := s.now()
+	now := s.Now()
 	var unknown string
 
-	if !s.withTx(w, r, func(tx *sql.Tx) error {
-		catalog, err := s.llmClients.List(r.Context(), tx, "")
+	if !s.WithTx(w, r, func(tx *sql.Tx) error {
+		catalog, err := s.LLMClients.List(r.Context(), tx, "")
 		if err != nil {
 			return err
 		}
@@ -559,11 +560,11 @@ func (s *Server) saveModelRoles(w http.ResponseWriter, r *http.Request, orgID, r
 		// forgé ne doit pas créer une ligne que rien ne lira. Et chaque
 		// rôle n'accepte que sa famille — un générateur d'images ne
 		// conversera jamais.
-		for _, role := range llmclients.Roles(s.cfg) {
+		for _, role := range llmclients.Roles(s.Cfg) {
 			name := strings.TrimSpace(r.PostFormValue("role:" + role))
 
 			if name == "" {
-				if err := s.orgClients.Unset(r.Context(), tx, orgID, role); err != nil {
+				if err := s.OrgClients.Unset(r.Context(), tx, orgID, role); err != nil {
 					return err
 				}
 				continue
@@ -578,7 +579,7 @@ func (s *Server) saveModelRoles(w http.ResponseWriter, r *http.Request, orgID, r
 				return nil
 			}
 
-			if err := s.orgClients.Set(r.Context(), tx, persistence.OrgAgentClient{
+			if err := s.OrgClients.Set(r.Context(), tx, persistence.OrgAgentClient{
 				OrgID:      orgID,
 				Role:       role,
 				ClientName: name,
@@ -598,7 +599,7 @@ func (s *Server) saveModelRoles(w http.ResponseWriter, r *http.Request, orgID, r
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: rôles de modèles modifiés", "org", orgID)
+	s.Logger.InfoContext(r.Context(), "web: rôles de modèles modifiés", "org", orgID)
 
 	http.Redirect(w, r, redirect, http.StatusFound)
 }
@@ -607,7 +608,7 @@ func (s *Server) saveModelRoles(w http.ResponseWriter, r *http.Request, orgID, r
 // organisation s'y réfère encore : la suppression laisserait alors des
 // agents sans modèle.
 func (s *Server) handleLLMClientDelete(w http.ResponseWriter, r *http.Request) {
-	if !checkCSRF(r) {
+	if !core.CheckCSRF(r) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
 	}
@@ -615,9 +616,9 @@ func (s *Server) handleLLMClientDelete(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
 	var uses []persistence.OrgAgentClient
-	if !s.withTx(w, r, func(tx *sql.Tx) error {
+	if !s.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		uses, err = s.orgClients.UsedBy(r.Context(), tx, name)
+		uses, err = s.OrgClients.UsedBy(r.Context(), tx, name)
 		return err
 	}) {
 		return
@@ -628,13 +629,13 @@ func (s *Server) handleLLMClientDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.withTx(w, r, func(tx *sql.Tx) error {
-		return s.llmClients.Delete(r.Context(), tx, name)
+	if !s.WithTx(w, r, func(tx *sql.Tx) error {
+		return s.LLMClients.Delete(r.Context(), tx, name)
 	}) {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: modèle supprimé", "client", name)
+	s.Logger.InfoContext(r.Context(), "web: modèle supprimé", "client", name)
 
 	http.Redirect(w, r, "/admin/llm-clients", http.StatusFound)
 }

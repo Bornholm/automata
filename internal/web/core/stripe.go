@@ -1,4 +1,4 @@
-package web
+package core
 
 import (
 	"context"
@@ -28,19 +28,27 @@ const (
 	stripeTimeout   = 15 * time.Second
 )
 
-// stripeClient appelle l'API Stripe avec la clé secrète configurée.
-type stripeClient struct {
+// StripeClient appelle l'API Stripe avec la clé secrète configurée.
+type StripeClient struct {
 	secretKey string
 	// taxCode classe le produit vendu : Stripe le réclame dès que Stripe
 	// Tax est activé sur le compte.
 	taxCode string
 	http    *http.Client
-	// baseURL est surchargée dans les tests.
+	// baseURL est surchargée par WithBaseURL (bancs de test, ou passerelle
+	// interposée).
 	baseURL string
 }
 
-func newStripeClient(secretKey, taxCode string) *stripeClient {
-	return &stripeClient{
+// WithBaseURL remplace le point d'entrée de l'API Stripe. Retourne c pour
+// permettre le chaînage.
+func (c *StripeClient) WithBaseURL(url string) *StripeClient {
+	c.baseURL = url
+	return c
+}
+
+func NewStripeClient(secretKey, taxCode string) *StripeClient {
+	return &StripeClient{
 		secretKey: secretKey,
 		taxCode:   taxCode,
 		http:      &http.Client{Timeout: stripeTimeout},
@@ -48,11 +56,11 @@ func newStripeClient(secretKey, taxCode string) *stripeClient {
 	}
 }
 
-// checkoutSession crée une session de paiement pour un pack de crédits et
+// CheckoutSession crée une session de paiement pour un pack de crédits et
 // retourne l'URL vers laquelle rediriger le navigateur. Le prix est passé
 // en ligne (price_data) : les packs vivent dans la configuration
 // d'Automata, pas dans un catalogue Stripe à tenir en double.
-func (c *stripeClient) checkoutSession(ctx context.Context, orgID, memberID string, credits int64, priceEUR float64, successURL, cancelURL string) (string, error) {
+func (c *StripeClient) CheckoutSession(ctx context.Context, orgID, memberID string, credits int64, priceEUR float64, successURL, cancelURL string) (string, error) {
 	form := url.Values{}
 	form.Set("mode", "payment")
 	form.Set("success_url", successURL)
@@ -60,7 +68,7 @@ func (c *stripeClient) checkoutSession(ctx context.Context, orgID, memberID stri
 	form.Set("line_items[0][quantity]", "1")
 	form.Set("line_items[0][price_data][currency]", "eur")
 	form.Set("line_items[0][price_data][unit_amount]", strconv.FormatInt(int64(priceEUR*100+0.5), 10))
-	form.Set("line_items[0][price_data][product_data][name]", formatCreditsProduct(credits))
+	form.Set("line_items[0][price_data][product_data][name]", FormatCreditsProduct(credits))
 	if c.taxCode != "" {
 		form.Set("line_items[0][price_data][product_data][tax_code]", c.taxCode)
 	}
@@ -113,14 +121,14 @@ func (c *stripeClient) checkoutSession(ctx context.Context, orgID, memberID stri
 	return session.URL, nil
 }
 
-// formatCreditsProduct nomme le produit tel qu'il apparaîtra sur la page de
+// FormatCreditsProduct nomme le produit tel qu'il apparaîtra sur la page de
 // paiement et la facture.
-func formatCreditsProduct(credits int64) string {
+func FormatCreditsProduct(credits int64) string {
 	return fmt.Sprintf("Automata — %d crédits", credits)
 }
 
-// stripeEvent est la part d'un événement Stripe qui nous intéresse.
-type stripeEvent struct {
+// StripeEvent est la part d'un événement Stripe qui nous intéresse.
+type StripeEvent struct {
 	Type string `json:"type"`
 	Data struct {
 		Object struct {
@@ -136,10 +144,10 @@ type stripeEvent struct {
 	} `json:"data"`
 }
 
-// verifyStripeSignature vérifie l'en-tête Stripe-Signature (schéma v1 :
+// VerifyStripeSignature vérifie l'en-tête Stripe-Signature (schéma v1 :
 // HMAC-SHA256 de « <timestamp>.<corps> » avec le secret du webhook) et
 // retourne l'événement décodé.
-func verifyStripeSignature(payload []byte, header, secret string, now time.Time) (stripeEvent, error) {
+func VerifyStripeSignature(payload []byte, header, secret string, now time.Time) (StripeEvent, error) {
 	var timestamp string
 	var signatures []string
 
@@ -157,15 +165,15 @@ func verifyStripeSignature(payload []byte, header, secret string, now time.Time)
 	}
 
 	if timestamp == "" || len(signatures) == 0 {
-		return stripeEvent{}, fmt.Errorf("web: en-tête de signature Stripe incomplet")
+		return StripeEvent{}, fmt.Errorf("web: en-tête de signature Stripe incomplet")
 	}
 
 	unix, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
-		return stripeEvent{}, fmt.Errorf("web: horodatage de signature Stripe invalide")
+		return StripeEvent{}, fmt.Errorf("web: horodatage de signature Stripe invalide")
 	}
 	if delta := now.Sub(time.Unix(unix, 0)); delta > stripeTolerance || delta < -stripeTolerance {
-		return stripeEvent{}, fmt.Errorf("web: signature Stripe hors tolérance temporelle")
+		return StripeEvent{}, fmt.Errorf("web: signature Stripe hors tolérance temporelle")
 	}
 
 	mac := hmac.New(sha256.New, []byte(secret))
@@ -181,12 +189,12 @@ func verifyStripeSignature(payload []byte, header, secret string, now time.Time)
 		}
 	}
 	if !valid {
-		return stripeEvent{}, fmt.Errorf("web: signature Stripe invalide")
+		return StripeEvent{}, fmt.Errorf("web: signature Stripe invalide")
 	}
 
-	var event stripeEvent
+	var event StripeEvent
 	if err := json.Unmarshal(payload, &event); err != nil {
-		return stripeEvent{}, fmt.Errorf("web: événement Stripe illisible: %w", err)
+		return StripeEvent{}, fmt.Errorf("web: événement Stripe illisible: %w", err)
 	}
 
 	return event, nil

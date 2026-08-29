@@ -17,6 +17,7 @@ import (
 
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/plugin"
+	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
 )
 
@@ -63,7 +64,7 @@ func seedPluginProfile(t *testing.T, server *Server) (linkPath string) {
 	seedMember(t, server, persistence.Member{ID: "cam", OrgID: "org-a", DisplayName: "Camille", Role: "member"})
 
 	now := time.Now().UTC()
-	err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+	err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		return persistence.NewPluginActivationRepository().Upsert(context.Background(), tx, persistence.PluginActivation{
 			PluginName: "echo", OrgID: "org-a", Enabled: true, CreatedAt: now, UpdatedAt: now,
 		})
@@ -91,10 +92,10 @@ func TestPluginProxy_InjectsContractAndStripsCookies(t *testing.T) {
 	port := portOf(t, backendURL)
 
 	server, ts, _ := testServer(t)
-	server.pluginManager = &fakePluginManager{port: port, token: "jeton-ui-secret"}
+	server.PluginMgr = &fakePluginManager{port: port, token: "jeton-ui-secret"}
 	seedPluginProfile(t, server)
 
-	uiPath := pluginUIPrefix + server.pluginUIToken(pluginViewMember, "org-a", "cam", "echo", server.now())
+	uiPath := pluginUIPrefix + server.PluginUIToken(pluginViewMember, "org-a", "cam", "echo", server.Now())
 
 	// SANS cookie, délibérément : une iframe sandbouclée n'en transporte
 	// aucun. C'est la régression du 2026-08-23 — le proxy rendait alors
@@ -142,7 +143,7 @@ func TestPluginProxy_HiddenWhenInactive(t *testing.T) {
 	backendURL, _ := url.Parse(backend.URL)
 
 	server, ts, client := testServer(t)
-	server.pluginManager = &fakePluginManager{port: portOf(t, backendURL), token: "t"}
+	server.PluginMgr = &fakePluginManager{port: portOf(t, backendURL), token: "t"}
 
 	seedOrg(t, server, persistence.Organization{ID: "org-b", DisplayName: "Org B"}, 0)
 	seedMember(t, server, persistence.Member{ID: "zoe", OrgID: "org-b", DisplayName: "Zoé", Role: "member"})
@@ -150,7 +151,7 @@ func TestPluginProxy_HiddenWhenInactive(t *testing.T) {
 	// Le jeton est valide : c'est l'activation, revérifiée à chaque
 	// requête, qui doit refuser. Un plugin désactivé après l'émission
 	// devient injoignable sur-le-champ.
-	uiPath := pluginUIPrefix + server.pluginUIToken(pluginViewMember, "org-b", "zoe", "echo", server.now())
+	uiPath := pluginUIPrefix + server.PluginUIToken(pluginViewMember, "org-b", "zoe", "echo", server.Now())
 
 	resp, err := client.Get(ts.URL + uiPath + "/")
 	if err != nil {
@@ -272,18 +273,18 @@ func TestPluginUIToken_ScopeIsEnforced(t *testing.T) {
 	backendURL, _ := url.Parse(backend.URL)
 
 	server, ts, _ := testServer(t)
-	server.pluginManager = &fakePluginManager{port: portOf(t, backendURL), token: "t"}
+	server.PluginMgr = &fakePluginManager{port: portOf(t, backendURL), token: "t"}
 	seedPluginProfile(t, server)
 
-	now := server.now()
-	valid := server.pluginUIToken(pluginViewMember, "org-a", "cam", "echo", now)
+	now := server.Now()
+	valid := server.PluginUIToken(pluginViewMember, "org-a", "cam", "echo", now)
 
 	cases := map[string]string{
 		// Émis pour un autre plugin : le nom voyage DANS le jeton, il ne
 		// peut pas être changé en chemin.
-		"autre plugin": server.pluginUIToken(pluginViewMember, "org-a", "cam", "autre", now),
+		"autre plugin": server.PluginUIToken(pluginViewMember, "org-a", "cam", "autre", now),
 		// Émis il y a plus longtemps que sa durée de vie.
-		"périmé": server.pluginUIToken(pluginViewMember, "org-a", "cam", "echo", now.Add(-pluginUITokenTTL-time.Minute)),
+		"périmé": server.PluginUIToken(pluginViewMember, "org-a", "cam", "echo", now.Add(-core.PluginUITokenTTL-time.Minute)),
 		// Signature invalide : un octet modifié suffit.
 		"falsifié": valid[:len(valid)-3] + "AAA",
 		// Pas un jeton du tout.
@@ -311,10 +312,10 @@ func TestPluginUIToken_ScopeIsEnforced(t *testing.T) {
 // réciproquement : la vue est scellée dans le jeton.
 func TestPluginUIToken_ViewIsSealed(t *testing.T) {
 	server, _, _ := testServer(t)
-	now := server.now()
+	now := server.Now()
 
-	token := server.pluginUIToken(pluginViewMember, "org-a", "cam", "echo", now)
-	view, orgID, memberID, name, ok := server.parsePluginUIToken(token, now)
+	token := server.PluginUIToken(pluginViewMember, "org-a", "cam", "echo", now)
+	view, orgID, memberID, name, ok := server.ParsePluginUIToken(token, now)
 	if !ok {
 		t.Fatal("un jeton fraîchement émis doit être accepté")
 	}
@@ -324,8 +325,8 @@ func TestPluginUIToken_ViewIsSealed(t *testing.T) {
 
 	// Un cookie de session signé par la même clé n'est pas un jeton
 	// d'interface : le « kind » les sépare.
-	session := server.signer.sign(sessionPayload("profile", "cam/lien", now.Add(time.Hour)))
-	if _, _, _, _, ok := server.parsePluginUIToken(base64.RawURLEncoding.EncodeToString([]byte(session)), now); ok {
+	session := server.Signer.Sign(core.SessionPayload("profile", "cam/lien", now.Add(time.Hour)))
+	if _, _, _, _, ok := server.ParsePluginUIToken(base64.RawURLEncoding.EncodeToString([]byte(session)), now); ok {
 		t.Error("un cookie de session a été accepté comme jeton d'interface")
 	}
 }

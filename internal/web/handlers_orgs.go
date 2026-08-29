@@ -14,6 +14,7 @@ import (
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
 	"github.com/bornholm/automata/internal/weblink"
 )
@@ -29,13 +30,13 @@ import (
 func (s *Server) orgSubtitle(orgID string, bound []persistence.ChannelBinding) string {
 	var count int
 	firstType := ""
-	for _, ch := range s.cfg.Channels {
+	for _, ch := range s.Cfg.Channels {
 		if ch.OrgID != orgID {
 			continue
 		}
 		count++
 		if firstType == "" {
-			firstType = s.providerTypeOf(ch.Provider)
+			firstType = s.ProviderTypeOf(ch.Provider)
 		}
 	}
 
@@ -45,7 +46,7 @@ func (s *Server) orgSubtitle(orgID string, bound []persistence.ChannelBinding) s
 		}
 		count++
 		if firstType == "" {
-			firstType = s.providerTypeOf(binding.Provider)
+			firstType = s.ProviderTypeOf(binding.Provider)
 		}
 	}
 
@@ -57,50 +58,50 @@ func (s *Server) orgSubtitle(orgID string, bound []persistence.ChannelBinding) s
 	if count == 1 {
 		label = "canal"
 	}
-	return fmt.Sprintf("%s · %d %s", platformDisplayName(firstType, firstType), count, label)
+	return fmt.Sprintf("%s · %d %s", core.PlatformDisplayName(firstType, firstType), count, label)
 }
 
 // handleOrgs — ADM-02.
 func (s *Server) handleOrgs(w http.ResponseWriter, r *http.Request) {
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
-	now := s.now()
-	monthFrom, monthTo := monthBounds(now)
+	now := s.Now()
+	monthFrom, monthTo := core.MonthBounds(now)
 
 	page := view.OrgsPage{
 		Search:    search,
-		Platforms: s.sidebarPlatforms(),
-		CSRFToken: s.csrfToken(w, r),
+		Platforms: s.SidebarPlatforms(),
+		CSRFToken: s.CSRFToken(w, r),
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		orgs, err := s.orgs.List(r.Context(), tx, search)
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		orgs, err := s.Orgs.List(r.Context(), tx, search)
 		if err != nil {
 			return err
 		}
-		balances, err := s.wallet.Balances(r.Context(), tx)
+		balances, err := s.Wallet.Balances(r.Context(), tx)
 		if err != nil {
 			return err
 		}
-		memberCounts, err := s.members.CountByOrg(r.Context(), tx)
+		memberCounts, err := s.Members.CountByOrg(r.Context(), tx)
 		if err != nil {
 			return err
 		}
-		bound, err := s.bindings.ListAll(r.Context(), tx)
+		bound, err := s.Bindings.ListAll(r.Context(), tx)
 		if err != nil {
 			return err
 		}
-		monthUsage, err := s.orgUsageCredits(r.Context(), tx, monthFrom, monthTo)
+		monthUsage, err := s.OrgUsageCredits(r.Context(), tx, monthFrom, monthTo)
 		if err != nil {
 			return err
 		}
 
 		for _, org := range orgs {
-			lastCredit, err := s.wallet.LastCredit(r.Context(), tx, org.ID)
+			lastCredit, err := s.Wallet.LastCredit(r.Context(), tx, org.ID)
 			if err != nil {
 				return err
 			}
 
-			state := computeWalletState(org, balances[org.ID], lastCredit, monthUsage[org.ID])
+			state := core.ComputeWalletState(org, balances[org.ID], lastCredit, monthUsage[org.ID])
 
 			usageLabel := "—"
 			if monthUsage[org.ID] > 0 {
@@ -132,13 +133,13 @@ func (s *Server) handleOrgs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.render(w, r, http.StatusOK, view.AdminOrgs(page))
+	s.Render(w, r, http.StatusOK, view.AdminOrgs(page))
 }
 
 func (s *Server) handleOrgNewForm(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, http.StatusOK, view.AdminOrgNew(view.OrgNewPage{
-		Platforms: s.sidebarPlatforms(),
-		CSRFToken: s.csrfToken(w, r),
+	s.Render(w, r, http.StatusOK, view.AdminOrgNew(view.OrgNewPage{
+		Platforms: s.SidebarPlatforms(),
+		CSRFToken: s.CSRFToken(w, r),
 	}))
 }
 
@@ -183,9 +184,9 @@ func slugify(name string) string {
 func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.PostFormValue("display_name"))
 	if name == "" {
-		s.render(w, r, http.StatusBadRequest, view.AdminOrgNew(view.OrgNewPage{
-			Platforms: s.sidebarPlatforms(),
-			CSRFToken: s.csrfToken(w, r),
+		s.Render(w, r, http.StatusBadRequest, view.AdminOrgNew(view.OrgNewPage{
+			Platforms: s.SidebarPlatforms(),
+			CSRFToken: s.CSRFToken(w, r),
 			Error:     "Le nom de l'organisation est requis.",
 		}))
 		return
@@ -193,7 +194,7 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 
 	welcome, _ := strconv.ParseInt(r.PostFormValue("welcome_credits"), 10, 64)
 	ownerName := strings.TrimSpace(r.PostFormValue("owner_name"))
-	now := s.now()
+	now := s.Now()
 
 	orgID := slugify(name)
 	if orgID == "" {
@@ -206,8 +207,8 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 	// création refaite, pas d'une intention — mieux vaut le dire que le
 	// laisser passer et devoir démêler ensuite quel canal est allé où.
 	var duplicate bool
-	if !s.withTx(w, r, func(tx *sql.Tx) error {
-		existing, err := s.orgs.List(r.Context(), tx, "")
+	if !s.WithTx(w, r, func(tx *sql.Tx) error {
+		existing, err := s.Orgs.List(r.Context(), tx, "")
 		if err != nil {
 			return err
 		}
@@ -223,19 +224,19 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if duplicate {
-		s.render(w, r, http.StatusConflict, view.AdminOrgNew(view.OrgNewPage{
-			Platforms: s.sidebarPlatforms(),
-			CSRFToken: s.csrfToken(w, r),
+		s.Render(w, r, http.StatusConflict, view.AdminOrgNew(view.OrgNewPage{
+			Platforms: s.SidebarPlatforms(),
+			CSRFToken: s.CSRFToken(w, r),
 			Error:     "Une organisation nommée « " + name + " » existe déjà. Choisissez un autre nom, ou ouvrez l'existante.",
 		}))
 		return
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
 		// Suffixe numérique en cas de collision d'identifiant.
 		candidate := orgID
 		for i := 2; ; i++ {
-			_, exists, err := s.orgs.FindByID(r.Context(), tx, candidate)
+			_, exists, err := s.Orgs.FindByID(r.Context(), tx, candidate)
 			if err != nil {
 				return err
 			}
@@ -252,12 +253,12 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
-		if err := s.orgs.Insert(r.Context(), tx, org, false); err != nil {
+		if err := s.Orgs.Insert(r.Context(), tx, org, false); err != nil {
 			return err
 		}
 
 		if welcome > 0 {
-			if err := s.wallet.Insert(r.Context(), tx, persistence.WalletEntry{
+			if err := s.Wallet.Insert(r.Context(), tx, persistence.WalletEntry{
 				OrgID:     orgID,
 				Kind:      persistence.WalletKindWelcome,
 				Label:     "Crédits de bienvenue",
@@ -273,7 +274,7 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return err
 			}
-			return s.members.Insert(r.Context(), tx, persistence.Member{
+			return s.Members.Insert(r.Context(), tx, persistence.Member{
 				ID:          strings.ToLower(memberID),
 				OrgID:       orgID,
 				DisplayName: ownerName,
@@ -289,7 +290,7 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: organisation créée", "org_id", orgID)
+	s.Logger.InfoContext(r.Context(), "web: organisation créée", "org_id", orgID)
 	http.Redirect(w, r, "/admin/orgs/"+orgID, http.StatusFound)
 }
 
@@ -300,41 +301,41 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	if tab != "members" && tab != "channels" && tab != "customization" && tab != "models" && tab != "plugins" {
 		tab = "credits"
 	}
-	now := s.now()
-	monthFrom, monthTo := monthBounds(now)
+	now := s.Now()
+	monthFrom, monthTo := core.MonthBounds(now)
 
 	page := view.OrgPage{
-		Platforms: s.sidebarPlatforms(),
-		CSRFToken: s.csrfToken(w, r),
+		Platforms: s.SidebarPlatforms(),
+		CSRFToken: s.CSRFToken(w, r),
 		ID:        orgID,
 		Tab:       tab,
 	}
 
 	found := false
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		org, exists, err := s.orgs.FindByID(r.Context(), tx, orgID)
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		org, exists, err := s.Orgs.FindByID(r.Context(), tx, orgID)
 		if err != nil || !exists {
 			return err
 		}
 		found = true
 
-		balance, err := s.wallet.Balance(r.Context(), tx, orgID)
+		balance, err := s.Wallet.Balance(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
-		lastCredit, err := s.wallet.LastCredit(r.Context(), tx, orgID)
+		lastCredit, err := s.Wallet.LastCredit(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
-		monthUsage, err := s.singleOrgUsageCredits(r.Context(), tx, orgID, monthFrom, monthTo)
+		monthUsage, err := s.SingleOrgUsageCredits(r.Context(), tx, orgID, monthFrom, monthTo)
 		if err != nil {
 			return err
 		}
-		members, err := s.members.ListByOrg(r.Context(), tx, orgID)
+		members, err := s.Members.ListByOrg(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
-		rate, err := s.dailyRate(r.Context(), tx, orgID, now)
+		rate, err := s.DailyRate(r.Context(), tx, orgID, now)
 		if err != nil {
 			return err
 		}
@@ -351,7 +352,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 		}
 		page.ModelRoles = modelRoles
 
-		state := computeWalletState(org, balance, lastCredit, monthUsage)
+		state := core.ComputeWalletState(org, balance, lastCredit, monthUsage)
 
 		page.Name = org.DisplayName
 		page.Chip = state.Chip
@@ -372,13 +373,13 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 		// Les canaux d'une organisation viennent de deux sources : la
 		// configuration et les liaisons par jeton. Lues une seule fois,
 		// elles servent au compteur d'en-tête comme à l'onglet Canaux.
-		bound, err := s.bindings.ListByOrg(r.Context(), tx, orgID)
+		bound, err := s.Bindings.ListByOrg(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
 
 		channelCount := len(bound)
-		for _, ch := range s.cfg.Channels {
+		for _, ch := range s.Cfg.Channels {
 			if ch.OrgID == orgID {
 				channelCount++
 			}
@@ -392,7 +393,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 
 		// Mouvements avec solde après coup : la liste est antichronologique,
 		// le solde « après » se déroule depuis le solde courant.
-		entries, err := s.wallet.List(r.Context(), tx, orgID, 50)
+		entries, err := s.Wallet.List(r.Context(), tx, orgID, 50)
 		if err != nil {
 			return err
 		}
@@ -432,14 +433,14 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 
 		// Personnalisation : les spécialistes déclarés dans l'instance,
 		// cochés selon ce que l'organisation conserve.
-		settings, _, err := s.orgSettings.Get(r.Context(), tx, orgID)
+		settings, _, err := s.OrgSettings.Get(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
 		page.PromptExtra = settings.PromptExtra
 		page.MaxToolCalls = settings.MaxToolCalls
 
-		for name, agentCfg := range s.cfg.Agents {
+		for name, agentCfg := range s.Cfg.Agents {
 			if agentCfg.Type == config.AgentTypeOrchestrator {
 				continue
 			}
@@ -453,21 +454,21 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 
 		for _, binding := range bound {
 			page.Channels = append(page.Channels, view.OrgChannelRow{
-				PlatformType: s.providerTypeOf(binding.Provider),
+				PlatformType: s.ProviderTypeOf(binding.Provider),
 				Name:         binding.DisplayName,
 				Kind:         channelKindLabelFromScope(binding.Kind),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
 			})
 		}
 
-		for _, ch := range s.cfg.Channels {
+		for _, ch := range s.Cfg.Channels {
 			if ch.OrgID != orgID {
 				continue
 			}
 			page.Channels = append(page.Channels, view.OrgChannelRow{
-				PlatformType: s.providerTypeOf(ch.Provider),
-				Name:         s.channelDisplayName(ch),
-				Kind:         channelKindLabel(ch.Kind),
+				PlatformType: s.ProviderTypeOf(ch.Provider),
+				Name:         s.ChannelDisplayName(ch),
+				Kind:         core.ChannelKindLabel(ch.Kind),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
 			})
 		}
@@ -483,7 +484,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if key := r.URL.Query().Get("reveal"); key != "" {
-		if value, ok := s.reveals.pop(key, now); ok {
+		if value, ok := s.Reveals.Pop(key, now); ok {
 			page.FlashToken = &view.TokenPanelData{
 				Eyebrow:   "Jeton de groupe",
 				Display:   value.Display,
@@ -504,7 +505,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	// toujours là.
 	page.Error = r.URL.Query().Get("error")
 
-	s.render(w, r, http.StatusOK, view.AdminOrg(page))
+	s.Render(w, r, http.StatusOK, view.AdminOrg(page))
 }
 
 // weeklyUsage construit les 5 dernières semaines de consommation (barres
@@ -512,10 +513,10 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 func (s *Server) weeklyUsage(ctx context.Context, tx *sql.Tx, orgID string, now time.Time) ([]view.WeekBar, error) {
 	const weeks = 5
 
-	rate := s.creditRate(ctx, tx)
+	rate := s.CreditRate(ctx, tx)
 	start := now.AddDate(0, 0, -7*weeks)
 
-	aggregates, err := s.usage.AggregateUsage(ctx, tx, start, now, []string{"day"}, persistence.UsageFilter{OrgID: orgID})
+	aggregates, err := s.Usage.AggregateUsage(ctx, tx, start, now, []string{"day"}, persistence.UsageFilter{OrgID: orgID})
 	if err != nil {
 		return nil, err
 	}
@@ -530,7 +531,7 @@ func (s *Server) weeklyUsage(ctx context.Context, tx *sql.Tx, orgID string, now 
 		if index < 0 || index >= weeks {
 			continue
 		}
-		totals[index] += s.usageCredits(agg.CostAmount, rate)
+		totals[index] += s.UsageCredits(agg.CostAmount, rate)
 	}
 
 	var max int64 = 1
@@ -580,20 +581,20 @@ func (s *Server) handleOrgGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		return s.wallet.Insert(r.Context(), tx, persistence.WalletEntry{
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		return s.Wallet.Insert(r.Context(), tx, persistence.WalletEntry{
 			OrgID:     orgID,
 			Kind:      persistence.WalletKindGrant,
 			Label:     label,
 			Amount:    amount,
-			CreatedAt: s.now(),
+			CreatedAt: s.Now(),
 		})
 	})
 	if !ok {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: crédits offerts", "org_id", orgID, "amount", amount)
+	s.Logger.InfoContext(r.Context(), "web: crédits offerts", "org_id", orgID, "amount", amount)
 	http.Redirect(w, r, "/admin/orgs/"+orgID+"?granted=1", http.StatusFound)
 }
 
@@ -602,8 +603,8 @@ func (s *Server) handleOrgOffered(w http.ResponseWriter, r *http.Request) {
 	offered := r.PostFormValue("offered") == "true"
 	allowance, _ := strconv.ParseInt(r.PostFormValue("allowance"), 10, 64)
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		org, exists, err := s.orgs.FindByID(r.Context(), tx, orgID)
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		org, exists, err := s.Orgs.FindByID(r.Context(), tx, orgID)
 		if err != nil || !exists {
 			return err
 		}
@@ -611,8 +612,8 @@ func (s *Server) handleOrgOffered(w http.ResponseWriter, r *http.Request) {
 		if allowance >= 0 && offered {
 			org.MonthlyAllowance = allowance
 		}
-		org.UpdatedAt = s.now()
-		if err := s.orgs.Update(r.Context(), tx, org); err != nil {
+		org.UpdatedAt = s.Now()
+		if err := s.Orgs.Update(r.Context(), tx, org); err != nil {
 			return err
 		}
 
@@ -623,7 +624,7 @@ func (s *Server) handleOrgOffered(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 
-		balance, err := s.wallet.Balance(r.Context(), tx, orgID)
+		balance, err := s.Wallet.Balance(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
@@ -631,12 +632,12 @@ func (s *Server) handleOrgOffered(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 
-		return s.wallet.Insert(r.Context(), tx, persistence.WalletEntry{
+		return s.Wallet.Insert(r.Context(), tx, persistence.WalletEntry{
 			OrgID:     orgID,
 			Kind:      persistence.WalletKindAllowance,
 			Label:     "Allocation mensuelle offerte",
 			Amount:    org.MonthlyAllowance - balance,
-			CreatedAt: s.now(),
+			CreatedAt: s.Now(),
 		})
 	})
 	if !ok {
@@ -654,21 +655,21 @@ func (s *Server) handleOrgUnlimited(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	unlimited := r.PostFormValue("unlimited") == "true"
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		org, exists, err := s.orgs.FindByID(r.Context(), tx, orgID)
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		org, exists, err := s.Orgs.FindByID(r.Context(), tx, orgID)
 		if err != nil || !exists {
 			return err
 		}
 		org.Unlimited = unlimited
-		org.UpdatedAt = s.now()
+		org.UpdatedAt = s.Now()
 
-		return s.orgs.Update(r.Context(), tx, org)
+		return s.Orgs.Update(r.Context(), tx, org)
 	})
 	if !ok {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: mode gratuit sans limite modifié",
+	s.Logger.InfoContext(r.Context(), "web: mode gratuit sans limite modifié",
 		"org", orgID, "unlimited", unlimited)
 
 	http.Redirect(w, r, "/admin/orgs/"+orgID, http.StatusFound)
@@ -681,11 +682,11 @@ func (s *Server) handleOrgGroupToken(w http.ResponseWriter, r *http.Request) {
 // createGroupToken génère un jeton de groupe pour orgID et redirige vers
 // redirectBase avec la clé de révélation.
 func (s *Server) createGroupToken(w http.ResponseWriter, r *http.Request, orgID, redirectBase string) {
-	now := s.now()
+	now := s.Now()
 
 	clear, hash, display, err := weblink.NewLinkToken()
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "web: génération d'un jeton de groupe", "error", err)
+		s.Logger.ErrorContext(r.Context(), "web: génération d'un jeton de groupe", "error", err)
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
@@ -696,8 +697,8 @@ func (s *Server) createGroupToken(w http.ResponseWriter, r *http.Request, orgID,
 		return
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		return s.linkTokens.Insert(r.Context(), tx, persistence.LinkToken{
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		return s.LinkTokens.Insert(r.Context(), tx, persistence.LinkToken{
 			ID:        strings.ToLower(tokenID),
 			Kind:      persistence.LinkTokenKindGroup,
 			OrgID:     orgID,
@@ -711,13 +712,13 @@ func (s *Server) createGroupToken(w http.ResponseWriter, r *http.Request, orgID,
 		return
 	}
 
-	key, err := s.reveals.put(revealValue{Clear: clear, Display: display}, now)
+	key, err := s.Reveals.Put(core.RevealValue{Clear: clear, Display: display}, now)
 	if err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: jeton de groupe généré", "org_id", orgID, "token_id", tokenID)
+	s.Logger.InfoContext(r.Context(), "web: jeton de groupe généré", "org_id", orgID, "token_id", tokenID)
 
 	separator := "?"
 	if strings.Contains(redirectBase, "?") {
@@ -731,9 +732,9 @@ func (s *Server) handleOrgWalletCSV(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 
 	var entries []persistence.WalletEntry
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		entries, err = s.wallet.List(r.Context(), tx, orgID, 0)
+		entries, err = s.Wallet.List(r.Context(), tx, orgID, 0)
 		return err
 	})
 	if !ok {
@@ -770,7 +771,7 @@ func (s *Server) handleOrgCustomization(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var disabled []string
-	for name, agentCfg := range s.cfg.Agents {
+	for name, agentCfg := range s.Cfg.Agents {
 		if agentCfg.Type == config.AgentTypeOrchestrator {
 			continue
 		}
@@ -785,20 +786,20 @@ func (s *Server) handleOrgCustomization(w http.ResponseWriter, r *http.Request) 
 		maxToolCalls = 0
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		return s.orgSettings.Upsert(r.Context(), tx, persistence.OrgSettings{
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		return s.OrgSettings.Upsert(r.Context(), tx, persistence.OrgSettings{
 			OrgID:          orgID,
 			PromptExtra:    strings.TrimSpace(r.PostFormValue("prompt_extra")),
 			DisabledAgents: disabled,
 			MaxToolCalls:   maxToolCalls,
-			UpdatedAt:      s.now(),
+			UpdatedAt:      s.Now(),
 		})
 	})
 	if !ok {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: personnalisation d'organisation enregistrée",
+	s.Logger.InfoContext(r.Context(), "web: personnalisation d'organisation enregistrée",
 		"org_id", orgID, "disabled_agents", len(disabled), "max_tool_calls", maxToolCalls)
 
 	http.Redirect(w, r, "/admin/orgs/"+orgID+"?tab=customization&saved=1", http.StatusFound)
@@ -814,7 +815,7 @@ func (s *Server) handleOrgDelete(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	typed := strings.TrimSpace(r.PostFormValue("confirm_name"))
 
-	if s.privacy == nil {
+	if s.Privacy == nil {
 		s.redirectOrgError(w, r, orgID, "La suppression n'est pas disponible sur cette instance.")
 		return
 	}
@@ -824,8 +825,8 @@ func (s *Server) handleOrgDelete(w http.ResponseWriter, r *http.Request) {
 		missing  bool
 	)
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		org, found, err := s.orgs.FindByID(r.Context(), tx, orgID)
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		org, found, err := s.Orgs.FindByID(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
@@ -855,15 +856,15 @@ func (s *Server) handleOrgDelete(w http.ResponseWriter, r *http.Request) {
 	// La suppression touche la base mémoire autant que la base
 	// applicative : elle passe par le service de confidentialité, qui
 	// possède les deux.
-	report, err := s.privacy.DeleteOrganization(r.Context(), orgID)
+	report, err := s.Privacy.DeleteOrganization(r.Context(), orgID)
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "web: échec de la suppression d'une organisation", "org_id", orgID, "error", err)
+		s.Logger.ErrorContext(r.Context(), "web: échec de la suppression d'une organisation", "org_id", orgID, "error", err)
 		s.redirectOrgError(w, r, orgID, "La suppression a échoué. Rien n'a été supprimé, ou seulement une partie : consultez les journaux.")
 		return
 	}
 
 	// Compteurs seulement : ce qui a été effacé ne se journalise pas.
-	s.logger.InfoContext(r.Context(), "web: organisation supprimée",
+	s.Logger.InfoContext(r.Context(), "web: organisation supprimée",
 		"org_id", orgID,
 		"members", report.Members,
 		"orphan_members", report.OrphanMembers,

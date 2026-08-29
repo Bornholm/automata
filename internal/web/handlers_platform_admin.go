@@ -134,9 +134,9 @@ func (s *Server) handlePlatformCreate(w http.ResponseWriter, r *http.Request) {
 
 	// La configuration doit produire un fournisseur : la vérifier ici évite
 	// d'enregistrer un compte qui échouerait indéfiniment au démarrage.
-	if s.validatePlatform != nil {
-		if err := s.validatePlatform(providerType, config); err != nil {
-			s.logger.WarnContext(r.Context(), "web: configuration de compte refusée",
+	if s.ValidatePlatform != nil {
+		if err := s.ValidatePlatform(providerType, config); err != nil {
+			s.Logger.WarnContext(r.Context(), "web: configuration de compte refusée",
 				"platform_id", id, "type", providerType, "error", err)
 			http.Redirect(w, r, "/admin/platforms?pairing="+pairingModeFor(providerType)+
 				"&platform="+providerType+"&error=invalide", http.StatusFound)
@@ -150,16 +150,16 @@ func (s *Server) handlePlatformCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sealed, err := s.secrets.Seal(string(raw))
+	sealed, err := s.Secrets.Seal(string(raw))
 	if err != nil {
-		s.logger.ErrorContext(r.Context(), "web: chiffrement de la configuration d'un compte", "platform_id", id, "error", err)
+		s.Logger.ErrorContext(r.Context(), "web: chiffrement de la configuration d'un compte", "platform_id", id, "error", err)
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
 
-	now := s.now()
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		return s.platforms.Insert(r.Context(), tx, persistence.Platform{
+	now := s.Now()
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		return s.Platforms.Insert(r.Context(), tx, persistence.Platform{
 			ID:          id,
 			Type:        providerType,
 			DisplayName: strings.TrimSpace(r.PostFormValue("display_name")),
@@ -175,7 +175,7 @@ func (s *Server) handlePlatformCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Le secret n'apparaît jamais dans les journaux : seuls l'identifiant
 	// et le type du compte.
-	s.logger.InfoContext(r.Context(), "web: compte de messagerie ajouté", "platform_id", id, "type", providerType)
+	s.Logger.InfoContext(r.Context(), "web: compte de messagerie ajouté", "platform_id", id, "type", providerType)
 	s.wakePlatforms()
 
 	http.Redirect(w, r, "/admin/platforms?added="+id, http.StatusFound)
@@ -205,20 +205,20 @@ func (s *Server) handlePlatformToggle(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	enabled := r.PostFormValue("enabled") == "true"
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		p, found, err := s.platforms.FindByID(r.Context(), tx, id)
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		p, found, err := s.Platforms.FindByID(r.Context(), tx, id)
 		if err != nil || !found {
 			return err
 		}
 		p.Enabled = enabled
-		p.UpdatedAt = s.now()
-		return s.platforms.Update(r.Context(), tx, p)
+		p.UpdatedAt = s.Now()
+		return s.Platforms.Update(r.Context(), tx, p)
 	})
 	if !ok {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: compte de messagerie basculé", "platform_id", id, "enabled", enabled)
+	s.Logger.InfoContext(r.Context(), "web: compte de messagerie basculé", "platform_id", id, "enabled", enabled)
 	s.wakePlatforms()
 
 	http.Redirect(w, r, "/admin/platforms", http.StatusFound)
@@ -229,14 +229,14 @@ func (s *Server) handlePlatformToggle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePlatformDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		return s.platforms.Delete(r.Context(), tx, id)
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		return s.Platforms.Delete(r.Context(), tx, id)
 	})
 	if !ok {
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: compte de messagerie supprimé", "platform_id", id)
+	s.Logger.InfoContext(r.Context(), "web: compte de messagerie supprimé", "platform_id", id)
 	s.wakePlatforms()
 
 	http.Redirect(w, r, "/admin/platforms", http.StatusFound)
@@ -246,8 +246,8 @@ func (s *Server) handlePlatformDelete(w http.ResponseWriter, r *http.Request) {
 // changements ; sans lui, la prochaine synchronisation périodique s'en
 // chargerait, mais l'écran mentirait entre-temps.
 func (s *Server) wakePlatforms() {
-	if s.platformManager != nil {
-		s.platformManager.Wake()
+	if s.PlatformMgr != nil {
+		s.PlatformMgr.Wake()
 	}
 }
 

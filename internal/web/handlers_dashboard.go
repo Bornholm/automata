@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
 )
 
@@ -19,25 +20,25 @@ const deliveryLookback = 7 * 24 * time.Hour
 
 // handleDashboard — ADM-01.
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	now := s.now()
-	monthFrom, monthTo := monthBounds(now)
+	now := s.Now()
+	monthFrom, monthTo := core.MonthBounds(now)
 
 	page := view.DashboardPage{
-		Platforms: s.sidebarPlatforms(),
-		CSRFToken: s.csrfToken(w, r),
+		Platforms: s.SidebarPlatforms(),
+		CSRFToken: s.CSRFToken(w, r),
 		Period:    strings.ToLower(view.FormatMonth(now)) + " " + fmt.Sprintf("%d", now.Year()),
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		orgs, err := s.orgs.List(r.Context(), tx, "")
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		orgs, err := s.Orgs.List(r.Context(), tx, "")
 		if err != nil {
 			return err
 		}
-		balances, err := s.wallet.Balances(r.Context(), tx)
+		balances, err := s.Wallet.Balances(r.Context(), tx)
 		if err != nil {
 			return err
 		}
-		monthUsage, err := s.orgUsageCredits(r.Context(), tx, monthFrom, monthTo)
+		monthUsage, err := s.OrgUsageCredits(r.Context(), tx, monthFrom, monthTo)
 		if err != nil {
 			return err
 		}
@@ -54,11 +55,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			totalUsage += credits
 		}
 
-		pricingSettings, err := s.pricing(r.Context(), tx)
+		pricingSettings, err := s.Pricing(r.Context(), tx)
 		if err != nil {
 			return err
 		}
-		m, err := s.computeMargin(r.Context(), tx, pricingSettings, monthFrom, monthTo)
+		m, err := s.ComputeMargin(r.Context(), tx, pricingSettings, monthFrom, monthTo)
 		if err != nil {
 			return err
 		}
@@ -77,11 +78,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 		// Organisations à surveiller : solde faible ou épuisé.
 		for _, org := range orgs {
-			lastCredit, err := s.wallet.LastCredit(r.Context(), tx, org.ID)
+			lastCredit, err := s.Wallet.LastCredit(r.Context(), tx, org.ID)
 			if err != nil {
 				return err
 			}
-			state := computeWalletState(org, balances[org.ID], lastCredit, monthUsage[org.ID])
+			state := core.ComputeWalletState(org, balances[org.ID], lastCredit, monthUsage[org.ID])
 
 			switch state.State {
 			case "empty":
@@ -104,12 +105,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Comptes de messagerie en défaut.
-		if s.platformManager != nil {
-			accounts, err := s.platforms.List(r.Context(), tx)
+		if s.PlatformMgr != nil {
+			accounts, err := s.Platforms.List(r.Context(), tx)
 			if err != nil {
 				return err
 			}
-			statuses := s.platformManager.Statuses()
+			statuses := s.PlatformMgr.Statuses()
 
 			for _, account := range accounts {
 				if !account.Enabled {
@@ -198,20 +199,20 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.render(w, r, http.StatusOK, view.AdminDashboard(page))
+	s.Render(w, r, http.StatusOK, view.AdminDashboard(page))
 }
 
 // platformCounts compte les comptes actifs et ceux qui répondent.
 func (s *Server) platformCounts(ctx context.Context, q persistence.Querier) (connected, total int) {
-	accounts, err := s.platforms.List(ctx, q)
+	accounts, err := s.Platforms.List(ctx, q)
 	if err != nil {
 		return 0, 0
 	}
 
 	var statuses map[string]platformStatus
-	if s.platformManager != nil {
+	if s.PlatformMgr != nil {
 		statuses = map[string]platformStatus{}
-		for id, status := range s.platformManager.Statuses() {
+		for id, status := range s.PlatformMgr.Statuses() {
 			statuses[id] = platformStatus{State: string(status.State)}
 		}
 	}
@@ -248,7 +249,7 @@ func (s *Server) recentDeliveryFailures(ctx context.Context, q persistence.Queri
 
 // countActiveMembers décrit le nombre de membres rattachés.
 func countActiveMembers(ctx context.Context, q persistence.Querier, s *Server) string {
-	counts, err := s.members.CountByOrg(ctx, q)
+	counts, err := s.Members.CountByOrg(ctx, q)
 	if err != nil {
 		return ""
 	}

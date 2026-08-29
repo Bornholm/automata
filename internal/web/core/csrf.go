@@ -1,4 +1,4 @@
-package web
+package core
 
 import (
 	"crypto/subtle"
@@ -12,9 +12,9 @@ import (
 // coïncident — un site tiers peut déclencher la requête mais ne peut ni
 // lire le cookie ni forger le champ.
 
-// ensureCSRFCookie retourne le jeton CSRF courant, en le créant au besoin.
-func ensureCSRFCookie(w http.ResponseWriter, r *http.Request) (string, error) {
-	if cookie, err := r.Cookie(csrfCookieName); err == nil && len(cookie.Value) >= 20 {
+// EnsureCSRFCookie retourne le jeton CSRF courant, en le créant au besoin.
+func EnsureCSRFCookie(w http.ResponseWriter, r *http.Request) (string, error) {
+	if cookie, err := r.Cookie(CSRFCookieName); err == nil && len(cookie.Value) >= 20 {
 		return cookie.Value, nil
 	}
 
@@ -24,7 +24,7 @@ func ensureCSRFCookie(w http.ResponseWriter, r *http.Request) (string, error) {
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     csrfCookieName,
+		Name:     CSRFCookieName,
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
@@ -34,10 +34,10 @@ func ensureCSRFCookie(w http.ResponseWriter, r *http.Request) (string, error) {
 	return token, nil
 }
 
-// checkCSRF vérifie qu'un POST porte le jeton du cookie (champ de
+// CheckCSRF vérifie qu'un POST porte le jeton du cookie (champ de
 // formulaire csrf_token, ou en-tête X-CSRF-Token pour les requêtes htmx).
-func checkCSRF(r *http.Request) bool {
-	cookie, err := r.Cookie(csrfCookieName)
+func CheckCSRF(r *http.Request) bool {
+	cookie, err := r.Cookie(CSRFCookieName)
 	if err != nil || cookie.Value == "" {
 		return false
 	}

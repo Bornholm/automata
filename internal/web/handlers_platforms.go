@@ -8,13 +8,14 @@ import (
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/platform"
 
+	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
 	"github.com/bornholm/automata/internal/weblink"
 )
 
 // handlePlatforms — ADM-05.
 func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
-	now := s.now()
+	now := s.Now()
 	pairing := r.URL.Query().Get("pairing")
 	if pairing != "qr" && pairing != "credentials" {
 		pairing = ""
@@ -37,8 +38,8 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 	}
 
 	page := view.PlatformsPage{
-		Platforms:       s.sidebarPlatforms(),
-		CSRFToken:       s.csrfToken(w, r),
+		Platforms:       s.SidebarPlatforms(),
+		CSRFToken:       s.CSRFToken(w, r),
 		Pairing:         pairing,
 		PairingPlatform: pairingPlatform,
 	}
@@ -65,8 +66,8 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 	// Cartes de plateformes : les comptes enregistrés, avec leur état réel
 	// tel que le gestionnaire l'observe (internal/platform).
 	statuses := map[string]platform.Status{}
-	if s.platformManager != nil {
-		statuses = s.platformManager.Statuses()
+	if s.PlatformMgr != nil {
+		statuses = s.PlatformMgr.Statuses()
 	}
 
 	// Canaux d'un compte de messagerie : ceux déclarés en configuration
@@ -74,19 +75,19 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 	// « 0 canaux » sur la carte d'une plateforme dont la table, juste en
 	// dessous, en listait trois.
 	configChannelCounts := map[string]int{}
-	for _, ch := range s.cfg.Channels {
+	for _, ch := range s.Cfg.Channels {
 		configChannelCounts[ch.Provider]++
 	}
 
-	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		accounts, err := s.platforms.List(r.Context(), tx)
+	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+		accounts, err := s.Platforms.List(r.Context(), tx)
 		if err != nil {
 			return err
 		}
 
 		// Canaux liés dynamiquement (jetons de groupe consommés) : lus
 		// avant les cartes, qui en affichent le compte.
-		bindings, err := s.bindings.ListAll(r.Context(), tx)
+		bindings, err := s.Bindings.ListAll(r.Context(), tx)
 		if err != nil {
 			return err
 		}
@@ -153,26 +154,26 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 				PlatformType: platformTypeOf(accounts, binding.Provider),
 				Name:         binding.DisplayName,
 				Kind:         channelKindLabelFromScope(binding.Kind),
-				OrgName:      s.orgDisplayName(r.Context(), tx, binding.OrgID),
+				OrgName:      s.OrgDisplayName(r.Context(), tx, binding.OrgID),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
 			})
 			page.Active++
 		}
 
 		// Canaux actifs de la configuration.
-		for _, ch := range s.cfg.Channels {
+		for _, ch := range s.Cfg.Channels {
 			page.Channels = append(page.Channels, view.ChannelRow{
-				PlatformType: s.providerTypeOf(ch.Provider),
-				Name:         s.channelDisplayName(ch),
-				Kind:         channelKindLabel(ch.Kind),
-				OrgName:      s.orgDisplayName(r.Context(), tx, ch.OrgID),
+				PlatformType: s.ProviderTypeOf(ch.Provider),
+				Name:         s.ChannelDisplayName(ch),
+				Kind:         core.ChannelKindLabel(ch.Kind),
+				OrgName:      s.OrgDisplayName(r.Context(), tx, ch.OrgID),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
 			})
 			page.Active++
 		}
 
 		// Jetons de groupe en attente : les futurs canaux.
-		pending, err := s.linkTokens.ListPendingGroup(r.Context(), tx)
+		pending, err := s.LinkTokens.ListPendingGroup(r.Context(), tx)
 		if err != nil {
 			return err
 		}
@@ -183,7 +184,7 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 			page.Channels = append(page.Channels, view.ChannelRow{
 				Name:        "Canal à lier",
 				Kind:        "Groupe",
-				OrgName:     s.orgDisplayName(r.Context(), tx, token.OrgID),
+				OrgName:     s.OrgDisplayName(r.Context(), tx, token.OrgID),
 				Chip:        view.Chip{Label: "En attente de liaison", Tone: "warn"},
 				TokenPrefix: weblink.TokenPrefix(token.ID),
 				RowTone:     "warn",
@@ -191,7 +192,7 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 			page.PendingCnt++
 		}
 
-		orgs, err := s.orgs.List(r.Context(), tx, "")
+		orgs, err := s.Orgs.List(r.Context(), tx, "")
 		if err != nil {
 			return err
 		}
@@ -206,7 +207,7 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if key := r.URL.Query().Get("reveal"); key != "" {
-		if value, ok := s.reveals.pop(key, now); ok {
+		if value, ok := s.Reveals.Pop(key, now); ok {
 			page.FlashToken = &view.TokenPanelData{
 				Eyebrow:   "Jeton de groupe",
 				Display:   value.Display,
@@ -217,7 +218,7 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.render(w, r, http.StatusOK, view.AdminPlatforms(page))
+	s.Render(w, r, http.StatusOK, view.AdminPlatforms(page))
 }
 
 func (s *Server) handlePlatformsGroupToken(w http.ResponseWriter, r *http.Request) {
@@ -249,5 +250,5 @@ func channelKindLabelFromScope(kind string) string {
 
 // platformTypeLabel nomme un type de compte pour l'affichage.
 func platformTypeLabel(providerType string) string {
-	return platformDisplayName(providerType, providerType)
+	return core.PlatformDisplayName(providerType, providerType)
 }

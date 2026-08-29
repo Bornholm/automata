@@ -11,6 +11,7 @@ import (
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/secretbox"
+	"github.com/bornholm/automata/internal/web/core"
 )
 
 // smtpSender envoie les codes de vérification par SMTP, avec les réglages
@@ -30,11 +31,11 @@ type smtpSender struct {
 	name string
 }
 
-// NewSMTPSender construit un MailSender adossé au compte de messagerie
+// NewSMTPSender construit un core.MailSender adossé au compte de messagerie
 // nommé par web.mail_provider, ou (nil, nil) si le champ est vide. Le
 // compte lui-même n'est vérifié qu'À L'ENVOI : il se crée et se corrige en
 // ligne, le démarrage n'a pas à le connaître.
-func NewSMTPSender(cfg *config.Config, db *persistence.DB, secrets *secretbox.Box) (MailSender, error) {
+func NewSMTPSender(cfg *config.Config, db *persistence.DB, secrets *secretbox.Box) (core.MailSender, error) {
 	if cfg.Web.MailProvider == "" {
 		return nil, nil
 	}
@@ -87,7 +88,7 @@ func (s *smtpSender) smtpSettings(ctx context.Context) (config.MailProviderConfi
 	return mailCfg, nil
 }
 
-// SendVerificationCode implémente MailSender.
+// SendVerificationCode implémente core.MailSender.
 func (s *smtpSender) SendVerificationCode(ctx context.Context, email, code string) error {
 	settings, err := s.smtpSettings(ctx)
 	if err != nil {

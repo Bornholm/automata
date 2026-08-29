@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
 )
 
@@ -18,8 +19,8 @@ func (s *Server) handleProfileUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := s.now()
-	monthFrom, monthTo := monthBounds(now)
+	now := s.Now()
+	monthFrom, monthTo := core.MonthBounds(now)
 
 	page := view.ProfileUsagePage{
 		LinkID: r.PathValue("link"),
@@ -33,11 +34,11 @@ func (s *Server) handleProfileUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	page.PluginUIs = plugins
 
-	txOK := s.withTx(w, r, func(tx *sql.Tx) error {
-		rate := s.creditRate(r.Context(), tx)
+	txOK := s.WithTx(w, r, func(tx *sql.Tx) error {
+		rate := s.CreditRate(r.Context(), tx)
 
 		// Répartition du mois par nature d'usage.
-		aggregates, err := s.usage.AggregateUsage(r.Context(), tx, monthFrom, monthTo,
+		aggregates, err := s.Usage.AggregateUsage(r.Context(), tx, monthFrom, monthTo,
 			[]string{"agent", "kind"}, persistence.UsageFilter{OrgID: member.OrgID})
 		if err != nil {
 			return err
@@ -46,7 +47,7 @@ func (s *Server) handleProfileUsage(w http.ResponseWriter, r *http.Request) {
 		buckets := map[string]int64{}
 		var monthTotal int64
 		for _, agg := range aggregates {
-			credits := s.usageCredits(agg.CostAmount, rate)
+			credits := s.UsageCredits(agg.CostAmount, rate)
 			label := "Conversations"
 			switch {
 			case agg.Keys[1] == "image":
@@ -85,7 +86,7 @@ func (s *Server) handleProfileUsage(w http.ResponseWriter, r *http.Request) {
 		for i := 5; i >= 0; i-- {
 			from := monthFrom.AddDate(0, -i, 0)
 			to := from.AddDate(0, 1, 0)
-			credits, err := s.singleOrgUsageCredits(r.Context(), tx, member.OrgID, from, to)
+			credits, err := s.SingleOrgUsageCredits(r.Context(), tx, member.OrgID, from, to)
 			if err != nil {
 				return err
 			}
@@ -111,7 +112,7 @@ func (s *Server) handleProfileUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.render(w, r, http.StatusOK, view.ProfileUsage(page))
+	s.Render(w, r, http.StatusOK, view.ProfileUsage(page))
 }
 
 // usageSummary énonce l'usage du mois avant tout chiffre, et le compare au
