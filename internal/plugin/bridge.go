@@ -23,6 +23,9 @@ import (
 // ne doit pas suspendre le tour entier.
 const pluginToolTimeout = 60 * time.Second
 
+// maxLoggedErrorBytes borne le message d'échec journalisé.
+const maxLoggedErrorBytes = 300
+
 // maxPluginToolTimeout plafonne ce qu'un plugin peut demander comme
 // timeout d'outil. Un plugin déclare ce dont il a besoin (une commande
 // ffmpeg dure plus qu'un appel d'API), l'hôte garde le dernier mot : sans
@@ -166,7 +169,15 @@ func (m *Manager) CallTool(ctx context.Context, pluginName, toolName string, cal
 	if err == nil {
 		logCtx = append(logCtx, "is_error", out.IsError)
 		if out.IsError {
-			logCtx = append(logCtx, "argument_keys", argumentKeys(argsJSON))
+			// En cas d'échec, le motif : un message d'erreur est rédigé
+			// POUR être lu, et sans lui un plugin en panne n'est pas
+			// diagnosticable en production — les journaux du
+			// sous-processus, eux, ne remontent pas jusqu'ici. Tronqué, et
+			// réservé à l'échec : un résultat NOMINAL peut porter le
+			// contenu d'un fichier ou d'un courriel, jamais journalisé.
+			logCtx = append(logCtx,
+				"argument_keys", argumentKeys(argsJSON),
+				"error_text", truncateUTF8(out.ResultText, maxLoggedErrorBytes))
 		}
 	}
 	slog.InfoContext(ctx, "plugin: appel d'outil", logCtx...)
