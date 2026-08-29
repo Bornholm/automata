@@ -1,77 +1,141 @@
 ---
 name: design-web-page
-description: Visual design system for building a polished web page by hand (tokens, type, color, dark mode)
+description: Visual design system for building a polished web page by hand (skeleton, tokens, type, dark mode)
 agents: [pages]
 ---
 
 # Design a polished web page
 
-Load this before writing any HTML or CSS. You have no framework, no build
-step and no network at authoring time: everything below is achievable with
-one hand-written `style.css`, and that constraint is the style — clean,
-airy, typographic.
+You cannot see the page you are writing, so do not invent layout: START
+FROM THE SKELETON BELOW, verbatim, and only then adapt the content. Every
+part of it is deliberate and mobile-safe. You have no framework, no build
+step and no network at authoring time — one hand-written `style.css`, and
+that constraint is the style: clean, airy, typographic.
 
-## Structure
+## The skeleton (copy it, then adapt)
 
-- Semantic HTML5: `header`, `main`, `section`, `footer`, real headings in
-  order (`h1` once, then `h2`…). Never build layout out of bare `div`s
-  when an element says what the block is.
-- One stylesheet, `style.css`, linked with a relative path. No inline
-  `style=` attributes, no CSS framework, no base64 media, no text baked
-  into images.
+`index.html`:
 
-## Design tokens first
+```html
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TITLE</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="hero">
+  <!-- The hero image is optional; when present it sits ABOVE the text,
+       full width — never beside it. -->
+  <img class="hero-img" src="photo.jpg" alt="" loading="eager">
+  <p class="kicker">KICKER LINE</p>
+  <h1>TITLE</h1>
+  <p class="lead">SUBTITLE · DATE</p>
+</header>
+<main>
+  <section>
+    <h2>SECTION TITLE</h2>
+    <dl class="facts">
+      <div><dt>LABEL</dt><dd>VALUE</dd></div>
+      <div><dt>LABEL</dt><dd>VALUE</dd></div>
+    </dl>
+  </section>
+  <section>
+    <h2>SECTION TITLE</h2>
+    <p>BODY TEXT.</p>
+  </section>
+</main>
+<footer><p>FOOTER LINE</p></footer>
+</body>
+</html>
+```
 
-Open `style.css` by defining the whole system as custom properties on
-`:root`, then use ONLY the tokens below in the rest of the file:
+`style.css` (the tokens ARE the design system — use only them below):
 
 ```css
 :root {
-  --bg: #faf9f7;         /* page ground, slightly warm, never pure white */
-  --surface: #ffffff;    /* cards */
-  --text: #1c1c1e;       /* near-black, never #000 */
+  --bg: #faf9f7;       /* slightly warm ground, never pure white */
+  --surface: #ffffff;
+  --text: #1c1c1e;     /* near-black, never #000 */
   --muted: #6b6b70;
-  --accent: #0f6b54;     /* ONE accent hue; pick it to match the subject */
-  --radius: 12px;
-  --space-1: 0.5rem; --space-2: 1rem; --space-3: 2rem; --space-4: 4rem;
-  --shadow: 0 1px 3px rgb(0 0 0 / 0.08), 0 8px 24px rgb(0 0 0 / 0.06);
+  --accent: #0f6b54;   /* ONE accent hue; pick it to match the subject */
+  --radius: 14px;
+  --space-1: .5rem; --space-2: 1rem; --space-3: 2rem; --space-4: 4rem;
+  --shadow: 0 1px 3px rgb(0 0 0 / .08), 0 8px 24px rgb(0 0 0 / .06);
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg:#141416; --surface:#1e1e21; --text:#f2f2f2;
           --muted:#9a9aa1; --accent:#4cc9a4;
-          --shadow: 0 1px 3px rgb(0 0 0 / 0.5); }
+          --shadow: 0 1px 3px rgb(0 0 0 / .5); }
 }
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 1rem/1.6 system-ui, sans-serif;
+}
+img, video { max-width: 100%; height: auto; display: block; }
+.hero, main, footer {
+  width: min(100% - 2 * var(--space-2), 42rem);
+  margin-inline: auto;
+}
+.hero { padding-block: var(--space-3); text-align: center; }
+.hero-img {
+  width: 100%; max-height: 60vh; object-fit: cover;
+  border-radius: var(--radius); box-shadow: var(--shadow);
+  margin-bottom: var(--space-3);
+}
+.kicker { letter-spacing: .18em; text-transform: uppercase;
+  font-size: .8rem; color: var(--muted); }
+h1 { font-size: clamp(2rem, 5vw + 1rem, 3.2rem); line-height: 1.15;
+  margin: var(--space-1) 0; }
+.lead { color: var(--accent); font-size: 1.15rem; }
+h2 { font-size: 1.35rem; margin: var(--space-3) 0 var(--space-1); }
+section { background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: var(--space-2) var(--space-3);
+  margin-block: var(--space-2); }
+.facts div { padding-block: var(--space-1);
+  border-bottom: 1px dashed color-mix(in srgb, var(--muted) 35%, transparent); }
+.facts div:last-child { border-bottom: 0; }
+.facts dt { letter-spacing: .14em; text-transform: uppercase;
+  font-size: .75rem; color: var(--muted); }
+.facts dd { margin: 0; font-size: 1.1rem; }
+footer { padding-block: var(--space-3); color: var(--muted);
+  text-align: center; font-size: .9rem; }
 ```
 
-Dark mode costs those few lines when every color goes through a token —
-always include it. Keep text/background contrast at AA (4.5:1); check the
-accent on both grounds.
+This skeleton is a SINGLE COLUMN at every width, and that is correct: a
+42rem centered column reads well on a phone and on a desktop. Do not add
+side-by-side layouts. The only allowed multi-column construct is a card
+grid that collapses by itself:
 
-## Typography carries the design
+```css
+.grid { display: grid; gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+```
 
-- Fluid sizes with `clamp()`: `h1 { font-size: clamp(1.8rem, 4vw + 1rem, 3rem); }`,
-  body at `1rem/1.6`. Two or three sizes total — restraint reads as intent.
-- Reading measure: `max-width: 65ch` on text blocks, centered with margin
-  auto and `padding-inline: var(--space-2)`.
-- Font: the system stack (`system-ui, sans-serif`) is a fine default. One
-  Google Fonts family is allowed for headings (the page is public, the
-  visitor's browser fetches it): a single `<link>`, `font-display: swap`,
-  and a real fallback in the stack.
+Never `grid-template-columns: 1fr 1fr`, never floats, never a flex row
+holding text next to an image — on a phone half the screen per column is
+a failed page.
 
-## Composition
+## Adapting without breaking it
 
-- Space is the main design tool: section padding from the scale
-  (`var(--space-3)` up), consistent gaps, no crammed blocks.
-- Layout with flex and grid only; never fixed pixel widths on containers.
-  A card grid: `display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:var(--space-2);`.
-- Media: `img, video { max-width:100%; height:auto; border-radius:var(--radius); display:block; }`
-  and `object-fit: cover` on fixed-ratio thumbnails.
-- Finish: one consistent `--radius`, the soft `--shadow` on cards,
-  `transition: 150ms` on links/buttons hover. Nothing blinking, nothing
-  auto-playing with sound.
+- Keep every color a token. Dark mode then costs nothing — keep the dark
+  block, adjust only the accent.
+- Two or three font sizes total; restraint reads as intent. One Google
+  Fonts family is allowed for headings (single `<link>`,
+  `font-display: swap`, real fallback in the stack).
+- More photos: give each its own full-width `<img>` inside a section, or
+  the `.grid` above with `object-fit: cover` thumbnails.
+- Finish: one `--radius` everywhere, the soft `--shadow` on cards,
+  `transition: 150ms` on links and buttons. Nothing blinking, nothing
+  auto-playing.
+- Contrast at AA (4.5:1) — check the accent on both grounds.
 
-## Judge it before publishing
+## Judge it before finishing
 
-Re-read the HTML as a visitor: is there one clear focal point, is the
-hierarchy obvious from size and space alone, does every color come from a
-token? If a section looks busy, remove decoration rather than adding more.
+Re-read the HTML as a phone visitor: one clear focal point, hierarchy
+from size and space alone, every color a token, no element wider than its
+container. If a section looks busy, remove decoration rather than adding
+more.
