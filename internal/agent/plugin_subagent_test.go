@@ -1,8 +1,10 @@
 package agent_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"strings"
 	"sync"
 	"testing"
@@ -351,18 +353,32 @@ type fakeFileTransfer struct {
 	getErr      error
 }
 
-func (f *fakeFileTransfer) PutPluginFile(_ context.Context, _ string, _ agent.PluginCallContext, filename, mimeType string, data []byte) (string, bool, string, error) {
+func (f *fakeFileTransfer) PutPluginFile(_ context.Context, _ string, _ agent.PluginCallContext, meta agent.PluginFileMeta, r io.Reader) (string, bool, string, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return "", false, "", err
+	}
+
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.putFilename, f.putMime, f.putData = filename, mimeType, append([]byte(nil), data...)
+	f.putFilename, f.putMime, f.putData = meta.Filename, meta.MimeType, data
 	return f.putPath, f.putIsError, f.putErrText, f.putErr
 }
 
-func (f *fakeFileTransfer) GetPluginFile(_ context.Context, _ string, _ agent.PluginCallContext, path string, _ int64) (string, string, []byte, error) {
+func (f *fakeFileTransfer) OpenPluginFile(_ context.Context, _ string, _ agent.PluginCallContext, path string) (agent.PluginFileMeta, io.ReadCloser, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.getPath = path
-	return f.getFilename, f.getMime, f.getData, f.getErr
+	if f.getErr != nil {
+		return agent.PluginFileMeta{}, nil, f.getErr
+	}
+
+	return agent.PluginFileMeta{
+			Filename: f.getFilename,
+			MimeType: f.getMime,
+			Size:     int64(len(f.getData)),
+		},
+		io.NopCloser(bytes.NewReader(f.getData)), nil
 }
 
 func fileCapableSpec() agent.PluginSubAgentSpec {

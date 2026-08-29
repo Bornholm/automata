@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/bornholm/automata/pkg/pluginsdk"
 	proto "github.com/bornholm/automata/pkg/pluginsdk/proto"
 )
 
@@ -34,11 +35,6 @@ const maxPluginToolTimeout = 10 * time.Minute
 
 // maxToolResultBytes borne la taille d'un résultat relayé au modèle.
 const maxToolResultBytes = 48 * 1024
-
-// fileChunkBytes est la taille des tranches de fichier échangées avec un
-// plugin. Bien sous la limite de message gRPC (4 Mio par défaut) : la
-// tranche entière doit tenir dans un message, cadre compris.
-const fileChunkBytes = 1 << 20
 
 // SubAgentSpec décrit le sous-agent d'un plugin actif, prêt à être monté.
 type SubAgentSpec struct {
@@ -225,14 +221,25 @@ func toolTimeout(seconds int) time.Duration {
 	return d
 }
 
-// PutFile pousse un fichier vers le plugin, par tranches. Retourne le
-// chemin sous lequel le plugin l'a rangé.
+// FileMeta décrit un fichier échangé avec un plugin : ce que l'appelant
+// doit connaître AVANT de disposer des octets — pour poser des en-têtes
+// HTTP, refuser une taille, ou nommer une pièce jointe.
+type FileMeta struct {
+	Filename string
+	MimeType string
+	// Size est la taille annoncée par la source. Zéro quand elle n'est pas
+	// connue à l'avance : c'est une indication, jamais une garantie.
+	Size int64
+}
+
+// PutFile pousse un fichier vers le plugin, en le lisant au fil de l'eau.
+// Retourne le chemin sous lequel le plugin l'a rangé.
 //
 // Les octets ne passent JAMAIS par un résultat d'outil : ce canal existe
 // précisément pour qu'une vidéo n'ait pas à traverser la conversation.
-// PutFile et GetFile : voir agent.PluginFileTransfer pour le contrat côté
+// PutFile et OpenFile : voir agent.PluginFileTransfer pour le contrat côté
 // appelant.
-func (m *Manager) PutFile(ctx context.Context, pluginName string, callCtx CallContext, filename, mimeType string, data []byte) (string, bool, string, error) {
+func (m *Manager) PutFile(ctx context.Context, pluginName string, callCtx CallContext, meta FileMeta, r io.Reader) (string, bool, string, error) {
 	client, desc, ok := m.GetOrRestart(ctx, pluginName)
 	if !ok {
 		return "", false, "", fmt.Errorf("plugin %q indisponible", pluginName)
@@ -249,21 +256,23 @@ func (m *Manager) PutFile(ctx context.Context, pluginName string, callCtx CallCo
 		return "", false, "", fmt.Errorf("ouverture du flux PutFile vers %q: %w", pluginName, err)
 	}
 
-	meta := &proto.PutFileChunk{Payload: &proto.PutFileChunk_Metadata{Metadata: &proto.PutFileMetadata{
+	header := &proto.PutFileChunk{Payload: &proto.PutFileChunk_Metadata{Metadata: &proto.PutFileMetadata{
 		Ctx:      toProtoContext(callCtx),
-		Filename: filename,
-		MimeType: mimeType,
-		Size:     uint64(len(data)),
+		Filename: meta.Filename,
+		MimeType: meta.MimeType,
+		Size:     uint64(max(meta.Size, 0)),
 	}}}
-	if err := stream.Send(meta); err != nil {
+	if err := stream.Send(header); err != nil {
 		return "", false, "", fmt.Errorf("envoi des métadonnées à %q: %w", pluginName, err)
 	}
 
-	for offset := 0; offset < len(data); offset += fileChunkBytes {
-		end := min(offset+fileChunkBytes, len(data))
-		if err := stream.Send(&proto.PutFileChunk{Payload: &proto.PutFileChunk_Data{Data: data[offset:end]}}); err != nil {
-			return "", false, "", fmt.Errorf("envoi d'une tranche à %q: %w", pluginName, err)
-		}
+	sent := 0
+	err = pluginsdk.SendFile(func(data []byte) error {
+		sent += len(data)
+		return stream.Send(&proto.PutFileChunk{Payload: &proto.PutFileChunk_Data{Data: data}})
+	}, r)
+	if err != nil {
+		return "", false, "", fmt.Errorf("envoi d'une tranche à %q: %w", pluginName, err)
 	}
 
 	result, err := stream.CloseAndRecv()
@@ -274,63 +283,88 @@ func (m *Manager) PutFile(ctx context.Context, pluginName string, callCtx CallCo
 	// Identifiants et compteurs seulement : jamais le nom du fichier, qui
 	// vient de l'utilisateur.
 	slog.InfoContext(ctx, "plugin: fichier transmis au plugin",
-		"plugin", pluginName, "bytes", len(data), "is_error", result.IsError)
+		"plugin", pluginName, "bytes", sent, "is_error", result.IsError)
 
 	return result.Path, result.IsError, result.ErrorText, nil
 }
 
-// GetFile récupère un fichier depuis le plugin, par tranches, en bornant
-// la taille reçue : un plugin ne doit pas pouvoir saturer la mémoire de
-// l'hôte en annonçant un fichier énorme.
-func (m *Manager) GetFile(ctx context.Context, pluginName string, callCtx CallContext, path string, maxBytes int64) (filename, mimeType string, data []byte, err error) {
+// OpenFile ouvre un fichier du plugin et rend ses métadonnées puis un
+// lecteur qui tire les tranches au fil de l'eau.
+//
+// Rien n'est accumulé ici : c'est ce qui permet de servir un fichier de
+// plusieurs centaines de mégaoctets à un navigateur sans le charger en
+// mémoire. Un appelant qui a besoin des octets en entier les lit lui-même
+// avec SA borne (io.LimitReader) — voir attach_file et view_file, qui
+// refusent au-delà de attachments.max_tool_size.
+//
+// Le lecteur retourné DOIT être fermé : il tient le flux gRPC ouvert.
+func (m *Manager) OpenFile(ctx context.Context, pluginName string, callCtx CallContext, path string) (FileMeta, io.ReadCloser, error) {
 	client, desc, ok := m.GetOrRestart(ctx, pluginName)
 	if !ok {
-		return "", "", nil, fmt.Errorf("plugin %q indisponible", pluginName)
+		return FileMeta{}, nil, fmt.Errorf("plugin %q indisponible", pluginName)
 	}
 	if desc == nil || !desc.SupportsFiles {
-		return "", "", nil, fmt.Errorf("le plugin %q ne prend pas en charge les fichiers", pluginName)
+		return FileMeta{}, nil, fmt.Errorf("le plugin %q ne prend pas en charge les fichiers", pluginName)
 	}
 
-	callTimeout, cancel := context.WithTimeout(ctx, maxPluginToolTimeout)
-	defer cancel()
-
-	stream, err := client.GetFile(callTimeout, &proto.GetFileRequest{
+	// Le contexte n'est PAS borné par maxPluginToolTimeout : il gouverne
+	// désormais toute la durée de la lecture, qui dure aussi longtemps que
+	// le téléchargement du client. C'est à l'appelant de le borner.
+	stream, err := client.GetFile(ctx, &proto.GetFileRequest{
 		Ctx:  toProtoContext(callCtx),
 		Path: path,
 	})
 	if err != nil {
-		return "", "", nil, fmt.Errorf("ouverture du flux GetFile depuis %q: %w", pluginName, err)
+		return FileMeta{}, nil, fmt.Errorf("ouverture du flux GetFile depuis %q: %w", pluginName, err)
 	}
 
-	var buf []byte
-	for {
+	// La première trame porte les métadonnées : on l'attend avant de rendre
+	// la main, pour que l'appelant sache ce qu'il s'apprête à lire.
+	var meta FileMeta
+	first, err := stream.Recv()
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			return FileMeta{}, nil, fmt.Errorf("le plugin %q n'a rien renvoyé pour ce fichier", pluginName)
+		}
+		return FileMeta{}, nil, fmt.Errorf("lecture du flux GetFile depuis %q: %w", pluginName, err)
+	}
+
+	// Une trame de données peut précéder les métadonnées si le plugin les
+	// omet : on la garde plutôt que de la perdre.
+	var pending []byte
+	switch payload := first.Payload.(type) {
+	case *proto.FileChunk_Metadata:
+		meta = FileMeta{
+			Filename: payload.Metadata.Filename,
+			MimeType: payload.Metadata.MimeType,
+			Size:     int64(payload.Metadata.Size),
+		}
+	case *proto.FileChunk_Data:
+		pending = payload.Data
+	}
+
+	body := pluginsdk.RecvFile(func() ([]byte, error) {
+		if pending != nil {
+			data := pending
+			pending = nil
+			return data, nil
+		}
+
 		chunk, recvErr := stream.Recv()
-		if errors.Is(recvErr, io.EOF) {
-			break
-		}
 		if recvErr != nil {
-			return "", "", nil, fmt.Errorf("lecture du flux GetFile depuis %q: %w", pluginName, recvErr)
+			return nil, recvErr
+		}
+		if data, ok := chunk.Payload.(*proto.FileChunk_Data); ok {
+			return data.Data, nil
 		}
 
-		switch payload := chunk.Payload.(type) {
-		case *proto.FileChunk_Metadata:
-			filename = payload.Metadata.Filename
-			mimeType = payload.Metadata.MimeType
-			if maxBytes > 0 && payload.Metadata.Size > uint64(maxBytes) {
-				return "", "", nil, fmt.Errorf("le fichier dépasse %d octets", maxBytes)
-			}
-		case *proto.FileChunk_Data:
-			buf = append(buf, payload.Data...)
-			if maxBytes > 0 && int64(len(buf)) > maxBytes {
-				return "", "", nil, fmt.Errorf("le fichier dépasse %d octets", maxBytes)
-			}
-		}
-	}
+		return nil, nil
+	})
 
-	slog.InfoContext(ctx, "plugin: fichier récupéré depuis le plugin",
-		"plugin", pluginName, "bytes", len(buf))
+	slog.InfoContext(ctx, "plugin: fichier ouvert depuis le plugin",
+		"plugin", pluginName, "announced_bytes", meta.Size)
 
-	return filename, mimeType, buf, nil
+	return meta, body, nil
 }
 
 func toProtoContext(cc CallContext) *proto.CallContext {

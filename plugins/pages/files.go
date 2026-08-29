@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/bornholm/automata/pkg/pluginsdk"
 	proto "github.com/bornholm/automata/pkg/pluginsdk/proto"
 )
 
@@ -21,12 +22,10 @@ import (
 // espace (GetFile).
 
 // maxImportBytes borne un fichier importé ; l'hôte applique déjà ses
-// quotas, cette borne est la ceinture du plugin.
+// quotas, cette borne est la ceinture du plugin. Contrairement au plugin
+// workspace, elle reste ici : un objet du magasin est fait pour tenir en
+// mémoire — c'est sa nature, et sa limite est du même ordre.
 const maxImportBytes = 16 << 20
-
-// fileChunkBytes est la taille des tranches renvoyées à l'hôte, bien sous
-// la limite de message gRPC.
-const fileChunkBytes = 1 << 20
 
 // PutFile implémente proto.AutomataPluginServer : l'hôte pousse une pièce
 // jointe de la conversation, qui atterrit dans « imports » en attendant
@@ -50,26 +49,30 @@ func (p *Plugin) PutFile(stream proto.AutomataPlugin_PutFileServer) error {
 		return errors.New("pages: contexte d'appel incomplet")
 	}
 
-	var data []byte
-	for {
+	// Le magasin d'objets prend les octets en une fois : on lit donc le
+	// flux, mais TOUJOURS sous une borne — lire un octet de trop est ce qui
+	// permet de détecter le dépassement plutôt que de tronquer en silence.
+	body := pluginsdk.RecvFile(func() ([]byte, error) {
 		chunk, recvErr := stream.Recv()
-		if errors.Is(recvErr, io.EOF) {
-			break
-		}
 		if recvErr != nil {
-			return fmt.Errorf("pages: réception d'une tranche: %w", recvErr)
+			return nil, recvErr
 		}
 		payload, isData := chunk.Payload.(*proto.PutFileChunk_Data)
 		if !isData {
-			return errors.New("pages: fragment inattendu après les métadonnées")
+			return nil, errors.New("pages: fragment inattendu après les métadonnées")
 		}
-		data = append(data, payload.Data...)
-		if len(data) > maxImportBytes {
-			return stream.SendAndClose(&proto.PutFileResult{
-				IsError:   true,
-				ErrorText: fmt.Sprintf("the file exceeds %d bytes", maxImportBytes),
-			})
-		}
+		return payload.Data, nil
+	})
+
+	data, err := io.ReadAll(io.LimitReader(body, maxImportBytes+1))
+	if err != nil {
+		return fmt.Errorf("pages: réception d'une tranche: %w", err)
+	}
+	if len(data) > maxImportBytes {
+		return stream.SendAndClose(&proto.PutFileResult{
+			IsError:   true,
+			ErrorText: fmt.Sprintf("the file exceeds %d bytes", maxImportBytes),
+		})
 	}
 
 	key := importKey(meta.Metadata.Filename, meta.Metadata.MimeType)
@@ -96,11 +99,17 @@ func (p *Plugin) GetFile(req *proto.GetFileRequest, stream proto.AutomataPlugin_
 	}
 
 	if space, ok := strings.CutSuffix(req.Path, ".zip"); ok && spaceNamePattern.MatchString(space) {
-		data, err := p.zipSpace(stream.Context(), callScope{host: host, orgID: req.Ctx.OrgId, memberID: req.Ctx.MemberId}, space)
-		if err != nil {
+		scope := callScope{host: host, orgID: req.Ctx.OrgId, memberID: req.Ctx.MemberId}
+
+		// Les métadonnées partent avant le premier octet : une archive
+		// produite au fil de l'eau n'a pas de taille connue d'avance.
+		if err := sendMeta(stream, space+".zip", "application/zip", 0); err != nil {
 			return err
 		}
-		return sendFile(stream, space+".zip", "application/zip", data)
+
+		return p.zipSpace(stream.Context(), scope, space, pluginsdk.ChunkWriter(func(data []byte) error {
+			return stream.Send(&proto.FileChunk{Payload: &proto.FileChunk_Data{Data: data}})
+		}))
 	}
 
 	space, filePath, ok := strings.Cut(req.Path, "/")
@@ -133,55 +142,64 @@ func (p *Plugin) GetFile(req *proto.GetFileRequest, stream proto.AutomataPlugin_
 	return sendFile(stream, path.Base(filePath), contentType, data)
 }
 
-// zipSpace archive le brouillon d'un espace en mémoire.
-func (p *Plugin) zipSpace(ctx context.Context, s callScope, space string) ([]byte, error) {
+// zipSpace archive le brouillon d'un espace DIRECTEMENT dans le flux :
+// l'archive n'existe jamais en entier, ni ici ni chez l'hôte. Sa taille
+// n'est donc pas connue à l'avance — les métadonnées annoncent zéro, ce
+// qui vaut « inconnue ».
+func (p *Plugin) zipSpace(ctx context.Context, s callScope, space string, dst io.Writer) error {
 	entries, err := s.host.ListObjects(ctx, s.orgID, s.memberID, draftCollection(space))
 	if err != nil {
-		return nil, fmt.Errorf("pages: listage de l'espace: %w", err)
+		return fmt.Errorf("pages: listage de l'espace: %w", err)
 	}
 	if len(entries) == 0 {
-		return nil, fmt.Errorf("pages: aucun espace %q", space)
+		return fmt.Errorf("pages: aucun espace %q", space)
 	}
 
-	var buf bytes.Buffer
-	archive := zip.NewWriter(&buf)
+	archive := zip.NewWriter(dst)
+
 	for _, entry := range entries {
 		data, _, found, err := s.host.GetObject(ctx, s.orgID, s.memberID, draftCollection(space), entry.Key)
 		if err != nil || !found {
-			return nil, fmt.Errorf("pages: lecture de %q: %w", entry.Key, err)
+			return fmt.Errorf("pages: lecture de %q: %w", entry.Key, err)
 		}
 		writer, err := archive.Create(space + "/" + entry.Key)
 		if err != nil {
-			return nil, fmt.Errorf("pages: écriture de l'archive: %w", err)
+			return fmt.Errorf("pages: écriture de l'archive: %w", err)
 		}
 		if _, err := writer.Write(data); err != nil {
-			return nil, fmt.Errorf("pages: écriture de l'archive: %w", err)
+			return fmt.Errorf("pages: écriture de l'archive: %w", err)
 		}
 	}
+
 	if err := archive.Close(); err != nil {
-		return nil, fmt.Errorf("pages: clôture de l'archive: %w", err)
+		return fmt.Errorf("pages: clôture de l'archive: %w", err)
 	}
 
-	return buf.Bytes(), nil
+	return nil
 }
 
-// sendFile pousse un fichier vers l'hôte en tranches.
-func sendFile(stream proto.AutomataPlugin_GetFileServer, filename, mimeType string, data []byte) error {
+// sendMeta ouvre le flux par la trame de métadonnées. size à zéro signale
+// une taille inconnue (contenu produit au fil de l'eau).
+func sendMeta(stream proto.AutomataPlugin_GetFileServer, filename, mimeType string, size int) error {
 	if err := stream.Send(&proto.FileChunk{Payload: &proto.FileChunk_Metadata{Metadata: &proto.FileMetadata{
 		Filename: filename,
 		MimeType: mimeType,
-		Size:     uint64(len(data)),
+		Size:     uint64(max(size, 0)),
 	}}}); err != nil {
 		return fmt.Errorf("pages: envoi des métadonnées: %w", err)
 	}
-
-	for offset := 0; offset < len(data); offset += fileChunkBytes {
-		end := min(offset+fileChunkBytes, len(data))
-		if err := stream.Send(&proto.FileChunk{Payload: &proto.FileChunk_Data{Data: data[offset:end]}}); err != nil {
-			return fmt.Errorf("pages: envoi d'une tranche: %w", err)
-		}
-	}
 	return nil
+}
+
+// sendFile pousse un objet du magasin vers l'hôte, en tranches.
+func sendFile(stream proto.AutomataPlugin_GetFileServer, filename, mimeType string, data []byte) error {
+	if err := sendMeta(stream, filename, mimeType, len(data)); err != nil {
+		return err
+	}
+
+	return pluginsdk.SendFile(func(chunk []byte) error {
+		return stream.Send(&proto.FileChunk{Payload: &proto.FileChunk_Data{Data: chunk}})
+	}, bytes.NewReader(data))
 }
 
 // importKeyUnsafe retire tout ce qui n'a pas sa place dans une clé du

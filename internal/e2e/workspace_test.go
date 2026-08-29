@@ -15,6 +15,7 @@ package e2e_test
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -131,12 +132,25 @@ func (c pluginCaller) CallPluginTool(ctx context.Context, pluginName, toolName s
 
 type fileTransfer struct{ manager *plugin.Manager }
 
-func (t fileTransfer) PutPluginFile(ctx context.Context, pluginName string, callCtx agent.PluginCallContext, filename, mimeType string, data []byte) (string, bool, string, error) {
-	return t.manager.PutFile(ctx, pluginName, toPluginCtx(callCtx), filename, mimeType, data)
+func (t fileTransfer) PutPluginFile(ctx context.Context, pluginName string, callCtx agent.PluginCallContext, meta agent.PluginFileMeta, r io.Reader) (string, bool, string, error) {
+	return t.manager.PutFile(ctx, pluginName, toPluginCtx(callCtx), plugin.FileMeta{
+		Filename: meta.Filename,
+		MimeType: meta.MimeType,
+		Size:     meta.Size,
+	}, r)
 }
 
-func (t fileTransfer) GetPluginFile(ctx context.Context, pluginName string, callCtx agent.PluginCallContext, path string, maxBytes int64) (string, string, []byte, error) {
-	return t.manager.GetFile(ctx, pluginName, toPluginCtx(callCtx), path, maxBytes)
+func (t fileTransfer) OpenPluginFile(ctx context.Context, pluginName string, callCtx agent.PluginCallContext, path string) (agent.PluginFileMeta, io.ReadCloser, error) {
+	meta, body, err := t.manager.OpenFile(ctx, pluginName, toPluginCtx(callCtx), path)
+	if err != nil {
+		return agent.PluginFileMeta{}, nil, err
+	}
+
+	return agent.PluginFileMeta{
+		Filename: meta.Filename,
+		MimeType: meta.MimeType,
+		Size:     meta.Size,
+	}, body, nil
 }
 
 func toPluginCtx(callCtx agent.PluginCallContext) plugin.CallContext {

@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"sort"
 	"strings"
@@ -37,9 +39,45 @@ type PluginToolCaller interface {
 // PluginFileTransfer déplace des octets entre l'hôte et un plugin, hors du
 // canal des résultats d'outils : ceux-ci sont textuels et bornés à 48 Ko,
 // une vidéo n'y a rien à faire. Implémenté par internal/plugin.Manager.
+// Les octets circulent EN FLUX : ni l'hôte ni le plugin ne matérialisent
+// un fichier entier. Les appelants qui ont réellement besoin des octets —
+// une pièce jointe, une image à montrer au modèle — les lisent eux-mêmes
+// avec leur propre borne (readBounded ci-dessous).
 type PluginFileTransfer interface {
-	PutPluginFile(ctx context.Context, pluginName string, callCtx PluginCallContext, filename, mimeType string, data []byte) (path string, isError bool, errText string, err error)
-	GetPluginFile(ctx context.Context, pluginName string, callCtx PluginCallContext, path string, maxBytes int64) (filename, mimeType string, data []byte, err error)
+	PutPluginFile(ctx context.Context, pluginName string, callCtx PluginCallContext, meta PluginFileMeta, r io.Reader) (path string, isError bool, errText string, err error)
+	OpenPluginFile(ctx context.Context, pluginName string, callCtx PluginCallContext, path string) (meta PluginFileMeta, body io.ReadCloser, err error)
+}
+
+// PluginFileMeta décrit un fichier échangé avec un plugin : ce qu'on sait
+// de lui avant d'en lire le moindre octet.
+type PluginFileMeta struct {
+	Filename string
+	MimeType string
+	// Size est la taille annoncée par la source ; zéro si inconnue.
+	Size int64
+}
+
+// readBounded lit body en refusant de dépasser maxBytes, et ferme toujours
+// la source. C'est le seul endroit du paquet où des octets de plugin sont
+// rassemblés : la borne y est donc systématique, jamais optionnelle.
+func readBounded(body io.ReadCloser, maxBytes int64) ([]byte, error) {
+	defer func() { _ = body.Close() }()
+
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("agent: aucune borne de lecture fournie")
+	}
+
+	// maxBytes+1 : lire un octet de trop est ce qui permet de DÉTECTER le
+	// dépassement, au lieu de rendre un fichier tronqué en silence.
+	data, err := io.ReadAll(io.LimitReader(body, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("le fichier dépasse %d octets", maxBytes)
+	}
+
+	return data, nil
 }
 
 // PluginCallContext est l'identité transmise au plugin. Toujours
@@ -468,7 +506,13 @@ func (a *PluginSubAgent) newImportAttachmentTool(req delegation.Request) llm.Too
 				), nil
 			}
 
-			path, isError, errText, err := a.files.PutPluginFile(ctx, a.spec.PluginName, callCtx, found.Filename, found.MimeType, found.Data)
+			// found.Data est déjà en mémoire (la pièce jointe du tour) :
+			// un bytes.Reader suffit à la présenter au flux.
+			path, isError, errText, err := a.files.PutPluginFile(ctx, a.spec.PluginName, callCtx, PluginFileMeta{
+				Filename: found.Filename,
+				MimeType: found.MimeType,
+				Size:     int64(len(found.Data)),
+			}, bytes.NewReader(found.Data))
 			if err != nil {
 				a.logger.WarnContext(ctx, "agent: import de pièce jointe en échec",
 					"plugin", a.spec.PluginName, "bytes", len(found.Data), "error", err)
@@ -514,7 +558,12 @@ func (a *PluginSubAgent) newAttachFileTool(req delegation.Request, collector *me
 				return llm.NewToolResult("error: 'path' is required."), nil
 			}
 
-			filename, mimeType, data, err := a.files.GetPluginFile(ctx, a.spec.PluginName, callCtx, path, a.maxFileBytes)
+			meta, body, err := a.files.OpenPluginFile(ctx, a.spec.PluginName, callCtx, path)
+			var data []byte
+			if err == nil {
+				data, err = readBounded(body, a.maxFileBytes)
+			}
+			filename, mimeType := meta.Filename, meta.MimeType
 			if err != nil {
 				a.logger.WarnContext(ctx, "agent: récupération de fichier en échec",
 					"plugin", a.spec.PluginName, "error", err)
@@ -626,7 +675,12 @@ func (a *PluginSubAgent) newViewFileTool(req delegation.Request, vision llm.Chat
 				), nil
 			}
 
-			filename, mimeType, data, err := a.files.GetPluginFile(ctx, a.spec.PluginName, callCtx, path, a.maxFileBytes)
+			meta, body, err := a.files.OpenPluginFile(ctx, a.spec.PluginName, callCtx, path)
+			var data []byte
+			if err == nil {
+				data, err = readBounded(body, a.maxFileBytes)
+			}
+			filename, mimeType := meta.Filename, meta.MimeType
 			if err != nil {
 				a.logger.WarnContext(ctx, "agent: lecture de fichier pour la vision en échec",
 					"plugin", a.spec.PluginName, "error", err)

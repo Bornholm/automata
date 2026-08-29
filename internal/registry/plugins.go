@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 
@@ -162,13 +163,26 @@ type pluginFileTransfer struct {
 }
 
 // PutPluginFile implémente agent.PluginFileTransfer.
-func (t pluginFileTransfer) PutPluginFile(ctx context.Context, pluginName string, callCtx agent.PluginCallContext, filename, mimeType string, data []byte) (string, bool, string, error) {
-	return t.manager.PutFile(ctx, pluginName, toPluginCallContext(callCtx), filename, mimeType, data)
+func (t pluginFileTransfer) PutPluginFile(ctx context.Context, pluginName string, callCtx agent.PluginCallContext, meta agent.PluginFileMeta, r io.Reader) (string, bool, string, error) {
+	return t.manager.PutFile(ctx, pluginName, toPluginCallContext(callCtx), plugin.FileMeta{
+		Filename: meta.Filename,
+		MimeType: meta.MimeType,
+		Size:     meta.Size,
+	}, r)
 }
 
-// GetPluginFile implémente agent.PluginFileTransfer.
-func (t pluginFileTransfer) GetPluginFile(ctx context.Context, pluginName string, callCtx agent.PluginCallContext, path string, maxBytes int64) (string, string, []byte, error) {
-	return t.manager.GetFile(ctx, pluginName, toPluginCallContext(callCtx), path, maxBytes)
+// OpenPluginFile implémente agent.PluginFileTransfer.
+func (t pluginFileTransfer) OpenPluginFile(ctx context.Context, pluginName string, callCtx agent.PluginCallContext, path string) (agent.PluginFileMeta, io.ReadCloser, error) {
+	meta, body, err := t.manager.OpenFile(ctx, pluginName, toPluginCallContext(callCtx), path)
+	if err != nil {
+		return agent.PluginFileMeta{}, nil, err
+	}
+
+	return agent.PluginFileMeta{
+		Filename: meta.Filename,
+		MimeType: meta.MimeType,
+		Size:     meta.Size,
+	}, body, nil
 }
 
 func toPluginCallContext(callCtx agent.PluginCallContext) plugin.CallContext {

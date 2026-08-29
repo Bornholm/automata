@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -228,15 +229,16 @@ func handleUIArchive(w http.ResponseWriter, r *http.Request) {
 	host := pluginsdk.HostClientFromContext(r.Context())
 	plugin := &Plugin{}
 	plugin.SetHostClient(host)
-	data, err := plugin.zipSpace(r.Context(), callScope{host: host, orgID: orgID, memberID: memberID}, name)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
+	// L'archive s'écrit directement dans la réponse : elle n'existe jamais
+	// en entier en mémoire. Les en-têtes partent donc AVANT, et un échec
+	// survenu en cours de route ne peut plus être rattrapé par un 404 —
+	// c'est le prix, assumé, de ne pas tout garder.
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name+".zip"))
-	_, _ = w.Write(data)
+
+	if err := plugin.zipSpace(r.Context(), callScope{host: host, orgID: orgID, memberID: memberID}, name, w); err != nil {
+		slog.WarnContext(r.Context(), "pages: archive interrompue", "space", name, "error", err)
+	}
 }
 
 // sizeLabel rend une taille lisible.

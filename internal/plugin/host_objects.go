@@ -17,6 +17,7 @@ import (
 
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/weblink"
+	"github.com/bornholm/automata/pkg/pluginsdk"
 	proto "github.com/bornholm/automata/pkg/pluginsdk/proto"
 )
 
@@ -262,8 +263,8 @@ func (s *scopedHostService) GetObject(req *proto.GetObjectRequest, stream proto.
 	}
 
 	data := object.Data
-	for offset := 0; offset < len(data); offset += fileChunkBytes {
-		end := min(offset+fileChunkBytes, len(data))
+	for offset := 0; offset < len(data); offset += pluginsdk.ChunkBytes {
+		end := min(offset+pluginsdk.ChunkBytes, len(data))
 		if err := stream.Send(&proto.GetObjectChunk{Payload: &proto.GetObjectChunk_Data{Data: data[offset:end]}}); err != nil {
 			return status.Error(codes.Internal, "object download interrupted")
 		}

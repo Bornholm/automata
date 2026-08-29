@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -238,9 +237,10 @@ func (c *LeashClient) ListFiles(ctx context.Context, orgID, memberID string) ([]
 }
 
 // PutFile dépose un fichier dans le workspace du membre et retourne le
-// chemin retenu par le serveur.
-func (c *LeashClient) PutFile(ctx context.Context, orgID, memberID, path, mimeType string, data []byte) (string, error) {
-	resp, err := c.do(ctx, http.MethodPut, orgID, memberID, path, bytes.NewReader(data), mimeType)
+// chemin retenu par le serveur. Le corps est lu EN FLUX : rien n'oblige
+// l'appelant à détenir le fichier entier en mémoire.
+func (c *LeashClient) PutFile(ctx context.Context, orgID, memberID, path, mimeType string, r io.Reader) (string, error) {
+	resp, err := c.do(ctx, http.MethodPut, orgID, memberID, path, r, mimeType)
 	if err != nil {
 		return "", err
 	}
@@ -258,26 +258,43 @@ func (c *LeashClient) PutFile(ctx context.Context, orgID, memberID, path, mimeTy
 	return entry.Path, nil
 }
 
-// GetFile récupère un fichier du workspace du membre. maxBytes borne la
-// lecture : le plugin ne doit pas se laisser saturer par un fichier
-// démesuré, même produit par l'utilisateur lui-même.
-func (c *LeashClient) GetFile(ctx context.Context, orgID, memberID, path string, maxBytes int64) ([]byte, string, error) {
+// OpenFile ouvre un fichier du workspace du membre et rend son corps tel
+// quel, sans le lire.
+//
+// C'est ce qui permet de relayer une vidéo de plusieurs centaines de
+// mégaoctets jusqu'au navigateur sans jamais la charger : ni ici, ni chez
+// l'hôte. L'appelant DOIT fermer le lecteur retourné.
+func (c *LeashClient) OpenFile(ctx context.Context, orgID, memberID, path string) (io.ReadCloser, string, int64, error) {
 	resp, err := c.do(ctx, http.MethodGet, orgID, memberID, path, nil, "")
+	if err != nil {
+		return nil, "", 0, err
+	}
+
+	if err := checkStatus(resp, http.StatusOK); err != nil {
+		_ = resp.Body.Close()
+		return nil, "", 0, err
+	}
+
+	return resp.Body, resp.Header.Get("Content-Type"), resp.ContentLength, nil
+}
+
+// GetFile récupère un fichier du workspace du membre. maxBytes borne la
+// lecture : un appelant qui a besoin des octets en mémoire — pour les
+// joindre à une réponse, pour les montrer à un modèle — doit dire jusqu'où
+// il accepte d'aller.
+func (c *LeashClient) GetFile(ctx context.Context, orgID, memberID, path string, maxBytes int64) ([]byte, string, error) {
+	body, contentType, _, err := c.OpenFile(ctx, orgID, memberID, path)
 	if err != nil {
 		return nil, "", err
 	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if err := checkStatus(resp, http.StatusOK); err != nil {
-		return nil, "", err
-	}
+	defer func() { _ = body.Close() }()
 
 	limit := maxBytes
 	if limit <= 0 {
 		limit = 32 << 20
 	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	data, err := io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {
 		return nil, "", fmt.Errorf("lecture du fichier: %w", err)
 	}
@@ -285,7 +302,7 @@ func (c *LeashClient) GetFile(ctx context.Context, orgID, memberID, path string,
 		return nil, "", fmt.Errorf("le fichier dépasse %d octets", limit)
 	}
 
-	return data, resp.Header.Get("Content-Type"), nil
+	return data, contentType, nil
 }
 
 // do construit et exécute une requête vers les endpoints fichiers.
