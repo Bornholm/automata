@@ -226,6 +226,11 @@ func (p *Plugin) downloadVideo(ctx context.Context, in *proto.CallToolInput) (*p
 
 	target, err := validateDownloadURL(args.URL, downloadDomains())
 	if err != nil {
+		// Journaliser le REFUS, pas l'URL (contenu utilisateur) : sans
+		// cette trace, un téléchargement refusé est indiscernable d'un
+		// téléchargement en panne côté exploitation.
+		slog.InfoContext(ctx, "workspace: téléchargement refusé",
+			"org_id", in.Ctx.OrgId, "reason", err.Error())
 		return errorOutput(err.Error()), nil
 	}
 	name, err := validateOutputName(args.Name)

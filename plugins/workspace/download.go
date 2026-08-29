@@ -60,7 +60,18 @@ var outputNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 // validateDownloadURL vérifie schéma, hôte et appartenance à la liste
 // blanche. Le texte d'erreur part au modèle : anglais, actionnable.
 func validateDownloadURL(raw string, domains []string) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
+	raw = strings.TrimSpace(raw)
+
+	// Un modèle recopie volontiers le lien tel qu'il s'affiche, sans
+	// schéma (« facebook.com/share/… ») : le refuser ferait échouer la
+	// demande pour une broutille de forme. On complète en https, jamais
+	// en http — compléter vers le moins sûr des deux serait un choix
+	// silencieux à la place de l'utilisateur.
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+
+	parsed, err := url.Parse(raw)
 	if err != nil {
 		return "", fmt.Errorf("the URL could not be parsed")
 	}

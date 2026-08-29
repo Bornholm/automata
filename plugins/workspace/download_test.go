@@ -15,6 +15,10 @@ func TestValidateDownloadURL(t *testing.T) {
 		"https://m.youtube.com/watch?v=abc",
 		"https://youtu.be/abc",
 		"http://vimeo.com/123456",
+		// Sans schéma : un modèle recopie le lien tel qu'il s'affiche.
+		// Vu en production, c'est ce qui a fait échouer le premier essai.
+		"www.youtube.com/watch?v=abc",
+		"vimeo.com/123456",
 	}
 	for _, raw := range accepted {
 		if _, err := validateDownloadURL(raw, domains); err != nil {
@@ -30,6 +34,8 @@ func TestValidateDownloadURL(t *testing.T) {
 		"https://notyoutube.com/watch": "limited to these sites",
 		"https://youtube.com.evil.tld": "limited to these sites",
 		// Schémas hors http(s) : file:// lirait le disque du sandbox.
+		// La complétion en https ne s'applique qu'à l'absence de schéma,
+		// jamais à un schéma explicite et refusé.
 		"file:///etc/passwd": "http and https",
 		"ftp://exemple.fr/v": "http and https",
 		// Adresses littérales : la forme d'une tentative vers un service
