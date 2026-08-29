@@ -146,6 +146,14 @@ func downloadFailureAdvice(output string) string {
 			"Do NOT try other forms of the same link: they lead to the same page and will fail identically. " +
 			"Ask the user to send the video as an attachment instead."
 
+	// Plafond d'exploitation atteint : ni une panne ni un problème d'URL.
+	// L'agent doit le dire tel quel, sans chercher d'autre lien.
+	case strings.Contains(output, "larger than max-filesize"),
+		strings.Contains(output, "does not pass filter"):
+		return "The video was refused by this server's limits, not by the platform: it is too large or too long. " +
+			"Do not retry with another link to the same video. " +
+			"Tell the user plainly that this video exceeds what the workspace accepts."
+
 	// Vraie indisponibilité : là, une autre URL a du sens.
 	case strings.Contains(output, "Private video"),
 		strings.Contains(output, "Sign in to confirm"),
