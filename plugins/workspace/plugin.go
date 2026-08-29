@@ -36,17 +36,33 @@ const maxImportBytes = 32 << 20
 const fileChunkBytes = 1 << 20
 
 // Describe implements proto.AutomataPluginServer.
+//
+// La description du sous-agent est ce que LIT L'ORCHESTRATEUR pour décider
+// de déléguer : une capacité absente de ce texte n'existe pas pour lui, si
+// bien qu'il répond « je n'ai pas d'outil pour ça » sans jamais appeler le
+// spécialiste. Elle doit donc suivre les outils réellement montés — d'où
+// la mention conditionnelle du téléchargement.
 func (p *Plugin) Describe(context.Context, *proto.DescribeRequest) (*proto.PluginDescriptor, error) {
+	description := "Atelier de fichiers : retouche de vidéos et d'images (ffmpeg, imagemagick), édition et conversion de documents (pandoc, LibreOffice) dans un bac à sable isolé."
+	subAgentDescription := "edits videos, images and documents in a sandboxed workspace. " +
+		"Videos and images with ffmpeg and imagemagick (crop, trim, resize, remove a watermark, convert a format, extract audio); " +
+		"documents with pandoc and LibreOffice (read or edit a docx or odt, write a report, produce a PDF, convert between formats)"
+
+	if p.leash.fetchConfigured() {
+		description += " Peut aussi télécharger une vidéo publique depuis les sites autorisés par l'exploitant."
+		subAgentDescription += ". It can also DOWNLOAD a public video from a URL into the workspace before editing it — " +
+			"allowed sites: " + strings.Join(downloadDomains(), ", ") +
+			" — so a request like \"download this video and crop it\" is for this agent, not something to refuse"
+	}
+
 	return &proto.PluginDescriptor{
 		Name:             "workspace",
 		Version:          "0.1.0",
-		Description:      "Atelier de fichiers : retouche de vidéos et d'images (ffmpeg, imagemagick), édition et conversion de documents (pandoc, LibreOffice) dans un bac à sable isolé.",
+		Description:      description,
 		PermissionDomain: "workspace",
 		SupportsFiles:    true,
 		SubAgent: &proto.SubAgentDescriptor{
-			Description: "edits videos, images and documents in a sandboxed workspace. " +
-				"Videos and images with ffmpeg and imagemagick (crop, trim, resize, remove a watermark, convert a format, extract audio); " +
-				"documents with pandoc and LibreOffice (read or edit a docx or odt, write a report, produce a PDF, convert between formats)",
+			Description:  subAgentDescription,
 			SystemPrompt: workspaceSystemPrompt,
 			// Le travail sur média est exploratoire : inspecter, regarder
 			// une trame, essayer un filtre, vérifier la taille du résultat.
