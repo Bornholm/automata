@@ -66,6 +66,15 @@ service AutomataHostService {
   // handed out in their private channel. Nothing becomes public and the
   // signing secret never reaches the plugin.
   rpc PreviewCollection(PreviewCollectionRequest) returns (PreviewCollectionResponse);
+  // ShareFile mints a signed, expiring URL serving ONE file of the
+  // plugin, under the host's /f/ route. It exists because messaging
+  // attachments are capped far below what a workspace produces: a
+  // 140 MB video has no other way back to the member who asked for it.
+  //
+  // The host streams the bytes from the plugin when the link is opened —
+  // nothing is copied or stored — and the signing secret never reaches
+  // the plugin. The file must exist: the plugin checks before asking.
+  rpc ShareFile(ShareFileRequest) returns (ShareFileResponse);
 }
 
 message DescribeRequest {}
@@ -491,6 +500,18 @@ message PreviewCollectionRequest {
   string collection = 3;
 }
 message PreviewCollectionResponse {
+  // url is absolute and expires; expires_at is RFC3339 UTC.
+  string url = 1;
+  string expires_at = 2;
+}
+
+message ShareFileRequest {
+  string org_id = 1;
+  string member_id = 2;
+  // path names the file the way the plugin's own tools express it.
+  string path = 3;
+}
+message ShareFileResponse {
   // url is absolute and expires; expires_at is RFC3339 UTC.
   string url = 1;
   string expires_at = 2;

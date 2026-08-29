@@ -515,6 +515,7 @@ const (
 	AutomataHostService_UnpublishCollection_FullMethodName = "/automata.plugin.v1.AutomataHostService/UnpublishCollection"
 	AutomataHostService_ListPublications_FullMethodName    = "/automata.plugin.v1.AutomataHostService/ListPublications"
 	AutomataHostService_PreviewCollection_FullMethodName   = "/automata.plugin.v1.AutomataHostService/PreviewCollection"
+	AutomataHostService_ShareFile_FullMethodName           = "/automata.plugin.v1.AutomataHostService/ShareFile"
 )
 
 // AutomataHostServiceClient is the client API for AutomataHostService service.
@@ -556,6 +557,15 @@ type AutomataHostServiceClient interface {
 	// handed out in their private channel. Nothing becomes public and the
 	// signing secret never reaches the plugin.
 	PreviewCollection(ctx context.Context, in *PreviewCollectionRequest, opts ...grpc.CallOption) (*PreviewCollectionResponse, error)
+	// ShareFile mints a signed, expiring URL serving ONE file of the
+	// plugin, under the host's /f/ route. It exists because messaging
+	// attachments are capped far below what a workspace produces: a
+	// 140 MB video has no other way back to the member who asked for it.
+	//
+	// The host streams the bytes from the plugin when the link is opened —
+	// nothing is copied or stored — and the signing secret never reaches
+	// the plugin. The file must exist: the plugin checks before asking.
+	ShareFile(ctx context.Context, in *ShareFileRequest, opts ...grpc.CallOption) (*ShareFileResponse, error)
 }
 
 type automataHostServiceClient struct {
@@ -758,6 +768,16 @@ func (c *automataHostServiceClient) PreviewCollection(ctx context.Context, in *P
 	return out, nil
 }
 
+func (c *automataHostServiceClient) ShareFile(ctx context.Context, in *ShareFileRequest, opts ...grpc.CallOption) (*ShareFileResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ShareFileResponse)
+	err := c.cc.Invoke(ctx, AutomataHostService_ShareFile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AutomataHostServiceServer is the server API for AutomataHostService service.
 // All implementations must embed UnimplementedAutomataHostServiceServer
 // for forward compatibility.
@@ -797,6 +817,15 @@ type AutomataHostServiceServer interface {
 	// handed out in their private channel. Nothing becomes public and the
 	// signing secret never reaches the plugin.
 	PreviewCollection(context.Context, *PreviewCollectionRequest) (*PreviewCollectionResponse, error)
+	// ShareFile mints a signed, expiring URL serving ONE file of the
+	// plugin, under the host's /f/ route. It exists because messaging
+	// attachments are capped far below what a workspace produces: a
+	// 140 MB video has no other way back to the member who asked for it.
+	//
+	// The host streams the bytes from the plugin when the link is opened —
+	// nothing is copied or stored — and the signing secret never reaches
+	// the plugin. The file must exist: the plugin checks before asking.
+	ShareFile(context.Context, *ShareFileRequest) (*ShareFileResponse, error)
 	mustEmbedUnimplementedAutomataHostServiceServer()
 }
 
@@ -860,6 +889,9 @@ func (UnimplementedAutomataHostServiceServer) ListPublications(context.Context, 
 }
 func (UnimplementedAutomataHostServiceServer) PreviewCollection(context.Context, *PreviewCollectionRequest) (*PreviewCollectionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PreviewCollection not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) ShareFile(context.Context, *ShareFileRequest) (*ShareFileResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ShareFile not implemented")
 }
 func (UnimplementedAutomataHostServiceServer) mustEmbedUnimplementedAutomataHostServiceServer() {}
 func (UnimplementedAutomataHostServiceServer) testEmbeddedByValue()                             {}
@@ -1188,6 +1220,24 @@ func _AutomataHostService_PreviewCollection_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AutomataHostService_ShareFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ShareFileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataHostServiceServer).ShareFile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataHostService_ShareFile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataHostServiceServer).ShareFile(ctx, req.(*ShareFileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AutomataHostService_ServiceDesc is the grpc.ServiceDesc for AutomataHostService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1258,6 +1308,10 @@ var AutomataHostService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PreviewCollection",
 			Handler:    _AutomataHostService_PreviewCollection_Handler,
+		},
+		{
+			MethodName: "ShareFile",
+			Handler:    _AutomataHostService_ShareFile_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

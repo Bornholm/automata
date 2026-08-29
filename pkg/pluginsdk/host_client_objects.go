@@ -184,6 +184,20 @@ func (c *grpcHostClient) PreviewCollection(ctx context.Context, orgID, memberID,
 	return resp.Url, resp.ExpiresAt, nil
 }
 
+// ShareFile implémente HostClient.
+func (c *grpcHostClient) ShareFile(ctx context.Context, orgID, memberID, path string) (url, expiresAt string, err error) {
+	resp, err := c.client.ShareFile(ctx, &proto.ShareFileRequest{
+		OrgId:    orgID,
+		MemberId: memberID,
+		Path:     path,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("ShareFile: %w", err)
+	}
+
+	return resp.GetUrl(), resp.GetExpiresAt(), nil
+}
+
 func (c *grpcHostClient) ListPublications(ctx context.Context, orgID, memberID string) ([]Publication, error) {
 	resp, err := c.client.ListPublications(ctx, &proto.ListPublicationsRequest{
 		OrgId: orgID, MemberId: memberID,

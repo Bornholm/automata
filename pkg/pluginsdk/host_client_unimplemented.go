@@ -81,6 +81,10 @@ func (UnimplementedHostClient) PreviewCollection(context.Context, string, string
 	return "", "", ErrNotImplemented
 }
 
+func (UnimplementedHostClient) ShareFile(context.Context, string, string, string) (string, string, error) {
+	return "", "", ErrNotImplemented
+}
+
 func (UnimplementedHostClient) ListPublications(context.Context, string, string) ([]Publication, error) {
 	return nil, ErrNotImplemented
 }

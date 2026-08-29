@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"mime"
 	"path"
 	"strings"
+	"sync"
 
+	"github.com/bornholm/automata/pkg/pluginsdk"
 	proto "github.com/bornholm/automata/pkg/pluginsdk/proto"
 )
 
@@ -22,19 +23,29 @@ type Plugin struct {
 	proto.UnimplementedAutomataPluginServer
 
 	leash *LeashClient
+
+	// host sert à fabriquer les liens de téléchargement : le plugin ne
+	// signe rien lui-même, il demande à l'hôte. Renseigné à l'Initialize.
+	mu   sync.Mutex
+	host pluginsdk.HostClient
 }
 
 func newPlugin(leash *LeashClient) *Plugin {
 	return &Plugin{leash: leash}
 }
 
-// maxImportBytes borne un fichier importé depuis l'hôte. L'hôte applique
-// déjà attachments.max_tool_size ; cette borne est la ceinture du plugin.
-const maxImportBytes = 32 << 20
+// SetHostClient implémente pluginsdk.HostClientSetter.
+func (p *Plugin) SetHostClient(client pluginsdk.HostClient) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.host = client
+}
 
-// fileChunkBytes est la taille des tranches renvoyées à l'hôte, bien sous
-// la limite de message gRPC.
-const fileChunkBytes = 1 << 20
+func (p *Plugin) hostClient() pluginsdk.HostClient {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.host
+}
 
 // Describe implements proto.AutomataPluginServer.
 //
@@ -50,7 +61,8 @@ func (p *Plugin) Describe(context.Context, *proto.DescribeRequest) (*proto.Plugi
 	// fichiers survivent d'un tour à l'autre et repartent vers
 	// l'utilisateur — sans quoi, à « envoie-moi le fichier », il répond
 	// qu'il n'a aucun outil pour cela alors que le spécialiste l'a.
-	subAgentDescription := "edits videos, images and documents in a sandboxed workspace, and SENDS files back to the user. " +
+	subAgentDescription := "edits videos, images and documents in a sandboxed workspace, and SENDS files back to the user " +
+		"— as an attachment, or as a temporary download link when the file is too large for messaging. " +
 		"Videos and images with ffmpeg and imagemagick (crop, trim, resize, remove a watermark, convert a format, extract audio); " +
 		"documents with pandoc and LibreOffice (read or edit a docx or odt, write a report, produce a PDF, convert between formats). " +
 		"Its workspace PERSISTS between messages: a file produced or downloaded earlier is still there, " +
@@ -98,9 +110,11 @@ const workspaceSystemPrompt = "You are a shell expert working inside an isolated
 	"For a video, extract a frame first (ffmpeg -y -i input.mp4 -ss 1 -frames:v 1 frame.png) then look at that frame. " +
 	"Never try to see an image by dumping pixels, histograms or text renderings of it: that wastes your budget and tells you nothing.\n" +
 	"4. Run the transformation with run_command. Paths are relative to the workspace; write the result to a new file, never overwrite the input.\n" +
-	"5. Always re-encode the output so it stays under about 15 MB — messaging platforms reject anything larger. " +
+	"5. Prefer an output under about 15 MB so it can travel as an attachment. " +
 	"For video prefer libx264 with -crf 28 and -preset veryfast, scale down if needed, and check the resulting size with ls -l before attaching.\n" +
-	"6. Call attach_file with the path of the result. Do not describe the file afterwards: state briefly what you did.\n\n" +
+	"6. Call attach_file with the path of the result. If it is refused for being too large, call share_file on the SAME path " +
+	"and give the user the link it returns — never tell them you cannot send a file. " +
+	"Do not describe the file afterwards: state briefly what you did.\n\n" +
 	"When the task matches a skill from your catalog, load it first and follow it instead of improvising.\n\n" +
 	"Attach as soon as you have a usable result, before checking it: a file left in the workspace is worth nothing to the user. " +
 	"You can look at it and refine it afterwards if time allows.\n" +
@@ -150,7 +164,30 @@ func (p *Plugin) ListTools(context.Context, *proto.ListToolsInput) (*proto.ListT
 		out.Tools = append(out.Tools, downloadTool(downloadDomains()))
 	}
 
+	// share_file n'existe que si l'hôte peut réellement fabriquer un lien :
+	// proposer au modèle un outil qui répondra « non câblé » lui ferait
+	// perdre un appel et une explication.
+	if p.hostClient() != nil {
+		out.Tools = append(out.Tools, shareTool())
+	}
+
 	return out, nil
+}
+
+// shareTool décrit share_file : la seconde voie de sortie, pour ce qui ne
+// tient pas dans une pièce jointe.
+func shareTool() *proto.ToolDescriptor {
+	return &proto.ToolDescriptor{
+		Name: "share_file",
+		Description: "Give the user a temporary download link to a file of your workspace. " +
+			"Use this when attach_file refuses a file for being too large — never tell the user you cannot send it. " +
+			"The link works for 24 hours and needs no account; give it to them as it is.",
+		InputSchemaJson: `{"type":"object","properties":{"path":{"type":"string","description":"Path of the file in your workspace, as returned by list_files."}},"required":["path"]}`,
+		// read_only : le lien ne modifie rien, il expose au membre son
+		// propre fichier, dans la conversation où il vient de le demander.
+		ReadOnly:       true,
+		TimeoutSeconds: 60,
+	}
 }
 
 // downloadTool décrit download_video. Monté seulement quand l'exploitant a
@@ -188,6 +225,8 @@ func (p *Plugin) CallTool(ctx context.Context, in *proto.CallToolInput) (*proto.
 		return p.listFiles(ctx, in)
 	case "download_video":
 		return p.downloadVideo(ctx, in)
+	case "share_file":
+		return p.shareFile(ctx, in)
 	default:
 		return errorOutput(fmt.Sprintf("unknown tool %q", in.Name)), nil
 	}
@@ -284,6 +323,62 @@ func (p *Plugin) downloadVideo(ctx context.Context, in *proto.CallToolInput) (*p
 		"\nThe file is now in your workspace: call list_files to see its exact name before working on it."}, nil
 }
 
+// shareFile fabrique un lien de téléchargement temporaire vers un fichier
+// du workspace. L'existence du fichier est vérifiée ICI : l'hôte, lui, ne
+// sait pas lire le workspace, et un lien vers un fichier absent ne se
+// découvrirait qu'à l'ouverture, chez l'utilisateur.
+func (p *Plugin) shareFile(ctx context.Context, in *proto.CallToolInput) (*proto.CallToolOutput, error) {
+	host := p.hostClient()
+	if host == nil {
+		return errorOutput("sharing links is not available on this instance."), nil
+	}
+
+	var args struct {
+		Path string `json:"path"`
+		File string `json:"file"`
+	}
+	if in.ArgumentsJson != "" {
+		if err := json.Unmarshal([]byte(in.ArgumentsJson), &args); err != nil {
+			return errorOutput("invalid parameters"), nil
+		}
+	}
+
+	target := strings.TrimSpace(cmp.Or(args.Path, args.File))
+	if target == "" {
+		return errorOutput("parameter 'path' is required"), nil
+	}
+
+	entries, err := p.leash.ListFiles(ctx, in.Ctx.OrgId, in.Ctx.MemberId)
+	if err != nil {
+		return errorOutput(fmt.Sprintf("the workspace could not be listed: %v", err)), nil
+	}
+
+	var found bool
+	var size int64
+	for _, entry := range entries {
+		if entry.Path == target {
+			found, size = true, entry.Size
+			break
+		}
+	}
+	if !found {
+		return errorOutput("no file named " + target + " in your workspace. Call list_files to see the exact names."), nil
+	}
+
+	url, expiresAt, err := host.ShareFile(ctx, in.Ctx.OrgId, in.Ctx.MemberId, target)
+	if err != nil {
+		slog.WarnContext(ctx, "workspace: fabrication du lien en échec", "org_id", in.Ctx.OrgId, "error", err)
+		return errorOutput(fmt.Sprintf("the download link could not be created: %v", err)), nil
+	}
+
+	slog.InfoContext(ctx, "workspace: lien de téléchargement créé",
+		"org_id", in.Ctx.OrgId, "bytes", size)
+
+	return &proto.CallToolOutput{ResultText: fmt.Sprintf(
+		"Download link (valid until %s, no account needed):\n%s\n\nGive this link to the user as it is.",
+		expiresAt, url)}, nil
+}
+
 func (p *Plugin) listFiles(ctx context.Context, in *proto.CallToolInput) (*proto.CallToolOutput, error) {
 	entries, err := p.leash.ListFiles(ctx, in.Ctx.OrgId, in.Ctx.MemberId)
 	if err != nil {
@@ -320,43 +415,35 @@ func (p *Plugin) PutFile(stream proto.AutomataPlugin_PutFileServer) error {
 		return errors.New("workspace: contexte d'appel incomplet")
 	}
 
-	var data []byte
-	for {
-		chunk, recvErr := stream.Recv()
-		if errors.Is(recvErr, io.EOF) {
-			break
-		}
-		if recvErr != nil {
-			return fmt.Errorf("workspace: réception d'une tranche: %w", recvErr)
-		}
-
-		payload, isData := chunk.Payload.(*proto.PutFileChunk_Data)
-		if !isData {
-			return errors.New("workspace: fragment inattendu après les métadonnées")
-		}
-
-		data = append(data, payload.Data...)
-		if len(data) > maxImportBytes {
-			return stream.SendAndClose(&proto.PutFileResult{
-				IsError:   true,
-				ErrorText: fmt.Sprintf("the file exceeds %d bytes", maxImportBytes),
-			})
-		}
-	}
-
 	name := safeFilename(meta.Metadata.Filename, meta.Metadata.MimeType)
 
-	stored, err := p.leash.PutFile(stream.Context(), callCtx.OrgId, callCtx.MemberId, name, meta.Metadata.MimeType, data)
+	// Le flux gRPC entrant alimente directement le corps de la requête
+	// vers LeaSH : les octets traversent, ils ne s'accumulent nulle part.
+	var received int64
+	body := pluginsdk.RecvFile(func() ([]byte, error) {
+		chunk, recvErr := stream.Recv()
+		if recvErr != nil {
+			return nil, recvErr
+		}
+		payload, isData := chunk.Payload.(*proto.PutFileChunk_Data)
+		if !isData {
+			return nil, errors.New("workspace: fragment inattendu après les métadonnées")
+		}
+		received += int64(len(payload.Data))
+		return payload.Data, nil
+	})
+
+	stored, err := p.leash.PutFile(stream.Context(), callCtx.OrgId, callCtx.MemberId, name, meta.Metadata.MimeType, body)
 	if err != nil {
 		slog.WarnContext(stream.Context(), "workspace: dépôt de fichier en échec",
-			"org_id", callCtx.OrgId, "bytes", len(data), "error", err)
+			"org_id", callCtx.OrgId, "bytes", received, "error", err)
 		return stream.SendAndClose(&proto.PutFileResult{
 			IsError:   true,
 			ErrorText: fmt.Sprintf("the file could not be stored in the workspace: %v", err),
 		})
 	}
 
-	slog.InfoContext(stream.Context(), "workspace: fichier déposé", "org_id", callCtx.OrgId, "bytes", len(data))
+	slog.InfoContext(stream.Context(), "workspace: fichier déposé", "org_id", callCtx.OrgId, "bytes", received)
 
 	return stream.SendAndClose(&proto.PutFileResult{Path: stored})
 }
@@ -371,12 +458,13 @@ func (p *Plugin) GetFile(req *proto.GetFileRequest, stream proto.AutomataPlugin_
 		return errors.New("workspace: chemin requis")
 	}
 
-	data, contentType, err := p.leash.GetFile(stream.Context(), req.Ctx.OrgId, req.Ctx.MemberId, req.Path, maxImportBytes)
+	body, contentType, size, err := p.leash.OpenFile(stream.Context(), req.Ctx.OrgId, req.Ctx.MemberId, req.Path)
 	if err != nil {
 		slog.WarnContext(stream.Context(), "workspace: récupération de fichier en échec",
 			"org_id", req.Ctx.OrgId, "error", err)
 		return fmt.Errorf("workspace: récupération du fichier: %w", err)
 	}
+	defer func() { _ = body.Close() }()
 
 	mimeType := normalizeContentType(contentType)
 	if mimeType == "" {
@@ -386,20 +474,22 @@ func (p *Plugin) GetFile(req *proto.GetFileRequest, stream proto.AutomataPlugin_
 	metaErr := stream.Send(&proto.FileChunk{Payload: &proto.FileChunk_Metadata{Metadata: &proto.FileMetadata{
 		Filename: path.Base(req.Path),
 		MimeType: mimeType,
-		Size:     uint64(len(data)),
+		Size:     uint64(max(size, 0)),
 	}}})
 	if metaErr != nil {
 		return fmt.Errorf("workspace: envoi des métadonnées: %w", metaErr)
 	}
 
-	for offset := 0; offset < len(data); offset += fileChunkBytes {
-		end := min(offset+fileChunkBytes, len(data))
-		if err := stream.Send(&proto.FileChunk{Payload: &proto.FileChunk_Data{Data: data[offset:end]}}); err != nil {
-			return fmt.Errorf("workspace: envoi d'une tranche: %w", err)
-		}
+	// Relais tranche par tranche : c'est ce qui rend possible le partage
+	// d'un fichier de plusieurs centaines de mégaoctets.
+	if err := pluginsdk.SendFile(func(data []byte) error {
+		return stream.Send(&proto.FileChunk{Payload: &proto.FileChunk_Data{Data: data}})
+	}, body); err != nil {
+		return fmt.Errorf("workspace: envoi d'une tranche: %w", err)
 	}
 
-	slog.InfoContext(stream.Context(), "workspace: fichier récupéré", "org_id", req.Ctx.OrgId, "bytes", len(data))
+	slog.InfoContext(stream.Context(), "workspace: fichier récupéré",
+		"org_id", req.Ctx.OrgId, "announced_bytes", size)
 
 	return nil
 }

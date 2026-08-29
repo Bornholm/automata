@@ -1,9 +1,11 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,14 +23,32 @@ import (
 // fakePluginManager simule le gestionnaire : un backend httptest tient
 // lieu d'interface embarquée du plugin.
 type fakePluginManager struct {
-	port  uint32
-	token string
+	port     uint32
+	token    string
+	files    map[string][]byte
+	mimeType string
 }
 
 func (f *fakePluginManager) Statuses() []plugin.Status {
 	return []plugin.Status{{Name: "echo", Version: "0.0.1", Running: true, HasUI: f.port != 0}}
 }
 func (f *fakePluginManager) Restart(context.Context, string) bool { return true }
+
+// files, s'il est renseigné, est servi par OpenFile quel que soit le
+// chemin demandé — de quoi éprouver la route /f/ sans plugin réel.
+func (f *fakePluginManager) OpenFile(_ context.Context, _ string, _ plugin.CallContext, path string) (plugin.FileMeta, io.ReadCloser, error) {
+	data, ok := f.files[path]
+	if !ok {
+		return plugin.FileMeta{}, nil, errors.New("fichier introuvable")
+	}
+
+	return plugin.FileMeta{
+			Filename: path,
+			MimeType: f.mimeType,
+			Size:     int64(len(data)),
+		},
+		io.NopCloser(bytes.NewReader(data)), nil
+}
 func (f *fakePluginManager) UIEndpoint(name string) (uint32, string, bool) {
 	if name != "echo" || f.port == 0 {
 		return 0, "", false

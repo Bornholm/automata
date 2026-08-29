@@ -246,6 +246,68 @@ func (s *Server) parseDraftPreviewToken(token string, now time.Time) (pluginName
 	return parts[0], parts[1], parts[2], parts[3], true
 }
 
+// fileLinkTTL borne la vie d'un lien de téléchargement (route /f/). Vingt-
+// quatre heures, alignées sur la durée de vie d'un espace de travail : un
+// lien plus long désignerait un fichier déjà effacé, un lien plus court
+// serait mort au réveil de celui qui l'a reçu la veille au soir.
+//
+// C'est plus large que draftPreviewTTL, et le jeton voyage dans les mêmes
+// journaux de reverse proxy. Le compromis tient à ce qu'il ouvre : UN
+// chemin précis, dans l'espace de travail d'UN membre, et rien d'autre.
+const fileLinkTTL = 24 * time.Hour
+
+// FileLinkMinter retourne la fabrique de liens de téléchargement, sur le
+// modèle de DraftPreviewMinter : une closure qui capture le secret, remise
+// au service hôte des plugins par le registre, de sorte que ni
+// internal/plugin ni le plugin lui-même ne le détiennent jamais.
+//
+// Le sujet garde l'ordre plugin/org/membre/chemin ; seuls les trois
+// premiers segments sont sans « / », le chemin récupère le reste au
+// découpage — un fichier peut vivre dans un sous-répertoire.
+func FileLinkMinter(sessionSecret, baseURL string) func(pluginName, orgID, memberID, path string) (url string, expiresAt time.Time, err error) {
+	sig := signer{secret: []byte(sessionSecret)}
+	base := strings.TrimRight(baseURL, "/")
+
+	return func(pluginName, orgID, memberID, path string) (string, time.Time, error) {
+		for _, segment := range []string{pluginName, orgID, memberID} {
+			if segment == "" || strings.Contains(segment, "/") {
+				return "", time.Time{}, fmt.Errorf("web: sujet de lien de fichier invalide")
+			}
+		}
+		if path == "" {
+			return "", time.Time{}, fmt.Errorf("web: chemin de fichier vide")
+		}
+
+		expires := time.Now().Add(fileLinkTTL)
+		subject := pluginName + "/" + orgID + "/" + memberID + "/" + path
+		payload := sessionPayload("file-link", subject, expires)
+		token := base64.RawURLEncoding.EncodeToString([]byte(sig.sign(payload)))
+
+		return base + "/f/" + token, expires, nil
+	}
+}
+
+// parseFileLinkToken vérifie un jeton de téléchargement et rend ce qu'il
+// désigne.
+func (s *Server) parseFileLinkToken(token string, now time.Time) (pluginName, orgID, memberID, path string, ok bool) {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", "", "", "", false
+	}
+
+	subject, _, valid := s.signer.parseSession(string(raw), "file-link", now)
+	if !valid {
+		return "", "", "", "", false
+	}
+
+	parts := strings.SplitN(subject, "/", 4)
+	if len(parts) != 4 || parts[0] == "" || parts[1] == "" || parts[2] == "" || parts[3] == "" {
+		return "", "", "", "", false
+	}
+
+	return parts[0], parts[1], parts[2], parts[3], true
+}
+
 // parsePluginUIToken vérifie un jeton et rend ce qu'il porte.
 func (s *Server) parsePluginUIToken(token string, now time.Time) (view, orgID, memberID, name string, ok bool) {
 	raw, err := base64.RawURLEncoding.DecodeString(token)

@@ -3825,6 +3825,120 @@ func (x *PreviewCollectionResponse) GetExpiresAt() string {
 	return ""
 }
 
+type ShareFileRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	OrgId    string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	MemberId string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	// path names the file the way the plugin's own tools express it.
+	Path          string `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShareFileRequest) Reset() {
+	*x = ShareFileRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShareFileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShareFileRequest) ProtoMessage() {}
+
+func (x *ShareFileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShareFileRequest.ProtoReflect.Descriptor instead.
+func (*ShareFileRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *ShareFileRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ShareFileRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *ShareFileRequest) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+type ShareFileResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// url is absolute and expires; expires_at is RFC3339 UTC.
+	Url           string `protobuf:"bytes,1,opt,name=url,proto3" json:"url,omitempty"`
+	ExpiresAt     string `protobuf:"bytes,2,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShareFileResponse) Reset() {
+	*x = ShareFileResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[65]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShareFileResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShareFileResponse) ProtoMessage() {}
+
+func (x *ShareFileResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[65]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShareFileResponse.ProtoReflect.Descriptor instead.
+func (*ShareFileResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{65}
+}
+
+func (x *ShareFileResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *ShareFileResponse) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
+}
+
 type Publication struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	Collection string                 `protobuf:"bytes,1,opt,name=collection,proto3" json:"collection,omitempty"`
@@ -3838,7 +3952,7 @@ type Publication struct {
 
 func (x *Publication) Reset() {
 	*x = Publication{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[64]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3850,7 +3964,7 @@ func (x *Publication) String() string {
 func (*Publication) ProtoMessage() {}
 
 func (x *Publication) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[64]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3863,7 +3977,7 @@ func (x *Publication) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Publication.ProtoReflect.Descriptor instead.
 func (*Publication) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{64}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *Publication) GetCollection() string {
@@ -3904,7 +4018,7 @@ type ListPublicationsRequest struct {
 
 func (x *ListPublicationsRequest) Reset() {
 	*x = ListPublicationsRequest{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[65]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3916,7 +4030,7 @@ func (x *ListPublicationsRequest) String() string {
 func (*ListPublicationsRequest) ProtoMessage() {}
 
 func (x *ListPublicationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[65]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3929,7 +4043,7 @@ func (x *ListPublicationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPublicationsRequest.ProtoReflect.Descriptor instead.
 func (*ListPublicationsRequest) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{65}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *ListPublicationsRequest) GetOrgId() string {
@@ -3955,7 +4069,7 @@ type ListPublicationsResponse struct {
 
 func (x *ListPublicationsResponse) Reset() {
 	*x = ListPublicationsResponse{}
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[66]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3967,7 +4081,7 @@ func (x *ListPublicationsResponse) String() string {
 func (*ListPublicationsResponse) ProtoMessage() {}
 
 func (x *ListPublicationsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[66]
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3980,7 +4094,7 @@ func (x *ListPublicationsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListPublicationsResponse.ProtoReflect.Descriptor instead.
 func (*ListPublicationsResponse) Descriptor() ([]byte, []int) {
-	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{66}
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *ListPublicationsResponse) GetPublications() []*Publication {
@@ -4257,6 +4371,14 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\x19PreviewCollectionResponse\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x1d\n" +
 	"\n" +
+	"expires_at\x18\x02 \x01(\tR\texpiresAt\"Z\n" +
+	"\x10ShareFileRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\"D\n" +
+	"\x11ShareFileResponse\x12\x10\n" +
+	"\x03url\x18\x01 \x01(\tR\x03url\x12\x1d\n" +
+	"\n" +
 	"expires_at\x18\x02 \x01(\tR\texpiresAt\"v\n" +
 	"\vPublication\x12\x1e\n" +
 	"\n" +
@@ -4282,7 +4404,7 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\bPutEvent\x12#.automata.plugin.v1.PutEventRequest\x1a$.automata.plugin.v1.PutEventResponse\x12^\n" +
 	"\vDeleteEvent\x12&.automata.plugin.v1.DeleteEventRequest\x1a'.automata.plugin.v1.DeleteEventResponse\x12[\n" +
 	"\n" +
-	"ListEvents\x12%.automata.plugin.v1.ListEventsRequest\x1a&.automata.plugin.v1.ListEventsResponse2\x97\x0e\n" +
+	"ListEvents\x12%.automata.plugin.v1.ListEventsRequest\x1a&.automata.plugin.v1.ListEventsResponse2\xf1\x0e\n" +
 	"\x13AutomataHostService\x12X\n" +
 	"\tGetConfig\x12$.automata.plugin.v1.GetConfigRequest\x1a%.automata.plugin.v1.GetConfigResponse\x12[\n" +
 	"\n" +
@@ -4302,7 +4424,8 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\x11PublishCollection\x12,.automata.plugin.v1.PublishCollectionRequest\x1a-.automata.plugin.v1.PublishCollectionResponse\x12v\n" +
 	"\x13UnpublishCollection\x12..automata.plugin.v1.UnpublishCollectionRequest\x1a/.automata.plugin.v1.UnpublishCollectionResponse\x12m\n" +
 	"\x10ListPublications\x12+.automata.plugin.v1.ListPublicationsRequest\x1a,.automata.plugin.v1.ListPublicationsResponse\x12p\n" +
-	"\x11PreviewCollection\x12,.automata.plugin.v1.PreviewCollectionRequest\x1a-.automata.plugin.v1.PreviewCollectionResponseB2Z0github.com/bornholm/automata/pkg/pluginsdk/protob\x06proto3"
+	"\x11PreviewCollection\x12,.automata.plugin.v1.PreviewCollectionRequest\x1a-.automata.plugin.v1.PreviewCollectionResponse\x12X\n" +
+	"\tShareFile\x12$.automata.plugin.v1.ShareFileRequest\x1a%.automata.plugin.v1.ShareFileResponseB2Z0github.com/bornholm/automata/pkg/pluginsdk/protob\x06proto3"
 
 var (
 	file_pkg_pluginsdk_proto_plugin_proto_rawDescOnce sync.Once
@@ -4316,7 +4439,7 @@ func file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP() []byte {
 	return file_pkg_pluginsdk_proto_plugin_proto_rawDescData
 }
 
-var file_pkg_pluginsdk_proto_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 68)
+var file_pkg_pluginsdk_proto_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 70)
 var file_pkg_pluginsdk_proto_plugin_proto_goTypes = []any{
 	(*DescribeRequest)(nil),             // 0: automata.plugin.v1.DescribeRequest
 	(*PluginDescriptor)(nil),            // 1: automata.plugin.v1.PluginDescriptor
@@ -4382,10 +4505,12 @@ var file_pkg_pluginsdk_proto_plugin_proto_goTypes = []any{
 	(*UnpublishCollectionResponse)(nil), // 61: automata.plugin.v1.UnpublishCollectionResponse
 	(*PreviewCollectionRequest)(nil),    // 62: automata.plugin.v1.PreviewCollectionRequest
 	(*PreviewCollectionResponse)(nil),   // 63: automata.plugin.v1.PreviewCollectionResponse
-	(*Publication)(nil),                 // 64: automata.plugin.v1.Publication
-	(*ListPublicationsRequest)(nil),     // 65: automata.plugin.v1.ListPublicationsRequest
-	(*ListPublicationsResponse)(nil),    // 66: automata.plugin.v1.ListPublicationsResponse
-	nil,                                 // 67: automata.plugin.v1.TriggerEvent.AttributesEntry
+	(*ShareFileRequest)(nil),            // 64: automata.plugin.v1.ShareFileRequest
+	(*ShareFileResponse)(nil),           // 65: automata.plugin.v1.ShareFileResponse
+	(*Publication)(nil),                 // 66: automata.plugin.v1.Publication
+	(*ListPublicationsRequest)(nil),     // 67: automata.plugin.v1.ListPublicationsRequest
+	(*ListPublicationsResponse)(nil),    // 68: automata.plugin.v1.ListPublicationsResponse
+	nil,                                 // 69: automata.plugin.v1.TriggerEvent.AttributesEntry
 }
 var file_pkg_pluginsdk_proto_plugin_proto_depIdxs = []int32{
 	2,  // 0: automata.plugin.v1.PluginDescriptor.sub_agent:type_name -> automata.plugin.v1.SubAgentDescriptor
@@ -4401,12 +4526,12 @@ var file_pkg_pluginsdk_proto_plugin_proto_depIdxs = []int32{
 	5,  // 10: automata.plugin.v1.DeleteEventRequest.ctx:type_name -> automata.plugin.v1.CallContext
 	5,  // 11: automata.plugin.v1.ListEventsRequest.ctx:type_name -> automata.plugin.v1.CallContext
 	17, // 12: automata.plugin.v1.ListEventsResponse.events:type_name -> automata.plugin.v1.ScheduledEvent
-	67, // 13: automata.plugin.v1.TriggerEvent.attributes:type_name -> automata.plugin.v1.TriggerEvent.AttributesEntry
+	69, // 13: automata.plugin.v1.TriggerEvent.attributes:type_name -> automata.plugin.v1.TriggerEvent.AttributesEntry
 	32, // 14: automata.plugin.v1.ListConfigsResponse.entries:type_name -> automata.plugin.v1.ConfigEntry
 	42, // 15: automata.plugin.v1.PutObjectChunk.metadata:type_name -> automata.plugin.v1.PutObjectMetadata
 	46, // 16: automata.plugin.v1.GetObjectChunk.metadata:type_name -> automata.plugin.v1.GetObjectMetadata
 	51, // 17: automata.plugin.v1.ListObjectsResponse.entries:type_name -> automata.plugin.v1.ObjectEntry
-	64, // 18: automata.plugin.v1.ListPublicationsResponse.publications:type_name -> automata.plugin.v1.Publication
+	66, // 18: automata.plugin.v1.ListPublicationsResponse.publications:type_name -> automata.plugin.v1.Publication
 	0,  // 19: automata.plugin.v1.AutomataPlugin.Describe:input_type -> automata.plugin.v1.DescribeRequest
 	3,  // 20: automata.plugin.v1.AutomataPlugin.Initialize:input_type -> automata.plugin.v1.InitializeRequest
 	7,  // 21: automata.plugin.v1.AutomataPlugin.ListTools:input_type -> automata.plugin.v1.ListToolsInput
@@ -4433,38 +4558,40 @@ var file_pkg_pluginsdk_proto_plugin_proto_depIdxs = []int32{
 	56, // 42: automata.plugin.v1.AutomataHostService.CopyCollection:input_type -> automata.plugin.v1.CopyCollectionRequest
 	58, // 43: automata.plugin.v1.AutomataHostService.PublishCollection:input_type -> automata.plugin.v1.PublishCollectionRequest
 	60, // 44: automata.plugin.v1.AutomataHostService.UnpublishCollection:input_type -> automata.plugin.v1.UnpublishCollectionRequest
-	65, // 45: automata.plugin.v1.AutomataHostService.ListPublications:input_type -> automata.plugin.v1.ListPublicationsRequest
+	67, // 45: automata.plugin.v1.AutomataHostService.ListPublications:input_type -> automata.plugin.v1.ListPublicationsRequest
 	62, // 46: automata.plugin.v1.AutomataHostService.PreviewCollection:input_type -> automata.plugin.v1.PreviewCollectionRequest
-	1,  // 47: automata.plugin.v1.AutomataPlugin.Describe:output_type -> automata.plugin.v1.PluginDescriptor
-	4,  // 48: automata.plugin.v1.AutomataPlugin.Initialize:output_type -> automata.plugin.v1.InitializeResponse
-	8,  // 49: automata.plugin.v1.AutomataPlugin.ListTools:output_type -> automata.plugin.v1.ListToolsOutput
-	10, // 50: automata.plugin.v1.AutomataPlugin.CallTool:output_type -> automata.plugin.v1.CallToolOutput
-	25, // 51: automata.plugin.v1.AutomataPlugin.WatchTriggers:output_type -> automata.plugin.v1.TriggerEvent
-	13, // 52: automata.plugin.v1.AutomataPlugin.PutFile:output_type -> automata.plugin.v1.PutFileResult
-	15, // 53: automata.plugin.v1.AutomataPlugin.GetFile:output_type -> automata.plugin.v1.FileChunk
-	19, // 54: automata.plugin.v1.AutomataPlugin.PutEvent:output_type -> automata.plugin.v1.PutEventResponse
-	21, // 55: automata.plugin.v1.AutomataPlugin.DeleteEvent:output_type -> automata.plugin.v1.DeleteEventResponse
-	23, // 56: automata.plugin.v1.AutomataPlugin.ListEvents:output_type -> automata.plugin.v1.ListEventsResponse
-	27, // 57: automata.plugin.v1.AutomataHostService.GetConfig:output_type -> automata.plugin.v1.GetConfigResponse
-	29, // 58: automata.plugin.v1.AutomataHostService.SaveConfig:output_type -> automata.plugin.v1.SaveConfigResponse
-	31, // 59: automata.plugin.v1.AutomataHostService.ListConfigs:output_type -> automata.plugin.v1.ListConfigsResponse
-	34, // 60: automata.plugin.v1.AutomataHostService.GetSecret:output_type -> automata.plugin.v1.GetSecretResponse
-	36, // 61: automata.plugin.v1.AutomataHostService.SetSecret:output_type -> automata.plugin.v1.SetSecretResponse
-	38, // 62: automata.plugin.v1.AutomataHostService.DeleteSecret:output_type -> automata.plugin.v1.DeleteSecretResponse
-	40, // 63: automata.plugin.v1.AutomataHostService.Notify:output_type -> automata.plugin.v1.NotifyResponse
-	43, // 64: automata.plugin.v1.AutomataHostService.PutObject:output_type -> automata.plugin.v1.PutObjectResult
-	45, // 65: automata.plugin.v1.AutomataHostService.GetObject:output_type -> automata.plugin.v1.GetObjectChunk
-	48, // 66: automata.plugin.v1.AutomataHostService.DeleteObject:output_type -> automata.plugin.v1.DeleteObjectResponse
-	50, // 67: automata.plugin.v1.AutomataHostService.DeleteCollection:output_type -> automata.plugin.v1.DeleteCollectionResponse
-	53, // 68: automata.plugin.v1.AutomataHostService.ListObjects:output_type -> automata.plugin.v1.ListObjectsResponse
-	55, // 69: automata.plugin.v1.AutomataHostService.ListCollections:output_type -> automata.plugin.v1.ListCollectionsResponse
-	57, // 70: automata.plugin.v1.AutomataHostService.CopyCollection:output_type -> automata.plugin.v1.CopyCollectionResponse
-	59, // 71: automata.plugin.v1.AutomataHostService.PublishCollection:output_type -> automata.plugin.v1.PublishCollectionResponse
-	61, // 72: automata.plugin.v1.AutomataHostService.UnpublishCollection:output_type -> automata.plugin.v1.UnpublishCollectionResponse
-	66, // 73: automata.plugin.v1.AutomataHostService.ListPublications:output_type -> automata.plugin.v1.ListPublicationsResponse
-	63, // 74: automata.plugin.v1.AutomataHostService.PreviewCollection:output_type -> automata.plugin.v1.PreviewCollectionResponse
-	47, // [47:75] is the sub-list for method output_type
-	19, // [19:47] is the sub-list for method input_type
+	64, // 47: automata.plugin.v1.AutomataHostService.ShareFile:input_type -> automata.plugin.v1.ShareFileRequest
+	1,  // 48: automata.plugin.v1.AutomataPlugin.Describe:output_type -> automata.plugin.v1.PluginDescriptor
+	4,  // 49: automata.plugin.v1.AutomataPlugin.Initialize:output_type -> automata.plugin.v1.InitializeResponse
+	8,  // 50: automata.plugin.v1.AutomataPlugin.ListTools:output_type -> automata.plugin.v1.ListToolsOutput
+	10, // 51: automata.plugin.v1.AutomataPlugin.CallTool:output_type -> automata.plugin.v1.CallToolOutput
+	25, // 52: automata.plugin.v1.AutomataPlugin.WatchTriggers:output_type -> automata.plugin.v1.TriggerEvent
+	13, // 53: automata.plugin.v1.AutomataPlugin.PutFile:output_type -> automata.plugin.v1.PutFileResult
+	15, // 54: automata.plugin.v1.AutomataPlugin.GetFile:output_type -> automata.plugin.v1.FileChunk
+	19, // 55: automata.plugin.v1.AutomataPlugin.PutEvent:output_type -> automata.plugin.v1.PutEventResponse
+	21, // 56: automata.plugin.v1.AutomataPlugin.DeleteEvent:output_type -> automata.plugin.v1.DeleteEventResponse
+	23, // 57: automata.plugin.v1.AutomataPlugin.ListEvents:output_type -> automata.plugin.v1.ListEventsResponse
+	27, // 58: automata.plugin.v1.AutomataHostService.GetConfig:output_type -> automata.plugin.v1.GetConfigResponse
+	29, // 59: automata.plugin.v1.AutomataHostService.SaveConfig:output_type -> automata.plugin.v1.SaveConfigResponse
+	31, // 60: automata.plugin.v1.AutomataHostService.ListConfigs:output_type -> automata.plugin.v1.ListConfigsResponse
+	34, // 61: automata.plugin.v1.AutomataHostService.GetSecret:output_type -> automata.plugin.v1.GetSecretResponse
+	36, // 62: automata.plugin.v1.AutomataHostService.SetSecret:output_type -> automata.plugin.v1.SetSecretResponse
+	38, // 63: automata.plugin.v1.AutomataHostService.DeleteSecret:output_type -> automata.plugin.v1.DeleteSecretResponse
+	40, // 64: automata.plugin.v1.AutomataHostService.Notify:output_type -> automata.plugin.v1.NotifyResponse
+	43, // 65: automata.plugin.v1.AutomataHostService.PutObject:output_type -> automata.plugin.v1.PutObjectResult
+	45, // 66: automata.plugin.v1.AutomataHostService.GetObject:output_type -> automata.plugin.v1.GetObjectChunk
+	48, // 67: automata.plugin.v1.AutomataHostService.DeleteObject:output_type -> automata.plugin.v1.DeleteObjectResponse
+	50, // 68: automata.plugin.v1.AutomataHostService.DeleteCollection:output_type -> automata.plugin.v1.DeleteCollectionResponse
+	53, // 69: automata.plugin.v1.AutomataHostService.ListObjects:output_type -> automata.plugin.v1.ListObjectsResponse
+	55, // 70: automata.plugin.v1.AutomataHostService.ListCollections:output_type -> automata.plugin.v1.ListCollectionsResponse
+	57, // 71: automata.plugin.v1.AutomataHostService.CopyCollection:output_type -> automata.plugin.v1.CopyCollectionResponse
+	59, // 72: automata.plugin.v1.AutomataHostService.PublishCollection:output_type -> automata.plugin.v1.PublishCollectionResponse
+	61, // 73: automata.plugin.v1.AutomataHostService.UnpublishCollection:output_type -> automata.plugin.v1.UnpublishCollectionResponse
+	68, // 74: automata.plugin.v1.AutomataHostService.ListPublications:output_type -> automata.plugin.v1.ListPublicationsResponse
+	63, // 75: automata.plugin.v1.AutomataHostService.PreviewCollection:output_type -> automata.plugin.v1.PreviewCollectionResponse
+	65, // 76: automata.plugin.v1.AutomataHostService.ShareFile:output_type -> automata.plugin.v1.ShareFileResponse
+	48, // [48:77] is the sub-list for method output_type
+	19, // [19:48] is the sub-list for method input_type
 	19, // [19:19] is the sub-list for extension type_name
 	19, // [19:19] is the sub-list for extension extendee
 	0,  // [0:19] is the sub-list for field type_name
@@ -4497,7 +4624,7 @@ func file_pkg_pluginsdk_proto_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_pluginsdk_proto_plugin_proto_rawDesc), len(file_pkg_pluginsdk_proto_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   68,
+			NumMessages:   70,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

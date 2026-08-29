@@ -68,6 +68,12 @@ type HostClient interface {
 	// collection — for the member's own eyes, nothing becomes public.
 	// expiresAt is RFC3339 UTC.
 	PreviewCollection(ctx context.Context, orgID, memberID, collection string) (url, expiresAt string, err error)
+	// ShareFile mints a signed, expiring URL serving ONE file of this
+	// plugin, for a member who cannot receive it as an attachment — a
+	// video is far larger than any messaging cap. The host streams the
+	// bytes when the link is opened; check the file exists first, the
+	// host cannot.
+	ShareFile(ctx context.Context, orgID, memberID, path string) (url, expiresAt string, err error)
 	// ListPublications returns the member's published collections.
 	ListPublications(ctx context.Context, orgID, memberID string) ([]Publication, error)
 }

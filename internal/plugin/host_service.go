@@ -42,6 +42,9 @@ type HostService struct {
 	baseURL      string
 	objectLimits ObjectStoreLimits
 	previewMint  PreviewMinter
+	// fileLinkMint fabrique les liens de téléchargement (route /f/) ;
+	// nil = ShareFile refusé. Voir host_files.go.
+	fileLinkMint FileLinkMinter
 }
 
 // NewHostService crée le service hôte.

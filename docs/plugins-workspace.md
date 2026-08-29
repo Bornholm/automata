@@ -31,7 +31,8 @@ Aucune interface : tout passe par la conversation.
    l'image au modèle multimodal et lui rend la réponse en texte. Pour une
    vidéo, il extrait d'abord une trame avec `ffmpeg`.
 6. Il appelle `attach_file` : l'hôte récupère le résultat et le joint à la
-   réponse.
+   réponse. Si le fichier dépasse la limite des pièces jointes, il appelle
+   `share_file` et donne le lien de téléchargement (voir plus bas).
 
 Les octets ne traversent jamais la conversation : le modèle ne voit que des
 chemins, des noms et des tailles.
@@ -145,12 +146,47 @@ attachments:
   max_tool_size: 16MiB
 ```
 
-`max_tool_size` borne les pièces entrantes **et** les fichiers renvoyés.
-16 Mio correspond à la limite d'une vidéo WhatsApp ; le prompt du
-sous-agent lui demande de ré-encoder ses sorties sous ~15 Mio.
+`max_tool_size` borne les pièces entrantes **et** les fichiers renvoyés en
+pièce jointe. 16 Mio correspond à la limite d'une vidéo WhatsApp ; le
+prompt du sous-agent lui demande de viser ~15 Mio. Au-delà, le fichier
+repart par un lien (section suivante), et non plus par la messagerie.
 
 Le plugin s'active ensuite par organisation, dans l'onglet Plugins de la
 fiche organisation.
+
+## Récupérer un fichier trop lourd
+
+Une vidéo de trente minutes pèse plus de cent mégaoctets : aucune
+messagerie ne l'accepte. `share_file` est la seconde voie de sortie — un
+**lien de téléchargement temporaire** que l'assistant donne dans la
+conversation.
+
+- **Valable 24 h**, comme l'espace de travail lui-même : un lien plus long
+  désignerait un fichier déjà effacé. Chaque accès au fichier rafraîchit ce
+  délai côté LeaSH, si bien qu'un lien utilisé garde son contenu en vie.
+- **Sans compte ni authentification** : le lien porte un jeton signé, non
+  devinable, qui n'ouvre qu'UN chemin précis de l'espace de travail d'UN
+  membre. Quiconque l'obtient télécharge le fichier — c'est ce qui le rend
+  partageable, et ce qu'il faut savoir avant de le transmettre.
+- **Sans confirmation** : l'outil est en lecture seule, comme le reste de
+  l'atelier. Le membre récupère son propre fichier, là où il vient de le
+  demander.
+- **Toujours en pièce jointe** côté navigateur (`Content-Disposition:
+  attachment`) : rien n'est jamais interprété, même un HTML produit dans
+  l'atelier.
+- **Coupé par la désactivation du plugin** : l'activation est relue à
+  chaque accès, comme pour les pages publiques.
+
+Les octets ne sont ni copiés ni stockés : ils traversent depuis LeaSH
+jusqu'au navigateur, par tranches d'un mégaoctet. Un fichier de 200 Mo ne
+coûte donc jamais sa taille en mémoire, quel que soit le nombre de
+téléchargements simultanés.
+
+**Limite connue** : les requêtes `Range` ne sont pas servies. Un
+téléchargement interrompu repart de zéro, et le lien ne permet pas de lire
+une vidéo en streaming dans le navigateur — seulement de la télécharger.
+Le jeton voyage dans le chemin de l'URL, donc dans les journaux du reverse
+proxy : c'est la contrepartie assumée d'une durée de 24 h.
 
 ## Documents
 

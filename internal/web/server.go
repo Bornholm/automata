@@ -251,6 +251,10 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("GET /plugin-ui/{token}/{path...}", s.handlePluginUI)
 	mux.HandleFunc("POST /plugin-ui/{token}/{path...}", s.handlePluginUI)
 
+	// Lien temporaire de téléchargement d'un fichier de plugin : la
+	// seconde voie de sortie, pour ce qui ne tient pas en pièce jointe.
+	mux.HandleFunc("GET /f/{token}", s.handleFileLink)
+
 	mux.HandleFunc("GET /p/{link}/plugins/{name}", s.handleProfilePluginPage)
 	mux.HandleFunc("GET /p/{link}", s.handleProfile)
 	mux.HandleFunc("GET /p/{link}/credits", s.handleProfileCredits)

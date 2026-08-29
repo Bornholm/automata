@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"database/sql"
+	"io"
 	"net/http"
 
 	"github.com/bornholm/automata/internal/persistence"
@@ -16,6 +17,9 @@ import (
 type PluginManager interface {
 	Statuses() []plugin.Status
 	Restart(ctx context.Context, name string) bool
+	// OpenFile sert les liens de téléchargement : les octets viennent du
+	// plugin EN FLUX, ils ne passent jamais par la mémoire du serveur.
+	OpenFile(ctx context.Context, pluginName string, callCtx plugin.CallContext, path string) (plugin.FileMeta, io.ReadCloser, error)
 }
 
 // handlePlugins — ADM-09 : état des plugins chargés et organisations où
