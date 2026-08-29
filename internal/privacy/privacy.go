@@ -313,6 +313,17 @@ func (s *Service) Delete(ctx context.Context, memberID string) (DeletionReport, 
 			return fmt.Errorf("suppression des publications de plugins: %w", err)
 		}
 
+		// Les configurations et secrets de plugins du membre : un compte
+		// IMAP, un agenda CalDAV — des accès personnels qui n'ont aucune
+		// raison de survivre au compte. La purge par organisation les
+		// couvrait déjà ; celle par membre les oubliait.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM plugin_configs WHERE member_id = ?`, memberID); err != nil {
+			return fmt.Errorf("suppression des configurations de plugins: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM plugin_secrets WHERE member_id = ?`, memberID); err != nil {
+			return fmt.Errorf("suppression des secrets de plugins: %w", err)
+		}
+
 		// Traces de consommation : dissociées, jamais supprimées — ce sont
 		// des pièces comptables.
 		if _, err := tx.ExecContext(ctx, `UPDATE usage_records SET principal_id = '', conversation_id = ''
