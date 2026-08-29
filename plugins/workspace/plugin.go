@@ -264,6 +264,13 @@ func (p *Plugin) downloadVideo(ctx context.Context, in *proto.CallToolInput) (*p
 	slog.InfoContext(ctx, "workspace: vidéo téléchargée", "org_id", in.Ctx.OrgId, "is_error", isError)
 
 	if isError {
+		// Un échec de yt-dlp se lit mal : « This video is not available »
+		// désigne aussi bien une vidéo privée qu'une panne de notre côté.
+		// Sans consigne, l'agent rejoue la même vidéo sous toutes ses
+		// formes d'URL puis livre à l'utilisateur un diagnostic inventé.
+		if advice := downloadFailureAdvice(text); advice != "" {
+			text += "\n\n" + advice
+		}
 		return &proto.CallToolOutput{ResultText: text, IsError: true}, nil
 	}
 	return &proto.CallToolOutput{ResultText: text +

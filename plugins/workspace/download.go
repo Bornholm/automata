@@ -112,3 +112,48 @@ func validateOutputName(name string) (string, error) {
 	}
 	return name, nil
 }
+
+// downloadFailureAdvice traduit une sortie d'échec de yt-dlp en consigne
+// pour le modèle.
+//
+// Sans elle, l'agent lit « This video is not available », en conclut que
+// l'URL est mauvaise, et rejoue la même vidéo sous une douzaine de formes
+// (youtu.be, /watch, /shorts, /embed, m.youtube…). Vu en production :
+// quatorze appels pour rien, puis une explication FAUSSE donnée à
+// l'utilisateur — « la vidéo est privée ou géo-restreinte » — alors que la
+// vidéo était publique et la panne du côté de l'outil.
+//
+// Retourne "" quand rien de connu n'est reconnu : mieux vaut laisser
+// passer la sortie brute que d'inventer une explication à notre tour.
+func downloadFailureAdvice(output string) string {
+	switch {
+	// L'image manque du runtime JavaScript dont yt-dlp a besoin pour
+	// résoudre le défi de signature de YouTube. Le message de yt-dlp est
+	// trompeur : il parle de disponibilité, c'est une panne d'outil.
+	case strings.Contains(output, "No supported JavaScript runtime"):
+		return "This is a fault in the download tool itself, not a problem with the URL: " +
+			"the video platform requires a JavaScript runtime that this server is missing. " +
+			"Do NOT retry, and do NOT try other forms of the same link — every one of them will fail the same way. " +
+			"Tell the user the download is broken on our side and that the operator has been given the details, " +
+			"and offer to work on the video if they send it as an attachment instead."
+
+	// Le format demandé n'existe pas, ou rien de vidéo n'est sorti :
+	// souvent le même défaut de fond, parfois une vidéo réellement sans
+	// piste téléchargeable.
+	case strings.Contains(output, "Requested format is not available"),
+		strings.Contains(output, "no video file was produced"):
+		return "The platform did not offer any downloadable video track for this link. " +
+			"Do NOT try other forms of the same link: they lead to the same page and will fail identically. " +
+			"Ask the user to send the video as an attachment instead."
+
+	// Vraie indisponibilité : là, une autre URL a du sens.
+	case strings.Contains(output, "Private video"),
+		strings.Contains(output, "Sign in to confirm"),
+		strings.Contains(output, "members-only"),
+		strings.Contains(output, "age-restricted"):
+		return "This video is genuinely not publicly accessible (private, age-restricted, or members-only). " +
+			"Do not retry: ask the user for a public link, or for the file as an attachment."
+	}
+
+	return ""
+}
