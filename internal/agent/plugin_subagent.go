@@ -493,9 +493,20 @@ func (a *PluginSubAgent) newAttachFileTool(req delegation.Request, collector *me
 
 	callCtx := pluginCallContext(req.Identity)
 
+	// La taille maximale est CHIFFRÉE au modèle, ici et dans l'échec :
+	// « trop gros, réencode plus petit » ne dit pas quelle cible viser, et
+	// un agent qui ne connaît pas la borne réessaie au hasard — ou renonce
+	// en disant à l'utilisateur qu'il ne sait pas envoyer de fichier.
+	limit := "a few megabytes"
+	if a.maxFileBytes > 0 {
+		limit = fmt.Sprintf("%d MB", a.maxFileBytes/(1024*1024))
+	}
+
 	return llm.NewFuncTool(
 		"attach_file",
-		"Attach a file from your workspace to the reply sent to the user. Do NOT describe the file afterwards, just confirm briefly what you produced.",
+		"Attach a file from your workspace to the reply sent to the user. This is how you give a file back to them. "+
+			"Maximum size: "+limit+" — re-encode or trim anything larger before attaching it. "+
+			"Do NOT describe the file afterwards, just confirm briefly what you produced.",
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			path, _ := params["path"].(string)
@@ -508,8 +519,9 @@ func (a *PluginSubAgent) newAttachFileTool(req delegation.Request, collector *me
 				a.logger.WarnContext(ctx, "agent: récupération de fichier en échec",
 					"plugin", a.spec.PluginName, "error", err)
 				return llm.NewToolResult(
-					"error: the file could not be attached (it may be missing, or too large to send: " +
-						"re-encode it smaller and try again).",
+					"error: the file could not be attached — it is missing, or larger than " + limit + ". " +
+						"If it is too large, re-encode it below that size (lower the resolution or the bitrate, " +
+						"or cut a shorter extract) and attach the result. Do not give up on sending it.",
 				), nil
 			}
 			if len(data) == 0 {

@@ -45,9 +45,16 @@ const fileChunkBytes = 1 << 20
 // la mention conditionnelle du téléchargement.
 func (p *Plugin) Describe(context.Context, *proto.DescribeRequest) (*proto.PluginDescriptor, error) {
 	description := "Atelier de fichiers : retouche de vidéos et d'images (ffmpeg, imagemagick), édition et conversion de documents (pandoc, LibreOffice) dans un bac à sable isolé."
-	subAgentDescription := "edits videos, images and documents in a sandboxed workspace. " +
+	// La description est ce que l'ORCHESTRATEUR lit avant de déléguer : ce
+	// qui n'y figure pas n'existe pas pour lui. Elle dit donc aussi que les
+	// fichiers survivent d'un tour à l'autre et repartent vers
+	// l'utilisateur — sans quoi, à « envoie-moi le fichier », il répond
+	// qu'il n'a aucun outil pour cela alors que le spécialiste l'a.
+	subAgentDescription := "edits videos, images and documents in a sandboxed workspace, and SENDS files back to the user. " +
 		"Videos and images with ffmpeg and imagemagick (crop, trim, resize, remove a watermark, convert a format, extract audio); " +
-		"documents with pandoc and LibreOffice (read or edit a docx or odt, write a report, produce a PDF, convert between formats)"
+		"documents with pandoc and LibreOffice (read or edit a docx or odt, write a report, produce a PDF, convert between formats). " +
+		"Its workspace PERSISTS between messages: a file produced or downloaded earlier is still there, " +
+		"so \"send me that file\", \"give me the video back\" or \"make it smaller and send it\" are all for this agent"
 
 	if p.leash.fetchConfigured() {
 		description += " Peut aussi télécharger une vidéo publique depuis les sites autorisés par l'exploitant."
