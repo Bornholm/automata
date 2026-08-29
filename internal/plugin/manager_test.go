@@ -402,8 +402,8 @@ func TestManager_ActiveSubAgentsHonorsActivation(t *testing.T) {
 	if len(specs) != 1 || specs[0].PluginName != "echo" {
 		t.Fatalf("sous-agents inattendus: %+v", specs)
 	}
-	if len(specs[0].Tools) != 2 {
-		t.Errorf("%d outil(s), attendu 2", len(specs[0].Tools))
+	if len(specs[0].Tools) != 3 {
+		t.Errorf("%d outil(s), attendu 3 (echo_read, echo_write, echo_store)", len(specs[0].Tools))
 	}
 
 	// L'autre organisation n'a rien activé.

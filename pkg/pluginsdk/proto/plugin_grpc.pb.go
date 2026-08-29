@@ -497,13 +497,23 @@ var AutomataPlugin_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	AutomataHostService_GetConfig_FullMethodName    = "/automata.plugin.v1.AutomataHostService/GetConfig"
-	AutomataHostService_SaveConfig_FullMethodName   = "/automata.plugin.v1.AutomataHostService/SaveConfig"
-	AutomataHostService_ListConfigs_FullMethodName  = "/automata.plugin.v1.AutomataHostService/ListConfigs"
-	AutomataHostService_GetSecret_FullMethodName    = "/automata.plugin.v1.AutomataHostService/GetSecret"
-	AutomataHostService_SetSecret_FullMethodName    = "/automata.plugin.v1.AutomataHostService/SetSecret"
-	AutomataHostService_DeleteSecret_FullMethodName = "/automata.plugin.v1.AutomataHostService/DeleteSecret"
-	AutomataHostService_Notify_FullMethodName       = "/automata.plugin.v1.AutomataHostService/Notify"
+	AutomataHostService_GetConfig_FullMethodName           = "/automata.plugin.v1.AutomataHostService/GetConfig"
+	AutomataHostService_SaveConfig_FullMethodName          = "/automata.plugin.v1.AutomataHostService/SaveConfig"
+	AutomataHostService_ListConfigs_FullMethodName         = "/automata.plugin.v1.AutomataHostService/ListConfigs"
+	AutomataHostService_GetSecret_FullMethodName           = "/automata.plugin.v1.AutomataHostService/GetSecret"
+	AutomataHostService_SetSecret_FullMethodName           = "/automata.plugin.v1.AutomataHostService/SetSecret"
+	AutomataHostService_DeleteSecret_FullMethodName        = "/automata.plugin.v1.AutomataHostService/DeleteSecret"
+	AutomataHostService_Notify_FullMethodName              = "/automata.plugin.v1.AutomataHostService/Notify"
+	AutomataHostService_PutObject_FullMethodName           = "/automata.plugin.v1.AutomataHostService/PutObject"
+	AutomataHostService_GetObject_FullMethodName           = "/automata.plugin.v1.AutomataHostService/GetObject"
+	AutomataHostService_DeleteObject_FullMethodName        = "/automata.plugin.v1.AutomataHostService/DeleteObject"
+	AutomataHostService_DeleteCollection_FullMethodName    = "/automata.plugin.v1.AutomataHostService/DeleteCollection"
+	AutomataHostService_ListObjects_FullMethodName         = "/automata.plugin.v1.AutomataHostService/ListObjects"
+	AutomataHostService_ListCollections_FullMethodName     = "/automata.plugin.v1.AutomataHostService/ListCollections"
+	AutomataHostService_CopyCollection_FullMethodName      = "/automata.plugin.v1.AutomataHostService/CopyCollection"
+	AutomataHostService_PublishCollection_FullMethodName   = "/automata.plugin.v1.AutomataHostService/PublishCollection"
+	AutomataHostService_UnpublishCollection_FullMethodName = "/automata.plugin.v1.AutomataHostService/UnpublishCollection"
+	AutomataHostService_ListPublications_FullMethodName    = "/automata.plugin.v1.AutomataHostService/ListPublications"
 )
 
 // AutomataHostServiceClient is the client API for AutomataHostService service.
@@ -522,6 +532,24 @@ type AutomataHostServiceClient interface {
 	SetSecret(ctx context.Context, in *SetSecretRequest, opts ...grpc.CallOption) (*SetSecretResponse, error)
 	DeleteSecret(ctx context.Context, in *DeleteSecretRequest, opts ...grpc.CallOption) (*DeleteSecretResponse, error)
 	Notify(ctx context.Context, in *NotifyRequest, opts ...grpc.CallOption) (*NotifyResponse, error)
+	// Object store: binary objects grouped in named collections, scoped to
+	// (plugin, org, member) like configs and secrets. Unlike secrets the
+	// bytes are NOT sealed at rest — the store exists to hold content meant
+	// to be served publicly, and must never receive a secret. Streaming
+	// mirrors PutFile/GetFile: 1 MiB slices under the gRPC message limit.
+	PutObject(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[PutObjectChunk, PutObjectResult], error)
+	GetObject(ctx context.Context, in *GetObjectRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetObjectChunk], error)
+	DeleteObject(ctx context.Context, in *DeleteObjectRequest, opts ...grpc.CallOption) (*DeleteObjectResponse, error)
+	DeleteCollection(ctx context.Context, in *DeleteCollectionRequest, opts ...grpc.CallOption) (*DeleteCollectionResponse, error)
+	ListObjects(ctx context.Context, in *ListObjectsRequest, opts ...grpc.CallOption) (*ListObjectsResponse, error)
+	ListCollections(ctx context.Context, in *ListCollectionsRequest, opts ...grpc.CallOption) (*ListCollectionsResponse, error)
+	CopyCollection(ctx context.Context, in *CopyCollectionRequest, opts ...grpc.CallOption) (*CopyCollectionResponse, error)
+	// PublishCollection exposes a collection under the host's public
+	// /s/<slug> route. The slug is generated host-side, stays stable while
+	// the publication exists, and dies the moment UnpublishCollection runs.
+	PublishCollection(ctx context.Context, in *PublishCollectionRequest, opts ...grpc.CallOption) (*PublishCollectionResponse, error)
+	UnpublishCollection(ctx context.Context, in *UnpublishCollectionRequest, opts ...grpc.CallOption) (*UnpublishCollectionResponse, error)
+	ListPublications(ctx context.Context, in *ListPublicationsRequest, opts ...grpc.CallOption) (*ListPublicationsResponse, error)
 }
 
 type automataHostServiceClient struct {
@@ -602,6 +630,118 @@ func (c *automataHostServiceClient) Notify(ctx context.Context, in *NotifyReques
 	return out, nil
 }
 
+func (c *automataHostServiceClient) PutObject(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[PutObjectChunk, PutObjectResult], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AutomataHostService_ServiceDesc.Streams[0], AutomataHostService_PutObject_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[PutObjectChunk, PutObjectResult]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AutomataHostService_PutObjectClient = grpc.ClientStreamingClient[PutObjectChunk, PutObjectResult]
+
+func (c *automataHostServiceClient) GetObject(ctx context.Context, in *GetObjectRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetObjectChunk], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AutomataHostService_ServiceDesc.Streams[1], AutomataHostService_GetObject_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[GetObjectRequest, GetObjectChunk]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AutomataHostService_GetObjectClient = grpc.ServerStreamingClient[GetObjectChunk]
+
+func (c *automataHostServiceClient) DeleteObject(ctx context.Context, in *DeleteObjectRequest, opts ...grpc.CallOption) (*DeleteObjectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteObjectResponse)
+	err := c.cc.Invoke(ctx, AutomataHostService_DeleteObject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *automataHostServiceClient) DeleteCollection(ctx context.Context, in *DeleteCollectionRequest, opts ...grpc.CallOption) (*DeleteCollectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteCollectionResponse)
+	err := c.cc.Invoke(ctx, AutomataHostService_DeleteCollection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *automataHostServiceClient) ListObjects(ctx context.Context, in *ListObjectsRequest, opts ...grpc.CallOption) (*ListObjectsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListObjectsResponse)
+	err := c.cc.Invoke(ctx, AutomataHostService_ListObjects_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *automataHostServiceClient) ListCollections(ctx context.Context, in *ListCollectionsRequest, opts ...grpc.CallOption) (*ListCollectionsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCollectionsResponse)
+	err := c.cc.Invoke(ctx, AutomataHostService_ListCollections_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *automataHostServiceClient) CopyCollection(ctx context.Context, in *CopyCollectionRequest, opts ...grpc.CallOption) (*CopyCollectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CopyCollectionResponse)
+	err := c.cc.Invoke(ctx, AutomataHostService_CopyCollection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *automataHostServiceClient) PublishCollection(ctx context.Context, in *PublishCollectionRequest, opts ...grpc.CallOption) (*PublishCollectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PublishCollectionResponse)
+	err := c.cc.Invoke(ctx, AutomataHostService_PublishCollection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *automataHostServiceClient) UnpublishCollection(ctx context.Context, in *UnpublishCollectionRequest, opts ...grpc.CallOption) (*UnpublishCollectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UnpublishCollectionResponse)
+	err := c.cc.Invoke(ctx, AutomataHostService_UnpublishCollection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *automataHostServiceClient) ListPublications(ctx context.Context, in *ListPublicationsRequest, opts ...grpc.CallOption) (*ListPublicationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPublicationsResponse)
+	err := c.cc.Invoke(ctx, AutomataHostService_ListPublications_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AutomataHostServiceServer is the server API for AutomataHostService service.
 // All implementations must embed UnimplementedAutomataHostServiceServer
 // for forward compatibility.
@@ -618,6 +758,24 @@ type AutomataHostServiceServer interface {
 	SetSecret(context.Context, *SetSecretRequest) (*SetSecretResponse, error)
 	DeleteSecret(context.Context, *DeleteSecretRequest) (*DeleteSecretResponse, error)
 	Notify(context.Context, *NotifyRequest) (*NotifyResponse, error)
+	// Object store: binary objects grouped in named collections, scoped to
+	// (plugin, org, member) like configs and secrets. Unlike secrets the
+	// bytes are NOT sealed at rest — the store exists to hold content meant
+	// to be served publicly, and must never receive a secret. Streaming
+	// mirrors PutFile/GetFile: 1 MiB slices under the gRPC message limit.
+	PutObject(grpc.ClientStreamingServer[PutObjectChunk, PutObjectResult]) error
+	GetObject(*GetObjectRequest, grpc.ServerStreamingServer[GetObjectChunk]) error
+	DeleteObject(context.Context, *DeleteObjectRequest) (*DeleteObjectResponse, error)
+	DeleteCollection(context.Context, *DeleteCollectionRequest) (*DeleteCollectionResponse, error)
+	ListObjects(context.Context, *ListObjectsRequest) (*ListObjectsResponse, error)
+	ListCollections(context.Context, *ListCollectionsRequest) (*ListCollectionsResponse, error)
+	CopyCollection(context.Context, *CopyCollectionRequest) (*CopyCollectionResponse, error)
+	// PublishCollection exposes a collection under the host's public
+	// /s/<slug> route. The slug is generated host-side, stays stable while
+	// the publication exists, and dies the moment UnpublishCollection runs.
+	PublishCollection(context.Context, *PublishCollectionRequest) (*PublishCollectionResponse, error)
+	UnpublishCollection(context.Context, *UnpublishCollectionRequest) (*UnpublishCollectionResponse, error)
+	ListPublications(context.Context, *ListPublicationsRequest) (*ListPublicationsResponse, error)
 	mustEmbedUnimplementedAutomataHostServiceServer()
 }
 
@@ -648,6 +806,36 @@ func (UnimplementedAutomataHostServiceServer) DeleteSecret(context.Context, *Del
 }
 func (UnimplementedAutomataHostServiceServer) Notify(context.Context, *NotifyRequest) (*NotifyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Notify not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) PutObject(grpc.ClientStreamingServer[PutObjectChunk, PutObjectResult]) error {
+	return status.Error(codes.Unimplemented, "method PutObject not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) GetObject(*GetObjectRequest, grpc.ServerStreamingServer[GetObjectChunk]) error {
+	return status.Error(codes.Unimplemented, "method GetObject not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) DeleteObject(context.Context, *DeleteObjectRequest) (*DeleteObjectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteObject not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) DeleteCollection(context.Context, *DeleteCollectionRequest) (*DeleteCollectionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteCollection not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) ListObjects(context.Context, *ListObjectsRequest) (*ListObjectsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListObjects not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) ListCollections(context.Context, *ListCollectionsRequest) (*ListCollectionsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCollections not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) CopyCollection(context.Context, *CopyCollectionRequest) (*CopyCollectionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CopyCollection not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) PublishCollection(context.Context, *PublishCollectionRequest) (*PublishCollectionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PublishCollection not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) UnpublishCollection(context.Context, *UnpublishCollectionRequest) (*UnpublishCollectionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnpublishCollection not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) ListPublications(context.Context, *ListPublicationsRequest) (*ListPublicationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPublications not implemented")
 }
 func (UnimplementedAutomataHostServiceServer) mustEmbedUnimplementedAutomataHostServiceServer() {}
 func (UnimplementedAutomataHostServiceServer) testEmbeddedByValue()                             {}
@@ -796,6 +984,168 @@ func _AutomataHostService_Notify_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AutomataHostService_PutObject_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AutomataHostServiceServer).PutObject(&grpc.GenericServerStream[PutObjectChunk, PutObjectResult]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AutomataHostService_PutObjectServer = grpc.ClientStreamingServer[PutObjectChunk, PutObjectResult]
+
+func _AutomataHostService_GetObject_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(GetObjectRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(AutomataHostServiceServer).GetObject(m, &grpc.GenericServerStream[GetObjectRequest, GetObjectChunk]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AutomataHostService_GetObjectServer = grpc.ServerStreamingServer[GetObjectChunk]
+
+func _AutomataHostService_DeleteObject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteObjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataHostServiceServer).DeleteObject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataHostService_DeleteObject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataHostServiceServer).DeleteObject(ctx, req.(*DeleteObjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AutomataHostService_DeleteCollection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteCollectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataHostServiceServer).DeleteCollection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataHostService_DeleteCollection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataHostServiceServer).DeleteCollection(ctx, req.(*DeleteCollectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AutomataHostService_ListObjects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListObjectsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataHostServiceServer).ListObjects(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataHostService_ListObjects_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataHostServiceServer).ListObjects(ctx, req.(*ListObjectsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AutomataHostService_ListCollections_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCollectionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataHostServiceServer).ListCollections(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataHostService_ListCollections_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataHostServiceServer).ListCollections(ctx, req.(*ListCollectionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AutomataHostService_CopyCollection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CopyCollectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataHostServiceServer).CopyCollection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataHostService_CopyCollection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataHostServiceServer).CopyCollection(ctx, req.(*CopyCollectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AutomataHostService_PublishCollection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PublishCollectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataHostServiceServer).PublishCollection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataHostService_PublishCollection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataHostServiceServer).PublishCollection(ctx, req.(*PublishCollectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AutomataHostService_UnpublishCollection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UnpublishCollectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataHostServiceServer).UnpublishCollection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataHostService_UnpublishCollection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataHostServiceServer).UnpublishCollection(ctx, req.(*UnpublishCollectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AutomataHostService_ListPublications_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPublicationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataHostServiceServer).ListPublications(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataHostService_ListPublications_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataHostServiceServer).ListPublications(ctx, req.(*ListPublicationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AutomataHostService_ServiceDesc is the grpc.ServiceDesc for AutomataHostService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -831,7 +1181,50 @@ var AutomataHostService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "Notify",
 			Handler:    _AutomataHostService_Notify_Handler,
 		},
+		{
+			MethodName: "DeleteObject",
+			Handler:    _AutomataHostService_DeleteObject_Handler,
+		},
+		{
+			MethodName: "DeleteCollection",
+			Handler:    _AutomataHostService_DeleteCollection_Handler,
+		},
+		{
+			MethodName: "ListObjects",
+			Handler:    _AutomataHostService_ListObjects_Handler,
+		},
+		{
+			MethodName: "ListCollections",
+			Handler:    _AutomataHostService_ListCollections_Handler,
+		},
+		{
+			MethodName: "CopyCollection",
+			Handler:    _AutomataHostService_CopyCollection_Handler,
+		},
+		{
+			MethodName: "PublishCollection",
+			Handler:    _AutomataHostService_PublishCollection_Handler,
+		},
+		{
+			MethodName: "UnpublishCollection",
+			Handler:    _AutomataHostService_UnpublishCollection_Handler,
+		},
+		{
+			MethodName: "ListPublications",
+			Handler:    _AutomataHostService_ListPublications_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "PutObject",
+			Handler:       _AutomataHostService_PutObject_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "GetObject",
+			Handler:       _AutomataHostService_GetObject_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "pkg/pluginsdk/proto/plugin.proto",
 }

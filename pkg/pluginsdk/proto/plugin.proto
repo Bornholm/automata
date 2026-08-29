@@ -43,6 +43,24 @@ service AutomataHostService {
   rpc SetSecret(SetSecretRequest) returns (SetSecretResponse);
   rpc DeleteSecret(DeleteSecretRequest) returns (DeleteSecretResponse);
   rpc Notify(NotifyRequest) returns (NotifyResponse);
+  // Object store: binary objects grouped in named collections, scoped to
+  // (plugin, org, member) like configs and secrets. Unlike secrets the
+  // bytes are NOT sealed at rest — the store exists to hold content meant
+  // to be served publicly, and must never receive a secret. Streaming
+  // mirrors PutFile/GetFile: 1 MiB slices under the gRPC message limit.
+  rpc PutObject(stream PutObjectChunk) returns (PutObjectResult);
+  rpc GetObject(GetObjectRequest) returns (stream GetObjectChunk);
+  rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse);
+  rpc DeleteCollection(DeleteCollectionRequest) returns (DeleteCollectionResponse);
+  rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse);
+  rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResponse);
+  rpc CopyCollection(CopyCollectionRequest) returns (CopyCollectionResponse);
+  // PublishCollection exposes a collection under the host's public
+  // /s/<slug> route. The slug is generated host-side, stays stable while
+  // the publication exists, and dies the moment UnpublishCollection runs.
+  rpc PublishCollection(PublishCollectionRequest) returns (PublishCollectionResponse);
+  rpc UnpublishCollection(UnpublishCollectionRequest) returns (UnpublishCollectionResponse);
+  rpc ListPublications(ListPublicationsRequest) returns (ListPublicationsResponse);
 }
 
 message DescribeRequest {}
@@ -341,3 +359,138 @@ message NotifyRequest {
   string text = 3;
 }
 message NotifyResponse {}
+
+// PutObjectChunk streams one object from the plugin to the host store.
+// The first chunk carries the metadata, every following chunk carries
+// data. Writing to an existing (collection, key) replaces the object.
+message PutObjectChunk {
+  oneof payload {
+    PutObjectMetadata metadata = 1;
+    bytes data = 2;
+  }
+}
+message PutObjectMetadata {
+  string org_id = 1;
+  string member_id = 2;
+  string collection = 3;
+  string key = 4;
+  // content_type is declarative; the host re-derives what it serves
+  // publicly from the key's extension.
+  string content_type = 5;
+}
+message PutObjectResult {
+  int64 size = 1;
+}
+
+message GetObjectRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string collection = 3;
+  string key = 4;
+}
+// GetObjectChunk streams one object back to the plugin. The first chunk
+// carries the metadata, every following chunk carries data. A missing
+// object answers found=false and no data — not an error.
+message GetObjectChunk {
+  oneof payload {
+    GetObjectMetadata metadata = 1;
+    bytes data = 2;
+  }
+}
+message GetObjectMetadata {
+  string content_type = 1;
+  int64 size = 2;
+  bool found = 3;
+}
+
+message DeleteObjectRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string collection = 3;
+  string key = 4;
+}
+message DeleteObjectResponse {
+  bool deleted = 1;
+}
+
+message DeleteCollectionRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string collection = 3;
+}
+message DeleteCollectionResponse {
+  int64 deleted = 1;
+}
+
+message ObjectEntry {
+  string key = 1;
+  string content_type = 2;
+  int64 size = 3;
+  // updated_at is RFC3339 UTC.
+  string updated_at = 4;
+}
+message ListObjectsRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string collection = 3;
+}
+message ListObjectsResponse {
+  repeated ObjectEntry entries = 1;
+}
+
+message ListCollectionsRequest {
+  string org_id = 1;
+  string member_id = 2;
+  // prefix filters collections by literal prefix; empty lists them all.
+  string prefix = 3;
+}
+message ListCollectionsResponse {
+  repeated string collections = 1;
+}
+
+// CopyCollection replaces the target collection with a copy of the
+// source, atomically. It is how a draft becomes the published version.
+message CopyCollectionRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string from = 3;
+  string to = 4;
+}
+message CopyCollectionResponse {
+  int64 copied = 1;
+}
+
+message PublishCollectionRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string collection = 3;
+}
+message PublishCollectionResponse {
+  string slug = 1;
+  // url is the absolute public URL, composed by the host.
+  string url = 2;
+}
+
+message UnpublishCollectionRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string collection = 3;
+}
+message UnpublishCollectionResponse {
+  bool existed = 1;
+}
+
+message Publication {
+  string collection = 1;
+  string slug = 2;
+  string url = 3;
+  // published_at is RFC3339 UTC.
+  string published_at = 4;
+}
+message ListPublicationsRequest {
+  string org_id = 1;
+  string member_id = 2;
+}
+message ListPublicationsResponse {
+  repeated Publication publications = 1;
+}

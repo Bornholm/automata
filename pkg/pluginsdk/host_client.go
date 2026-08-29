@@ -35,6 +35,37 @@ type HostClient interface {
 	// Notify sends an application-authored message to the member's
 	// private channel. No LLM is involved.
 	Notify(ctx context.Context, orgID, memberID, text string) error
+
+	// Object store: binary objects grouped in named collections, scoped
+	// like configs and secrets. NOT sealed at rest — it exists to hold
+	// content meant to be served publicly, never secrets. Collection and
+	// key names are restricted to lowercase [a-z0-9._/-] path segments.
+
+	// PutObject stores one object; writing an existing (collection, key)
+	// replaces it. Quotas are enforced host-side.
+	PutObject(ctx context.Context, orgID, memberID, collection, key, contentType string, data []byte) error
+	// GetObject returns one object; found is false when it is absent.
+	GetObject(ctx context.Context, orgID, memberID, collection, key string) (data []byte, contentType string, found bool, err error)
+	// DeleteObject removes one object.
+	DeleteObject(ctx context.Context, orgID, memberID, collection, key string) (bool, error)
+	// DeleteCollection removes every object of a collection, along with
+	// its publication if any.
+	DeleteCollection(ctx context.Context, orgID, memberID, collection string) (int64, error)
+	// ListObjects returns the metadata of a collection's objects.
+	ListObjects(ctx context.Context, orgID, memberID, collection string) ([]ObjectEntry, error)
+	// ListCollections returns the non-empty collections matching a
+	// literal prefix; empty prefix lists them all.
+	ListCollections(ctx context.Context, orgID, memberID, prefix string) ([]string, error)
+	// CopyCollection replaces the target collection with a copy of the
+	// source, atomically.
+	CopyCollection(ctx context.Context, orgID, memberID, from, to string) (int64, error)
+	// PublishCollection exposes a collection under the host's public
+	// /s/<slug> route and returns the stable slug and absolute URL.
+	PublishCollection(ctx context.Context, orgID, memberID, collection string) (slug, url string, err error)
+	// UnpublishCollection kills the public link. The content stays.
+	UnpublishCollection(ctx context.Context, orgID, memberID, collection string) (bool, error)
+	// ListPublications returns the member's published collections.
+	ListPublications(ctx context.Context, orgID, memberID string) ([]Publication, error)
 }
 
 // ConfigEntry is one stored configuration, as returned by ListConfigs.

@@ -157,6 +157,11 @@ func (s *Service) DeleteOrganization(ctx context.Context, orgID string) (OrgDele
 			`DELETE FROM plugin_activations WHERE org_id = ?`,
 			`DELETE FROM plugin_configs WHERE org_id = ?`,
 			`DELETE FROM plugin_secrets WHERE org_id = ?`,
+			// Le magasin d'objets et les publications tombent avec
+			// l'organisation : des pages PUBLIQUES ne doivent pas
+			// survivre à leur propriétaire.
+			`DELETE FROM plugin_objects WHERE org_id = ?`,
+			`DELETE FROM plugin_public_sites WHERE org_id = ?`,
 			`DELETE FROM organizations WHERE id = ?`,
 		}
 		for _, statement := range statements {

@@ -176,6 +176,7 @@ func TestDueEvent_CarriesTheTextAndDistinguishesOccurrences(t *testing.T) {
 // stubHost est un client hôte minimal : il rend une configuration figée et
 // aucun secret.
 type stubHost struct {
+	pluginsdk.UnimplementedHostClient
 	config string
 }
 

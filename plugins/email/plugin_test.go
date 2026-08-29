@@ -75,6 +75,7 @@ const sampleEmail = "From: yann@example.test\r\n" +
 
 // fakeHost implémente pluginsdk.HostClient en mémoire.
 type fakeHost struct {
+	pluginsdk.UnimplementedHostClient
 	mu      sync.Mutex
 	configs map[string]string
 	secrets map[string]string

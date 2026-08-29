@@ -35,6 +35,12 @@ type HostService struct {
 	orgs        *persistence.OrganizationRepository
 	members     *persistence.MemberRepository
 	notifier    Notifier
+
+	// Magasin d'objets, câblé par WithObjectStore ; nil = RPC refusés.
+	objects      *persistence.PluginObjectRepository
+	sites        *persistence.PluginPublicSiteRepository
+	baseURL      string
+	objectLimits ObjectStoreLimits
 }
 
 // NewHostService crée le service hôte.

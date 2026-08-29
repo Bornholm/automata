@@ -352,6 +352,12 @@ type Plugins struct {
 	MemLimit string `yaml:"mem_limit"`
 	// Triggers borne les déclenchements extérieurs.
 	Triggers PluginTriggers `yaml:"triggers"`
+	// ObjectStoreMaxObjectBytes borne la taille d'un objet du magasin des
+	// plugins. Vide : 16 Mio.
+	ObjectStoreMaxObjectBytes ByteSize `yaml:"object_store_max_object_bytes"`
+	// ObjectStoreMaxMemberBytes borne le volume total du magasin pour un
+	// (plugin, organisation, membre). Vide : 64 Mio.
+	ObjectStoreMaxMemberBytes ByteSize `yaml:"object_store_max_member_bytes"`
 }
 
 // PluginTriggers borne les déclenchements : un plugin extérieur peut

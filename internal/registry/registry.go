@@ -179,7 +179,11 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			agentNames = append(agentNames, name)
 		}
 
-		pluginHost := plugin.NewHostService(db, pluginBox)
+		pluginHost := plugin.NewHostService(db, pluginBox).
+			WithObjectStore(cfg.Web.BaseURL, plugin.ObjectStoreLimits{
+				MaxObjectBytes: int64(cfg.Plugins.ObjectStoreMaxObjectBytes),
+				MaxMemberBytes: int64(cfg.Plugins.ObjectStoreMaxMemberBytes),
+			})
 		pluginManager = plugin.NewManager(cfg.Plugins, pluginHost, agentNames)
 		if err := pluginManager.Start(ctx); err != nil {
 			logger.WarnContext(ctx, "registry: démarrage des plugins incomplet", "error", err)

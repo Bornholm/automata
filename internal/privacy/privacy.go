@@ -303,6 +303,16 @@ func (s *Service) Delete(ctx context.Context, memberID string) (DeletionReport, 
 			return fmt.Errorf("suppression des liaisons de canal: %w", err)
 		}
 
+		// Le magasin d'objets des plugins et ses publications : des pages
+		// PUBLIQUES ne doivent pas survivre à l'effacement de leur
+		// propriétaire.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM plugin_objects WHERE member_id = ?`, memberID); err != nil {
+			return fmt.Errorf("suppression des objets de plugins: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM plugin_public_sites WHERE member_id = ?`, memberID); err != nil {
+			return fmt.Errorf("suppression des publications de plugins: %w", err)
+		}
+
 		// Traces de consommation : dissociées, jamais supprimées — ce sont
 		// des pièces comptables.
 		if _, err := tx.ExecContext(ctx, `UPDATE usage_records SET principal_id = '', conversation_id = ''

@@ -2467,6 +2467,1416 @@ func (*NotifyResponse) Descriptor() ([]byte, []int) {
 	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{40}
 }
 
+// PutObjectChunk streams one object from the plugin to the host store.
+// The first chunk carries the metadata, every following chunk carries
+// data. Writing to an existing (collection, key) replaces the object.
+type PutObjectChunk struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*PutObjectChunk_Metadata
+	//	*PutObjectChunk_Data
+	Payload       isPutObjectChunk_Payload `protobuf_oneof:"payload"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutObjectChunk) Reset() {
+	*x = PutObjectChunk{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutObjectChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutObjectChunk) ProtoMessage() {}
+
+func (x *PutObjectChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutObjectChunk.ProtoReflect.Descriptor instead.
+func (*PutObjectChunk) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *PutObjectChunk) GetPayload() isPutObjectChunk_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *PutObjectChunk) GetMetadata() *PutObjectMetadata {
+	if x != nil {
+		if x, ok := x.Payload.(*PutObjectChunk_Metadata); ok {
+			return x.Metadata
+		}
+	}
+	return nil
+}
+
+func (x *PutObjectChunk) GetData() []byte {
+	if x != nil {
+		if x, ok := x.Payload.(*PutObjectChunk_Data); ok {
+			return x.Data
+		}
+	}
+	return nil
+}
+
+type isPutObjectChunk_Payload interface {
+	isPutObjectChunk_Payload()
+}
+
+type PutObjectChunk_Metadata struct {
+	Metadata *PutObjectMetadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof"`
+}
+
+type PutObjectChunk_Data struct {
+	Data []byte `protobuf:"bytes,2,opt,name=data,proto3,oneof"`
+}
+
+func (*PutObjectChunk_Metadata) isPutObjectChunk_Payload() {}
+
+func (*PutObjectChunk_Data) isPutObjectChunk_Payload() {}
+
+type PutObjectMetadata struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	OrgId      string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	MemberId   string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	Collection string                 `protobuf:"bytes,3,opt,name=collection,proto3" json:"collection,omitempty"`
+	Key        string                 `protobuf:"bytes,4,opt,name=key,proto3" json:"key,omitempty"`
+	// content_type is declarative; the host re-derives what it serves
+	// publicly from the key's extension.
+	ContentType   string `protobuf:"bytes,5,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutObjectMetadata) Reset() {
+	*x = PutObjectMetadata{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutObjectMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutObjectMetadata) ProtoMessage() {}
+
+func (x *PutObjectMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutObjectMetadata.ProtoReflect.Descriptor instead.
+func (*PutObjectMetadata) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *PutObjectMetadata) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *PutObjectMetadata) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *PutObjectMetadata) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+func (x *PutObjectMetadata) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *PutObjectMetadata) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+type PutObjectResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Size          int64                  `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PutObjectResult) Reset() {
+	*x = PutObjectResult{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PutObjectResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PutObjectResult) ProtoMessage() {}
+
+func (x *PutObjectResult) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PutObjectResult.ProtoReflect.Descriptor instead.
+func (*PutObjectResult) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *PutObjectResult) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+type GetObjectRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	MemberId      string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	Collection    string                 `protobuf:"bytes,3,opt,name=collection,proto3" json:"collection,omitempty"`
+	Key           string                 `protobuf:"bytes,4,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetObjectRequest) Reset() {
+	*x = GetObjectRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetObjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetObjectRequest) ProtoMessage() {}
+
+func (x *GetObjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetObjectRequest.ProtoReflect.Descriptor instead.
+func (*GetObjectRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *GetObjectRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *GetObjectRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *GetObjectRequest) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+func (x *GetObjectRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+// GetObjectChunk streams one object back to the plugin. The first chunk
+// carries the metadata, every following chunk carries data. A missing
+// object answers found=false and no data — not an error.
+type GetObjectChunk struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Payload:
+	//
+	//	*GetObjectChunk_Metadata
+	//	*GetObjectChunk_Data
+	Payload       isGetObjectChunk_Payload `protobuf_oneof:"payload"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetObjectChunk) Reset() {
+	*x = GetObjectChunk{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetObjectChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetObjectChunk) ProtoMessage() {}
+
+func (x *GetObjectChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetObjectChunk.ProtoReflect.Descriptor instead.
+func (*GetObjectChunk) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *GetObjectChunk) GetPayload() isGetObjectChunk_Payload {
+	if x != nil {
+		return x.Payload
+	}
+	return nil
+}
+
+func (x *GetObjectChunk) GetMetadata() *GetObjectMetadata {
+	if x != nil {
+		if x, ok := x.Payload.(*GetObjectChunk_Metadata); ok {
+			return x.Metadata
+		}
+	}
+	return nil
+}
+
+func (x *GetObjectChunk) GetData() []byte {
+	if x != nil {
+		if x, ok := x.Payload.(*GetObjectChunk_Data); ok {
+			return x.Data
+		}
+	}
+	return nil
+}
+
+type isGetObjectChunk_Payload interface {
+	isGetObjectChunk_Payload()
+}
+
+type GetObjectChunk_Metadata struct {
+	Metadata *GetObjectMetadata `protobuf:"bytes,1,opt,name=metadata,proto3,oneof"`
+}
+
+type GetObjectChunk_Data struct {
+	Data []byte `protobuf:"bytes,2,opt,name=data,proto3,oneof"`
+}
+
+func (*GetObjectChunk_Metadata) isGetObjectChunk_Payload() {}
+
+func (*GetObjectChunk_Data) isGetObjectChunk_Payload() {}
+
+type GetObjectMetadata struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ContentType   string                 `protobuf:"bytes,1,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	Size          int64                  `protobuf:"varint,2,opt,name=size,proto3" json:"size,omitempty"`
+	Found         bool                   `protobuf:"varint,3,opt,name=found,proto3" json:"found,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetObjectMetadata) Reset() {
+	*x = GetObjectMetadata{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetObjectMetadata) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetObjectMetadata) ProtoMessage() {}
+
+func (x *GetObjectMetadata) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetObjectMetadata.ProtoReflect.Descriptor instead.
+func (*GetObjectMetadata) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *GetObjectMetadata) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+func (x *GetObjectMetadata) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *GetObjectMetadata) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+type DeleteObjectRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	MemberId      string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	Collection    string                 `protobuf:"bytes,3,opt,name=collection,proto3" json:"collection,omitempty"`
+	Key           string                 `protobuf:"bytes,4,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteObjectRequest) Reset() {
+	*x = DeleteObjectRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[47]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteObjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteObjectRequest) ProtoMessage() {}
+
+func (x *DeleteObjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[47]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteObjectRequest.ProtoReflect.Descriptor instead.
+func (*DeleteObjectRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{47}
+}
+
+func (x *DeleteObjectRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *DeleteObjectRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *DeleteObjectRequest) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+func (x *DeleteObjectRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+type DeleteObjectResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deleted       bool                   `protobuf:"varint,1,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteObjectResponse) Reset() {
+	*x = DeleteObjectResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[48]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteObjectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteObjectResponse) ProtoMessage() {}
+
+func (x *DeleteObjectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[48]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteObjectResponse.ProtoReflect.Descriptor instead.
+func (*DeleteObjectResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{48}
+}
+
+func (x *DeleteObjectResponse) GetDeleted() bool {
+	if x != nil {
+		return x.Deleted
+	}
+	return false
+}
+
+type DeleteCollectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	MemberId      string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	Collection    string                 `protobuf:"bytes,3,opt,name=collection,proto3" json:"collection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteCollectionRequest) Reset() {
+	*x = DeleteCollectionRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[49]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteCollectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteCollectionRequest) ProtoMessage() {}
+
+func (x *DeleteCollectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[49]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteCollectionRequest.ProtoReflect.Descriptor instead.
+func (*DeleteCollectionRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{49}
+}
+
+func (x *DeleteCollectionRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *DeleteCollectionRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *DeleteCollectionRequest) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+type DeleteCollectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Deleted       int64                  `protobuf:"varint,1,opt,name=deleted,proto3" json:"deleted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteCollectionResponse) Reset() {
+	*x = DeleteCollectionResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[50]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteCollectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteCollectionResponse) ProtoMessage() {}
+
+func (x *DeleteCollectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[50]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteCollectionResponse.ProtoReflect.Descriptor instead.
+func (*DeleteCollectionResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{50}
+}
+
+func (x *DeleteCollectionResponse) GetDeleted() int64 {
+	if x != nil {
+		return x.Deleted
+	}
+	return 0
+}
+
+type ObjectEntry struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Key         string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	ContentType string                 `protobuf:"bytes,2,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	Size        int64                  `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	// updated_at is RFC3339 UTC.
+	UpdatedAt     string `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ObjectEntry) Reset() {
+	*x = ObjectEntry{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ObjectEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ObjectEntry) ProtoMessage() {}
+
+func (x *ObjectEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ObjectEntry.ProtoReflect.Descriptor instead.
+func (*ObjectEntry) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *ObjectEntry) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *ObjectEntry) GetContentType() string {
+	if x != nil {
+		return x.ContentType
+	}
+	return ""
+}
+
+func (x *ObjectEntry) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *ObjectEntry) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
+type ListObjectsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	MemberId      string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	Collection    string                 `protobuf:"bytes,3,opt,name=collection,proto3" json:"collection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListObjectsRequest) Reset() {
+	*x = ListObjectsRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListObjectsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListObjectsRequest) ProtoMessage() {}
+
+func (x *ListObjectsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListObjectsRequest.ProtoReflect.Descriptor instead.
+func (*ListObjectsRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *ListObjectsRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ListObjectsRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *ListObjectsRequest) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+type ListObjectsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*ObjectEntry         `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListObjectsResponse) Reset() {
+	*x = ListObjectsResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[53]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListObjectsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListObjectsResponse) ProtoMessage() {}
+
+func (x *ListObjectsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[53]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListObjectsResponse.ProtoReflect.Descriptor instead.
+func (*ListObjectsResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{53}
+}
+
+func (x *ListObjectsResponse) GetEntries() []*ObjectEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+type ListCollectionsRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	OrgId    string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	MemberId string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	// prefix filters collections by literal prefix; empty lists them all.
+	Prefix        string `protobuf:"bytes,3,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListCollectionsRequest) Reset() {
+	*x = ListCollectionsRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[54]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListCollectionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListCollectionsRequest) ProtoMessage() {}
+
+func (x *ListCollectionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[54]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListCollectionsRequest.ProtoReflect.Descriptor instead.
+func (*ListCollectionsRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{54}
+}
+
+func (x *ListCollectionsRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ListCollectionsRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *ListCollectionsRequest) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
+type ListCollectionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Collections   []string               `protobuf:"bytes,1,rep,name=collections,proto3" json:"collections,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListCollectionsResponse) Reset() {
+	*x = ListCollectionsResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[55]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListCollectionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListCollectionsResponse) ProtoMessage() {}
+
+func (x *ListCollectionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[55]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListCollectionsResponse.ProtoReflect.Descriptor instead.
+func (*ListCollectionsResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{55}
+}
+
+func (x *ListCollectionsResponse) GetCollections() []string {
+	if x != nil {
+		return x.Collections
+	}
+	return nil
+}
+
+// CopyCollection replaces the target collection with a copy of the
+// source, atomically. It is how a draft becomes the published version.
+type CopyCollectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	MemberId      string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	From          string                 `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"`
+	To            string                 `protobuf:"bytes,4,opt,name=to,proto3" json:"to,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CopyCollectionRequest) Reset() {
+	*x = CopyCollectionRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[56]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CopyCollectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CopyCollectionRequest) ProtoMessage() {}
+
+func (x *CopyCollectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[56]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CopyCollectionRequest.ProtoReflect.Descriptor instead.
+func (*CopyCollectionRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{56}
+}
+
+func (x *CopyCollectionRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *CopyCollectionRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *CopyCollectionRequest) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *CopyCollectionRequest) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
+type CopyCollectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Copied        int64                  `protobuf:"varint,1,opt,name=copied,proto3" json:"copied,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CopyCollectionResponse) Reset() {
+	*x = CopyCollectionResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[57]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CopyCollectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CopyCollectionResponse) ProtoMessage() {}
+
+func (x *CopyCollectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[57]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CopyCollectionResponse.ProtoReflect.Descriptor instead.
+func (*CopyCollectionResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{57}
+}
+
+func (x *CopyCollectionResponse) GetCopied() int64 {
+	if x != nil {
+		return x.Copied
+	}
+	return 0
+}
+
+type PublishCollectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	MemberId      string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	Collection    string                 `protobuf:"bytes,3,opt,name=collection,proto3" json:"collection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublishCollectionRequest) Reset() {
+	*x = PublishCollectionRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[58]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublishCollectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublishCollectionRequest) ProtoMessage() {}
+
+func (x *PublishCollectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[58]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublishCollectionRequest.ProtoReflect.Descriptor instead.
+func (*PublishCollectionRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{58}
+}
+
+func (x *PublishCollectionRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *PublishCollectionRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *PublishCollectionRequest) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+type PublishCollectionResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Slug  string                 `protobuf:"bytes,1,opt,name=slug,proto3" json:"slug,omitempty"`
+	// url is the absolute public URL, composed by the host.
+	Url           string `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PublishCollectionResponse) Reset() {
+	*x = PublishCollectionResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[59]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PublishCollectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PublishCollectionResponse) ProtoMessage() {}
+
+func (x *PublishCollectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[59]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PublishCollectionResponse.ProtoReflect.Descriptor instead.
+func (*PublishCollectionResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{59}
+}
+
+func (x *PublishCollectionResponse) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
+}
+
+func (x *PublishCollectionResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+type UnpublishCollectionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	MemberId      string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	Collection    string                 `protobuf:"bytes,3,opt,name=collection,proto3" json:"collection,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnpublishCollectionRequest) Reset() {
+	*x = UnpublishCollectionRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[60]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnpublishCollectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnpublishCollectionRequest) ProtoMessage() {}
+
+func (x *UnpublishCollectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[60]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnpublishCollectionRequest.ProtoReflect.Descriptor instead.
+func (*UnpublishCollectionRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{60}
+}
+
+func (x *UnpublishCollectionRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *UnpublishCollectionRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+func (x *UnpublishCollectionRequest) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+type UnpublishCollectionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Existed       bool                   `protobuf:"varint,1,opt,name=existed,proto3" json:"existed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UnpublishCollectionResponse) Reset() {
+	*x = UnpublishCollectionResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[61]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UnpublishCollectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UnpublishCollectionResponse) ProtoMessage() {}
+
+func (x *UnpublishCollectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[61]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UnpublishCollectionResponse.ProtoReflect.Descriptor instead.
+func (*UnpublishCollectionResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{61}
+}
+
+func (x *UnpublishCollectionResponse) GetExisted() bool {
+	if x != nil {
+		return x.Existed
+	}
+	return false
+}
+
+type Publication struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Collection string                 `protobuf:"bytes,1,opt,name=collection,proto3" json:"collection,omitempty"`
+	Slug       string                 `protobuf:"bytes,2,opt,name=slug,proto3" json:"slug,omitempty"`
+	Url        string                 `protobuf:"bytes,3,opt,name=url,proto3" json:"url,omitempty"`
+	// published_at is RFC3339 UTC.
+	PublishedAt   string `protobuf:"bytes,4,opt,name=published_at,json=publishedAt,proto3" json:"published_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Publication) Reset() {
+	*x = Publication{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[62]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Publication) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Publication) ProtoMessage() {}
+
+func (x *Publication) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[62]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Publication.ProtoReflect.Descriptor instead.
+func (*Publication) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{62}
+}
+
+func (x *Publication) GetCollection() string {
+	if x != nil {
+		return x.Collection
+	}
+	return ""
+}
+
+func (x *Publication) GetSlug() string {
+	if x != nil {
+		return x.Slug
+	}
+	return ""
+}
+
+func (x *Publication) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *Publication) GetPublishedAt() string {
+	if x != nil {
+		return x.PublishedAt
+	}
+	return ""
+}
+
+type ListPublicationsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	OrgId         string                 `protobuf:"bytes,1,opt,name=org_id,json=orgId,proto3" json:"org_id,omitempty"`
+	MemberId      string                 `protobuf:"bytes,2,opt,name=member_id,json=memberId,proto3" json:"member_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPublicationsRequest) Reset() {
+	*x = ListPublicationsRequest{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[63]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPublicationsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPublicationsRequest) ProtoMessage() {}
+
+func (x *ListPublicationsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[63]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPublicationsRequest.ProtoReflect.Descriptor instead.
+func (*ListPublicationsRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{63}
+}
+
+func (x *ListPublicationsRequest) GetOrgId() string {
+	if x != nil {
+		return x.OrgId
+	}
+	return ""
+}
+
+func (x *ListPublicationsRequest) GetMemberId() string {
+	if x != nil {
+		return x.MemberId
+	}
+	return ""
+}
+
+type ListPublicationsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Publications  []*Publication         `protobuf:"bytes,1,rep,name=publications,proto3" json:"publications,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPublicationsResponse) Reset() {
+	*x = ListPublicationsResponse{}
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[64]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPublicationsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPublicationsResponse) ProtoMessage() {}
+
+func (x *ListPublicationsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_pluginsdk_proto_plugin_proto_msgTypes[64]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPublicationsResponse.ProtoReflect.Descriptor instead.
+func (*ListPublicationsResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP(), []int{64}
+}
+
+func (x *ListPublicationsResponse) GetPublications() []*Publication {
+	if x != nil {
+		return x.Publications
+	}
+	return nil
+}
+
 var File_pkg_pluginsdk_proto_plugin_proto protoreflect.FileDescriptor
 
 const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
@@ -2634,7 +4044,109 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
 	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\"\x10\n" +
-	"\x0eNotifyResponse2\x82\a\n" +
+	"\x0eNotifyResponse\"v\n" +
+	"\x0ePutObjectChunk\x12C\n" +
+	"\bmetadata\x18\x01 \x01(\v2%.automata.plugin.v1.PutObjectMetadataH\x00R\bmetadata\x12\x14\n" +
+	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
+	"\apayload\"\x9c\x01\n" +
+	"\x11PutObjectMetadata\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x03 \x01(\tR\n" +
+	"collection\x12\x10\n" +
+	"\x03key\x18\x04 \x01(\tR\x03key\x12!\n" +
+	"\fcontent_type\x18\x05 \x01(\tR\vcontentType\"%\n" +
+	"\x0fPutObjectResult\x12\x12\n" +
+	"\x04size\x18\x01 \x01(\x03R\x04size\"x\n" +
+	"\x10GetObjectRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x03 \x01(\tR\n" +
+	"collection\x12\x10\n" +
+	"\x03key\x18\x04 \x01(\tR\x03key\"v\n" +
+	"\x0eGetObjectChunk\x12C\n" +
+	"\bmetadata\x18\x01 \x01(\v2%.automata.plugin.v1.GetObjectMetadataH\x00R\bmetadata\x12\x14\n" +
+	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
+	"\apayload\"`\n" +
+	"\x11GetObjectMetadata\x12!\n" +
+	"\fcontent_type\x18\x01 \x01(\tR\vcontentType\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\x03R\x04size\x12\x14\n" +
+	"\x05found\x18\x03 \x01(\bR\x05found\"{\n" +
+	"\x13DeleteObjectRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x03 \x01(\tR\n" +
+	"collection\x12\x10\n" +
+	"\x03key\x18\x04 \x01(\tR\x03key\"0\n" +
+	"\x14DeleteObjectResponse\x12\x18\n" +
+	"\adeleted\x18\x01 \x01(\bR\adeleted\"m\n" +
+	"\x17DeleteCollectionRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x03 \x01(\tR\n" +
+	"collection\"4\n" +
+	"\x18DeleteCollectionResponse\x12\x18\n" +
+	"\adeleted\x18\x01 \x01(\x03R\adeleted\"u\n" +
+	"\vObjectEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12!\n" +
+	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x03R\x04size\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\x04 \x01(\tR\tupdatedAt\"h\n" +
+	"\x12ListObjectsRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x03 \x01(\tR\n" +
+	"collection\"P\n" +
+	"\x13ListObjectsResponse\x129\n" +
+	"\aentries\x18\x01 \x03(\v2\x1f.automata.plugin.v1.ObjectEntryR\aentries\"d\n" +
+	"\x16ListCollectionsRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x16\n" +
+	"\x06prefix\x18\x03 \x01(\tR\x06prefix\";\n" +
+	"\x17ListCollectionsResponse\x12 \n" +
+	"\vcollections\x18\x01 \x03(\tR\vcollections\"o\n" +
+	"\x15CopyCollectionRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x12\n" +
+	"\x04from\x18\x03 \x01(\tR\x04from\x12\x0e\n" +
+	"\x02to\x18\x04 \x01(\tR\x02to\"0\n" +
+	"\x16CopyCollectionResponse\x12\x16\n" +
+	"\x06copied\x18\x01 \x01(\x03R\x06copied\"n\n" +
+	"\x18PublishCollectionRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x03 \x01(\tR\n" +
+	"collection\"A\n" +
+	"\x19PublishCollectionResponse\x12\x12\n" +
+	"\x04slug\x18\x01 \x01(\tR\x04slug\x12\x10\n" +
+	"\x03url\x18\x02 \x01(\tR\x03url\"p\n" +
+	"\x1aUnpublishCollectionRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x03 \x01(\tR\n" +
+	"collection\"7\n" +
+	"\x1bUnpublishCollectionResponse\x12\x18\n" +
+	"\aexisted\x18\x01 \x01(\bR\aexisted\"v\n" +
+	"\vPublication\x12\x1e\n" +
+	"\n" +
+	"collection\x18\x01 \x01(\tR\n" +
+	"collection\x12\x12\n" +
+	"\x04slug\x18\x02 \x01(\tR\x04slug\x12\x10\n" +
+	"\x03url\x18\x03 \x01(\tR\x03url\x12!\n" +
+	"\fpublished_at\x18\x04 \x01(\tR\vpublishedAt\"M\n" +
+	"\x17ListPublicationsRequest\x12\x15\n" +
+	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
+	"\tmember_id\x18\x02 \x01(\tR\bmemberId\"_\n" +
+	"\x18ListPublicationsResponse\x12C\n" +
+	"\fpublications\x18\x01 \x03(\v2\x1f.automata.plugin.v1.PublicationR\fpublications2\x82\a\n" +
 	"\x0eAutomataPlugin\x12U\n" +
 	"\bDescribe\x12#.automata.plugin.v1.DescribeRequest\x1a$.automata.plugin.v1.PluginDescriptor\x12[\n" +
 	"\n" +
@@ -2647,7 +4159,7 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\bPutEvent\x12#.automata.plugin.v1.PutEventRequest\x1a$.automata.plugin.v1.PutEventResponse\x12^\n" +
 	"\vDeleteEvent\x12&.automata.plugin.v1.DeleteEventRequest\x1a'.automata.plugin.v1.DeleteEventResponse\x12[\n" +
 	"\n" +
-	"ListEvents\x12%.automata.plugin.v1.ListEventsRequest\x1a&.automata.plugin.v1.ListEventsResponse2\x94\x05\n" +
+	"ListEvents\x12%.automata.plugin.v1.ListEventsRequest\x1a&.automata.plugin.v1.ListEventsResponse2\xa5\r\n" +
 	"\x13AutomataHostService\x12X\n" +
 	"\tGetConfig\x12$.automata.plugin.v1.GetConfigRequest\x1a%.automata.plugin.v1.GetConfigResponse\x12[\n" +
 	"\n" +
@@ -2656,7 +4168,17 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\tGetSecret\x12$.automata.plugin.v1.GetSecretRequest\x1a%.automata.plugin.v1.GetSecretResponse\x12X\n" +
 	"\tSetSecret\x12$.automata.plugin.v1.SetSecretRequest\x1a%.automata.plugin.v1.SetSecretResponse\x12a\n" +
 	"\fDeleteSecret\x12'.automata.plugin.v1.DeleteSecretRequest\x1a(.automata.plugin.v1.DeleteSecretResponse\x12O\n" +
-	"\x06Notify\x12!.automata.plugin.v1.NotifyRequest\x1a\".automata.plugin.v1.NotifyResponseB2Z0github.com/bornholm/automata/pkg/pluginsdk/protob\x06proto3"
+	"\x06Notify\x12!.automata.plugin.v1.NotifyRequest\x1a\".automata.plugin.v1.NotifyResponse\x12V\n" +
+	"\tPutObject\x12\".automata.plugin.v1.PutObjectChunk\x1a#.automata.plugin.v1.PutObjectResult(\x01\x12W\n" +
+	"\tGetObject\x12$.automata.plugin.v1.GetObjectRequest\x1a\".automata.plugin.v1.GetObjectChunk0\x01\x12a\n" +
+	"\fDeleteObject\x12'.automata.plugin.v1.DeleteObjectRequest\x1a(.automata.plugin.v1.DeleteObjectResponse\x12m\n" +
+	"\x10DeleteCollection\x12+.automata.plugin.v1.DeleteCollectionRequest\x1a,.automata.plugin.v1.DeleteCollectionResponse\x12^\n" +
+	"\vListObjects\x12&.automata.plugin.v1.ListObjectsRequest\x1a'.automata.plugin.v1.ListObjectsResponse\x12j\n" +
+	"\x0fListCollections\x12*.automata.plugin.v1.ListCollectionsRequest\x1a+.automata.plugin.v1.ListCollectionsResponse\x12g\n" +
+	"\x0eCopyCollection\x12).automata.plugin.v1.CopyCollectionRequest\x1a*.automata.plugin.v1.CopyCollectionResponse\x12p\n" +
+	"\x11PublishCollection\x12,.automata.plugin.v1.PublishCollectionRequest\x1a-.automata.plugin.v1.PublishCollectionResponse\x12v\n" +
+	"\x13UnpublishCollection\x12..automata.plugin.v1.UnpublishCollectionRequest\x1a/.automata.plugin.v1.UnpublishCollectionResponse\x12m\n" +
+	"\x10ListPublications\x12+.automata.plugin.v1.ListPublicationsRequest\x1a,.automata.plugin.v1.ListPublicationsResponseB2Z0github.com/bornholm/automata/pkg/pluginsdk/protob\x06proto3"
 
 var (
 	file_pkg_pluginsdk_proto_plugin_proto_rawDescOnce sync.Once
@@ -2670,50 +4192,74 @@ func file_pkg_pluginsdk_proto_plugin_proto_rawDescGZIP() []byte {
 	return file_pkg_pluginsdk_proto_plugin_proto_rawDescData
 }
 
-var file_pkg_pluginsdk_proto_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_pkg_pluginsdk_proto_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 66)
 var file_pkg_pluginsdk_proto_plugin_proto_goTypes = []any{
-	(*DescribeRequest)(nil),      // 0: automata.plugin.v1.DescribeRequest
-	(*PluginDescriptor)(nil),     // 1: automata.plugin.v1.PluginDescriptor
-	(*SubAgentDescriptor)(nil),   // 2: automata.plugin.v1.SubAgentDescriptor
-	(*InitializeRequest)(nil),    // 3: automata.plugin.v1.InitializeRequest
-	(*InitializeResponse)(nil),   // 4: automata.plugin.v1.InitializeResponse
-	(*CallContext)(nil),          // 5: automata.plugin.v1.CallContext
-	(*ToolDescriptor)(nil),       // 6: automata.plugin.v1.ToolDescriptor
-	(*ListToolsInput)(nil),       // 7: automata.plugin.v1.ListToolsInput
-	(*ListToolsOutput)(nil),      // 8: automata.plugin.v1.ListToolsOutput
-	(*CallToolInput)(nil),        // 9: automata.plugin.v1.CallToolInput
-	(*CallToolOutput)(nil),       // 10: automata.plugin.v1.CallToolOutput
-	(*PutFileChunk)(nil),         // 11: automata.plugin.v1.PutFileChunk
-	(*PutFileMetadata)(nil),      // 12: automata.plugin.v1.PutFileMetadata
-	(*PutFileResult)(nil),        // 13: automata.plugin.v1.PutFileResult
-	(*GetFileRequest)(nil),       // 14: automata.plugin.v1.GetFileRequest
-	(*FileChunk)(nil),            // 15: automata.plugin.v1.FileChunk
-	(*FileMetadata)(nil),         // 16: automata.plugin.v1.FileMetadata
-	(*ScheduledEvent)(nil),       // 17: automata.plugin.v1.ScheduledEvent
-	(*PutEventRequest)(nil),      // 18: automata.plugin.v1.PutEventRequest
-	(*PutEventResponse)(nil),     // 19: automata.plugin.v1.PutEventResponse
-	(*DeleteEventRequest)(nil),   // 20: automata.plugin.v1.DeleteEventRequest
-	(*DeleteEventResponse)(nil),  // 21: automata.plugin.v1.DeleteEventResponse
-	(*ListEventsRequest)(nil),    // 22: automata.plugin.v1.ListEventsRequest
-	(*ListEventsResponse)(nil),   // 23: automata.plugin.v1.ListEventsResponse
-	(*WatchTriggersRequest)(nil), // 24: automata.plugin.v1.WatchTriggersRequest
-	(*TriggerEvent)(nil),         // 25: automata.plugin.v1.TriggerEvent
-	(*GetConfigRequest)(nil),     // 26: automata.plugin.v1.GetConfigRequest
-	(*GetConfigResponse)(nil),    // 27: automata.plugin.v1.GetConfigResponse
-	(*SaveConfigRequest)(nil),    // 28: automata.plugin.v1.SaveConfigRequest
-	(*SaveConfigResponse)(nil),   // 29: automata.plugin.v1.SaveConfigResponse
-	(*ListConfigsRequest)(nil),   // 30: automata.plugin.v1.ListConfigsRequest
-	(*ListConfigsResponse)(nil),  // 31: automata.plugin.v1.ListConfigsResponse
-	(*ConfigEntry)(nil),          // 32: automata.plugin.v1.ConfigEntry
-	(*GetSecretRequest)(nil),     // 33: automata.plugin.v1.GetSecretRequest
-	(*GetSecretResponse)(nil),    // 34: automata.plugin.v1.GetSecretResponse
-	(*SetSecretRequest)(nil),     // 35: automata.plugin.v1.SetSecretRequest
-	(*SetSecretResponse)(nil),    // 36: automata.plugin.v1.SetSecretResponse
-	(*DeleteSecretRequest)(nil),  // 37: automata.plugin.v1.DeleteSecretRequest
-	(*DeleteSecretResponse)(nil), // 38: automata.plugin.v1.DeleteSecretResponse
-	(*NotifyRequest)(nil),        // 39: automata.plugin.v1.NotifyRequest
-	(*NotifyResponse)(nil),       // 40: automata.plugin.v1.NotifyResponse
-	nil,                          // 41: automata.plugin.v1.TriggerEvent.AttributesEntry
+	(*DescribeRequest)(nil),             // 0: automata.plugin.v1.DescribeRequest
+	(*PluginDescriptor)(nil),            // 1: automata.plugin.v1.PluginDescriptor
+	(*SubAgentDescriptor)(nil),          // 2: automata.plugin.v1.SubAgentDescriptor
+	(*InitializeRequest)(nil),           // 3: automata.plugin.v1.InitializeRequest
+	(*InitializeResponse)(nil),          // 4: automata.plugin.v1.InitializeResponse
+	(*CallContext)(nil),                 // 5: automata.plugin.v1.CallContext
+	(*ToolDescriptor)(nil),              // 6: automata.plugin.v1.ToolDescriptor
+	(*ListToolsInput)(nil),              // 7: automata.plugin.v1.ListToolsInput
+	(*ListToolsOutput)(nil),             // 8: automata.plugin.v1.ListToolsOutput
+	(*CallToolInput)(nil),               // 9: automata.plugin.v1.CallToolInput
+	(*CallToolOutput)(nil),              // 10: automata.plugin.v1.CallToolOutput
+	(*PutFileChunk)(nil),                // 11: automata.plugin.v1.PutFileChunk
+	(*PutFileMetadata)(nil),             // 12: automata.plugin.v1.PutFileMetadata
+	(*PutFileResult)(nil),               // 13: automata.plugin.v1.PutFileResult
+	(*GetFileRequest)(nil),              // 14: automata.plugin.v1.GetFileRequest
+	(*FileChunk)(nil),                   // 15: automata.plugin.v1.FileChunk
+	(*FileMetadata)(nil),                // 16: automata.plugin.v1.FileMetadata
+	(*ScheduledEvent)(nil),              // 17: automata.plugin.v1.ScheduledEvent
+	(*PutEventRequest)(nil),             // 18: automata.plugin.v1.PutEventRequest
+	(*PutEventResponse)(nil),            // 19: automata.plugin.v1.PutEventResponse
+	(*DeleteEventRequest)(nil),          // 20: automata.plugin.v1.DeleteEventRequest
+	(*DeleteEventResponse)(nil),         // 21: automata.plugin.v1.DeleteEventResponse
+	(*ListEventsRequest)(nil),           // 22: automata.plugin.v1.ListEventsRequest
+	(*ListEventsResponse)(nil),          // 23: automata.plugin.v1.ListEventsResponse
+	(*WatchTriggersRequest)(nil),        // 24: automata.plugin.v1.WatchTriggersRequest
+	(*TriggerEvent)(nil),                // 25: automata.plugin.v1.TriggerEvent
+	(*GetConfigRequest)(nil),            // 26: automata.plugin.v1.GetConfigRequest
+	(*GetConfigResponse)(nil),           // 27: automata.plugin.v1.GetConfigResponse
+	(*SaveConfigRequest)(nil),           // 28: automata.plugin.v1.SaveConfigRequest
+	(*SaveConfigResponse)(nil),          // 29: automata.plugin.v1.SaveConfigResponse
+	(*ListConfigsRequest)(nil),          // 30: automata.plugin.v1.ListConfigsRequest
+	(*ListConfigsResponse)(nil),         // 31: automata.plugin.v1.ListConfigsResponse
+	(*ConfigEntry)(nil),                 // 32: automata.plugin.v1.ConfigEntry
+	(*GetSecretRequest)(nil),            // 33: automata.plugin.v1.GetSecretRequest
+	(*GetSecretResponse)(nil),           // 34: automata.plugin.v1.GetSecretResponse
+	(*SetSecretRequest)(nil),            // 35: automata.plugin.v1.SetSecretRequest
+	(*SetSecretResponse)(nil),           // 36: automata.plugin.v1.SetSecretResponse
+	(*DeleteSecretRequest)(nil),         // 37: automata.plugin.v1.DeleteSecretRequest
+	(*DeleteSecretResponse)(nil),        // 38: automata.plugin.v1.DeleteSecretResponse
+	(*NotifyRequest)(nil),               // 39: automata.plugin.v1.NotifyRequest
+	(*NotifyResponse)(nil),              // 40: automata.plugin.v1.NotifyResponse
+	(*PutObjectChunk)(nil),              // 41: automata.plugin.v1.PutObjectChunk
+	(*PutObjectMetadata)(nil),           // 42: automata.plugin.v1.PutObjectMetadata
+	(*PutObjectResult)(nil),             // 43: automata.plugin.v1.PutObjectResult
+	(*GetObjectRequest)(nil),            // 44: automata.plugin.v1.GetObjectRequest
+	(*GetObjectChunk)(nil),              // 45: automata.plugin.v1.GetObjectChunk
+	(*GetObjectMetadata)(nil),           // 46: automata.plugin.v1.GetObjectMetadata
+	(*DeleteObjectRequest)(nil),         // 47: automata.plugin.v1.DeleteObjectRequest
+	(*DeleteObjectResponse)(nil),        // 48: automata.plugin.v1.DeleteObjectResponse
+	(*DeleteCollectionRequest)(nil),     // 49: automata.plugin.v1.DeleteCollectionRequest
+	(*DeleteCollectionResponse)(nil),    // 50: automata.plugin.v1.DeleteCollectionResponse
+	(*ObjectEntry)(nil),                 // 51: automata.plugin.v1.ObjectEntry
+	(*ListObjectsRequest)(nil),          // 52: automata.plugin.v1.ListObjectsRequest
+	(*ListObjectsResponse)(nil),         // 53: automata.plugin.v1.ListObjectsResponse
+	(*ListCollectionsRequest)(nil),      // 54: automata.plugin.v1.ListCollectionsRequest
+	(*ListCollectionsResponse)(nil),     // 55: automata.plugin.v1.ListCollectionsResponse
+	(*CopyCollectionRequest)(nil),       // 56: automata.plugin.v1.CopyCollectionRequest
+	(*CopyCollectionResponse)(nil),      // 57: automata.plugin.v1.CopyCollectionResponse
+	(*PublishCollectionRequest)(nil),    // 58: automata.plugin.v1.PublishCollectionRequest
+	(*PublishCollectionResponse)(nil),   // 59: automata.plugin.v1.PublishCollectionResponse
+	(*UnpublishCollectionRequest)(nil),  // 60: automata.plugin.v1.UnpublishCollectionRequest
+	(*UnpublishCollectionResponse)(nil), // 61: automata.plugin.v1.UnpublishCollectionResponse
+	(*Publication)(nil),                 // 62: automata.plugin.v1.Publication
+	(*ListPublicationsRequest)(nil),     // 63: automata.plugin.v1.ListPublicationsRequest
+	(*ListPublicationsResponse)(nil),    // 64: automata.plugin.v1.ListPublicationsResponse
+	nil,                                 // 65: automata.plugin.v1.TriggerEvent.AttributesEntry
 }
 var file_pkg_pluginsdk_proto_plugin_proto_depIdxs = []int32{
 	2,  // 0: automata.plugin.v1.PluginDescriptor.sub_agent:type_name -> automata.plugin.v1.SubAgentDescriptor
@@ -2729,47 +4275,71 @@ var file_pkg_pluginsdk_proto_plugin_proto_depIdxs = []int32{
 	5,  // 10: automata.plugin.v1.DeleteEventRequest.ctx:type_name -> automata.plugin.v1.CallContext
 	5,  // 11: automata.plugin.v1.ListEventsRequest.ctx:type_name -> automata.plugin.v1.CallContext
 	17, // 12: automata.plugin.v1.ListEventsResponse.events:type_name -> automata.plugin.v1.ScheduledEvent
-	41, // 13: automata.plugin.v1.TriggerEvent.attributes:type_name -> automata.plugin.v1.TriggerEvent.AttributesEntry
+	65, // 13: automata.plugin.v1.TriggerEvent.attributes:type_name -> automata.plugin.v1.TriggerEvent.AttributesEntry
 	32, // 14: automata.plugin.v1.ListConfigsResponse.entries:type_name -> automata.plugin.v1.ConfigEntry
-	0,  // 15: automata.plugin.v1.AutomataPlugin.Describe:input_type -> automata.plugin.v1.DescribeRequest
-	3,  // 16: automata.plugin.v1.AutomataPlugin.Initialize:input_type -> automata.plugin.v1.InitializeRequest
-	7,  // 17: automata.plugin.v1.AutomataPlugin.ListTools:input_type -> automata.plugin.v1.ListToolsInput
-	9,  // 18: automata.plugin.v1.AutomataPlugin.CallTool:input_type -> automata.plugin.v1.CallToolInput
-	24, // 19: automata.plugin.v1.AutomataPlugin.WatchTriggers:input_type -> automata.plugin.v1.WatchTriggersRequest
-	11, // 20: automata.plugin.v1.AutomataPlugin.PutFile:input_type -> automata.plugin.v1.PutFileChunk
-	14, // 21: automata.plugin.v1.AutomataPlugin.GetFile:input_type -> automata.plugin.v1.GetFileRequest
-	18, // 22: automata.plugin.v1.AutomataPlugin.PutEvent:input_type -> automata.plugin.v1.PutEventRequest
-	20, // 23: automata.plugin.v1.AutomataPlugin.DeleteEvent:input_type -> automata.plugin.v1.DeleteEventRequest
-	22, // 24: automata.plugin.v1.AutomataPlugin.ListEvents:input_type -> automata.plugin.v1.ListEventsRequest
-	26, // 25: automata.plugin.v1.AutomataHostService.GetConfig:input_type -> automata.plugin.v1.GetConfigRequest
-	28, // 26: automata.plugin.v1.AutomataHostService.SaveConfig:input_type -> automata.plugin.v1.SaveConfigRequest
-	30, // 27: automata.plugin.v1.AutomataHostService.ListConfigs:input_type -> automata.plugin.v1.ListConfigsRequest
-	33, // 28: automata.plugin.v1.AutomataHostService.GetSecret:input_type -> automata.plugin.v1.GetSecretRequest
-	35, // 29: automata.plugin.v1.AutomataHostService.SetSecret:input_type -> automata.plugin.v1.SetSecretRequest
-	37, // 30: automata.plugin.v1.AutomataHostService.DeleteSecret:input_type -> automata.plugin.v1.DeleteSecretRequest
-	39, // 31: automata.plugin.v1.AutomataHostService.Notify:input_type -> automata.plugin.v1.NotifyRequest
-	1,  // 32: automata.plugin.v1.AutomataPlugin.Describe:output_type -> automata.plugin.v1.PluginDescriptor
-	4,  // 33: automata.plugin.v1.AutomataPlugin.Initialize:output_type -> automata.plugin.v1.InitializeResponse
-	8,  // 34: automata.plugin.v1.AutomataPlugin.ListTools:output_type -> automata.plugin.v1.ListToolsOutput
-	10, // 35: automata.plugin.v1.AutomataPlugin.CallTool:output_type -> automata.plugin.v1.CallToolOutput
-	25, // 36: automata.plugin.v1.AutomataPlugin.WatchTriggers:output_type -> automata.plugin.v1.TriggerEvent
-	13, // 37: automata.plugin.v1.AutomataPlugin.PutFile:output_type -> automata.plugin.v1.PutFileResult
-	15, // 38: automata.plugin.v1.AutomataPlugin.GetFile:output_type -> automata.plugin.v1.FileChunk
-	19, // 39: automata.plugin.v1.AutomataPlugin.PutEvent:output_type -> automata.plugin.v1.PutEventResponse
-	21, // 40: automata.plugin.v1.AutomataPlugin.DeleteEvent:output_type -> automata.plugin.v1.DeleteEventResponse
-	23, // 41: automata.plugin.v1.AutomataPlugin.ListEvents:output_type -> automata.plugin.v1.ListEventsResponse
-	27, // 42: automata.plugin.v1.AutomataHostService.GetConfig:output_type -> automata.plugin.v1.GetConfigResponse
-	29, // 43: automata.plugin.v1.AutomataHostService.SaveConfig:output_type -> automata.plugin.v1.SaveConfigResponse
-	31, // 44: automata.plugin.v1.AutomataHostService.ListConfigs:output_type -> automata.plugin.v1.ListConfigsResponse
-	34, // 45: automata.plugin.v1.AutomataHostService.GetSecret:output_type -> automata.plugin.v1.GetSecretResponse
-	36, // 46: automata.plugin.v1.AutomataHostService.SetSecret:output_type -> automata.plugin.v1.SetSecretResponse
-	38, // 47: automata.plugin.v1.AutomataHostService.DeleteSecret:output_type -> automata.plugin.v1.DeleteSecretResponse
-	40, // 48: automata.plugin.v1.AutomataHostService.Notify:output_type -> automata.plugin.v1.NotifyResponse
-	32, // [32:49] is the sub-list for method output_type
-	15, // [15:32] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	42, // 15: automata.plugin.v1.PutObjectChunk.metadata:type_name -> automata.plugin.v1.PutObjectMetadata
+	46, // 16: automata.plugin.v1.GetObjectChunk.metadata:type_name -> automata.plugin.v1.GetObjectMetadata
+	51, // 17: automata.plugin.v1.ListObjectsResponse.entries:type_name -> automata.plugin.v1.ObjectEntry
+	62, // 18: automata.plugin.v1.ListPublicationsResponse.publications:type_name -> automata.plugin.v1.Publication
+	0,  // 19: automata.plugin.v1.AutomataPlugin.Describe:input_type -> automata.plugin.v1.DescribeRequest
+	3,  // 20: automata.plugin.v1.AutomataPlugin.Initialize:input_type -> automata.plugin.v1.InitializeRequest
+	7,  // 21: automata.plugin.v1.AutomataPlugin.ListTools:input_type -> automata.plugin.v1.ListToolsInput
+	9,  // 22: automata.plugin.v1.AutomataPlugin.CallTool:input_type -> automata.plugin.v1.CallToolInput
+	24, // 23: automata.plugin.v1.AutomataPlugin.WatchTriggers:input_type -> automata.plugin.v1.WatchTriggersRequest
+	11, // 24: automata.plugin.v1.AutomataPlugin.PutFile:input_type -> automata.plugin.v1.PutFileChunk
+	14, // 25: automata.plugin.v1.AutomataPlugin.GetFile:input_type -> automata.plugin.v1.GetFileRequest
+	18, // 26: automata.plugin.v1.AutomataPlugin.PutEvent:input_type -> automata.plugin.v1.PutEventRequest
+	20, // 27: automata.plugin.v1.AutomataPlugin.DeleteEvent:input_type -> automata.plugin.v1.DeleteEventRequest
+	22, // 28: automata.plugin.v1.AutomataPlugin.ListEvents:input_type -> automata.plugin.v1.ListEventsRequest
+	26, // 29: automata.plugin.v1.AutomataHostService.GetConfig:input_type -> automata.plugin.v1.GetConfigRequest
+	28, // 30: automata.plugin.v1.AutomataHostService.SaveConfig:input_type -> automata.plugin.v1.SaveConfigRequest
+	30, // 31: automata.plugin.v1.AutomataHostService.ListConfigs:input_type -> automata.plugin.v1.ListConfigsRequest
+	33, // 32: automata.plugin.v1.AutomataHostService.GetSecret:input_type -> automata.plugin.v1.GetSecretRequest
+	35, // 33: automata.plugin.v1.AutomataHostService.SetSecret:input_type -> automata.plugin.v1.SetSecretRequest
+	37, // 34: automata.plugin.v1.AutomataHostService.DeleteSecret:input_type -> automata.plugin.v1.DeleteSecretRequest
+	39, // 35: automata.plugin.v1.AutomataHostService.Notify:input_type -> automata.plugin.v1.NotifyRequest
+	41, // 36: automata.plugin.v1.AutomataHostService.PutObject:input_type -> automata.plugin.v1.PutObjectChunk
+	44, // 37: automata.plugin.v1.AutomataHostService.GetObject:input_type -> automata.plugin.v1.GetObjectRequest
+	47, // 38: automata.plugin.v1.AutomataHostService.DeleteObject:input_type -> automata.plugin.v1.DeleteObjectRequest
+	49, // 39: automata.plugin.v1.AutomataHostService.DeleteCollection:input_type -> automata.plugin.v1.DeleteCollectionRequest
+	52, // 40: automata.plugin.v1.AutomataHostService.ListObjects:input_type -> automata.plugin.v1.ListObjectsRequest
+	54, // 41: automata.plugin.v1.AutomataHostService.ListCollections:input_type -> automata.plugin.v1.ListCollectionsRequest
+	56, // 42: automata.plugin.v1.AutomataHostService.CopyCollection:input_type -> automata.plugin.v1.CopyCollectionRequest
+	58, // 43: automata.plugin.v1.AutomataHostService.PublishCollection:input_type -> automata.plugin.v1.PublishCollectionRequest
+	60, // 44: automata.plugin.v1.AutomataHostService.UnpublishCollection:input_type -> automata.plugin.v1.UnpublishCollectionRequest
+	63, // 45: automata.plugin.v1.AutomataHostService.ListPublications:input_type -> automata.plugin.v1.ListPublicationsRequest
+	1,  // 46: automata.plugin.v1.AutomataPlugin.Describe:output_type -> automata.plugin.v1.PluginDescriptor
+	4,  // 47: automata.plugin.v1.AutomataPlugin.Initialize:output_type -> automata.plugin.v1.InitializeResponse
+	8,  // 48: automata.plugin.v1.AutomataPlugin.ListTools:output_type -> automata.plugin.v1.ListToolsOutput
+	10, // 49: automata.plugin.v1.AutomataPlugin.CallTool:output_type -> automata.plugin.v1.CallToolOutput
+	25, // 50: automata.plugin.v1.AutomataPlugin.WatchTriggers:output_type -> automata.plugin.v1.TriggerEvent
+	13, // 51: automata.plugin.v1.AutomataPlugin.PutFile:output_type -> automata.plugin.v1.PutFileResult
+	15, // 52: automata.plugin.v1.AutomataPlugin.GetFile:output_type -> automata.plugin.v1.FileChunk
+	19, // 53: automata.plugin.v1.AutomataPlugin.PutEvent:output_type -> automata.plugin.v1.PutEventResponse
+	21, // 54: automata.plugin.v1.AutomataPlugin.DeleteEvent:output_type -> automata.plugin.v1.DeleteEventResponse
+	23, // 55: automata.plugin.v1.AutomataPlugin.ListEvents:output_type -> automata.plugin.v1.ListEventsResponse
+	27, // 56: automata.plugin.v1.AutomataHostService.GetConfig:output_type -> automata.plugin.v1.GetConfigResponse
+	29, // 57: automata.plugin.v1.AutomataHostService.SaveConfig:output_type -> automata.plugin.v1.SaveConfigResponse
+	31, // 58: automata.plugin.v1.AutomataHostService.ListConfigs:output_type -> automata.plugin.v1.ListConfigsResponse
+	34, // 59: automata.plugin.v1.AutomataHostService.GetSecret:output_type -> automata.plugin.v1.GetSecretResponse
+	36, // 60: automata.plugin.v1.AutomataHostService.SetSecret:output_type -> automata.plugin.v1.SetSecretResponse
+	38, // 61: automata.plugin.v1.AutomataHostService.DeleteSecret:output_type -> automata.plugin.v1.DeleteSecretResponse
+	40, // 62: automata.plugin.v1.AutomataHostService.Notify:output_type -> automata.plugin.v1.NotifyResponse
+	43, // 63: automata.plugin.v1.AutomataHostService.PutObject:output_type -> automata.plugin.v1.PutObjectResult
+	45, // 64: automata.plugin.v1.AutomataHostService.GetObject:output_type -> automata.plugin.v1.GetObjectChunk
+	48, // 65: automata.plugin.v1.AutomataHostService.DeleteObject:output_type -> automata.plugin.v1.DeleteObjectResponse
+	50, // 66: automata.plugin.v1.AutomataHostService.DeleteCollection:output_type -> automata.plugin.v1.DeleteCollectionResponse
+	53, // 67: automata.plugin.v1.AutomataHostService.ListObjects:output_type -> automata.plugin.v1.ListObjectsResponse
+	55, // 68: automata.plugin.v1.AutomataHostService.ListCollections:output_type -> automata.plugin.v1.ListCollectionsResponse
+	57, // 69: automata.plugin.v1.AutomataHostService.CopyCollection:output_type -> automata.plugin.v1.CopyCollectionResponse
+	59, // 70: automata.plugin.v1.AutomataHostService.PublishCollection:output_type -> automata.plugin.v1.PublishCollectionResponse
+	61, // 71: automata.plugin.v1.AutomataHostService.UnpublishCollection:output_type -> automata.plugin.v1.UnpublishCollectionResponse
+	64, // 72: automata.plugin.v1.AutomataHostService.ListPublications:output_type -> automata.plugin.v1.ListPublicationsResponse
+	46, // [46:73] is the sub-list for method output_type
+	19, // [19:46] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_pkg_pluginsdk_proto_plugin_proto_init() }
@@ -2785,13 +4355,21 @@ func file_pkg_pluginsdk_proto_plugin_proto_init() {
 		(*FileChunk_Metadata)(nil),
 		(*FileChunk_Data)(nil),
 	}
+	file_pkg_pluginsdk_proto_plugin_proto_msgTypes[41].OneofWrappers = []any{
+		(*PutObjectChunk_Metadata)(nil),
+		(*PutObjectChunk_Data)(nil),
+	}
+	file_pkg_pluginsdk_proto_plugin_proto_msgTypes[45].OneofWrappers = []any{
+		(*GetObjectChunk_Metadata)(nil),
+		(*GetObjectChunk_Data)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_pkg_pluginsdk_proto_plugin_proto_rawDesc), len(file_pkg_pluginsdk_proto_plugin_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   42,
+			NumMessages:   66,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

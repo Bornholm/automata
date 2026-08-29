@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -47,14 +48,69 @@ func (p *echoPlugin) ListTools(_ context.Context, in *proto.ListToolsInput) (*pr
 			Description:     "Pretend to write the given text somewhere.",
 			InputSchemaJson: `{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}`,
 		},
+		{
+			Name:            "echo_store",
+			Description:     "Exercise the host object store end to end.",
+			InputSchemaJson: `{"type":"object","properties":{}}`,
+			ReadOnly:        true,
+		},
 	}}, nil
 }
 
-func (p *echoPlugin) CallTool(_ context.Context, in *proto.CallToolInput) (*proto.CallToolOutput, error) {
+func (p *echoPlugin) CallTool(ctx context.Context, in *proto.CallToolInput) (*proto.CallToolOutput, error) {
+	if in.Name == "echo_store" {
+		return p.exerciseStore(ctx, in)
+	}
+
 	return &proto.CallToolOutput{
 		ResultText: fmt.Sprintf("%s org=%s member=%s idem=%s args=%s",
 			in.Name, in.Ctx.GetOrgId(), in.Ctx.GetMemberId(), in.Ctx.GetIdempotencyKey(), in.ArgumentsJson),
 	}, nil
+}
+
+// exerciseStore fait l'aller-retour complet du magasin d'objets à travers
+// le vrai broker : c'est le seul endroit où le streaming du client SDK
+// (découpage en tranches, EOF) rencontre le serveur hôte réel.
+func (p *echoPlugin) exerciseStore(ctx context.Context, in *proto.CallToolInput) (*proto.CallToolOutput, error) {
+	org, member := in.Ctx.GetOrgId(), in.Ctx.GetMemberId()
+
+	// Plus d'une tranche (1 Mio) pour éprouver le découpage.
+	payload := bytes.Repeat([]byte("automata!"), 150_000)
+	if err := p.host.PutObject(ctx, org, member, "spaces/e2e/draft", "big.bin", "application/octet-stream", payload); err != nil {
+		return fail("PutObject", err)
+	}
+
+	back, _, found, err := p.host.GetObject(ctx, org, member, "spaces/e2e/draft", "big.bin")
+	if err != nil || !found || !bytes.Equal(back, payload) {
+		return fail(fmt.Sprintf("GetObject (found=%v, equal=%v)", found, bytes.Equal(back, payload)), err)
+	}
+
+	if err := p.host.PutObject(ctx, org, member, "spaces/e2e/draft", "index.html", "text/html", []byte("<html>e2e</html>")); err != nil {
+		return fail("PutObject index", err)
+	}
+	if _, err := p.host.CopyCollection(ctx, org, member, "spaces/e2e/draft", "spaces/e2e/live"); err != nil {
+		return fail("CopyCollection", err)
+	}
+	slug, url, err := p.host.PublishCollection(ctx, org, member, "spaces/e2e/live")
+	if err != nil || slug == "" || url == "" {
+		return fail("PublishCollection", err)
+	}
+	publications, err := p.host.ListPublications(ctx, org, member)
+	if err != nil || len(publications) != 1 {
+		return fail(fmt.Sprintf("ListPublications (%d)", len(publications)), err)
+	}
+	if _, err := p.host.DeleteCollection(ctx, org, member, "spaces/e2e/live"); err != nil {
+		return fail("DeleteCollection", err)
+	}
+	if _, err := p.host.DeleteCollection(ctx, org, member, "spaces/e2e/draft"); err != nil {
+		return fail("DeleteCollection draft", err)
+	}
+
+	return &proto.CallToolOutput{ResultText: "store ok slug=" + slug + " url=" + url}, nil
+}
+
+func fail(step string, err error) (*proto.CallToolOutput, error) {
+	return &proto.CallToolOutput{ResultText: fmt.Sprintf("%s failed: %v", step, err), IsError: true}, nil
 }
 
 func uiHandler() http.Handler {
