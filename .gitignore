@@ -23,13 +23,7 @@
 # Espace de travail local pour itérer sur un dépôt frère avant publication
 # (jamais versionné) : la règle reste qu'un clone nu compile seul, donc
 # go.mod ne porte aucun replace.
-/go.work
-/go.work.sum
 /bin
-# Binaires de plugins compilés localement (make build-plugins les range dans local/plugins/)
-plugins/email/email
-plugins/pages/pages
-
 # Binaires des plugins compilés sur place (make build-plugins)
 plugins/caldav/caldav
 plugins/email/email
