@@ -129,6 +129,8 @@ const pagesSystemPrompt = "You are a web page builder. You create and edit small
 	"never truncate a file to fit one call.\n" +
 	"4. To use a picture or video the user sent in the conversation, call import_attachment with its exact filename, " +
 	"then use_file to place it in the space, then reference it with a relative path in the HTML. " +
+	"To look at a picture, call view_file with the path import_attachment returned (e.g. \"imports/photo.jpg\") " +
+	"or with \"<space>/<file>\" once placed. " +
 	"NEVER inline media as base64 and never hot-link external images.\n" +
 	"5. Edits always go to the user's private draft. Nothing is visible online until publish_space, " +
 	"and publish_space always requires the user's explicit confirmation — never claim a page is published or updated online before that. " +
@@ -367,6 +369,11 @@ func (p *Plugin) createSpace(ctx context.Context, s callScope, name string) (*pr
 	name = strings.TrimSpace(name)
 	if !spaceNamePattern.MatchString(name) {
 		return toolError("invalid space name: lowercase letters, digits and dashes only, 48 characters max"), nil
+	}
+	// « imports » est le préfixe des pièces importées dans les chemins de
+	// GetFile : un espace de ce nom rendrait ces chemins ambigus.
+	if name == importsCollection {
+		return toolError(`the name "imports" is reserved: pick another space name`), nil
 	}
 
 	names, err := spaceNames(ctx, s)

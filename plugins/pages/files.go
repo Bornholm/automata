@@ -105,10 +105,22 @@ func (p *Plugin) GetFile(req *proto.GetFileRequest, stream proto.AutomataPlugin_
 
 	space, filePath, ok := strings.Cut(req.Path, "/")
 	if !ok || !spaceNamePattern.MatchString(space) || !validFilePath(filePath) {
-		return fmt.Errorf("pages: chemin invalide %q", req.Path)
+		return fmt.Errorf("pages: chemin invalide %q (attendu \"imports/<fichier>\", \"<espace>/<fichier>\" ou \"<espace>.zip\")", req.Path)
 	}
 
-	data, contentType, found, err := host.GetObject(stream.Context(), req.Ctx.OrgId, req.Ctx.MemberId, draftCollection(space), filePath)
+	// « imports/<fichier> » adresse la collection des pièces importées :
+	// c'est ce qui permet à view_file de regarder une photo AVANT de la
+	// placer dans un espace. Le nom « imports » est réservé à la création
+	// d'espace, il n'y a pas d'ambiguïté.
+	collection := draftCollection(space)
+	if space == importsCollection {
+		if strings.Contains(filePath, "/") {
+			return fmt.Errorf("pages: chemin invalide %q", req.Path)
+		}
+		collection = importsCollection
+	}
+
+	data, contentType, found, err := host.GetObject(stream.Context(), req.Ctx.OrgId, req.Ctx.MemberId, collection, filePath)
 	if err != nil {
 		return fmt.Errorf("pages: lecture du fichier: %w", err)
 	}

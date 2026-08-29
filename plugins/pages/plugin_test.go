@@ -360,6 +360,33 @@ func TestPagesImportAndUseFile(t *testing.T) {
 	}
 }
 
+// GetFile sert aussi la collection des imports : c'est ce qui permet à
+// view_file de regarder une photo importée AVANT de la placer dans un
+// espace. Le nom d'espace « imports » est réservé pour lever l'ambiguïté.
+func TestPagesGetFileServesImports(t *testing.T) {
+	plugin, host := newTestPlugin()
+
+	if err := host.PutObject(context.Background(), "atelier", "cam", "imports", "photo.jpg", "image/jpeg", []byte("jpegdata")); err != nil {
+		t.Fatalf("PutObject: %v", err)
+	}
+
+	stream := &fakeGetFileStream{}
+	if err := plugin.GetFile(&proto.GetFileRequest{
+		Ctx:  &proto.CallContext{OrgId: "atelier", MemberId: "cam"},
+		Path: "imports/photo.jpg",
+	}, stream); err != nil {
+		t.Fatalf("GetFile imports: %v", err)
+	}
+	meta := stream.chunks[0].GetMetadata()
+	if meta.Filename != "photo.jpg" || meta.MimeType != "image/jpeg" {
+		t.Errorf("meta = %+v", meta)
+	}
+
+	if out := call(t, plugin, "create_space", `{"name":"imports"}`, ""); !out.IsError || !strings.Contains(out.ResultText, "reserved") {
+		t.Errorf("le nom d'espace « imports » doit être réservé: %+v", out)
+	}
+}
+
 // GetFile sert un fichier du brouillon et l'archive zip de l'espace.
 func TestPagesGetFile(t *testing.T) {
 	plugin, _ := newTestPlugin()
