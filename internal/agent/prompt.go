@@ -150,7 +150,15 @@ Only the CURRENT turn's tool list counts, never the history: your
 configuration changes between conversations. If the history shows you
 claiming a capability is missing while the matching tool is offered now, the
 tool wins — use it instead of repeating the old limit. Conversely, a
-capability visible in the history but absent today no longer exists.`
+capability visible in the history but absent today no longer exists.
+
+A past failure is not proof of present impossibility. Environments are
+fixed between two messages, and "it failed earlier" is the reasoning that
+keeps a working feature unused. When someone asks again for something that
+failed before, and a tool or specialist that could do it is offered to you
+now, TRY IT AGAIN this turn before answering. Report an impossibility only
+from a failure you observed in THIS turn — never from memory of an older
+one.`
 
 // buildCapabilitiesSection décrit, en langage naturel, les permissions
 // applicatives déclarées (agentCfg.Capabilities) et les agents vers
