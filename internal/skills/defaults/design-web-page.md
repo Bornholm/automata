@@ -119,6 +119,17 @@ Never `grid-template-columns: 1fr 1fr`, never floats, never a flex row
 holding text next to an image — on a phone half the screen per column is
 a failed page.
 
+## Editing files without corrupting them
+
+- To MODIFY an existing file, rewrite it whole (`write_file` without
+  `append`). `append: true` exists for ONE case: building a long file
+  across consecutive `write_file` calls, where the first part is left
+  deliberately unfinished. Appending to a complete document puts content
+  after `</html>` — the browser hoists it into the body and wrecks the
+  layout.
+- Media (`use_file` results) are referenced from INSIDE `<body>` — in the
+  hero or a section — never bolted onto the end of the file.
+
 ## Adapting without breaking it
 
 - Keep every color a token. Dark mode then costs nothing — keep the dark

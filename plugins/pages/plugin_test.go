@@ -248,6 +248,35 @@ func TestPagesGuards(t *testing.T) {
 	}
 }
 
+// L'append sur un document HTML déjà fermé est refusé, et un index.html
+// portant du contenu après </html> ne peut pas être publié : c'est la
+// corruption observée en production (figure orpheline après la fermeture,
+// remontée dans le body par le navigateur, mise en page mobile détruite).
+func TestPagesRefusesAppendAfterClosedDocument(t *testing.T) {
+	plugin, host := newTestPlugin()
+	call(t, plugin, "create_space", `{"name":"demo"}`, "")
+
+	// Le starter index.html est un document complet : l'append est refusé.
+	out := call(t, plugin, "write_file", `{"space":"demo","path":"index.html","content":"<figure>photo</figure>","append":true}`, "")
+	if !out.IsError || !strings.Contains(out.ResultText, "already complete") {
+		t.Fatalf("l'append sur un document fermé doit être refusé: %+v", out)
+	}
+
+	// Le flux légitime reste permis : première partie SANS </html>, puis
+	// la fin en append.
+	call(t, plugin, "write_file", `{"space":"demo","path":"index.html","content":"<!doctype html><html><body><p>partie 1</p>"}`, "")
+	if out := call(t, plugin, "write_file", `{"space":"demo","path":"index.html","content":"<p>partie 2</p></body></html>","append":true}`, ""); out.IsError {
+		t.Fatalf("l'append de la suite d'un document inachevé doit passer: %s", out.ResultText)
+	}
+
+	// Publication refusée si un index corrompu est réintroduit à la main.
+	host.objects[objectKey("spaces/demo/draft", "index.html")] = []byte("<html><body></body></html>\n<figure>orpheline</figure>")
+	out = call(t, plugin, "publish_space", `{"space":"demo"}`, "a1")
+	if !out.IsError || !strings.Contains(out.ResultText, "AFTER the closing") {
+		t.Fatalf("publier un index corrompu doit être refusé: %+v", out)
+	}
+}
+
 // La limite d'espaces protège le quota du membre.
 func TestPagesSpaceLimit(t *testing.T) {
 	plugin, _ := newTestPlugin()

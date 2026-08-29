@@ -454,6 +454,27 @@ func extensionOf(p string) string {
 	return ""
 }
 
+// htmlDocumentClosed reconnaît un fichier HTML dont le document est déjà
+// fermé : y ajouter quoi que ce soit produirait du contenu après </html>.
+func htmlDocumentClosed(filePath string, data []byte) bool {
+	ext := extensionOf(filePath)
+	if ext != ".html" && ext != ".htm" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(string(data)), "</html>")
+}
+
+// contentAfterClosingHTML détecte du contenu non blanc après la balise
+// </html> — la signature exacte de la corruption par append.
+func contentAfterClosingHTML(data []byte) bool {
+	lower := strings.ToLower(string(data))
+	i := strings.LastIndex(lower, "</html>")
+	if i < 0 {
+		return false
+	}
+	return strings.TrimSpace(string(data[i+len("</html>"):])) != ""
+}
+
 func (p *Plugin) writeFile(ctx context.Context, s callScope, space, filePath, content string, appendTo bool) (*proto.CallToolOutput, error) {
 	space, fail := checkSpace(ctx, s, space)
 	if fail != nil {
@@ -475,6 +496,13 @@ func (p *Plugin) writeFile(ctx context.Context, s callScope, space, filePath, co
 		existing, _, found, err := s.host.GetObject(ctx, s.orgID, s.memberID, draftCollection(space), filePath)
 		if err != nil {
 			return toolError("the file could not be read before appending: " + err.Error()), nil
+		}
+		// Ajouter après </html> produit un document mal formé que le
+		// navigateur « répare » en remontant le fragment dans le body —
+		// observé en production : une figure orpheline collée après la
+		// fermeture cassait toute la mise en page mobile.
+		if found && htmlDocumentClosed(filePath, existing) {
+			return toolError("this HTML document is already complete (it ends with </html>): appending would place content AFTER the closing tags and break the page. Rewrite the whole file without append, putting the new content inside <body>."), nil
 		}
 		if found {
 			data = append(existing, data...)
@@ -544,10 +572,18 @@ func (p *Plugin) publishSpace(ctx context.Context, s callScope, space, idempoten
 		return fail, nil
 	}
 
-	if _, _, found, err := s.host.GetObject(ctx, s.orgID, s.memberID, draftCollection(space), "index.html"); err != nil {
+	index, _, found, err := s.host.GetObject(ctx, s.orgID, s.memberID, draftCollection(space), "index.html")
+	if err != nil {
 		return toolError("the draft could not be checked: " + err.Error()), nil
-	} else if !found {
+	}
+	if !found {
 		return toolError("the space has no index.html: write one before publishing"), nil
+	}
+	// Filet de sécurité : ne jamais publier un document corrompu par du
+	// contenu après </html> — le rendu paraît fonctionner mais la
+	// récupération d'erreur du navigateur détruit la mise en page.
+	if trailing := contentAfterClosingHTML(index); trailing {
+		return toolError("index.html is malformed: there is content AFTER the closing </html> tag. Rewrite index.html so everything sits inside <body>, then publish again."), nil
 	}
 
 	if idempotencyKey != "" && !p.firstSubmission(idempotencyKey) {
