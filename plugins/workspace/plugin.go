@@ -60,6 +60,8 @@ func (p *Plugin) Describe(context.Context, *proto.DescribeRequest) (*proto.Plugi
 // workspaceSystemPrompt part vers le modèle : anglais uniquement.
 const workspaceSystemPrompt = "You are a shell expert working inside an isolated sandbox with ffmpeg, imagemagick, pandoc and LibreOffice available. " +
 	"You have no network access and no tools other than the ones listed.\n\n" +
+	"When download_video is available, you can also fetch a public video by URL into the workspace before editing it; " +
+	"only the sites listed in that tool's description are reachable, and nothing else on the network is.\n\n" +
 	"Your workspace persists between messages for about a day: files you imported or produced earlier are still there. " +
 	"Always call list_files first to see what you already have, and only call import_attachment for a file that is not there yet. " +
 	"import_attachment can bring in any file the user sent in this conversation, not only the one attached to the message you are answering: " +
@@ -97,7 +99,7 @@ const workspaceSystemPrompt = "You are a shell expert working inside an isolated
 // Corollaire : le réseau ne doit JAMAIS être ouvert dans la policy de ce
 // sandbox sans revenir sur cette décision.
 func (p *Plugin) ListTools(context.Context, *proto.ListToolsInput) (*proto.ListToolsOutput, error) {
-	return &proto.ListToolsOutput{
+	out := &proto.ListToolsOutput{
 		Tools: []*proto.ToolDescriptor{
 			{
 				Name: "run_command",
@@ -118,7 +120,31 @@ func (p *Plugin) ListTools(context.Context, *proto.ListToolsInput) (*proto.ListT
 				TimeoutSeconds:  60,
 			},
 		},
-	}, nil
+	}
+
+	if p.leash.fetchConfigured() {
+		out.Tools = append(out.Tools, downloadTool(downloadDomains()))
+	}
+
+	return out, nil
+}
+
+// downloadTool décrit download_video. Monté seulement quand l'exploitant a
+// configuré la clé de la policy réseau : sans elle, l'outil n'existe pas
+// pour le modèle, plutôt que d'échouer à l'usage.
+func downloadTool(domains []string) *proto.ToolDescriptor {
+	return &proto.ToolDescriptor{
+		Name: "download_video",
+		Description: "Download a public video into your workspace so you can edit it. " +
+			"Only these sites are allowed: " + strings.Join(domains, ", ") + ". " +
+			"Playlists are not downloaded, only a single video, capped in size and duration.",
+		InputSchemaJson: `{"type":"object","properties":{"url":{"type":"string","description":"Public URL of the video page."},"name":{"type":"string","description":"Optional output name without extension (letters, digits, dashes)."}},"required":["url"]}`,
+		// read_only comme run_command, et pour la même raison : la
+		// frontière est le bac à sable. Celui-ci n'expose QUE fetch-video,
+		// et n'écrit que dans le workspace du membre.
+		ReadOnly:       true,
+		TimeoutSeconds: 630,
+	}
 }
 
 // CallTool implements proto.AutomataPluginServer.
@@ -136,6 +162,8 @@ func (p *Plugin) CallTool(ctx context.Context, in *proto.CallToolInput) (*proto.
 		return p.runCommand(ctx, in)
 	case "list_files":
 		return p.listFiles(ctx, in)
+	case "download_video":
+		return p.downloadVideo(ctx, in)
 	default:
 		return errorOutput(fmt.Sprintf("unknown tool %q", in.Name)), nil
 	}
@@ -164,6 +192,45 @@ func (p *Plugin) runCommand(ctx context.Context, in *proto.CallToolInput) (*prot
 	slog.InfoContext(ctx, "workspace: commande exécutée", "org_id", in.Ctx.OrgId, "is_error", isError)
 
 	return &proto.CallToolOutput{ResultText: text, IsError: isError}, nil
+}
+
+// downloadVideo télécharge une vidéo publique dans le workspace, via le
+// bac à sable réseau (policy « fetch », clé distincte). L'URL est validée
+// ici contre la liste blanche de l'exploitant AVANT d'atteindre LeaSH.
+func (p *Plugin) downloadVideo(ctx context.Context, in *proto.CallToolInput) (*proto.CallToolOutput, error) {
+	var args struct {
+		URL  string `json:"url"`
+		Name string `json:"name"`
+	}
+	if in.ArgumentsJson != "" {
+		if err := json.Unmarshal([]byte(in.ArgumentsJson), &args); err != nil {
+			return errorOutput("invalid parameters"), nil
+		}
+	}
+
+	target, err := validateDownloadURL(args.URL, downloadDomains())
+	if err != nil {
+		return errorOutput(err.Error()), nil
+	}
+	name, err := validateOutputName(args.Name)
+	if err != nil {
+		return errorOutput(err.Error()), nil
+	}
+
+	text, isError, err := p.leash.Fetch(ctx, in.Ctx.OrgId, in.Ctx.MemberId, target, name)
+	if err != nil {
+		// Journaux : jamais l'URL, qui est du contenu utilisateur.
+		slog.WarnContext(ctx, "workspace: téléchargement en échec", "org_id", in.Ctx.OrgId, "error", err)
+		return errorOutput(fmt.Sprintf("the video could not be downloaded: %v", err)), nil
+	}
+
+	slog.InfoContext(ctx, "workspace: vidéo téléchargée", "org_id", in.Ctx.OrgId, "is_error", isError)
+
+	if isError {
+		return &proto.CallToolOutput{ResultText: text, IsError: true}, nil
+	}
+	return &proto.CallToolOutput{ResultText: text +
+		"\nThe file is now in your workspace: call list_files to see its exact name before working on it."}, nil
 }
 
 func (p *Plugin) listFiles(ctx context.Context, in *proto.CallToolInput) (*proto.CallToolOutput, error) {

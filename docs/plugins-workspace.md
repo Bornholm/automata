@@ -103,6 +103,31 @@ par membre :
 | ------------------- | -------------------------------------------------------------- |
 | `LEASH_SERVER_URL`  | URL du serveur LeaSH, sur le réseau interne (jamais publique). |
 | `LEASH_API_KEY`     | Clé API de l'instance Automata auprès de ce serveur.           |
+| `LEASH_FETCH_API_KEY` | Clé de la policy `fetch.yaml` (téléchargement). Vide : l'outil `download_video` n'existe pas. |
+| `WORKSPACE_DOWNLOAD_DOMAINS` | Liste blanche des sites téléchargeables, séparés par des virgules. Vide : YouTube, Vimeo, Dailymotion. |
+
+### Télécharger une vidéo
+
+L'atelier n'a **pas** le réseau, et c'est ce qui rend `run_command`
+exécutable sans confirmation. Le téléchargement passe donc par une
+**seconde clé API** pointant sur `policies/fetch.yaml` côté LeaSH : une
+policy dont le seul binaire autorisé est `fetch-video` (un encadrement de
+`yt-dlp` — ni `--exec`, ni playlist, ni post-processeur, plafonds de taille
+et de durée), sur le même workspace du membre. Deux clés, deux policies,
+un seul atelier :
+
+```
+LEASH_APIKEY_AUTOMATA=…        LEASH_APIKEY_AUTOMATA_POLICY=/app/policies/toolbox.yaml
+LEASH_APIKEY_FETCH=…           LEASH_APIKEY_FETCH_POLICY=/app/policies/fetch.yaml
+```
+
+L'outil `download_video` n'apparaît pour le modèle que si
+`LEASH_FETCH_API_KEY` est renseignée. L'URL est validée **deux fois** :
+côté Automata contre `WORKSPACE_DOWNLOAD_DOMAINS` (schéma http(s),
+sous-domaines acceptés, adresses IP littérales refusées — la forme
+qu'aurait une tentative vers un service interne), puis par le script
+lui-même. Élargir la liste blanche est un geste d'exploitation ; élargir
+la policy LeaSH d'un binaire n'en est pas un.
 
 Côté `config.yaml` :
 
