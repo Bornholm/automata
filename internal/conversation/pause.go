@@ -28,6 +28,7 @@ type ProfileLinkGenerator interface {
 // comportement des instances non facturées.
 func (h *Handler) WithBilling(links ProfileLinkGenerator) *Handler {
 	h.wallet = persistence.NewWalletRepository()
+	h.orgs = persistence.NewOrganizationRepository()
 	h.profileLinks = links
 	h.pauseNotices = &pauseNoticeTracker{last: map[model.ConversationID]time.Time{}}
 	return h
@@ -65,8 +66,21 @@ func (h *Handler) pausedReply(ctx context.Context, identity model.ExecutionIdent
 	var (
 		balance   int64
 		hasWallet bool
+		unlimited bool
 	)
 	err := h.db.WithTx(ctx, func(tx *sql.Tx) error {
+		// Le mode gratuit sans limite se lit dans la même transaction que le
+		// solde : une organisation offerte sans limite n'est JAMAIS mise en
+		// pause, quel que soit l'état de son portefeuille.
+		org, exists, err := h.orgs.FindByID(ctx, tx, string(identity.OrgID))
+		if err != nil {
+			return err
+		}
+		if exists && org.Unlimited {
+			unlimited = true
+			return nil
+		}
+
 		entries, err := h.wallet.List(ctx, tx, string(identity.OrgID), 1)
 		if err != nil {
 			return err
@@ -79,7 +93,7 @@ func (h *Handler) pausedReply(ctx context.Context, identity model.ExecutionIdent
 		balance, err = h.wallet.Balance(ctx, tx, string(identity.OrgID))
 		return err
 	})
-	if err != nil || !hasWallet || balance > 0 {
+	if err != nil || unlimited || !hasWallet || balance > 0 {
 		// Une erreur de lecture ne met jamais le service en pause : en cas de
 		// doute, on sert la conversation (le débit, lui, est déjà enregistré).
 		return "", false

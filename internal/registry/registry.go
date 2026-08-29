@@ -30,6 +30,7 @@ import (
 	"github.com/bornholm/automata/internal/conversation"
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/ingress"
+	"github.com/bornholm/automata/internal/llmclients"
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/memory"
@@ -147,6 +148,32 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	step("comptes de messagerie migrés")
 
+	// Catalogue des modèles : la base fait autorité depuis la migration
+	// 0022, le YAML n'en est que le semis initial. Sans secret de session
+	// exploitable (instance sans serveur web), le catalogue n'est pas
+	// monté : les agents gardent alors le client de leur configuration,
+	// comme avant.
+	var clientResolver agent.ClientResolver
+	if llmBox, err := secretbox.NewLLMClients(cfg.Web.SessionSecret); err != nil {
+		if cfg.Web.Enabled {
+			return fmt.Errorf("registry: dérivation de la clé du catalogue de modèles: %w", err)
+		}
+		logger.WarnContext(ctx, "registry: catalogue de modèles indisponible, les agents restent sur la configuration",
+			"error", err)
+	} else {
+		if err := llmclients.Seed(ctx, db, llmBox, cfg, logger); err != nil {
+			return fmt.Errorf("registry: %w", err)
+		}
+
+		store := llmclients.NewStore(db, llmBox)
+		pool := llmclients.NewPool(store, agent.BuildLLMClient, logger)
+		images := llmclients.NewImagePool(store, agent.BuildImageGenerationClient, logger)
+		clientResolver = llmclients.NewResolver(pool, store, llmclients.DefaultRoles(cfg), logger).
+			WithImagePool(images)
+
+		step("catalogue de modèles prêt")
+	}
+
 	memRes, err := buildMemory(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("registry: construction de la mémoire: %w", err)
@@ -199,7 +226,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	// Provider des sous-agents de plugins et exécuteurs de leurs actions
 	// confirmées. Nil quand le système est désactivé : le registre
 	// d'agents est nil-safe.
-	pluginProvider, err := newPluginSpecialistProvider(ctx, cfg, pluginManager, db, skillsProvider, logger)
+	pluginProvider, err := newPluginSpecialistProvider(ctx, cfg, pluginManager, db, skillsProvider, clientResolver, logger)
 	if err != nil {
 		return fmt.Errorf("registry: client llm des sous-agents de plugins: %w", err)
 	}
@@ -239,7 +266,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	step("moteur d'actions prêt")
 
-	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, pluginProvider, newPluginEventStoreResolver(pluginManager, db), skillsProvider, metrics, logger)
+	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, pluginProvider, newPluginEventStoreResolver(pluginManager, db), skillsProvider, clientResolver, metrics, logger)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
@@ -510,7 +537,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 // réutilisé tel quel par internal/scheduler pour exécuter les tâches
 // planifiées (PLAN.md §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, eventStores agent.EventStoreResolver, skillsProvider agent.SkillsProvider, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, eventStores agent.EventStoreResolver, skillsProvider agent.SkillsProvider, clientResolver agent.ClientResolver, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
 	memoryTools := buildMemoryTools(cfg, authorizer, memStore, metrics)
 
 	// Outil open_profile_link : disponible dès que le serveur web est
@@ -550,7 +577,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		Events: eventStores,
 	}
 
-	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, profileTools, tenants, mcpManager, pluginProvider, skillsProvider, metrics, logger)
+	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, profileTools, tenants, mcpManager, pluginProvider, skillsProvider, clientResolver, metrics, logger)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
 	}
@@ -566,7 +593,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	// impossible, là où une consigne de prompt ne ferait que la rendre moins
 	// probable ; et cela ferme du même coup la boucle d'une tâche qui se
 	// reprogrammerait indéfiniment.
-	taskAgents, err := agent.NewRegistryWithMemory(cfg, memoryTools, agent.ReminderTools{}, profileTools, tenants, mcpManager, pluginProvider, skillsProvider, metrics, logger)
+	taskAgents, err := agent.NewRegistryWithMemory(cfg, memoryTools, agent.ReminderTools{}, profileTools, tenants, mcpManager, pluginProvider, skillsProvider, clientResolver, metrics, logger)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("construction du registre d'agents des tâches planifiées: %w", err)
 	}
@@ -626,6 +653,12 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		}
 
 		compactor := conversation.NewCompactor(db, compactionClient, cfg.Conversation.HistoryLimit, cfg.Conversation.Compaction.MaxSummaryChars, logger, metrics)
+
+		// Une organisation peut compacter avec son propre modèle ; sans
+		// choix de sa part, c'est celui construit ci-dessus.
+		if clientResolver != nil {
+			compactor = compactor.WithClientResolver(clientResolver)
+		}
 
 		if cfg.Conversation.Compaction.ExtractFacts {
 			if memStore != nil {

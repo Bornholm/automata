@@ -12,6 +12,7 @@ import (
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/llmclients"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/plugin"
@@ -42,12 +43,16 @@ type pluginSpecialistProvider struct {
 	// `agents: [workspace]` n'apparaît qu'au sous-agent du plugin
 	// workspace.
 	skills agent.SkillsProvider
-	logger *slog.Logger
+	// clientResolver permet à chaque organisation d'avoir son propre modèle
+	// pour les sous-agents de plugins et pour view_file ; nil quand le
+	// catalogue n'est pas monté (les clients ci-dessus servent alors seuls).
+	clientResolver agent.ClientResolver
+	logger         *slog.Logger
 }
 
 // newPluginSpecialistProvider construit le provider ; nil si le système de
 // plugins est désactivé.
-func newPluginSpecialistProvider(ctx context.Context, cfg *config.Config, manager *plugin.Manager, db *persistence.DB, skills agent.SkillsProvider, logger *slog.Logger) (agent.PluginSpecialistProvider, error) {
+func newPluginSpecialistProvider(ctx context.Context, cfg *config.Config, manager *plugin.Manager, db *persistence.DB, skills agent.SkillsProvider, clientResolver agent.ClientResolver, logger *slog.Logger) (agent.PluginSpecialistProvider, error) {
 	if manager == nil {
 		return nil, nil
 	}
@@ -66,14 +71,15 @@ func newPluginSpecialistProvider(ctx context.Context, cfg *config.Config, manage
 	}
 
 	return &pluginSpecialistProvider{
-		manager:      manager,
-		db:           db,
-		client:       client,
-		vision:       vision,
-		textOnly:     !cfg.LLMClients[cfg.Plugins.Client].SupportsVision(),
-		maxFileBytes: int64(cfg.Attachments.MaxToolSize.Bytes()),
-		skills:       skills,
-		logger:       logger,
+		manager:        manager,
+		db:             db,
+		client:         client,
+		vision:         vision,
+		textOnly:       !cfg.LLMClients[cfg.Plugins.Client].SupportsVision(),
+		maxFileBytes:   int64(cfg.Attachments.MaxToolSize.Bytes()),
+		skills:         skills,
+		clientResolver: clientResolver,
+		logger:         logger,
 	}, nil
 }
 
@@ -113,7 +119,8 @@ func (p *pluginSpecialistProvider) SpecialistsFor(ctx context.Context, identity 
 
 		subAgent := agent.NewPluginSubAgent(agentSpec, p.client, pluginToolCaller{p.manager}, 0, p.logger).
 			WithTextOnly(p.textOnly).
-			WithSkills(p.skills)
+			WithSkills(p.skills).
+			WithClientResolver(p.clientResolver, llmclients.RolePlugins, llmclients.RolePluginsVision, p.logger)
 		if agentSpec.SupportsFiles {
 			// La borne des fichiers échangés est celle des pièces jointes
 			// « outillage seulement » : c'est la même taille qui entre par

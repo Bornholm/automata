@@ -33,6 +33,18 @@ type walletState struct {
 // organisation offerte, la jauge mesure l'usage du mois face à
 // l'allocation ; pour une payante, le solde face au dernier apport.
 func computeWalletState(org persistence.Organization, balance, lastCredit, monthUsage int64) walletState {
+	// Le mode sans limite passe avant tout le reste : cette organisation
+	// n'est jamais débitée, son solde n'a donc rien à dire.
+	if org.Unlimited {
+		return walletState{
+			State:        "unlimited",
+			Balance:      balance,
+			GaugeTone:    "brand",
+			Chip:         view.Chip{Label: "Offerte — sans limite", Tone: "brand", Dot: true},
+			BalanceLabel: "Sans limite",
+		}
+	}
+
 	if org.Offered {
 		return walletState{
 			State:        "offered",

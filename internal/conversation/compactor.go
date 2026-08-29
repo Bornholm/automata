@@ -11,6 +11,7 @@ import (
 
 	"github.com/bornholm/genai/llm"
 
+	"github.com/bornholm/automata/internal/llmclients"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
@@ -84,6 +85,43 @@ type Compactor struct {
 	// le contenu d'un épisode (il serait ensuite restitué au modèle par la
 	// recherche) : à défaut de nom résolu, c'est le rôle qui étiquette.
 	speakerName func(principalID model.PrincipalID) string
+
+	// clientResolver, s'il est renseigné, sert le modèle de compaction que
+	// l'organisation a choisi ; le client du constructeur reste le repli.
+	clientResolver ModelResolver
+}
+
+// ModelResolver choisit le modèle d'un rôle pour une organisation (voir
+// llmclients.Resolver). Déclaré ici plutôt qu'importé pour que le paquet
+// conversation reste indépendant du catalogue.
+type ModelResolver interface {
+	ResolveClient(ctx context.Context, role string, orgID model.OrgID) (llmclients.Resolved, error)
+}
+
+// WithClientResolver branche le catalogue de modèles : la compaction d'une
+// organisation utilise alors le modèle qu'elle a choisi pour le rôle
+// « compaction ». Retourne c pour permettre le chaînage.
+func (c *Compactor) WithClientResolver(resolver ModelResolver) *Compactor {
+	c.clientResolver = resolver
+	return c
+}
+
+// clientFor retourne le modèle à utiliser pour cette organisation. Une
+// résolution en échec n'est jamais fatale : la compaction repart sur le
+// client de la configuration plutôt que de laisser l'historique grossir.
+func (c *Compactor) clientFor(ctx context.Context, orgID model.OrgID) llm.ChatCompletionClient {
+	if c.clientResolver == nil {
+		return c.client
+	}
+
+	resolved, err := c.clientResolver.ResolveClient(ctx, llmclients.RoleCompaction, orgID)
+	if err != nil {
+		c.logger.WarnContext(ctx, "conversation: modèle de compaction non résolu, repli sur la configuration",
+			"org", string(orgID), "error", err)
+		return c.client
+	}
+
+	return resolved.Client
 }
 
 // NewCompactor construit un Compactor. historyLimit doit être la même
@@ -200,7 +238,7 @@ func (c *Compactor) CompactIfNeeded(ctx context.Context, identity model.Executio
 		return nil
 	}
 
-	updated, err := c.summarize(ctx, summary.Summary, batch)
+	updated, err := c.summarize(ctx, c.clientFor(ctx, conv.OrgID), summary.Summary, batch)
 	if err != nil {
 		return fmt.Errorf("conversation: résumé de la conversation %q: %w", conversationID, err)
 	}
@@ -342,7 +380,7 @@ func (c *Compactor) extractFacts(ctx context.Context, identity model.ExecutionId
 		fmt.Fprintf(&b, "%s (%s): %s\n", m.Role, m.PrincipalID, redactProfileLinks(m.Content))
 	}
 
-	response, err := c.client.ChatCompletion(ctx,
+	response, err := c.clientFor(ctx, conv.OrgID).ChatCompletion(ctx,
 		llm.WithMessages(
 			llm.NewMessage(llm.RoleSystem, factExtractionPrompt),
 			llm.NewMessage(llm.RoleUser, b.String()),
@@ -424,7 +462,9 @@ func parseFacts(raw string) ([]string, error) {
 
 // summarize produit le résumé fusionnant previous et batch, borné à
 // maxSummaryChars runes.
-func (c *Compactor) summarize(ctx context.Context, previous string, batch []persistence.Message) (string, error) {
+// client est le modèle retenu pour ce tour de compaction : il dépend de
+// l'organisation, il est donc passé plutôt que relu du champ.
+func (c *Compactor) summarize(ctx context.Context, client llm.ChatCompletionClient, previous string, batch []persistence.Message) (string, error) {
 	var b strings.Builder
 
 	if previous != "" {
@@ -440,7 +480,7 @@ func (c *Compactor) summarize(ctx context.Context, previous string, batch []pers
 
 	fmt.Fprintf(&b, "\nLongueur maximale du résumé : %d caractères.", c.maxSummaryChars)
 
-	response, err := c.client.ChatCompletion(ctx,
+	response, err := client.ChatCompletion(ctx,
 		llm.WithMessages(
 			llm.NewMessage(llm.RoleSystem, compactionPrompt),
 			llm.NewMessage(llm.RoleUser, b.String()),

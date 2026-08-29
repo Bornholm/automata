@@ -116,6 +116,11 @@ type PluginSubAgent struct {
 	// compétence ciblée `agents: [workspace]` n'apparaît que là.
 	skills SkillsProvider
 	logger *slog.Logger
+	// binding et visionBinding permettent de servir un modèle différent
+	// selon l'organisation, pour le sous-agent lui-même et pour le regard
+	// que porte view_file sur les images.
+	binding       clientBinding
+	visionBinding clientBinding
 }
 
 // NewPluginSubAgent construit le sous-agent d'un plugin.
@@ -149,6 +154,16 @@ func (a *PluginSubAgent) WithFiles(files PluginFileTransfer, maxFileBytes int64)
 // échouer tout le tour.
 func (a *PluginSubAgent) WithTextOnly(textOnly bool) *PluginSubAgent {
 	a.textOnly = textOnly
+	return a
+}
+
+// WithClientResolver permet de servir à ce sous-agent, et à son regard sur
+// les images, des modèles différents selon l'organisation. Les rôles sont
+// llmclients.RolePlugins et llmclients.RolePluginsVision. Retourne a pour
+// permettre le chaînage.
+func (a *PluginSubAgent) WithClientResolver(resolver ClientResolver, role, visionRole string, logger *slog.Logger) *PluginSubAgent {
+	a.binding.bind(resolver, role, logger)
+	a.visionBinding.bind(resolver, visionRole, logger)
 	return a
 }
 
@@ -187,6 +202,20 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 	agentName := a.spec.PluginName
 	ctx = withUsageAttribution(ctx, req.Identity, "plugin:"+agentName)
 
+	// Modèles du tour : ceux que l'organisation a choisis si elle en a
+	// choisi, ceux de la configuration sinon. Le client de vision est résolu
+	// séparément — il a son propre rôle au catalogue, et rien n'impose que
+	// les deux organisations le règlent de la même façon.
+	client, modelTextOnly := a.client, a.textOnly
+	if resolved, ok := a.binding.resolve(ctx, req.Identity.OrgID); ok {
+		client, modelTextOnly = resolved.Client, !resolved.SupportsVision
+	}
+
+	visionClient := a.vision
+	if resolved, ok := a.visionBinding.resolve(ctx, req.Identity.OrgID); ok {
+		visionClient = resolved.Client
+	}
+
 	collector := newProposalCollector()
 
 	tools := make([]llm.Tool, 0, len(a.spec.Tools))
@@ -204,8 +233,8 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 			a.newImportAttachmentTool(req),
 			a.newAttachFileTool(req, mediaCollector),
 		)
-		if a.vision != nil {
-			tools = append(tools, a.newViewFileTool(req))
+		if visionClient != nil {
+			tools = append(tools, a.newViewFileTool(req, visionClient))
 		}
 	}
 
@@ -240,7 +269,7 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 	// ce message », ce qu'ils ne sont pas.
 	input := buildDelegationInput(req)
 	attachmentsForModel := req.Attachments
-	textOnly := a.textOnly
+	textOnly := modelTextOnly
 
 	if a.SupportsFiles() {
 		attachmentsForModel = nil
@@ -274,7 +303,7 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 		defer cancel()
 	}
 
-	loopResult, err := runToolLoop(loopCtx, a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, "plugin:"+agentName)
+	loopResult, err := runToolLoop(loopCtx, client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, "plugin:"+agentName)
 	if err != nil {
 		return delegation.Result{}, err
 	}
@@ -551,7 +580,9 @@ const visionSystemPrompt = "You are the eyes of an agent that edits images and v
 //
 // Les octets ne traversent jamais la conversation ni le modèle du
 // sous-agent (texte-seul) : seule la description remonte.
-func (a *PluginSubAgent) newViewFileTool(req delegation.Request) llm.Tool {
+// vision est le client résolu pour ce tour, passé en paramètre plutôt que
+// relu du champ : l'organisation peut avoir choisi un autre modèle.
+func (a *PluginSubAgent) newViewFileTool(req delegation.Request, vision llm.ChatCompletionClient) llm.Tool {
 	schema := llm.NewJSONSchema().
 		RequiredProperty("path", "Path of the image in your workspace. Extract a frame with ffmpeg first to look at a video.", "string").
 		RequiredProperty("question", "What you need to know about the image, e.g. \"where is the logo, and how big is it?\".", "string")
@@ -613,7 +644,7 @@ func (a *PluginSubAgent) newViewFileTool(req delegation.Request) llm.Tool {
 				return llm.NewToolResult("error: this image could not be read."), nil
 			}
 
-			resp, err := a.vision.ChatCompletion(ctx,
+			resp, err := vision.ChatCompletion(ctx,
 				llm.WithMessages(
 					llm.NewMessage(llm.RoleSystem, visionSystemPrompt),
 					llm.NewMessageWithAttachments(llm.RoleUser, question, attachment),

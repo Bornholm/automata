@@ -61,14 +61,21 @@ type MCPToolAgent struct {
 	mcpLimits              mcp.Limits
 	maxSequentialToolCalls int
 	maxToolContextBytes    int64
-	// extraTools sont des outils applicatifs natifs ajoutés aux outils MCP
-	// (generate_image). Fixes à la construction : contrairement aux outils
-	// MCP, ils ne dépendent ni de la session ni du principal.
+	// extraTools sont des outils applicatifs natifs ajoutés aux outils MCP.
+	// Fixes à la construction : contrairement aux outils MCP, ils ne
+	// dépendent ni de la session ni du principal.
 	extraTools []llm.Tool
+	// imageBinding porte la génération d'images, montée PAR TOUR : son
+	// modèle peut différer selon l'organisation, contrairement aux
+	// extraTools ci-dessus.
+	imageBinding imageBinding
 	// skills fournit le catalogue des compétences et l'outil load_skill ;
 	// nil quand aucune bibliothèque n'est câblée.
 	skills SkillsProvider
 	logger *slog.Logger
+	// binding permet de servir un modèle différent selon l'organisation,
+	// résolu à chaque exécution.
+	binding clientBinding
 }
 
 // NewMCPToolAgent construit un MCPToolAgent. mcpServerNames est la liste des
@@ -111,6 +118,13 @@ func NewMCPToolAgent(client llm.ChatCompletionClient, systemPrompt, agentName st
 func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error) {
 	ctx = withUsageAttribution(ctx, req.Identity, a.agentName)
 
+	// Modèle du tour : celui que l'organisation a choisi si elle en a
+	// choisi un, celui de la configuration sinon.
+	client, textOnly := a.client, a.textOnly
+	if resolved, ok := a.binding.resolve(ctx, req.Identity.OrgID); ok {
+		client, textOnly = resolved.Client, !resolved.SupportsVision
+	}
+
 	sessionKey := mcp.SessionKey(req.Conversation.ID)
 
 	// Les outils d'écriture peuvent produire des actions à confirmer plutôt
@@ -149,6 +163,14 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 
 	tools = append(tools, a.extraTools...)
 
+	// Génération d'images : le générateur est résolu ici, car
+	// l'organisation peut en avoir choisi un autre. Sans générateur,
+	// l'outil n'est pas monté — promettre une capacité absente ferait
+	// perdre un tour au modèle.
+	if generator := a.imageBinding.resolve(ctx, req.Identity.OrgID); generator != nil {
+		tools = append(tools, newGenerateImageTool(generator))
+	}
+
 	systemPrompt := resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID)
 
 	// Catalogue des compétences et outil load_skill, montés PAR TOUR : la
@@ -158,7 +180,7 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name() < tools[j].Name() })
 
-	messages := buildChatMessages(systemPrompt, a.agentName, a.textOnly, "", req)
+	messages := buildChatMessages(systemPrompt, a.agentName, textOnly, "", req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {
@@ -170,7 +192,7 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 	// créé par tour : les outils, eux, sont partagés par toutes les requêtes.
 	mediaCollector := newMediaCollector()
 
-	loopResult, err := runToolLoop(withMediaCollector(ctx, mediaCollector), a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, a.agentName)
+	loopResult, err := runToolLoop(withMediaCollector(ctx, mediaCollector), client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, a.agentName)
 	if err != nil {
 		return Result{}, err
 	}
@@ -236,6 +258,24 @@ func (a *MCPToolAgent) ReportCapabilities(ctx context.Context, identity model.Ex
 // chaînage.
 func (a *MCPToolAgent) WithVision(enabled bool) *MCPToolAgent {
 	a.textOnly = !enabled
+	return a
+}
+
+// WithClientResolver permet de servir à cet agent un modèle différent selon
+// l'organisation. role est le nom sous lequel le catalogue le connaît
+// (typiquement le nom de l'agent). Retourne a pour permettre le chaînage.
+func (a *MCPToolAgent) WithClientResolver(resolver ClientResolver, role string, logger *slog.Logger) *MCPToolAgent {
+	a.binding.bind(resolver, role, logger)
+	return a
+}
+
+// WithImageGeneration branche la génération d'images : fallback est le
+// générateur construit depuis la configuration, resolver (facultatif)
+// permet à une organisation d'en choisir un autre. Sans générateur ni
+// résolveur, l'outil generate_image n'est jamais monté. Retourne a pour
+// permettre le chaînage.
+func (a *MCPToolAgent) WithImageGeneration(fallback llm.ImageGenerationClient, resolver ImageClientResolver, role string, logger *slog.Logger) *MCPToolAgent {
+	a.imageBinding = imageBinding{role: role, resolver: resolver, logger: logger, fallback: fallback}
 	return a
 }
 

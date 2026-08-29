@@ -214,7 +214,7 @@ type CreditsPage struct {
 	CSRFToken string
 	PluginUIs []ProfilePluginUI
 
-	// State : ok | low | empty | offered.
+	// State : ok | low | empty | offered | unlimited.
 	State       string
 	Balance     int64
 	GaugeRef    int64
@@ -295,6 +295,36 @@ templ ProfileCredits(page CreditsPage) {
 			}
 		}
 		switch page.State {
+			case "unlimited":
+				<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Votre usage du mois</h1>
+				<div class="mt-5 rounded-[14px] border border-line-2 p-4.5">
+					<div class="text-[21px] font-semibold leading-snug text-ink">{ page.BalanceHint }</div>
+					<div class="mt-3.5 text-sm leading-normal text-text-3">
+						Aucun plafond, aucune recharge à prévoir. Vous avez utilisé { FormatInt(page.UsedCredits) } crédits ce mois-ci — c'est indicatif, rien ne vous est décompté.
+					</div>
+				</div>
+				<div class="mt-4 flex items-center gap-2.5 rounded-[11px] bg-brand-wash-2 px-4 py-3">
+					@Logo("size-[22px] rounded-[7px]", "text-[11px]")
+					<div class="text-sm leading-snug text-brand-deep">Cet accès vous est offert par Automata, sans limite. Rien à payer, rien à renouveler.</div>
+				</div>
+				if len(page.Split) > 0 {
+					<div class="mt-6">
+						@Eyebrow("Ce mois-ci, en gros", "text-text-4")
+					</div>
+					<div class="mt-3.5 flex flex-col gap-3">
+						for _, split := range page.Split {
+							<div>
+								<div class="mb-1.5 flex justify-between">
+									<span class="text-[15px] leading-tight text-text">{ split.Label }</span>
+									<span class="font-mono text-sm leading-tight text-text-3">{ FormatCredits(split.Credits) }</span>
+								</div>
+								<div class="h-[7px] w-full overflow-hidden rounded-full bg-track">
+									<div class={ "h-full rounded-full", usageSplitClass(split.Shade) } style={ templ.SafeCSS("width:" + itoa(split.Pct) + "%") }></div>
+								</div>
+							</div>
+						}
+					</div>
+				}
 			case "offered":
 				<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Votre usage du mois</h1>
 				<div class="mt-5 rounded-[14px] border border-line-2 p-4.5">

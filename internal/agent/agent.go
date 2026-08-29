@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -106,6 +107,10 @@ type GenAIAgent struct {
 	// (llm_clients.<nom>.vision: false) : buildChatMessages n'envoie alors
 	// aucune pièce jointe et signale leur présence en texte.
 	textOnly bool
+	// binding permet de servir un modèle différent selon l'organisation,
+	// résolu à chaque exécution. Non câblé, client et textOnly ci-dessus
+	// restent seuls en vigueur.
+	binding clientBinding
 }
 
 // NewGenAIAgent construit un GenAIAgent utilisant client pour les
@@ -133,9 +138,14 @@ func NewGenAIAgent(client llm.ChatCompletionStreamingClient, systemPrompt string
 func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 	ctx = withUsageAttribution(ctx, req.Identity, a.agentName)
 
-	messages := a.buildMessages(req)
+	client, textOnly := a.client, a.textOnly
+	if resolved, ok := a.binding.resolve(ctx, req.Identity.OrgID); ok {
+		client, textOnly = resolved.Client, !resolved.SupportsVision
+	}
 
-	chunks, err := a.client.ChatCompletionStream(ctx, llm.WithMessages(messages...))
+	messages := a.buildMessages(req, textOnly)
+
+	chunks, err := client.ChatCompletionStream(ctx, llm.WithMessages(messages...))
 	if err != nil {
 		return Result{}, fmt.Errorf("agent: appel du client LLM: %w", err)
 	}
@@ -187,15 +197,29 @@ func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 // statique de l'agent suivi du bloc de contexte d'exécution propre à cette
 // requête (PLAN.md §7.2, §7.3) : le contexte n'est jamais mélangé au prompt
 // statique construit une fois pour toutes à l'enregistrement de l'agent.
-func (a *GenAIAgent) buildMessages(req Request) []llm.Message {
-	return buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, a.textOnly, "", req)
+// textOnly dépend du client effectivement retenu pour ce tour, qui peut
+// différer de celui de la configuration si l'organisation a choisi un autre
+// modèle : il est donc passé en paramètre, jamais relu du champ.
+func (a *GenAIAgent) buildMessages(req Request, textOnly bool) []llm.Message {
+	return buildChatMessages(resolveSystemPrompt(a.systemPrompt, a.orgPrompts, req.Identity.OrgID), a.agentName, textOnly, "", req)
 }
 
 // WithVision déclare si le modèle du client accepte les images en entrée.
 // À false, aucune pièce jointe ne part vers le modèle. Retourne a pour
 // permettre le chaînage.
+//
+// C'est la valeur du client de démarrage : si l'organisation en a choisi un
+// autre, c'est la capacité de CE modèle qui prime pour le tour.
 func (a *GenAIAgent) WithVision(enabled bool) *GenAIAgent {
 	a.textOnly = !enabled
+	return a
+}
+
+// WithClientResolver permet de servir à cet agent un modèle différent selon
+// l'organisation. role est le nom sous lequel le catalogue le connaît
+// (typiquement le nom de l'agent). Retourne a pour permettre le chaînage.
+func (a *GenAIAgent) WithClientResolver(resolver ClientResolver, role string, logger *slog.Logger) *GenAIAgent {
+	a.binding.bind(resolver, role, logger)
 	return a
 }
 

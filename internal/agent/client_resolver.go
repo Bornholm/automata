@@ -1,0 +1,98 @@
+package agent
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/bornholm/genai/llm"
+
+	"github.com/bornholm/automata/internal/llmclients"
+	"github.com/bornholm/automata/internal/model"
+)
+
+// ClientResolver choisit le client de modèle d'un rôle pour une
+// organisation : la surcharge de l'organisation si elle existe, le défaut
+// de l'instance sinon (voir llmclients.Resolver).
+//
+// Sans résolveur câblé, chaque agent utilise le client construit au
+// démarrage depuis la configuration — c'est le comportement historique, et
+// c'est aussi le repli en cas d'erreur.
+type ClientResolver interface {
+	ResolveClient(ctx context.Context, role string, orgID model.OrgID) (llmclients.Resolved, error)
+}
+
+// ImageClientResolver fait de même pour la génération d'images, dont le
+// modèle est distinct de celui qui converse. Un ClientResolver l'implémente
+// aussi lorsqu'un pool d'images lui est branché.
+type ImageClientResolver interface {
+	ResolveImageClient(ctx context.Context, role string, orgID model.OrgID) (llm.ImageGenerationClient, error)
+}
+
+// imageBinding relie un agent à son rôle de génération d'images.
+type imageBinding struct {
+	role     string
+	resolver ImageClientResolver
+	logger   *slog.Logger
+	// fallback est le générateur construit au démarrage ; nil quand l'agent
+	// ne déclare pas de génération d'images.
+	fallback llm.ImageGenerationClient
+}
+
+// resolve retourne le générateur à utiliser pour cette organisation, ou nil
+// si l'agent n'en a aucun — auquel cas l'outil n'est pas monté.
+func (b *imageBinding) resolve(ctx context.Context, orgID model.OrgID) llm.ImageGenerationClient {
+	if b.resolver == nil || b.role == "" {
+		return b.fallback
+	}
+
+	generator, err := b.resolver.ResolveImageClient(ctx, b.role, orgID)
+	if err != nil {
+		if b.logger != nil && b.fallback != nil {
+			b.logger.WarnContext(ctx, "agent: générateur d'images non résolu, repli sur la configuration de démarrage",
+				"role", b.role, "org", string(orgID), "error", err)
+		}
+		return b.fallback
+	}
+
+	return generator
+}
+
+// clientBinding relie un agent à son rôle dans le catalogue de modèles.
+// Embarqué par chaque type d'agent, il tient toute la logique de repli en
+// un seul endroit.
+type clientBinding struct {
+	role     string
+	resolver ClientResolver
+	logger   *slog.Logger
+}
+
+// bind déclare le rôle de cet agent et le résolveur à interroger.
+func (b *clientBinding) bind(resolver ClientResolver, role string, logger *slog.Logger) {
+	b.resolver = resolver
+	b.role = role
+	b.logger = logger
+}
+
+// resolve retourne le client à utiliser pour cette organisation, et false
+// si l'appelant doit garder celui qu'il a construit au démarrage.
+//
+// Une résolution en échec n'est jamais fatale : un catalogue illisible, un
+// client supprimé sous les pieds d'une organisation ou un fournisseur
+// inconnu font retomber l'agent sur son client de configuration, avec une
+// trace — l'assistant continue de répondre.
+func (b *clientBinding) resolve(ctx context.Context, orgID model.OrgID) (llmclients.Resolved, bool) {
+	if b.resolver == nil || b.role == "" {
+		return llmclients.Resolved{}, false
+	}
+
+	resolved, err := b.resolver.ResolveClient(ctx, b.role, orgID)
+	if err != nil {
+		if b.logger != nil {
+			b.logger.WarnContext(ctx, "agent: modèle non résolu, repli sur la configuration de démarrage",
+				"role", b.role, "org", string(orgID), "error", err)
+		}
+		return llmclients.Resolved{}, false
+	}
+
+	return resolved, true
+}

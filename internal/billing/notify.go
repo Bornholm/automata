@@ -55,9 +55,9 @@ func (d *Debiter) notifyLowBalances(ctx context.Context) error {
 		}
 
 		for _, org := range orgs {
-			// Une organisation offerte n'a rien à recharger : la prévenir
-			// n'appellerait aucune action de sa part.
-			if org.Offered {
+			// Une organisation offerte, ou sans limite, n'a rien à
+			// recharger : la prévenir n'appellerait aucune action de sa part.
+			if org.Offered || org.Unlimited {
 				continue
 			}
 

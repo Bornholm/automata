@@ -410,6 +410,14 @@ Conserver des images a un coût en vie privée et en volume. Voir
 
 ## llm_clients
 
+> **Cette section ne sert qu'au premier démarrage.** Les clients y sont
+> alors copiés en base, qui fait ensuite autorité : ils s'éditent dans
+> l'administration, à l'écran « Modèles », et une organisation peut se voir
+> servir un modèle différent des autres. La section reste requise, car
+> c'est elle qui dit quel client sert quel rôle par défaut
+> (`agents.<nom>.client`), mais **modifier un modèle ici n'a plus d'effet**
+> passé le semis. Voir [models.md](models.md).
+
 ```yaml
 llm_clients:
   main:

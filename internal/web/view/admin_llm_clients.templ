@@ -1,0 +1,255 @@
+package view
+
+// Catalogue des clients de modèles (migration 0022). La base fait
+// autorité : ce que montrent ces écrans est ce qui sert réellement, et une
+// modification prend effet au tour suivant, sans redémarrage.
+//
+// La clé d'API n'est JAMAIS relue : le formulaire dit seulement si elle est
+// définie, et ne propose que de la remplacer.
+
+// LLMClientRow est une ligne du catalogue.
+type LLMClientRow struct {
+	Name     string
+	Kind     string
+	Provider string
+	Model    string
+	// Roles énumère les rôles que ce client sert par défaut (« main,
+	// research, compaction ») ; vide s'il n'en sert aucun.
+	Roles     string
+	HasKey    bool
+	UpdatedAt string
+}
+
+type LLMClientsPage struct {
+	Platforms []SidebarPlatform
+	CSRFToken string
+
+	Clients []LLMClientRow
+	Error   string
+}
+
+templ AdminLLMClients(page LLMClientsPage) {
+	@AdminLayout("Modèles — Automata Admin", "llm-clients", page.Platforms, page.CSRFToken) {
+		<header class="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5">
+			<div>
+				<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Modèles</h1>
+				<div class="mt-0.5 text-sm text-text-3">Les fournisseurs et modèles que les agents utilisent</div>
+			</div>
+			<a href="/admin/llm-clients/new" class="flex h-9 shrink-0 items-center whitespace-nowrap rounded-lg bg-brand px-4 text-sm font-semibold text-white sm:ml-auto hover:bg-brand-strong hover:no-underline">Nouveau modèle</a>
+		</header>
+		<div class="p-4 md:p-7">
+			if page.Error != "" {
+				<div class="mb-4 rounded-lg bg-crit-wash px-3 py-2.5 text-[13px] text-crit-deep">{ page.Error }</div>
+			}
+			if len(page.Clients) == 0 {
+				<div class="rounded-[11px] border border-dashed border-line bg-white px-8 py-14 text-center text-sm text-text-4">
+					Aucun modèle. Les modèles déclarés dans la configuration sont repris au premier démarrage du service.
+				</div>
+			} else {
+				<div class="overflow-x-auto rounded-[11px] border border-line-2 bg-white">
+					<div class="hidden gap-4 border-b border-line-2 bg-panel px-5 py-2.5 font-mono text-[10px] font-bold uppercase tracking-[.09em] text-text-4 md:grid md:min-w-[760px] md:grid-cols-[1fr_1.4fr_.7fr_1.2fr_.6fr]">
+						<div>Nom</div>
+						<div>Modèle</div>
+						<div>Fournisseur</div>
+						<div>Rôles par défaut</div>
+						<div class="text-right">Modifié</div>
+					</div>
+					for _, row := range page.Clients {
+						<a href={ templ.SafeURL("/admin/llm-clients/" + row.Name) } class="flex flex-col gap-2 border-b border-line-3 px-5 py-3.5 last:border-b-0 hover:bg-panel hover:no-underline md:grid md:min-w-[760px] md:grid-cols-[1fr_1.4fr_.7fr_1.2fr_.6fr] md:items-center md:gap-4">
+							<div class="flex flex-wrap items-center gap-2">
+								<span class="font-mono text-sm font-medium text-text">{ row.Name }</span>
+								if row.Kind == "image" {
+									@StatusChip(Chip{Label: "Images", Tone: "brand"})
+								}
+								if !row.HasKey {
+									@StatusChip(Chip{Label: "Sans clé", Tone: "warn"})
+								}
+							</div>
+							<div class="font-mono text-[13px] leading-snug text-text-3">{ row.Model }</div>
+							<div class="text-[13px] text-text-3">{ row.Provider }</div>
+							<div class="order-last text-[13px] text-text-4 md:order-none">
+								if row.Roles == "" {
+									Aucun
+								} else {
+									{ row.Roles }
+								}
+							</div>
+							<div class="order-last font-mono text-[13px] text-text-4 md:order-none md:text-right">{ row.UpdatedAt }</div>
+						</a>
+					}
+				</div>
+				<div class="mt-3.5 text-[13px] text-text-4">
+					Une modification s'applique au message suivant, sans redémarrer le service. Le choix du modèle de chaque agent se règle
+					<a href="/admin/orgs">par organisation</a>.
+				</div>
+			}
+		</div>
+	}
+}
+
+// LLMClientFormPage sert la création (New) et l'édition. Le nom n'est
+// modifiable qu'à la création : c'est la clé à laquelle les rôles et les
+// choix des organisations se réfèrent.
+type LLMClientFormPage struct {
+	Platforms []SidebarPlatform
+	CSRFToken string
+
+	New             bool
+	Name            string
+	Kind            string
+	Provider        string
+	Model           string
+	BaseURL         string
+	ReasoningEffort string
+	Vision          bool
+	ExtraFields     string
+	// HasKey dit qu'une clé est enregistrée, sans jamais la montrer.
+	HasKey bool
+	// UsedBy énumère ce qui retient ce client (rôles de l'instance,
+	// organisations) et empêche sa suppression.
+	UsedBy []string
+	Saved  bool
+	Error  string
+}
+
+templ AdminLLMClientForm(page LLMClientFormPage) {
+	@AdminLayout("Modèle — Automata Admin", "llm-clients", page.Platforms, page.CSRFToken) {
+		<header class="border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5">
+			<div class="mb-2 text-[13px] text-text-4">
+				<a href="/admin/llm-clients">Modèles</a> /
+				if page.New {
+					<span class="text-text">Nouveau modèle</span>
+				} else {
+					<span class="text-text">{ page.Name }</span>
+				}
+			</div>
+			<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">
+				if page.New {
+					Nouveau modèle
+				} else {
+					{ page.Name }
+				}
+			</h1>
+		</header>
+		<div class="flex flex-col gap-5 p-4 md:p-7">
+			<form method="post" action={ llmClientFormAction(page) } class="flex max-w-[840px] flex-col gap-4 rounded-[11px] border border-line-2 bg-white p-5.5">
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				if page.Error != "" {
+					<div class="rounded-lg bg-crit-wash px-3 py-2.5 text-[13px] text-crit-deep">{ page.Error }</div>
+				}
+				if page.Saved {
+					<div class="rounded-lg bg-ok-wash px-3 py-2.5 text-[13px] text-ok-deep">Enregistré. La modification s'applique au message suivant.</div>
+				}
+				if page.New {
+					<label class="block">
+						<span class="mb-1.5 block text-[13px] font-medium text-text-2">Nom <span class="font-normal text-text-4">— définitif, c'est la clé à laquelle les agents se réfèrent</span></span>
+						<input type="text" name="name" required value={ page.Name } placeholder="main"
+							class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+					</label>
+					<label class="block">
+						<span class="mb-1.5 block text-[13px] font-medium text-text-2">Usage</span>
+						<select name="kind" class="h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none focus:border-brand">
+							<option value="llm" selected?={ page.Kind != "image" }>Conversation</option>
+							<option value="image" selected?={ page.Kind == "image" }>Génération d'images</option>
+						</select>
+					</label>
+				}
+				<label class="block">
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">Fournisseur</span>
+					<input type="text" name="provider" required value={ page.Provider } placeholder="openrouter"
+						class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+					<span class="mt-1 block text-[13px] text-text-4">Conversation : openai, mistral, openrouter. Images : openai, openrouter, minimax.</span>
+				</label>
+				<label class="block">
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">Modèle</span>
+					<input type="text" name="model" required value={ page.Model } placeholder="deepseek/deepseek-chat"
+						class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+					<span class="mt-1 block text-[13px] text-text-4">L'identifiant exact du fournisseur : un modèle inexistant fait échouer chaque appel.</span>
+				</label>
+				<label class="block">
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">URL du service <span class="font-normal text-text-4">— vide = celle du fournisseur</span></span>
+					<input type="text" name="base_url" value={ page.BaseURL } placeholder="https://openrouter.ai/api/v1"
+						class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+				</label>
+				<label class="block">
+					<span class="mb-1.5 block text-[13px] font-medium text-text-2">
+						Clé d'API
+						if page.HasKey {
+							<span class="font-normal text-text-4">— une clé est enregistrée ; laissez vide pour la conserver</span>
+						} else {
+							<span class="font-normal text-text-4">— aucune clé enregistrée</span>
+						}
+					</span>
+					<input type="password" name="api_key" value="" autocomplete="new-password" placeholder="sk-…"
+						class="h-[38px] w-full rounded-lg border border-line px-3 font-mono text-sm outline-none placeholder:text-text-5 focus:border-brand"/>
+					<span class="mt-1 block text-[13px] text-text-4">Chiffrée au repos. Elle n'est jamais réaffichée : en cas d'oubli, il faut la ressaisir.</span>
+				</label>
+				if page.Kind != "image" {
+					<label class="block">
+						<span class="mb-1.5 block text-[13px] font-medium text-text-2">Effort de réflexion <span class="font-normal text-text-4">— vide = valeur par défaut du modèle</span></span>
+						<select name="reasoning_effort" class="h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none focus:border-brand">
+							<option value="" selected?={ page.ReasoningEffort == "" }>Par défaut</option>
+							@llmEffortOption("none", page.ReasoningEffort)
+							@llmEffortOption("minimal", page.ReasoningEffort)
+							@llmEffortOption("low", page.ReasoningEffort)
+							@llmEffortOption("medium", page.ReasoningEffort)
+							@llmEffortOption("high", page.ReasoningEffort)
+							@llmEffortOption("xhigh", page.ReasoningEffort)
+						</select>
+						<span class="mt-1 block text-[13px] text-text-4">Réfléchir coûte du temps sur chaque message, banalités comprises.</span>
+					</label>
+					<label class="flex items-center gap-2.5">
+						<input type="checkbox" name="vision" value="1" checked?={ page.Vision || page.New } class="h-4 w-4 accent-brand"/>
+						<span class="text-[13px] font-medium text-text-2">Accepte les images <span class="font-normal text-text-4">— décochez pour un modèle texte seul : une seule image ferait échouer tout le message</span></span>
+					</label>
+					<label class="block">
+						<span class="mb-1.5 block text-[13px] font-medium text-text-2">Champs supplémentaires <span class="font-normal text-text-4">— objet JSON ajouté à chaque requête</span></span>
+						<textarea name="extra_fields" rows="3" placeholder="{&#34;usage&#34;: {&#34;include&#34;: true}}"
+							class="w-full rounded-lg border border-line px-3 py-2.5 font-mono text-[13px] leading-relaxed outline-none placeholder:text-text-5 focus:border-brand">{ page.ExtraFields }</textarea>
+						<span class="mt-1 block text-[13px] text-text-4">Rien n'est vérifié : le contenu part tel quel au fournisseur.</span>
+					</label>
+				}
+				<div class="flex gap-2.5 border-t border-line-3 pt-4">
+					<a href="/admin/llm-clients" class="flex h-[38px] items-center justify-center rounded-lg border border-line px-4 text-sm font-medium text-text hover:bg-panel hover:no-underline">Annuler</a>
+					<button type="submit" class="h-[38px] rounded-lg bg-brand px-5 text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
+				</div>
+			</form>
+			if !page.New {
+				<div class="flex max-w-[840px] flex-col gap-3 rounded-[11px] border border-line-2 bg-white p-5.5">
+					if len(page.UsedBy) > 0 {
+						<div class="text-[13px] text-text-4">
+							Ce modèle est utilisé — le supprimer laisserait ces rôles sans modèle :
+							<ul class="mt-1.5 flex flex-col gap-1">
+								for _, use := range page.UsedBy {
+									<li class="font-mono text-[13px] text-text-3">{ use }</li>
+								}
+							</ul>
+						</div>
+					} else {
+						<form method="post" action={ templ.SafeURL("/admin/llm-clients/" + page.Name + "/delete") } class="flex flex-wrap items-center gap-3"
+							onsubmit="return confirm('Supprimer ce modèle ?')">
+							<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+							<button type="submit" class="h-9 rounded-lg border border-line bg-white px-3.5 text-[13px] font-medium text-crit-deep hover:bg-crit-wash">Supprimer</button>
+							<span class="text-[13px] text-text-4">Aucun rôle ne s'y réfère.</span>
+						</form>
+					}
+				</div>
+			}
+		</div>
+	}
+}
+
+// llmEffortOption rend une option d'effort, sélectionnée si elle est la
+// valeur courante.
+templ llmEffortOption(value, current string) {
+	<option value={ value } selected?={ current == value }>{ value }</option>
+}
+
+// llmClientFormAction : la création poste sur la collection, l'édition sur
+// le client lui-même.
+func llmClientFormAction(page LLMClientFormPage) templ.SafeURL {
+	if page.New {
+		return templ.SafeURL("/admin/llm-clients")
+	}
+	return templ.SafeURL("/admin/llm-clients/" + page.Name)
+}

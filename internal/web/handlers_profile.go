@@ -458,6 +458,12 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 		page.GaugePct = state.GaugePct
 
 		switch state.State {
+		case "unlimited":
+			// Rien à acheter, rien à surveiller : on montre l'usage du mois
+			// et on s'arrête là — pas de solde, pas d'offres.
+			page.UsedCredits = monthUsage
+			page.BalanceHint = "Votre accès est sans limite"
+			return s.fillUsageSplit(r, tx, &page, org.ID, monthFrom, monthTo)
 		case "offered":
 			page.Allowance = org.MonthlyAllowance
 			page.UsedCredits = monthUsage

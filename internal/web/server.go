@@ -86,6 +86,12 @@ type Server struct {
 	bindings          *persistence.ChannelBindingRepository
 	pluginObjects     *persistence.PluginObjectRepository
 	pluginSites       *persistence.PluginPublicSiteRepository
+	llmClients        *persistence.LLMClientRepository
+	orgClients        *persistence.OrgAgentClientRepository
+	// llmBox scelle les clés d'API du catalogue de modèles. Nil si le
+	// secret de session est inexploitable : les écrans du catalogue
+	// refusent alors d'écrire plutôt que d'enregistrer une clé en clair.
+	llmBox *secretbox.Box
 }
 
 // PlatformManager est la vue qu'a le serveur web du gestionnaire de
@@ -137,6 +143,16 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 		skills:            persistence.NewSkillRepository(),
 		pluginObjects:     persistence.NewPluginObjectRepository(),
 		pluginSites:       persistence.NewPluginPublicSiteRepository(),
+		llmClients:        persistence.NewLLMClientRepository(),
+		orgClients:        persistence.NewOrgAgentClientRepository(),
+	}
+
+	// Même dérivation que celle du catalogue côté registry : les deux
+	// ouvrent les mêmes clés scellées.
+	if box, err := secretbox.NewLLMClients(cfg.Web.SessionSecret); err == nil {
+		s.llmBox = box
+	} else {
+		logger.Warn("web: catalogue de modèles en lecture seule", "error", err)
 	}
 
 	// La clé de chiffrement des secrets dérive du secret de session : la
@@ -178,6 +194,8 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("GET /admin/orgs/{id}/wallet.csv", admin(s.handleOrgWalletCSV))
 	mux.HandleFunc("POST /admin/orgs/{id}/grant", admin(s.handleOrgGrant))
 	mux.HandleFunc("POST /admin/orgs/{id}/offered", admin(s.handleOrgOffered))
+	mux.HandleFunc("POST /admin/orgs/{id}/unlimited", admin(s.handleOrgUnlimited))
+	mux.HandleFunc("POST /admin/orgs/{id}/models", admin(s.handleOrgModels))
 	mux.HandleFunc("POST /admin/orgs/{id}/group-token", admin(s.handleOrgGroupToken))
 	mux.HandleFunc("POST /admin/orgs/{id}/customization", admin(s.handleOrgCustomization))
 	mux.HandleFunc("POST /admin/orgs/{id}/delete", admin(s.handleOrgDelete))
@@ -209,6 +227,15 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("POST /admin/skills/{name}", admin(s.handleSkillUpdate))
 	mux.HandleFunc("POST /admin/skills/{name}/delete", admin(s.handleSkillDelete))
 	mux.HandleFunc("POST /admin/skills/{name}/restore", admin(s.handleSkillRestore))
+
+	// Catalogue de modèles : la base fait autorité, une modification
+	// s'applique au message suivant (voir internal/llmclients).
+	mux.HandleFunc("GET /admin/llm-clients", admin(s.handleLLMClients))
+	mux.HandleFunc("GET /admin/llm-clients/new", admin(s.handleLLMClientNewForm))
+	mux.HandleFunc("POST /admin/llm-clients", admin(s.handleLLMClientCreate))
+	mux.HandleFunc("GET /admin/llm-clients/{name}", admin(s.handleLLMClientForm))
+	mux.HandleFunc("POST /admin/llm-clients/{name}", admin(s.handleLLMClientUpdate))
+	mux.HandleFunc("POST /admin/llm-clients/{name}/delete", admin(s.handleLLMClientDelete))
 
 	mux.HandleFunc("GET /admin/plugins", admin(s.handlePlugins))
 	mux.HandleFunc("POST /admin/plugins/{name}/restart", admin(s.handlePluginRestart))

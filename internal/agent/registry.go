@@ -16,6 +16,7 @@ import (
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/llmclients"
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/usage"
@@ -52,7 +53,7 @@ type Registry struct {
 // deux passes sont nécessaires : un OrchestratorAgent a besoin que ses
 // délégués existent déjà dans le registre pour les envelopper.
 func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error) {
-	return NewRegistryWithMemory(cfg, MemoryTools{}, ReminderTools{}, ProfileTools{}, nil, mcpManager, nil, nil, nil, nil)
+	return NewRegistryWithMemory(cfg, MemoryTools{}, ReminderTools{}, ProfileTools{}, nil, mcpManager, nil, nil, nil, nil, nil)
 }
 
 // NewRegistryWithMemory se comporte comme NewRegistry, mais attache
@@ -88,7 +89,16 @@ func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error)
 // skills, s'il n'est pas nil, ajoute à chaque orchestrateur et à chaque
 // spécialiste MCP le catalogue des compétences et l'outil load_skill,
 // relus par tour. Nil : aucun des deux n'est exposé.
-func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminderTools ReminderTools, profileTools ProfileTools, customizer OrgCustomizer, mcpManager *mcp.Manager, pluginProvider PluginSpecialistProvider, skills SkillsProvider, metrics *observability.Metrics, logger *slog.Logger) (*Registry, error) {
+// clientResolver, s'il est fourni, permet à chaque agent de servir le
+// modèle que l'organisation du tour a choisi (catalogue administrable,
+// migration 0022) ; le client construit ici depuis la configuration reste
+// le repli. Nil : comportement historique, un seul modèle par agent.
+func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminderTools ReminderTools, profileTools ProfileTools, customizer OrgCustomizer, mcpManager *mcp.Manager, pluginProvider PluginSpecialistProvider, skills SkillsProvider, clientResolver ClientResolver, metrics *observability.Metrics, logger *slog.Logger) (*Registry, error) {
+	// Le même résolveur sert les modèles d'images quand un pool d'images
+	// lui est branché ; sinon les agents gardent le générateur construit
+	// depuis la configuration.
+	imageResolver, _ := clientResolver.(ImageClientResolver)
+
 	agents := make(map[string]Agent, len(cfg.Agents))
 	clients := make(map[string]llm.Client, len(cfg.Agents))
 	prompts := make(map[string]string, len(cfg.Agents))
@@ -117,7 +127,8 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 		// agents.
 		agents[name] = NewGenAIAgent(client, systemPrompt, name).
 			WithOrgSystemPrompts(orgPrompts[name]).
-			WithVision(llmClientCfg.SupportsVision())
+			WithVision(llmClientCfg.SupportsVision()).
+			WithClientResolver(clientResolver, name, logger)
 		clients[name] = client
 		prompts[name] = systemPrompt
 	}
@@ -142,14 +153,16 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 				MaxToolResultBytes: int64(agentCfg.Limits.MaxToolResultBytes.Bytes()),
 			}
 
-			// Outils applicatifs natifs du spécialiste, hors MCP.
-			var extraTools []llm.Tool
+			// Générateur d'images de la configuration : il sert de repli
+			// quand l'organisation n'en a pas choisi un autre. L'outil
+			// lui-même est monté par tour (voir MCPToolAgent.Execute).
+			var imageGenerator llm.ImageGenerationClient
 			if clientName := agentCfg.ImageGeneration.Client; clientName != "" {
 				generator, err := BuildImageGenerationClient(context.Background(), cfg.ImageClients[clientName])
 				if err != nil {
 					return nil, fmt.Errorf("agent: construction du client d'images %q pour l'agent %q: %w", clientName, name, err)
 				}
-				extraTools = append(extraTools, newGenerateImageTool(generator))
+				imageGenerator = generator
 			}
 
 			// Un seul type de spécialiste MCP, quel que soit le domaine.
@@ -171,7 +184,8 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			agents[name] = specialist.
 				WithOrgSystemPrompts(orgPrompts[name]).
 				WithVision(cfg.LLMClients[agentCfg.Client].SupportsVision()).
-				WithExtraTools(extraTools...).
+				WithClientResolver(clientResolver, name, logger).
+				WithImageGeneration(imageGenerator, imageResolver, llmclients.ImageRole(name), logger).
 				WithSkills(skills).
 				WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes())).
 				WithLogger(logger)
@@ -224,6 +238,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 		orchestrator := NewOrchestratorAgent(clients[name], prompts[name], name, specialists, agentCfg.Limits.MaxSequentialToolCalls).
 			WithOrgSystemPrompts(orgPrompts[name]).
 			WithVision(cfg.LLMClients[agentCfg.Client].SupportsVision()).
+			WithClientResolver(clientResolver, name, logger).
 			WithSpecialistDescriptions(specialistDescriptions).
 			WithSkills(skills)
 

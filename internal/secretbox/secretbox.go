@@ -46,6 +46,14 @@ func NewPlugins(secret string) (*Box, error) {
 	return newBox(secret, "automata/plugins/v1")
 }
 
+// NewLLMClients dérive la Box des clés d'API du catalogue de modèles
+// (table llm_clients, migration 0022) : contexte HKDF distinct, un secret
+// de plugin ou de plateforme ne peut jamais ouvrir une clé de fournisseur,
+// ni l'inverse.
+func NewLLMClients(secret string) (*Box, error) {
+	return newBox(secret, "automata/llm_clients/v1")
+}
+
 // newBox dérive une Box du secret fourni, pour l'usage nommé par info :
 // deux usages ne partagent jamais la même clé, même issus du même secret.
 func newBox(secret, info string) (*Box, error) {

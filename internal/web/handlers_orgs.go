@@ -297,7 +297,7 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	tab := r.URL.Query().Get("tab")
-	if tab != "members" && tab != "channels" && tab != "customization" && tab != "plugins" {
+	if tab != "members" && tab != "channels" && tab != "customization" && tab != "models" && tab != "plugins" {
 		tab = "credits"
 	}
 	now := s.now()
@@ -345,11 +345,18 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 		}
 		page.PluginRows = pluginRows
 
+		modelRoles, err := s.orgModelRows(r.Context(), tx, orgID)
+		if err != nil {
+			return err
+		}
+		page.ModelRoles = modelRoles
+
 		state := computeWalletState(org, balance, lastCredit, monthUsage)
 
 		page.Name = org.DisplayName
 		page.Chip = state.Chip
 		page.Offered = org.Offered
+		page.Unlimited = org.Unlimited
 		page.Allowance = org.MonthlyAllowance
 		page.Balance = balance
 		page.GaugePct = state.GaugePct
@@ -635,6 +642,34 @@ func (s *Server) handleOrgOffered(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+
+	http.Redirect(w, r, "/admin/orgs/"+orgID, http.StatusFound)
+}
+
+// handleOrgUnlimited bascule le mode gratuit sans limite : l'organisation
+// n'est plus jamais débitée ni mise en pause, et son allocation mensuelle
+// devient sans objet. Sa consommation reste mesurée : le coût réel demeure
+// visible dans les écrans d'usage et de marge.
+func (s *Server) handleOrgUnlimited(w http.ResponseWriter, r *http.Request) {
+	orgID := r.PathValue("id")
+	unlimited := r.PostFormValue("unlimited") == "true"
+
+	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+		org, exists, err := s.orgs.FindByID(r.Context(), tx, orgID)
+		if err != nil || !exists {
+			return err
+		}
+		org.Unlimited = unlimited
+		org.UpdatedAt = s.now()
+
+		return s.orgs.Update(r.Context(), tx, org)
+	})
+	if !ok {
+		return
+	}
+
+	s.logger.InfoContext(r.Context(), "web: mode gratuit sans limite modifié",
+		"org", orgID, "unlimited", unlimited)
 
 	http.Redirect(w, r, "/admin/orgs/"+orgID, http.StatusFound)
 }

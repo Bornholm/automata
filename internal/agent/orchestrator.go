@@ -70,6 +70,9 @@ type OrchestratorAgent struct {
 	customization OrgCustomizer
 	metrics       *observability.Metrics
 	logger        *slog.Logger
+	// binding permet de servir un modèle différent selon l'organisation,
+	// résolu à chaque exécution.
+	binding clientBinding
 }
 
 // NewOrchestratorAgent construit un OrchestratorAgent. specialists associe
@@ -97,6 +100,13 @@ func NewOrchestratorAgent(client llm.ChatCompletionClient, systemPrompt, agentNa
 // avec MCPToolAgent (Phase 12) : voir son commentaire de package.
 func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, error) {
 	ctx = withUsageAttribution(ctx, req.Identity, a.agentName)
+
+	// Modèle du tour : celui que l'organisation a choisi si elle en a
+	// choisi un, celui de la configuration sinon.
+	client, textOnly := a.client, a.textOnly
+	if resolved, ok := a.binding.resolve(ctx, req.Identity.OrgID); ok {
+		client, textOnly = resolved.Client, !resolved.SupportsVision
+	}
 
 	collector := newProposalCollector()
 	mediaCollector := newMediaCollector()
@@ -165,7 +175,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 		req.Input += media.DelegableFilesNotice(recentFiles)
 	}
 
-	messages := buildChatMessages(systemPrompt, a.agentName, a.textOnly, recallNote, req)
+	messages := buildChatMessages(systemPrompt, a.agentName, textOnly, recallNote, req)
 
 	maxIterations := a.maxSequentialToolCalls
 	if maxIterations <= 0 {
@@ -175,7 +185,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 		maxIterations = custom.MaxToolCalls
 	}
 
-	loopResult, err := runToolLoop(ctx, a.client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxDelegationsReached, a.logger, a.agentName)
+	loopResult, err := runToolLoop(ctx, client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxDelegationsReached, a.logger, a.agentName)
 	if err != nil {
 		return Result{}, err
 	}
@@ -218,6 +228,14 @@ func (a *OrchestratorAgent) collectedMedia(loopResult toolLoopResult, mediaColle
 // chaînage.
 func (a *OrchestratorAgent) WithVision(enabled bool) *OrchestratorAgent {
 	a.textOnly = !enabled
+	return a
+}
+
+// WithClientResolver permet de servir à cet agent un modèle différent selon
+// l'organisation. role est le nom sous lequel le catalogue le connaît
+// (typiquement le nom de l'agent). Retourne a pour permettre le chaînage.
+func (a *OrchestratorAgent) WithClientResolver(resolver ClientResolver, role string, logger *slog.Logger) *OrchestratorAgent {
+	a.binding.bind(resolver, role, logger)
 	return a
 }
 

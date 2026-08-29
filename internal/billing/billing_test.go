@@ -227,3 +227,57 @@ func TestApplyAllowances_TopsUpWithoutAccumulating(t *testing.T) {
 		t.Fatalf("solde %d, attendu 600 (remise à niveau, jamais cumul)", b)
 	}
 }
+
+// Une organisation en mode gratuit sans limite n'est jamais débitée : sa
+// consommation reste mesurée (usage_records intact), mais aucun mouvement
+// n'entre à son portefeuille — c'est ce qui la distingue d'une
+// organisation offerte, dont l'allocation finit par s'épuiser.
+func TestDebit_SkipsUnlimitedOrganizations(t *testing.T) {
+	db := testDB(t)
+	seedOrg(t, db, persistence.Organization{ID: "maison", DisplayName: "Maison", Unlimited: true})
+	seedOrg(t, db, persistence.Organization{ID: "client", DisplayName: "Client"})
+
+	now := time.Now()
+	debiter := billing.New(db, testCfg(), nil, nil).WithClock(func() time.Time { return now.Add(-time.Hour) })
+	if err := debiter.Debit(context.Background()); err != nil {
+		t.Fatalf("Debit (ancrage): %v", err)
+	}
+
+	for _, orgID := range []string{"maison", "client"} {
+		seedUsage(t, db, usage.Record{
+			CreatedAt: now.Add(-30 * time.Minute), OrgID: orgID,
+			Component: "agent", Agent: "main", Kind: "chat", CostAmount: 0.25, CostReported: true,
+		})
+	}
+
+	debiter = billing.New(db, testCfg(), nil, nil).WithClock(func() time.Time { return now })
+	if err := debiter.Debit(context.Background()); err != nil {
+		t.Fatalf("Debit: %v", err)
+	}
+
+	if b := balance(t, db, "maison"); b != 0 {
+		t.Fatalf("solde de l'organisation sans limite %d, attendu 0", b)
+	}
+	// Le témoin : la même consommation débite bien une organisation ordinaire.
+	if b := balance(t, db, "client"); b != -250 {
+		t.Fatalf("solde de l'organisation ordinaire %d, attendu -250", b)
+	}
+}
+
+// Une organisation sans limite ne reçoit pas d'allocation mensuelle : elle
+// n'a pas de solde à compenser.
+func TestApplyAllowances_SkipsUnlimitedOrganizations(t *testing.T) {
+	db := testDB(t)
+	seedOrg(t, db, persistence.Organization{
+		ID: "maison", DisplayName: "Maison", Unlimited: true, Offered: true, MonthlyAllowance: 5000,
+	})
+
+	debiter := billing.New(db, testCfg(), nil, nil)
+	if err := debiter.ApplyAllowances(context.Background()); err != nil {
+		t.Fatalf("ApplyAllowances: %v", err)
+	}
+
+	if b := balance(t, db, "maison"); b != 0 {
+		t.Fatalf("solde %d, attendu 0 (aucune allocation pour une organisation sans limite)", b)
+	}
+}

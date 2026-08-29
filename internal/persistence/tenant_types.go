@@ -19,6 +19,12 @@ type Organization struct {
 	// allocation mensuelle de crédits non cumulative au lieu d'achats.
 	Offered          bool
 	MonthlyAllowance int64
+	// Unlimited marque une organisation gratuite SANS limite : jamais
+	// débitée, jamais mise en pause, jamais alertée sur son solde. Sa
+	// consommation reste mesurée (usage_records), donc son coût réel
+	// demeure visible dans les écrans d'usage et de marge. Distinct
+	// d'Offered, qui plafonne à une allocation mensuelle.
+	Unlimited bool
 	// LowBalanceNotifiedAt date la dernière alerte de solde bas envoyée
 	// dans la conversation ; zéro = jamais prévenue.
 	LowBalanceNotifiedAt time.Time

@@ -1,12 +1,14 @@
 package web
 
 import (
+	"database/sql"
 	"fmt"
 	"net/http"
 	"sort"
 	"time"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/view"
 )
 
@@ -16,6 +18,21 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		Platforms: s.sidebarPlatforms(),
 		CSRFToken: s.csrfToken(w, r),
 		Version:   fmt.Sprintf("configuration version %d", s.cfg.Version),
+	}
+
+	// Catalogue des modèles : lu une fois, il sert à la fois la section
+	// des agents (quel modèle sert chacun) et la sienne.
+	var catalog []persistence.LLMClient
+	if !s.withTx(w, r, func(tx *sql.Tx) error {
+		var err error
+		catalog, err = s.llmClients.List(r.Context(), tx, "")
+		return err
+	}) {
+		return
+	}
+	models := make(map[string]string, len(catalog))
+	for _, client := range catalog {
+		models[client.Name] = client.Model
 	}
 
 	// Agents : le cœur de ce qu'on veut vérifier sans SSH.
@@ -34,7 +51,7 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 	for _, name := range agentNames {
 		agentCfg := s.cfg.Agents[name]
 
-		value := s.cfg.LLMClients[agentCfg.Client].Model
+		value := models[agentCfg.Client]
 		if value == "" {
 			value = agentCfg.Client
 		}
@@ -55,22 +72,25 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 	}
 	page.Sections = append(page.Sections, agents)
 
-	// Clients LLM : le modèle et le fournisseur, jamais la clé.
+	// Clients de modèles : le catalogue tel qu'il est EN BASE, qui fait
+	// autorité depuis la migration 0022 — la configuration n'en est plus
+	// que le semis initial. Le modèle et le fournisseur, jamais la clé.
 	clients := view.InstanceSection{
-		Title:  "Clients de modèles",
-		Detail: "Fournisseurs et modèles configurés — les clés d'API ne sont jamais affichées",
+		Title:     "Clients de modèles",
+		Detail:    "Fournisseurs et modèles en service — les clés d'API ne sont jamais affichées",
+		Href:      "/admin/llm-clients",
+		HrefLabel: "Gérer les modèles",
 	}
-	var clientNames []string
-	for name := range s.cfg.LLMClients {
-		clientNames = append(clientNames, name)
-	}
-	sort.Strings(clientNames)
-	for _, name := range clientNames {
-		client := s.cfg.LLMClients[name]
+	for _, client := range catalog {
+		hint := client.Provider
+		if client.Kind == persistence.LLMClientKindImage {
+			hint += " — images"
+		}
+
 		clients.Rows = append(clients.Rows, view.InstanceRow{
-			Name:  name,
+			Name:  client.Name,
 			Value: client.Model,
-			Hint:  client.Provider,
+			Hint:  hint,
 		})
 	}
 	page.Sections = append(page.Sections, clients)

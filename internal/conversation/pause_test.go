@@ -131,3 +131,39 @@ func TestHandler_NeverPausesOrganizationWithoutWallet(t *testing.T) {
 		t.Errorf("l'agent a été appelé %d fois, attendu 1 (aucun portefeuille = aucune pause)", len(a.requests))
 	}
 }
+
+// Une organisation en mode gratuit sans limite n'est JAMAIS mise en pause,
+// même le portefeuille à zéro : rien ne la débite, un solde nul ne dit donc
+// rien de son droit à être servie.
+func TestHandler_NeverPausedWhenOrganizationIsUnlimited(t *testing.T) {
+	db := openTestDB(t)
+
+	now := time.Now()
+	if err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		return persistence.NewOrganizationRepository().Insert(context.Background(), tx, persistence.Organization{
+			ID: "home", DisplayName: "Maison", Unlimited: true, CreatedAt: now, UpdatedAt: now,
+		}, true)
+	}); err != nil {
+		t.Fatalf("insertion de l'organisation: %v", err)
+	}
+
+	a := &recordingAgent{}
+	h := conversation.NewHandler(db, a, nil, 0, audio.Config{}, nil, false, nil).
+		WithBilling(fakeProfileLinks{url: "https://automata.test/p/abc.def"})
+
+	// Même portefeuille épuisé que le test de mise en pause ci-dessus.
+	seedWallet(t, db, "home", 500, -500)
+
+	reply, _, err := h.Handle(context.Background(), pauseIdentity(),
+		testConversation(model.ConversationID("conv-a"), "chan-a"), testMessage("alice", "bonjour"))
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	if strings.Contains(reply, "pause") {
+		t.Errorf("réponse %q : une organisation sans limite ne doit jamais être mise en pause", reply)
+	}
+	if len(a.requests) != 1 {
+		t.Errorf("l'agent a été appelé %d fois, attendu 1", len(a.requests))
+	}
+}

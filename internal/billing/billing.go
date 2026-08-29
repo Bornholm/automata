@@ -200,9 +200,19 @@ func (d *Debiter) Debit(ctx context.Context) error {
 		for orgID, byLabel := range totals {
 			// Seules les organisations enregistrées ont un portefeuille :
 			// une organisation encore purement configurée n'est pas facturée.
-			if _, exists, err := d.orgs.FindByID(ctx, tx, orgID); err != nil {
+			org, exists, err := d.orgs.FindByID(ctx, tx, orgID)
+			if err != nil {
 				return err
-			} else if !exists {
+			}
+			if !exists {
+				continue
+			}
+
+			// Mode gratuit sans limite : rien n'est inscrit au portefeuille.
+			// La consommation reste dans usage_records, donc le coût réel de
+			// l'organisation demeure visible dans les écrans d'usage et de
+			// marge — c'est ce qui distingue « offert » de « non mesuré ».
+			if org.Unlimited {
 				continue
 			}
 
@@ -302,6 +312,11 @@ func (d *Debiter) ApplyAllowances(ctx context.Context) error {
 		}
 
 		for _, org := range orgs {
+			// Une organisation sans limite n'a pas d'allocation à recevoir :
+			// elle n'est jamais débitée, un solde n'aurait rien à compenser.
+			if org.Unlimited {
+				continue
+			}
 			if !org.Offered || org.MonthlyAllowance <= 0 {
 				continue
 			}

@@ -75,7 +75,10 @@ type Handler struct {
 	// wallet, profileLinks et pauseNotices ne sont renseignés que si la
 	// facturation est active (voir WithBilling, pause.go) : sans eux,
 	// aucune conversation n'est jamais interrompue faute de crédits.
-	wallet       *persistence.WalletRepository
+	wallet *persistence.WalletRepository
+	// orgs sert à reconnaître les organisations en mode gratuit sans
+	// limite, qui ne sont jamais mises en pause.
+	orgs         *persistence.OrganizationRepository
 	profileLinks ProfileLinkGenerator
 	pauseNotices *pauseNoticeTracker
 	// summaries et compactor gouvernent la compaction de l'historique

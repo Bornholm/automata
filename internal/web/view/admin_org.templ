@@ -62,6 +62,9 @@ type OrgPage struct {
 	DailyRate     string // « ≈ 105 cr./j » ou « — »
 	Weeks         []WeekBar
 	Offered       bool
+	// Unlimited : mode gratuit SANS limite, distinct d'Offered — jamais
+	// débitée, jamais mise en pause.
+	Unlimited     bool
 	Allowance     int64
 	FlashToken    *TokenPanelData // jeton de groupe fraîchement généré, sinon nil
 	Flash         string
@@ -79,6 +82,37 @@ type OrgPage struct {
 	PromptExtra  string
 	MaxToolCalls int
 	Specialists  []SpecialistToggle
+
+	// Onglet Modèles : un choix par rôle.
+	ModelRoles []OrgModelRole
+}
+
+// OrgModelRole est le modèle qu'une organisation a choisi pour un rôle. Un
+// choix vide signifie « le défaut de l'instance », jamais « aucun modèle ».
+type OrgModelRole struct {
+	// Role est la clé technique (nom d'agent, ou rôle système).
+	Role string
+	// Label et Hint décrivent le rôle en français.
+	Label string
+	Hint  string
+	// Chosen est le client choisi par l'organisation, vide si elle suit le
+	// défaut.
+	Chosen string
+	// Default est le client que la configuration attribue à ce rôle.
+	Default string
+	// DefaultModel est le modèle de ce défaut, pour que l'opérateur sache
+	// ce qu'il remplace.
+	DefaultModel string
+	// Options est le catalogue proposé pour CE rôle : les modèles de
+	// conversation, ou ceux de génération d'images — les deux familles ne
+	// sont pas interchangeables.
+	Options []OrgModelOption
+}
+
+// OrgModelOption est une entrée du catalogue proposée dans les listes.
+type OrgModelOption struct {
+	Name  string
+	Model string
 }
 
 // SpecialistToggle est un spécialiste que l'organisation peut avoir ou
@@ -153,6 +187,7 @@ templ AdminOrg(page OrgPage) {
 				@orgTab(page, "channels", "Canaux")
 				@orgTab(page, "credits", "Crédits")
 				@orgTab(page, "customization", "Personnalisation")
+				@orgTab(page, "models", "Modèles")
 				@orgTab(page, "plugins", "Plugins")
 			</div>
 		</header>
@@ -175,6 +210,8 @@ templ AdminOrg(page OrgPage) {
 					@orgChannelsTab(page)
 				case "customization":
 					@orgCustomizationTab(page)
+				case "models":
+					@orgModelsTab(page)
 				case "plugins":
 					@OrgPluginsTab(page.ID, page.PluginRows, page.CSRFToken, page.Flash != "")
 				default:
@@ -244,6 +281,26 @@ templ orgCreditsTab(page OrgPage) {
 								<button type="submit" name="offered" value="true" class="h-[34px] rounded-lg border border-line px-3 text-[13px] font-medium text-text hover:bg-panel">Enregistrer</button>
 							}
 						</div>
+					</div>
+				</form>
+			</div>
+			<div class="rounded-[11px] border border-line-2 bg-white p-5">
+				<form method="post" action={ templ.SafeURL("/admin/orgs/" + page.ID + "/unlimited") } class="flex flex-wrap items-start gap-4">
+					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+					<button type="submit" name="unlimited" value={ boolFlip(page.Unlimited) }
+						class={ "flex h-[22px] w-[38px] shrink-0 rounded-full p-0.5 transition-colors", templ.KV("justify-end bg-ok", page.Unlimited), templ.KV("bg-track", !page.Unlimited) }
+						title="Basculer le mode sans limite">
+						<span class="size-[18px] rounded-full bg-white shadow-sm"></span>
+					</button>
+					<div class="min-w-0">
+						<div class="text-[15px] font-semibold text-ink">Gratuite, sans limite</div>
+						<div class="mt-1 max-w-[560px] text-sm leading-normal text-text-3">
+							Aucun débit, aucune mise en pause, aucune alerte de solde. La consommation reste mesurée : le coût réel de cette
+							organisation demeure visible dans <a href="/admin/usage">la consommation</a> et dans la marge.
+						</div>
+						if page.Unlimited {
+							<div class="mt-3 text-sm text-text-4">L'allocation mensuelle ci-dessus est sans effet tant que ce mode est actif.</div>
+						}
 					</div>
 				</form>
 			</div>
@@ -366,6 +423,50 @@ templ grantDialog(page OrgPage) {
 			</div>
 		</form>
 	</dialog>
+}
+
+// orgModelsTab règle le modèle de chaque rôle pour cette organisation. Un
+// rôle laissé sur « défaut de l'instance » suit la configuration : c'est le
+// cas de toutes les organisations tant que rien n'est choisi ici.
+templ orgModelsTab(page OrgPage) {
+	<form method="post" action={ templ.SafeURL("/admin/orgs/" + page.ID + "/models") } class="flex max-w-[760px] flex-col gap-4.5">
+		<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+		<div class="rounded-[11px] border border-line-2 bg-white p-5.5">
+			<div class="text-[15px] font-semibold text-ink">Modèles de cette organisation</div>
+			<div class="mt-1 text-sm leading-normal text-text-3">
+				Chaque rôle peut être servi par un modèle différent de celui de l'instance. Le changement s'applique au message suivant, sans
+				redémarrage. Le catalogue se gère dans <a href="/admin/llm-clients">Modèles</a>.
+			</div>
+			if len(page.ModelRoles) == 0 {
+				<div class="mt-3.5 text-sm text-text-4">Aucun rôle à régler : le catalogue de modèles n'est pas disponible.</div>
+			} else {
+				<div class="mt-4 flex flex-col gap-3.5">
+					for _, role := range page.ModelRoles {
+						<label class="flex flex-col gap-1.5 border-b border-line-3 pb-3.5 last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:gap-4">
+							<span class="min-w-0 flex-1">
+								<span class="block text-sm font-medium text-text">{ role.Label }</span>
+								<span class="block text-[13px] leading-snug text-text-4">{ role.Hint }</span>
+							</span>
+							<select name={ "role:" + role.Role } class="h-[38px] w-full shrink-0 rounded-lg border border-line px-3 text-sm outline-none focus:border-brand sm:w-[280px]">
+								<option value="" selected?={ role.Chosen == "" }>
+									Défaut de l'instance
+									if role.DefaultModel != "" {
+										&#32;({ role.DefaultModel })
+									}
+								</option>
+								for _, option := range role.Options {
+									<option value={ option.Name } selected?={ role.Chosen == option.Name }>{ option.Name } — { option.Model }</option>
+								}
+							</select>
+						</label>
+					}
+				</div>
+			}
+		</div>
+		<div>
+			<button type="submit" class="h-[38px] rounded-lg bg-brand px-5 text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
+		</div>
+	</form>
 }
 
 templ orgCustomizationTab(page OrgPage) {

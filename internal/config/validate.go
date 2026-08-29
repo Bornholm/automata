@@ -66,6 +66,12 @@ var validReasoningEfforts = []string{"none", "minimal", "low", "medium", "high",
 // validateLLMClients vérifie que chaque client déclaré a de quoi appeler un
 // fournisseur.
 //
+// Depuis la migration 0022, ces valeurs ne servent qu'au SEMIS initial du
+// catalogue (internal/llmclients.Seed) : passé le premier démarrage, c'est
+// la base qui fait autorité et l'administration qui édite. La section reste
+// néanmoins requise et validée, car c'est elle qui dit quel client sert
+// quel rôle par défaut — agents.<nom>.client s'y réfère par son nom.
+//
 // base_url est exigé, et non déduit d'un défaut : une valeur manquante
 // enverrait les requêtes chez un autre fournisseur que celui de la clé, ou
 // — quand le défaut du provider est écrasé par une chaîne vide — vers une
