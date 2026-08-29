@@ -49,39 +49,10 @@ courier:
   # consécutifs d'un même expéditeur arrivés pendant cette fenêtre sont
   # fusionnés en un seul tour de conversation. 0s désactive, 2s par défaut.
   coalesce_window: 2s
-  providers:
-    whatsapp:
-      type: whatsapp
-      # Ce répertoire doit exister et être accessible en écriture à l'UID du
-      # conteneur (65532) avant le premier démarrage — voir
-      # docs/deployment.md §5.
-      session_path: /data/courier/whatsapp
-
-    # Autres plateformes disponibles — chaque fournisseur actif a ses
-    # origins et ses channels propres (voir docs/configuration.md).
-    # signal:
-    #   type: signal
-    #   account: "+33612345678"
-    #   address: tcp://127.0.0.1:7583   # daemon signal-cli en mode JSON-RPC
-    # discord:
-    #   type: discord
-    #   token: ${DISCORD_BOT_TOKEN}
-    # rocket:
-    #   type: rocket
-    #   server_url: https://chat.example.test
-    #   username: ${ROCKET_USERNAME}
-    #   password: ${ROCKET_PASSWORD}
-    # mail:
-    #   type: mail
-    #   imap:
-    #     address: imap.example.test:993
-    #     username: ${MAIL_USERNAME}
-    #     password: ${MAIL_PASSWORD}
-    #   smtp:
-    #     address: smtp.example.test:587
-    #     issuer: assistant@example.test
-    #     username: ${MAIL_USERNAME}
-    #     password: ${MAIL_PASSWORD}
+  # Les COMPTES de messagerie (WhatsApp, Signal, mail…) ne se déclarent
+  # plus ici : ils se créent dans l'administration (Canaux et
+  # plateformes), qui range leur configuration chiffrée en base. Un compte
+  # supprimé en ligne ne réapparaît jamais au redémarrage.
 
 # Serveur HTTP local de santé et de métriques. Doit rester activé pour que la
 # sonde de l'image (`automata healthcheck`) fonctionne — voir
@@ -92,7 +63,8 @@ observability:
 
 audio:
   enabled: true
-  transcription_client: transcription
+  # Le modèle de transcription se règle en ligne : rôle « transcription »
+  # de l'écran des modèles (effet au redémarrage).
   max_size: 20MiB
   timeout: 2m
   # Ne jamais activer ces deux options sans décision explicite : le plan
@@ -155,43 +127,12 @@ attachments:
   # pas la conversation.
   max_reply: 3
 
-# Clients de modèles. Cette section ne sert qu'au PREMIER démarrage : les
-# clients y sont alors copiés en base, qui fait ensuite autorité — ils
-# s'éditent dans l'administration (« Modèles »), et une organisation peut se
-# voir servir un modèle différent des autres. La section reste requise, car
-# c'est elle qui dit quel client sert quel rôle par défaut
-# (agents.<nom>.client), mais modifier un modèle ici n'a plus d'effet passé
-# le semis. Voir docs/models.md.
-llm_clients:
-  main:
-    provider: openai
-    model: ${MAIN_MODEL}
-    api_key: ${MAIN_API_KEY}
-    base_url: ${MAIN_BASE_URL}
-    # Budget de réflexion des modèles « reasoning », appliqué à tous les
-    # appels de ce client. Absent, le défaut du modèle s'applique.
-    # L'orchestrateur ne fait qu'aiguiller : sa réflexion se paie en attente
-    # sur chaque message, banalités comprises.
-    # reasoning:
-    #   effort: low
-
-  # base_url est obligatoire ici aussi, et se règle indépendamment de celui
-  # du client principal : tous les fournisseurs de complétion ne
-  # transcrivent pas l'audio, et l'inverse est vrai aussi.
-  transcription:
-    provider: openai
-    model: ${TRANSCRIPTION_MODEL}
-    api_key: ${TRANSCRIPTION_API_KEY}
-    base_url: ${TRANSCRIPTION_BASE_URL}
-
-# Clients de génération d'images (facultatif), référencés par
-# agents.<nom>.image_generation.client. base_url est facultative ici :
-# chaque provider embarque l'URL de son service.
-# image_clients:
-#   image:
-#     provider: openrouter
-#     model: google/gemini-3.1-flash-lite-image
-#     api_key: ${OPENROUTER_API_KEY}
+# Les modèles (fournisseur, modèle, clé d'API) ne se déclarent pas ici :
+# le catalogue vit en base et s'administre en ligne (/admin/llm-clients),
+# tout comme l'affectation d'un modèle à chaque agent et à chaque fonction
+# (« rôles de l'instance », surchargeables par organisation). Une instance
+# neuve se règle depuis l'administration au premier démarrage. Voir
+# docs/models.md.
 
 agents:
   # L'orchestrateur ne reçoit jamais les outils des serveurs MCP : il ne
@@ -199,7 +140,6 @@ agents:
   # mémoire). Voir PLAN.md §6.1.
   main:
     type: orchestrator
-    client: main
     system_prompt:
       file: ../prompts/main.md
     delegates:
@@ -250,7 +190,6 @@ agents:
     # de déléguer. Sans elle, il ne connaît du délégué que son nom, et un
     # petit modèle répond souvent qu'il ne sait pas faire.
     description: consulte et modifie l'agenda du foyer
-    client: main
     system_prompt:
       file: ../prompts/agenda.md
     mcp_servers:
@@ -272,7 +211,6 @@ agents:
   research:
     type: specialist
     description: cherche des informations à jour sur Internet et lit des pages web
-    client: main
     system_prompt:
       file: ../prompts/research.md
     mcp_servers:
@@ -287,7 +225,6 @@ agents:
   todo:
     type: specialist
     description: consulte et modifie les listes de tâches du foyer
-    client: main
     system_prompt:
       file: ../prompts/todo.md
     mcp_servers:
@@ -400,7 +337,6 @@ conversation:
   compaction:
     enabled: true
     # Un modèle économique suffit pour résumer.
-    client: main
     max_summary_chars: 2000
     # Extrait aussi les faits durables des messages condensés vers la
     # mémoire à long terme (portée de la conversation, jamais org).
@@ -427,7 +363,6 @@ memory:
   # pas sans limite.
   consolidation:
     enabled: true
-    client: main
     # Cadence cron (heure locale du serveur). Défaut : chaque nuit à 4h40.
     cron: "40 4 * * *"
     # En dessous de ce nombre de souvenirs, une portée est laissée intacte.

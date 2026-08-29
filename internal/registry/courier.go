@@ -16,30 +16,6 @@ import (
 	"github.com/bornholm/automata/internal/config"
 )
 
-// buildCourierProviders construit un courier.Provider réel pour chaque
-// fournisseur déclaré dans cfg.Courier.Providers.
-//
-// Tous les constructeurs sont paresseux (convention go-courier : aucune
-// connexion avant Listen/Send) : construire ici ne touche pas le réseau, et
-// une erreur de construction est toujours une erreur de configuration. Les
-// champs requis sont déjà vérifiés au chargement (validateCourierProviders,
-// mêmes structs) : le décodage ne peut échouer ici que si la configuration
-// n'est pas passée par Load, ce que les erreurs ci-dessous couvrent quand
-// même — jamais de panique sur une config construite à la main.
-func buildCourierProviders(cfg *config.Config) (map[string]courier.Provider, error) {
-	providers := make(map[string]courier.Provider, len(cfg.Courier.Providers))
-
-	for name, cp := range cfg.Courier.Providers {
-		provider, err := buildCourierProvider(cp)
-		if err != nil {
-			return nil, fmt.Errorf("fournisseur courier %q: %w", name, err)
-		}
-		providers[name] = provider
-	}
-
-	return providers, nil
-}
-
 func buildCourierProvider(cp config.CourierProvider) (courier.Provider, error) {
 	switch cp.Type {
 	case "whatsapp":

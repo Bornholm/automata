@@ -2,9 +2,9 @@ package llmclients
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
-	"maps"
-	"sync"
+	"sort"
 
 	"github.com/bornholm/genai/llm"
 
@@ -12,26 +12,31 @@ import (
 	"github.com/bornholm/automata/internal/model"
 )
 
-// Resolver choisit le client d'un rôle pour une organisation donnée : la
-// surcharge de l'organisation si elle en a posé une, le défaut de
-// l'instance sinon. Dans les deux cas le client vient du pool, donc une
-// modification faite dans l'interface d'administration prend effet au tour
-// suivant, sans redémarrage.
+// Resolver choisit le client d'un rôle : la surcharge de l'organisation si
+// elle en a posé une, le défaut de l'instance sinon — les deux vivent dans
+// la MÊME table (org_agent_clients), le défaut d'instance étant la ligne
+// dont org_id est vide (migration 0023). Le YAML ne participe plus à la
+// résolution : la base fait foi, et un rôle sans défaut est une erreur
+// nommée, pas un repli silencieux.
 //
-// Les rôles sont les noms d'agents déclarés, plus les rôles système
-// RolePlugins, RolePluginsVision et RoleCompaction.
+// Dans tous les cas le client vient du pool : une modification faite dans
+// l'administration prend effet au tour suivant, sans redémarrage.
 type Resolver struct {
-	pool  *Pool
-	store *Store
-	// defaults associe un rôle au client que la configuration lui donne :
-	// c'est le YAML qui dit encore quel client sert quel rôle par défaut,
-	// seul le CONTENU des clients ayant migré en base.
-	mu       sync.RWMutex
-	defaults map[string]string
-	logger   *slog.Logger
+	pool   *Pool
+	store  *Store
+	logger *slog.Logger
 	// images sert les rôles de génération d'images ; nil = aucune
-	// résolution d'images (l'appelant garde son générateur de démarrage).
+	// résolution d'images.
 	images *ImagePool
+}
+
+// NewResolver construit un résolveur.
+func NewResolver(pool *Pool, store *Store, logger *slog.Logger) *Resolver {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	return &Resolver{pool: pool, store: store, logger: logger}
 }
 
 // WithImagePool branche le pool des générateurs d'images. Retourne r pour
@@ -41,20 +46,10 @@ func (r *Resolver) WithImagePool(pool *ImagePool) *Resolver {
 	return r
 }
 
-// ResolveImageClient retourne le générateur d'images du rôle pour cette
-// organisation, selon la même préséance que ResolveClient.
-func (r *Resolver) ResolveImageClient(ctx context.Context, role string, orgID model.OrgID) (llm.ImageGenerationClient, error) {
-	if r.images == nil {
-		return nil, ErrUnknownClient
-	}
-
-	name := r.clientNameFor(ctx, role, orgID)
-	if name == "" {
-		return nil, ErrUnknownClient
-	}
-
-	return r.images.Get(ctx, name)
-}
+// ErrNoDefault signale un rôle sans défaut d'instance : la fonctionnalité
+// qui en dépend doit se désactiver avec un message actionnable, jamais
+// paniquer. errors.Is le distingue d'une vraie panne de base.
+var ErrNoDefault = fmt.Errorf("llmclients: no client configured for this role")
 
 // Rôles système, distincts des noms d'agents déclarés dans la
 // configuration.
@@ -62,10 +57,19 @@ const (
 	RolePlugins       = "plugins"
 	RolePluginsVision = "plugins.vision"
 	RoleCompaction    = "compaction"
+	RoleTranscription = "transcription"
+	RoleConsolidation = "consolidation"
+	// RoleRetrieval sert la reformulation HyDE de la recherche mémoire.
+	RoleRetrieval = "retrieval"
 	// RoleImagePrefix préfixe le rôle de génération d'images d'un agent :
 	// « image:imagine ». Un agent a deux modèles distincts — celui qui
 	// converse et celui qui dessine.
 	RoleImagePrefix = "image:"
+	// RoleEmbeddingsPrefix préfixe le rôle d'embeddings d'un index
+	// sémantique : « embeddings:semantic ». VERROUILLÉ après le premier
+	// démarrage réussi (voir la sentinelle dans internal/registry/memory.go) :
+	// changer le modèle rendrait les vecteurs déjà écrits incomparables.
+	RoleEmbeddingsPrefix = "embeddings:"
 )
 
 // ImageRole compose le rôle de génération d'images d'un agent.
@@ -73,111 +77,114 @@ func ImageRole(agentName string) string {
 	return RoleImagePrefix + agentName
 }
 
-// DefaultRoles dresse la table « rôle → client par défaut » à partir de la
-// configuration : un rôle par agent déclaré, plus les rôles système. C'est
-// le YAML qui garde ce câblage ; seul le contenu des clients a migré en
-// base.
-//
-// Les clients de la mémoire n'y figurent pas volontairement : le modèle
-// d'embeddings d'un index ne peut pas changer sans rendre incomparables les
-// vecteurs déjà écrits, et la consolidation comme la reformulation HyDE
-// n'ont pas de sens à faire varier par organisation.
-func DefaultRoles(cfg *config.Config) map[string]string {
-	roles := make(map[string]string, len(cfg.Agents)+3)
-
-	for name, agentCfg := range cfg.Agents {
-		if agentCfg.Client != "" {
-			roles[name] = agentCfg.Client
-		}
-		if client := agentCfg.ImageGeneration.Client; client != "" {
-			roles[ImageRole(name)] = client
-		}
-	}
-
-	if name := cfg.Plugins.Client; name != "" {
-		roles[RolePlugins] = name
-	}
-	if name := cfg.Plugins.VisionClient; name != "" {
-		roles[RolePluginsVision] = name
-	}
-	if name := cfg.Conversation.Compaction.Client; name != "" {
-		roles[RoleCompaction] = name
-	}
-
-	return roles
+// EmbeddingsRole compose le rôle d'embeddings d'un index sémantique.
+func EmbeddingsRole(indexID string) string {
+	return RoleEmbeddingsPrefix + indexID
 }
 
-// NewResolver construit un résolveur. defaults associe chaque rôle au nom
-// du client que la configuration lui attribue.
-func NewResolver(pool *Pool, store *Store, defaults map[string]string, logger *slog.Logger) *Resolver {
-	if logger == nil {
-		logger = slog.Default()
+// Roles dresse la liste des rôles que cette instance peut configurer,
+// d'après ce que la configuration DÉCLARE (agents, index, fonctionnalités
+// actives) — jamais d'après la base : un rôle orphelin en base (agent
+// renommé) est simplement ignoré.
+//
+// Les noms de clients, eux, ne viennent plus jamais du YAML.
+func Roles(cfg *config.Config) []string {
+	var roles []string
+
+	for name, agentCfg := range cfg.Agents {
+		roles = append(roles, name)
+		if agentCfg.ImageGeneration {
+			roles = append(roles, ImageRole(name))
+		}
 	}
 
-	copied := make(map[string]string, len(defaults))
-	maps.Copy(copied, defaults)
+	if cfg.Plugins.Enabled {
+		roles = append(roles, RolePlugins, RolePluginsVision)
+	}
+	if cfg.Conversation.Compaction.Enabled {
+		roles = append(roles, RoleCompaction)
+	}
+	if cfg.Audio.Enabled {
+		roles = append(roles, RoleTranscription)
+	}
+	if cfg.Memory.Consolidation.Enabled {
+		roles = append(roles, RoleConsolidation)
+	}
+	if cfg.Memory.Retrieval.Profile == "balanced" {
+		roles = append(roles, RoleRetrieval)
+	}
+	for _, index := range cfg.Memory.Indexes {
+		if index.Type == "sqlitevec" {
+			roles = append(roles, EmbeddingsRole(index.ID))
+		}
+	}
 
-	return &Resolver{pool: pool, store: store, defaults: copied, logger: logger}
+	sort.Strings(roles)
+
+	return roles
 }
 
 // ResolveClient retourne le client à utiliser pour ce rôle et cette
 // organisation.
 //
 // Une organisation vide (exécution hors contexte d'organisation) ou sans
-// surcharge obtient le client par défaut du rôle. L'erreur retournée n'est
-// jamais fatale pour l'appelant : un agent qui ne peut pas résoudre son
-// client garde celui construit au démarrage, car une base illisible ne doit
-// pas rendre l'assistant muet.
+// surcharge obtient le défaut de l'instance. Aucun défaut : ErrNoDefault,
+// avec le rôle dans le message — l'appelant décide s'il dégrade ou s'il
+// fait échouer le tour, jamais en silence.
 func (r *Resolver) ResolveClient(ctx context.Context, role string, orgID model.OrgID) (Resolved, error) {
-	name := r.clientNameFor(ctx, role, orgID)
-	if name == "" {
-		return Resolved{}, ErrUnknownClient
+	name, err := r.clientNameFor(ctx, role, orgID)
+	if err != nil {
+		return Resolved{}, err
 	}
 
 	return r.pool.Get(ctx, name)
 }
 
+// ResolveImageClient retourne le générateur d'images du rôle pour cette
+// organisation, selon la même préséance que ResolveClient.
+func (r *Resolver) ResolveImageClient(ctx context.Context, role string, orgID model.OrgID) (llm.ImageGenerationClient, error) {
+	if r.images == nil {
+		return nil, fmt.Errorf("%w: %q (image pool not wired)", ErrNoDefault, role)
+	}
+
+	name, err := r.clientNameFor(ctx, role, orgID)
+	if err != nil {
+		return nil, err
+	}
+
+	return r.images.Get(ctx, name)
+}
+
 // clientNameFor applique la règle de préséance : surcharge de
-// l'organisation, puis défaut de l'instance.
-func (r *Resolver) clientNameFor(ctx context.Context, role string, orgID model.OrgID) string {
+// l'organisation, puis défaut de l'instance (org_id vide).
+func (r *Resolver) clientNameFor(ctx context.Context, role string, orgID model.OrgID) (string, error) {
 	if orgID != "" {
 		name, found, err := r.store.OrgChoice(ctx, string(orgID), role)
 		if err != nil {
-			// On journalise et on retombe sur le défaut : perdre la
-			// surcharge est préférable à perdre la conversation.
+			// On journalise et on retombe sur le défaut d'instance :
+			// perdre la surcharge est préférable à perdre la conversation.
 			r.logger.WarnContext(ctx, "llmclients: lecture du modèle de l'organisation en échec",
 				"org", string(orgID), "role", role, "error", err)
 		} else if found && name != "" {
-			return name
+			return name, nil
 		}
 	}
 
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	return r.defaults[role]
-}
-
-// DefaultFor retourne le client que la configuration attribue à ce rôle,
-// sans considérer d'organisation. Sert aux écrans d'administration, pour
-// dire à quoi revient l'option « défaut de l'instance ».
-func (r *Resolver) DefaultFor(role string) string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	return r.defaults[role]
-}
-
-// Roles retourne les rôles connus du résolveur, c'est-à-dire ceux qu'une
-// organisation peut surcharger.
-func (r *Resolver) Roles() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	roles := make([]string, 0, len(r.defaults))
-	for role := range r.defaults {
-		roles = append(roles, role)
+	name, found, err := r.store.OrgChoice(ctx, "", role)
+	if err != nil {
+		return "", fmt.Errorf("llmclients: lecture du défaut d'instance du rôle %q: %w", role, err)
+	}
+	if !found || name == "" {
+		return "", fmt.Errorf("%w: %q — set an instance default in the administration (Modèles)", ErrNoDefault, role)
 	}
 
-	return roles
+	return name, nil
+}
+
+// InstanceDefault retourne le client par défaut de l'instance pour un rôle,
+// ou ("", nil) s'il n'est pas configuré. Sert aux écrans d'administration
+// et aux composants construits au démarrage.
+func (r *Resolver) InstanceDefault(ctx context.Context, role string) (string, error) {
+	name, _, err := r.store.OrgChoice(ctx, "", role)
+	return name, err
 }

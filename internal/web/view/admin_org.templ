@@ -107,6 +107,51 @@ type OrgModelRole struct {
 	// conversation, ou ceux de génération d'images — les deux familles ne
 	// sont pas interchangeables.
 	Options []OrgModelOption
+	// InstanceView : la ligne édite le DÉFAUT DE L'INSTANCE lui-même
+	// (écran /admin/llm-clients). L'option vide devient « non configuré »,
+	// en alerte : un rôle sans modèle est une panne en puissance, pas un
+	// héritage.
+	InstanceView bool
+}
+
+// modelRoleSelect rend la liste déroulante d'un rôle : partagée entre
+// l'onglet Modèles d'une organisation et l'écran des rôles de l'instance.
+templ modelRoleSelect(role OrgModelRole) {
+	<select name={ "role:" + role.Role } class="h-[38px] w-full shrink-0 rounded-lg border border-line px-3 text-sm outline-none focus:border-brand sm:w-[280px]">
+		if role.InstanceView {
+			<option value="" selected?={ role.Chosen == "" }>— non configuré</option>
+		} else {
+			<option value="" selected?={ role.Chosen == "" }>
+				Défaut de l'instance
+				if role.DefaultModel != "" {
+					&#32;({ role.DefaultModel })
+				}
+			</option>
+		}
+		for _, option := range role.Options {
+			<option value={ option.Name } selected?={ role.Chosen == option.Name }>{ option.Name } — { option.Model }</option>
+		}
+	</select>
+}
+
+// ModelRoleRows rend les lignes de rôles d'un formulaire de modèles.
+templ ModelRoleRows(roles []OrgModelRole) {
+	<div class="mt-4 flex flex-col gap-3.5">
+		for _, role := range roles {
+			<label class="flex flex-col gap-1.5 border-b border-line-3 pb-3.5 last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:gap-4">
+				<span class="min-w-0 flex-1">
+					<span class="flex items-center gap-2 text-sm font-medium text-text">
+						{ role.Label }
+						if role.InstanceView && role.Chosen == "" {
+							@StatusChip(Chip{Label: "Non configuré", Tone: "warn"})
+						}
+					</span>
+					<span class="block text-[13px] leading-snug text-text-4">{ role.Hint }</span>
+				</span>
+				@modelRoleSelect(role)
+			</label>
+		}
+	</div>
 }
 
 // OrgModelOption est une entrée du catalogue proposée dans les listes.
@@ -440,27 +485,7 @@ templ orgModelsTab(page OrgPage) {
 			if len(page.ModelRoles) == 0 {
 				<div class="mt-3.5 text-sm text-text-4">Aucun rôle à régler : le catalogue de modèles n'est pas disponible.</div>
 			} else {
-				<div class="mt-4 flex flex-col gap-3.5">
-					for _, role := range page.ModelRoles {
-						<label class="flex flex-col gap-1.5 border-b border-line-3 pb-3.5 last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:gap-4">
-							<span class="min-w-0 flex-1">
-								<span class="block text-sm font-medium text-text">{ role.Label }</span>
-								<span class="block text-[13px] leading-snug text-text-4">{ role.Hint }</span>
-							</span>
-							<select name={ "role:" + role.Role } class="h-[38px] w-full shrink-0 rounded-lg border border-line px-3 text-sm outline-none focus:border-brand sm:w-[280px]">
-								<option value="" selected?={ role.Chosen == "" }>
-									Défaut de l'instance
-									if role.DefaultModel != "" {
-										&#32;({ role.DefaultModel })
-									}
-								</option>
-								for _, option := range role.Options {
-									<option value={ option.Name } selected?={ role.Chosen == option.Name }>{ option.Name } — { option.Model }</option>
-								}
-							</select>
-						</label>
-					}
-				</div>
+				@ModelRoleRows(page.ModelRoles)
 			}
 		</div>
 		<div>

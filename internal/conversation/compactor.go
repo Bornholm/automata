@@ -106,9 +106,10 @@ func (c *Compactor) WithClientResolver(resolver ModelResolver) *Compactor {
 	return c
 }
 
-// clientFor retourne le modèle à utiliser pour cette organisation. Une
-// résolution en échec n'est jamais fatale : la compaction repart sur le
-// client de la configuration plutôt que de laisser l'historique grossir.
+// clientFor retourne le modèle à utiliser pour cette organisation, ou nil
+// quand aucun n'est configuré : la compaction du tour est alors SAUTÉE avec
+// une trace — l'historique grossit, la conversation continue. Le client du
+// constructeur ne sert plus qu'aux tests, qui n'ont pas de résolveur.
 func (c *Compactor) clientFor(ctx context.Context, orgID model.OrgID) llm.ChatCompletionClient {
 	if c.clientResolver == nil {
 		return c.client
@@ -116,8 +117,9 @@ func (c *Compactor) clientFor(ctx context.Context, orgID model.OrgID) llm.ChatCo
 
 	resolved, err := c.clientResolver.ResolveClient(ctx, llmclients.RoleCompaction, orgID)
 	if err != nil {
-		c.logger.WarnContext(ctx, "conversation: modèle de compaction non résolu, repli sur la configuration",
-			"org", string(orgID), "error", err)
+		c.logger.WarnContext(ctx, "conversation: compaction sautée, modèle non résolu",
+			"org", string(orgID), "error", err,
+			"remède", "réglez le rôle compaction dans l'administration (Modèles)")
 		return c.client
 	}
 
@@ -238,7 +240,15 @@ func (c *Compactor) CompactIfNeeded(ctx context.Context, identity model.Executio
 		return nil
 	}
 
-	updated, err := c.summarize(ctx, c.clientFor(ctx, conv.OrgID), summary.Summary, batch)
+	client := c.clientFor(ctx, conv.OrgID)
+	if client == nil {
+		// Aucun modèle configuré pour la compaction : on n'abandonne pas le
+		// tour, on le laisse passer — le lot sera repris à la prochaine
+		// occasion, une fois le rôle réglé.
+		return nil
+	}
+
+	updated, err := c.summarize(ctx, client, summary.Summary, batch)
 	if err != nil {
 		return fmt.Errorf("conversation: résumé de la conversation %q: %w", conversationID, err)
 	}
@@ -380,7 +390,12 @@ func (c *Compactor) extractFacts(ctx context.Context, identity model.ExecutionId
 		fmt.Fprintf(&b, "%s (%s): %s\n", m.Role, m.PrincipalID, redactProfileLinks(m.Content))
 	}
 
-	response, err := c.clientFor(ctx, conv.OrgID).ChatCompletion(ctx,
+	factsClient := c.clientFor(ctx, conv.OrgID)
+	if factsClient == nil {
+		return nil
+	}
+
+	response, err := factsClient.ChatCompletion(ctx,
 		llm.WithMessages(
 			llm.NewMessage(llm.RoleSystem, factExtractionPrompt),
 			llm.NewMessage(llm.RoleUser, b.String()),

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -240,17 +241,22 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 	agentName := a.spec.PluginName
 	ctx = withUsageAttribution(ctx, req.Identity, "plugin:"+agentName)
 
-	// Modèles du tour : ceux que l'organisation a choisis si elle en a
-	// choisi, ceux de la configuration sinon. Le client de vision est résolu
-	// séparément — il a son propre rôle au catalogue, et rien n'impose que
-	// les deux organisations le règlent de la même façon.
+	// Modèles du tour : résolus par le catalogue (défaut d'instance,
+	// surchargé par organisation). Le client de vision a son propre rôle —
+	// rien n'impose que deux organisations le règlent de la même façon —
+	// et son absence dégrade (pas de view_file), jamais n'échoue.
 	client, modelTextOnly := a.client, a.textOnly
-	if resolved, ok := a.binding.resolve(ctx, req.Identity.OrgID); ok {
+	if resolved, resolveErr := a.binding.resolve(ctx, req.Identity.OrgID); resolveErr == nil {
 		client, modelTextOnly = resolved.Client, !resolved.SupportsVision
+	} else if !errors.Is(resolveErr, errNoResolver) {
+		return delegation.Result{}, fmt.Errorf("plugin agent %q: %w", agentName, resolveErr)
+	}
+	if client == nil {
+		return delegation.Result{}, fmt.Errorf("plugin agent %q: no model is configured for the plugins role — set an instance default in the administration (Modèles)", agentName)
 	}
 
 	visionClient := a.vision
-	if resolved, ok := a.visionBinding.resolve(ctx, req.Identity.OrgID); ok {
+	if resolved, resolveErr := a.visionBinding.resolve(ctx, req.Identity.OrgID); resolveErr == nil {
 		visionClient = resolved.Client
 	}
 

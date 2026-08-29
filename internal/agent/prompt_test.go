@@ -13,8 +13,7 @@ import (
 func testAgentConfigs() map[string]config.Agent {
 	return map[string]config.Agent{
 		"main": {
-			Type:   config.AgentTypeOrchestrator,
-			Client: "main",
+			Type: config.AgentTypeOrchestrator,
 			SystemPrompt: config.SystemPrompt{
 				Content: "Tu es Automata, l'assistant généraliste du foyer, méthodique et concis.",
 			},
@@ -25,8 +24,7 @@ func testAgentConfigs() map[string]config.Agent {
 			},
 		},
 		"agenda": {
-			Type:   config.AgentTypeSpecialist,
-			Client: "main",
+			Type: config.AgentTypeSpecialist,
 			SystemPrompt: config.SystemPrompt{
 				Content: "Tu es l'agent Agenda, spécialisé dans la gestion du calendrier familial.",
 			},

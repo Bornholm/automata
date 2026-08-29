@@ -31,7 +31,9 @@ func TestMain(m *testing.M) {
 
 	build := exec.Command("go", "build", "-o", echoBinary, ".")
 	build.Dir = "testdata/plugin-echo"
-	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod")
+	// GOWORK=off : le plugin d'essai est son propre module, hors du
+	// go.work du dépôt — et -mod=mod est interdit en mode workspace.
+	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOWORK=off")
 	if out, err := build.CombinedOutput(); err != nil {
 		panic("compilation du plugin d'essai: " + err.Error() + "\n" + string(out))
 	}

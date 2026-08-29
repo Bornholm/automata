@@ -20,12 +20,18 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		Version:   fmt.Sprintf("configuration version %d", s.cfg.Version),
 	}
 
-	// Catalogue des modèles : lu une fois, il sert à la fois la section
-	// des agents (quel modèle sert chacun) et la sienne.
-	var catalog []persistence.LLMClient
+	// Catalogue des modèles et défauts d'instance : lus une fois, ils
+	// servent la section des agents (quel modèle sert chacun) et la leur.
+	var (
+		catalog          []persistence.LLMClient
+		instanceDefaults map[string]string
+	)
 	if !s.withTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		catalog, err = s.llmClients.List(r.Context(), tx, "")
+		if catalog, err = s.llmClients.List(r.Context(), tx, ""); err != nil {
+			return err
+		}
+		instanceDefaults, err = s.orgClients.ListByOrg(r.Context(), tx, "")
 		return err
 	}) {
 		return
@@ -51,9 +57,11 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 	for _, name := range agentNames {
 		agentCfg := s.cfg.Agents[name]
 
-		value := models[agentCfg.Client]
+		// Le modèle d'un agent est le défaut d'instance de son rôle,
+		// réglé en ligne — le fichier ne le connaît plus.
+		value := models[instanceDefaults[name]]
 		if value == "" {
-			value = agentCfg.Client
+			value = "non configuré"
 		}
 
 		hint := agentCfg.Description

@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -231,6 +233,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	// Catalogue de modèles : la base fait autorité, une modification
 	// s'applique au message suivant (voir internal/llmclients).
 	mux.HandleFunc("GET /admin/llm-clients", admin(s.handleLLMClients))
+	mux.HandleFunc("POST /admin/llm-clients/roles", admin(s.handleInstanceModels))
 	mux.HandleFunc("GET /admin/llm-clients/new", admin(s.handleLLMClientNewForm))
 	mux.HandleFunc("POST /admin/llm-clients", admin(s.handleLLMClientCreate))
 	mux.HandleFunc("GET /admin/llm-clients/{name}", admin(s.handleLLMClientForm))
@@ -391,9 +394,26 @@ func (s *Server) withTx(w http.ResponseWriter, r *http.Request, fn func(tx *sql.
 	return true
 }
 
-// sidebarPlatforms liste les plateformes configurées pour la sidebar.
+// sidebarPlatforms liste les comptes de messagerie enregistrés, pour la
+// sidebar : l'état vivant du gestionnaire, jamais le fichier — les comptes
+// se gèrent en ligne.
 func (s *Server) sidebarPlatforms() []view.SidebarPlatform {
-	return configuredPlatforms(s.cfg)
+	if s.platformManager == nil {
+		return nil
+	}
+
+	var platforms []view.SidebarPlatform
+	for name, status := range s.platformManager.Statuses() {
+		platforms = append(platforms, view.SidebarPlatform{
+			Type: status.Type,
+			Name: platformDisplayName(status.Type, name),
+		})
+	}
+	slices.SortFunc(platforms, func(a, b view.SidebarPlatform) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+
+	return platforms
 }
 
 // revealStash conserve quelques secondes les secrets à afficher une seule

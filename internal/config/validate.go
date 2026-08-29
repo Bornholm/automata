@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -34,8 +33,6 @@ func Validate(cfg *Config, baseDir string) error {
 
 	errs = append(errs, validateVersion(cfg)...)
 	errs = append(errs, validateOrganizations(cfg)...)
-	errs = append(errs, validateLLMClients(cfg)...)
-	errs = append(errs, validateImageClients(cfg)...)
 	errs = append(errs, validateAgents(cfg)...)
 	errs = append(errs, validateMCPServers(cfg)...)
 	errs = append(errs, validateAudio(cfg)...)
@@ -49,87 +46,11 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateWeb(cfg)...)
 	errs = append(errs, validateBackup(cfg)...)
 	errs = append(errs, validateCourier(cfg)...)
-	errs = append(errs, validateCourierProviders(cfg)...)
 	errs = append(errs, validateConversation(cfg)...)
 	errs = append(errs, validateStorage(cfg)...)
 	errs = append(errs, validatePlugins(cfg)...)
 
 	return joinErrors(errs)
-}
-
-// validReasoningEfforts énumère les niveaux de réflexion acceptés. La liste
-// est dupliquée depuis internal/agent (qui les traduit en options genai)
-// plutôt qu'importée : internal/config ne dépend d'aucun paquet applicatif,
-// et l'écart éventuel est couvert par un test.
-var validReasoningEfforts = []string{"none", "minimal", "low", "medium", "high", "xhigh"}
-
-// validateLLMClients vérifie que chaque client déclaré a de quoi appeler un
-// fournisseur.
-//
-// Depuis la migration 0022, ces valeurs ne servent qu'au SEMIS initial du
-// catalogue (internal/llmclients.Seed) : passé le premier démarrage, c'est
-// la base qui fait autorité et l'administration qui édite. La section reste
-// néanmoins requise et validée, car c'est elle qui dit quel client sert
-// quel rôle par défaut — agents.<nom>.client s'y réfère par son nom.
-//
-// base_url est exigé, et non déduit d'un défaut : une valeur manquante
-// enverrait les requêtes chez un autre fournisseur que celui de la clé, ou
-// — quand le défaut du provider est écrasé par une chaîne vide — vers une
-// URL relative qui n'échoue qu'au premier appel réel. C'est exactement le
-// genre de panne qui se découvre des semaines après le déploiement, au
-// premier message vocal reçu : mieux vaut refuser de démarrer.
-func validateLLMClients(cfg *Config) []error {
-	var errs []error
-
-	for _, name := range sortedKeys(cfg.LLMClients) {
-		client := cfg.LLMClients[name]
-
-		if client.Provider == "" {
-			errs = append(errs, fmt.Errorf("llm_clients.%s.provider: requis", name))
-		}
-		if client.Model == "" {
-			errs = append(errs, fmt.Errorf("llm_clients.%s.model: requis", name))
-		}
-		if client.APIKey == "" {
-			errs = append(errs, fmt.Errorf("llm_clients.%s.api_key: requis", name))
-		}
-		if client.BaseURL == "" {
-			errs = append(errs, fmt.Errorf("llm_clients.%s.base_url: requis (point d'entrée du fournisseur, ex: https://api.openai.com/v1)", name))
-		}
-
-		if client.Reasoning != nil && client.Reasoning.Effort != "" && !slices.Contains(validReasoningEfforts, client.Reasoning.Effort) {
-			errs = append(errs, fmt.Errorf("llm_clients.%s.reasoning.effort: %q inconnu (valeurs: %s)", name, client.Reasoning.Effort, strings.Join(validReasoningEfforts, ", ")))
-		}
-	}
-
-	return errs
-}
-
-// validateImageClients vérifie les clients de génération d'images. base_url
-// reste facultative, contrairement aux llm_clients : chaque provider
-// embarque l'URL de son propre service.
-func validateImageClients(cfg *Config) []error {
-	var errs []error
-
-	for _, name := range sortedKeys(cfg.ImageClients) {
-		client := cfg.ImageClients[name]
-
-		switch client.Provider {
-		case "openai", "openrouter", "minimax":
-		case "":
-			errs = append(errs, fmt.Errorf("image_clients.%s.provider: requis", name))
-		default:
-			errs = append(errs, fmt.Errorf("image_clients.%s.provider: %q non supporté (providers: \"openai\", \"openrouter\", \"minimax\")", name, client.Provider))
-		}
-		if client.Model == "" {
-			errs = append(errs, fmt.Errorf("image_clients.%s.model: requis", name))
-		}
-		if client.APIKey == "" {
-			errs = append(errs, fmt.Errorf("image_clients.%s.api_key: requis", name))
-		}
-	}
-
-	return errs
 }
 
 // validateConversation vérifie la section conversation (historique et
@@ -150,12 +71,6 @@ func validateConversation(cfg *Config) []error {
 		return errs
 	}
 
-	if compaction.Client == "" {
-		errs = append(errs, fmt.Errorf("conversation.compaction.client: requis lorsque conversation.compaction.enabled est vrai"))
-	} else if _, ok := cfg.LLMClients[compaction.Client]; !ok {
-		errs = append(errs, fmt.Errorf("conversation.compaction.client: client llm %q introuvable dans llm_clients", compaction.Client))
-	}
-
 	if compaction.MaxFacts < 0 {
 		errs = append(errs, fmt.Errorf("conversation.compaction.max_facts: ne peut pas être négatif (valeur actuelle: %d)", compaction.MaxFacts))
 	}
@@ -163,10 +78,6 @@ func validateConversation(cfg *Config) []error {
 	return errs
 }
 
-// validateCourier vérifie la fenêtre de coalescence des rafales. Une valeur
-// négative n'a pas de sens, et une fenêtre de plus de 30 secondes ferait
-// passer l'assistant pour muet : chaque tour attend au moins la fenêtre
-// entière avant de traiter.
 // validateWeb vérifie la section web (serveur d'administration et de
 // profil). Ne s'applique que si le serveur est activé : une section absente
 // est valide et ne démarre rien.
@@ -191,11 +102,6 @@ func validateWeb(cfg *Config) []error {
 	}
 	if cfg.Web.Admin.PasswordHash == "" {
 		errs = append(errs, fmt.Errorf("web.admin.password_hash: requis (générer avec \"automata web hash-password\")"))
-	}
-	if cfg.Web.MailProvider != "" {
-		if _, ok := cfg.Courier.Providers[cfg.Web.MailProvider]; !ok {
-			errs = append(errs, fmt.Errorf("web.mail_provider: provider courier %q introuvable dans courier.providers", cfg.Web.MailProvider))
-		}
 	}
 	for i, pack := range cfg.Web.Credits.Packs {
 		if pack.Credits <= 0 {
@@ -241,6 +147,10 @@ func validateBackup(cfg *Config) []error {
 	return errs
 }
 
+// validateCourier vérifie la fenêtre de coalescence des rafales. Une valeur
+// négative n'a pas de sens, et une fenêtre de plus de 30 secondes ferait
+// passer l'assistant pour muet : chaque tour attend au moins la fenêtre
+// entière avant de traiter.
 func validateCourier(cfg *Config) []error {
 	if cfg.Courier.CoalesceWindow == nil {
 		return nil
@@ -301,12 +211,6 @@ func validateAgents(cfg *Config) []error {
 			errs = append(errs, fmt.Errorf("%s.type: valeur invalide %q (attendu orchestrator|specialist)", prefix, agent.Type))
 		}
 
-		if agent.Client == "" {
-			errs = append(errs, fmt.Errorf("%s.client: requis", prefix))
-		} else if _, ok := cfg.LLMClients[agent.Client]; !ok {
-			errs = append(errs, fmt.Errorf("%s.client: client llm inconnu %q", prefix, agent.Client))
-		}
-
 		errs = append(errs, validateSystemPrompt(prefix, agent.SystemPrompt)...)
 		errs = append(errs, validateSystemPromptOverrides(cfg, prefix, agent.SystemPrompt)...)
 
@@ -322,13 +226,8 @@ func validateAgents(cfg *Config) []error {
 			}
 		}
 
-		if client := agent.ImageGeneration.Client; client != "" {
-			if agent.Type != AgentTypeSpecialist {
-				errs = append(errs, fmt.Errorf("%s.image_generation: réservé aux agents specialist (l'orchestrateur délègue, il ne génère pas)", prefix))
-			}
-			if _, ok := cfg.ImageClients[client]; !ok {
-				errs = append(errs, fmt.Errorf("%s.image_generation.client: client d'images inconnu %q (déclarer dans image_clients)", prefix, client))
-			}
+		if agent.ImageGeneration && agent.Type != AgentTypeSpecialist {
+			errs = append(errs, fmt.Errorf("%s.image_generation: réservé aux agents specialist (l'orchestrateur délègue, il ne génère pas)", prefix))
 		}
 
 		if agent.RequiresAttachments && agent.Type != AgentTypeSpecialist {
@@ -551,15 +450,6 @@ func validateAudio(cfg *Config) []error {
 
 	if !cfg.Audio.Enabled {
 		return nil
-	}
-
-	if cfg.Audio.TranscriptionClient == "" {
-		errs = append(errs, fmt.Errorf("audio.transcription_client: requis lorsque audio.enabled est vrai"))
-		return errs
-	}
-
-	if _, ok := cfg.LLMClients[cfg.Audio.TranscriptionClient]; !ok {
-		errs = append(errs, fmt.Errorf("audio.transcription_client: client llm inconnu %q", cfg.Audio.TranscriptionClient))
 	}
 
 	return errs
@@ -992,11 +882,8 @@ func validateMemory(cfg *Config) []error {
 		switch idx.Type {
 		case "", "bleve":
 		case "sqlitevec":
-			if idx.Client == "" {
-				errs = append(errs, fmt.Errorf("%s.client: requis pour le type \"sqlitevec\" (client d'embeddings)", prefix))
-			} else if _, ok := cfg.LLMClients[idx.Client]; !ok {
-				errs = append(errs, fmt.Errorf("%s.client: client llm %q introuvable dans llm_clients", prefix, idx.Client))
-			}
+			// Le client d'embeddings se règle en ligne (rôle
+			// « embeddings:<id> ») : rien à valider ici.
 		default:
 			errs = append(errs, fmt.Errorf("%s.type: %q non supporté (types: \"bleve\", \"sqlitevec\")", prefix, idx.Type))
 		}
@@ -1006,11 +893,7 @@ func validateMemory(cfg *Config) []error {
 	switch retrieval.Profile {
 	case "", "fast":
 	case "balanced":
-		if retrieval.Client == "" {
-			errs = append(errs, fmt.Errorf("memory.retrieval.client: requis lorsque memory.retrieval.profile vaut \"balanced\" (étape HyDE)"))
-		} else if _, ok := cfg.LLMClients[retrieval.Client]; !ok {
-			errs = append(errs, fmt.Errorf("memory.retrieval.client: client llm %q introuvable dans llm_clients", retrieval.Client))
-		}
+		// Le modèle HyDE se règle en ligne (rôle « retrieval »).
 	default:
 		errs = append(errs, fmt.Errorf("memory.retrieval.profile: %q non supporté (profils: \"fast\", \"balanced\")", retrieval.Profile))
 	}
@@ -1021,12 +904,6 @@ func validateMemory(cfg *Config) []error {
 	}
 
 	if consolidation.Enabled {
-		if consolidation.Client == "" {
-			errs = append(errs, fmt.Errorf("memory.consolidation.client: requis lorsque memory.consolidation.enabled est vrai"))
-		} else if _, ok := cfg.LLMClients[consolidation.Client]; !ok {
-			errs = append(errs, fmt.Errorf("memory.consolidation.client: client llm %q introuvable dans llm_clients", consolidation.Client))
-		}
-
 		if consolidation.Cron != "" {
 			if _, err := cron.ParseStandard(consolidation.Cron); err != nil {
 				errs = append(errs, fmt.Errorf("memory.consolidation.cron: expression cron invalide %q: %w", consolidation.Cron, err))
@@ -1156,9 +1033,8 @@ func validateStorage(cfg *Config) []error {
 	return nil
 }
 
-// validatePlugins vérifie la section plugins. Le client LLM des
-// sous-agents est exigé dès l'activation : sans lui, un plugin déclarant
-// un sous-agent échouerait au premier tour, bien après le déploiement.
+// validatePlugins vérifie la section plugins. Le modèle des sous-agents se
+// règle en ligne (rôle « plugins ») : rien à exiger ici.
 func validatePlugins(cfg *Config) []error {
 	if !cfg.Plugins.Enabled {
 		return nil
@@ -1168,16 +1044,6 @@ func validatePlugins(cfg *Config) []error {
 
 	if cfg.Plugins.Dir == "" {
 		errs = append(errs, fmt.Errorf("plugins.dir: requis quand plugins.enabled est vrai"))
-	}
-	if cfg.Plugins.Client == "" {
-		errs = append(errs, fmt.Errorf("plugins.client: requis quand plugins.enabled est vrai"))
-	} else if _, ok := cfg.LLMClients[cfg.Plugins.Client]; !ok {
-		errs = append(errs, fmt.Errorf("plugins.client: client llm %q inconnu (llm_clients)", cfg.Plugins.Client))
-	}
-	if cfg.Plugins.VisionClient != "" {
-		if _, ok := cfg.LLMClients[cfg.Plugins.VisionClient]; !ok {
-			errs = append(errs, fmt.Errorf("plugins.vision_client: client llm %q inconnu (llm_clients)", cfg.Plugins.VisionClient))
-		}
 	}
 	if cfg.Plugins.RestartCooldown.Duration() < 0 {
 		errs = append(errs, fmt.Errorf("plugins.restart_cooldown: doit être positif"))

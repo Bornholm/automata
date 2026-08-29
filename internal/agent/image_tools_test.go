@@ -40,15 +40,11 @@ func TestGenerateImage_AttachmentReachesResult(t *testing.T) {
 
 	cfg := &config.Config{
 		Organization: config.Organization{ID: "home", DisplayName: "Maison"},
-		LLMClients: map[string]config.LLMClient{
-			"main": {Provider: "openai", Model: "gpt-test", APIKey: "sk-test", BaseURL: "https://api.example.test/v1"},
-		},
 		Agents: map[string]config.Agent{
 			"imagine": {
 				Type:            config.AgentTypeSpecialist,
-				Client:          "main",
 				SystemPrompt:    config.SystemPrompt{Content: "image specialist"},
-				ImageGeneration: config.ImageGeneration{Client: "image"},
+				ImageGeneration: true,
 			},
 		},
 	}

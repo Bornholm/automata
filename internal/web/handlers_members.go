@@ -168,7 +168,7 @@ func (s *Server) memberChannels(ctx context.Context, q persistence.Querier, memb
 				continue
 			}
 			rows = append(rows, view.OrgChannelRow{
-				PlatformType: providerTypeOf(s.cfg, binding.Provider),
+				PlatformType: s.providerTypeOf(binding.Provider),
 				Name:         binding.DisplayName,
 				Kind:         channelKindLabelFromScope(binding.Kind),
 			})
@@ -180,7 +180,7 @@ func (s *Server) memberChannels(ctx context.Context, q persistence.Querier, memb
 			continue
 		}
 		rows = append(rows, view.OrgChannelRow{
-			PlatformType: providerTypeOf(s.cfg, ch.Provider),
+			PlatformType: s.providerTypeOf(ch.Provider),
 			Name:         s.channelDisplayName(ch),
 			Kind:         channelKindLabel(ch.Kind),
 		})
@@ -225,7 +225,7 @@ func (s *Server) buildMemberPage(ctx context.Context, tx *sql.Tx, w http.Respons
 
 	if member.Linked() {
 		page.Chips = append(page.Chips, view.Chip{Label: "Lié", Tone: "ok", Dot: true})
-		providerType := providerTypeOf(s.cfg, member.Provider)
+		providerType := s.providerTypeOf(member.Provider)
 		if providerType == "" {
 			providerType = member.Provider
 		}

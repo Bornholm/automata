@@ -70,27 +70,27 @@ type Config struct {
 	// Organization est la forme abrégée acceptée quand l'instance ne sert
 	// qu'une organisation. Elle est équivalente à une liste d'un élément :
 	// toute lecture passe par AllOrganizations, jamais par ce champ.
-	Organization Organization         `yaml:"organization"`
-	Storage      Storage              `yaml:"storage"`
-	Courier      Courier              `yaml:"courier"`
-	Audio        Audio                `yaml:"audio"`
-	Attachments  Attachments          `yaml:"attachments"`
-	LLMClients   map[string]LLMClient `yaml:"llm_clients"`
-	// ImageClients déclare les clients de génération d'images, référencés
-	// par agents.<nom>.image_generation.client.
-	ImageClients  map[string]ImageClient `yaml:"image_clients"`
-	Agents        map[string]Agent       `yaml:"agents"`
-	MCPServers    map[string]MCPServer   `yaml:"mcp_servers"`
-	Memory        Memory                 `yaml:"memory"`
-	Conversation  Conversation           `yaml:"conversation"`
-	Identities    Identities             `yaml:"identities"`
-	Origins       []Origin               `yaml:"origins"`
-	Channels      []Channel              `yaml:"channels"`
-	Schedules     []Schedule             `yaml:"schedules"`
-	Observability Observability          `yaml:"observability"`
-	Web           Web                    `yaml:"web"`
-	Backup        Backup                 `yaml:"backup"`
-	Plugins       Plugins                `yaml:"plugins"`
+	Organization Organization `yaml:"organization"`
+	Storage      Storage      `yaml:"storage"`
+	Courier      Courier      `yaml:"courier"`
+	Audio        Audio        `yaml:"audio"`
+	Attachments  Attachments  `yaml:"attachments"`
+	// Les clients de modèles (fournisseur, modèle, clé) ne se déclarent
+	// PLUS ici : le catalogue vit en base et s'administre en ligne
+	// (/admin/llm-clients), tout comme l'affectation d'un client à chaque
+	// rôle. Voir docs/models.md — le YAML ne décrit que la machine.
+	Agents        map[string]Agent     `yaml:"agents"`
+	MCPServers    map[string]MCPServer `yaml:"mcp_servers"`
+	Memory        Memory               `yaml:"memory"`
+	Conversation  Conversation         `yaml:"conversation"`
+	Identities    Identities           `yaml:"identities"`
+	Origins       []Origin             `yaml:"origins"`
+	Channels      []Channel            `yaml:"channels"`
+	Schedules     []Schedule           `yaml:"schedules"`
+	Observability Observability        `yaml:"observability"`
+	Web           Web                  `yaml:"web"`
+	Backup        Backup               `yaml:"backup"`
+	Plugins       Plugins              `yaml:"plugins"`
 }
 
 // Backup décrit les sauvegardes périodiques des bases SQLite. Désactivées
@@ -334,15 +334,9 @@ type Plugins struct {
 	// au fichier de configuration. Tout fichier exécutable y est chargé :
 	// le répertoire doit rester sous le contrôle exclusif de l'exploitant.
 	Dir string `yaml:"dir"`
-	// Client est la clé de llm_clients qui sert les sous-agents de
-	// plugins. Passer par un client de l'instance conserve la
-	// comptabilité d'usage et le débit de crédits.
-	Client string `yaml:"client"`
-	// VisionClient est la clé de llm_clients qui sert l'outil view_file
-	// des sous-agents de plugins : le client de complétion est
-	// texte-seul, c'est celui-ci qui regarde réellement les images d'un
-	// espace de travail. Vide : l'outil n'est pas monté.
-	VisionClient string `yaml:"vision_client"`
+	// Le modèle des sous-agents et celui de view_file se règlent en
+	// ligne : rôles « plugins » et « plugins.vision » de l'écran des
+	// modèles.
 	// RestartCooldown est le délai minimal entre deux redémarrages d'un
 	// même plugin après incident. Vide : 30s. Il évite qu'un plugin qui
 	// meurt en boucle (OOM) consomme la machine.
@@ -436,10 +430,12 @@ type Pragmas struct {
 // sans retarder sensiblement la réponse.
 const defaultCoalesceWindow = 2 * time.Second
 
-// Courier décrit la configuration des fournisseurs de messagerie.
+// Courier décrit la configuration des fournisseurs de messagerie. Les
+// COMPTES eux-mêmes ne se déclarent plus ici : ils vivent en base (table
+// platforms) et se gèrent dans l'administration — le semis silencieux qui
+// les réimportait du YAML à chaque démarrage ressuscitait les comptes
+// supprimés en ligne.
 type Courier struct {
-	Providers map[string]CourierProvider `yaml:"providers"`
-
 	// CoalesceWindow est la fenêtre de silence attendue avant de traiter un
 	// message entrant : les messages texte consécutifs d'un même expéditeur
 	// arrivés pendant cette fenêtre sont fusionnés en un seul tour de
@@ -498,10 +494,9 @@ type Conversation struct {
 // fenêtre d'historique sortent simplement du contexte, comme avant.
 type Compaction struct {
 	Enabled bool `yaml:"enabled"`
-	// Client référence l'entrée de llm_clients utilisée pour produire les
-	// résumés. Requis lorsque Enabled est vrai. Un modèle économique suffit
+	// Le modèle qui produit les résumés se règle en ligne : rôle
+	// « compaction » de l'écran des modèles. Un modèle économique suffit
 	// largement.
-	Client string `yaml:"client"`
 	// MaxSummaryChars borne la taille du résumé persisté. 0 applique le
 	// défaut (2000 caractères).
 	MaxSummaryChars int `yaml:"max_summary_chars"`
@@ -523,8 +518,9 @@ type Compaction struct {
 
 // Audio décrit la configuration de traitement des messages vocaux.
 type Audio struct {
-	Enabled              bool     `yaml:"enabled"`
-	TranscriptionClient  string   `yaml:"transcription_client"`
+	Enabled bool `yaml:"enabled"`
+	// Le modèle de transcription se règle en ligne : rôle
+	// « transcription » de l'écran des modèles.
 	MaxSize              ByteSize `yaml:"max_size"`
 	Timeout              Duration `yaml:"timeout"`
 	PersistAudio         bool     `yaml:"persist_audio"`
@@ -630,8 +626,10 @@ type Agent struct {
 	// faire (« je n'ai pas accès à Internet ») au lieu de déléguer.
 	//
 	// Sans effet sur un orchestrateur, qui n'est le délégué de personne.
-	Description  string       `yaml:"description"`
-	Client       string       `yaml:"client"`
+	Description string `yaml:"description"`
+	// Le modèle de l'agent ne se déclare plus ici : chaque agent est un
+	// rôle de l'écran des modèles, réglé en ligne — par défaut d'instance
+	// et, éventuellement, par organisation.
 	SystemPrompt SystemPrompt `yaml:"system_prompt"`
 	Delegates    []string     `yaml:"delegates"`
 	Memory       AgentMemory  `yaml:"memory"`
@@ -643,11 +641,11 @@ type Agent struct {
 	// ProfileLink expose open_profile_link : l'agent peut ouvrir à son
 	// interlocuteur un lien temporaire vers sa page de profil (socle SaaS).
 	ProfileLink bool `yaml:"profile_link"`
-	// ImageGeneration donne à ce spécialiste l'outil generate_image, adossé
-	// au client de génération d'images désigné. L'image produite est jointe
-	// à la réponse et remonte jusqu'au canal. Spécialiste seulement, comme
-	// les serveurs MCP.
-	ImageGeneration ImageGeneration `yaml:"image_generation"`
+	// ImageGeneration donne à ce spécialiste l'outil generate_image.
+	// L'image produite est jointe à la réponse et remonte jusqu'au canal.
+	// Spécialiste seulement, comme les serveurs MCP. Le MODÈLE qui dessine
+	// se règle en ligne : rôle « image:<agent> » de l'écran des modèles.
+	ImageGeneration bool `yaml:"image_generation"`
 	// ScheduledTasks expose à cet agent les outils de tâches planifiées
 	// (schedule_task, list_scheduled_tasks, cancel_scheduled_task). Une
 	// tâche fait TRAVAILLER l'agent à l'échéance, là où un rappel ne fait
@@ -669,12 +667,6 @@ type Agent struct {
 	MCPServers          []string    `yaml:"mcp_servers"`
 	Capabilities        []string    `yaml:"capabilities"`
 	Limits              AgentLimits `yaml:"limits"`
-}
-
-// ImageGeneration relie un agent à un client de génération d'images.
-type ImageGeneration struct {
-	// Client désigne une entrée de image_clients. Vide = pas d'outil.
-	Client string `yaml:"client"`
 }
 
 // ImageClient décrit un client de génération d'images. Contrairement aux
@@ -834,9 +826,8 @@ type Memory struct {
 // limite. Désactivée par défaut.
 type MemoryConsolidation struct {
 	Enabled bool `yaml:"enabled"`
-	// Client référence l'entrée de llm_clients utilisée pour produire les
-	// plans de consolidation. Requis lorsque Enabled est vrai.
-	Client string `yaml:"client"`
+	// Le modèle qui produit les plans de consolidation se règle en
+	// ligne : rôle « consolidation » de l'écran des modèles.
 	// Cron est l'expression cron standard (5 champs, heure locale du
 	// serveur) de la cadence de consolidation. Vide applique le défaut
 	// ("40 4 * * *", chaque nuit vers 4h40).
@@ -887,10 +878,10 @@ type MemoryIndex struct {
 	Type   string  `yaml:"type"`
 	Path   string  `yaml:"path"`
 	Weight float64 `yaml:"weight"`
-	// Client référence l'entrée de llm_clients fournissant les embeddings.
-	// Requis pour le type "sqlitevec", ignoré sinon. Le modèle utilisé est
-	// celui du client référencé (ex: mistral-embed).
-	Client string `yaml:"client"`
+	// Le client d'embeddings d'un index "sqlitevec" se règle en ligne :
+	// rôle « embeddings:<id> » de l'écran des modèles, VERROUILLÉ après le
+	// premier démarrage réussi (sentinelle à côté du fichier d'index) —
+	// changer de modèle rendrait les vecteurs déjà écrits incomparables.
 }
 
 // MemoryRetrieval décrit le comportement de la recherche mémoire.
@@ -900,9 +891,9 @@ type MemoryRetrieval struct {
 	// ou "balanced" (HyDE : un appel de complétion par requête distincte,
 	// meilleure recherche sémantique).
 	Profile string `yaml:"profile"`
-	// Client référence l'entrée de llm_clients utilisée par l'étape HyDE.
-	// Requis lorsque Profile vaut "balanced". Un modèle économique suffit.
-	Client string `yaml:"client"`
+	// Le modèle de l'étape HyDE (profil "balanced") se règle en ligne :
+	// rôle « retrieval » de l'écran des modèles. Un modèle économique
+	// suffit.
 }
 
 // MemoryPolicies décrit les règles de propagation entre portées mémoire.

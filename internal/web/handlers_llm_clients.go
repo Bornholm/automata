@@ -60,14 +60,33 @@ func (s *Server) handleLLMClients(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Les rôles servis par défaut viennent de la configuration : ce sont
-	// eux qui disent à quoi sert réellement chaque entrée du catalogue.
+	// Les rôles servis par défaut se lisent en base (org_id vide) : ce
+	// sont eux qui disent à quoi sert réellement chaque entrée du
+	// catalogue — le fichier de configuration ne les connaît plus.
+	var instanceDefaults map[string]string
+	if !s.withTx(w, r, func(tx *sql.Tx) error {
+		var err error
+		instanceDefaults, err = s.orgClients.ListByOrg(r.Context(), tx, "")
+		return err
+	}) {
+		return
+	}
 	byClient := map[string][]string{}
-	for role, name := range llmclients.DefaultRoles(s.cfg) {
+	for role, name := range instanceDefaults {
 		byClient[name] = append(byClient[name], role)
 	}
 	for _, roles := range byClient {
 		sort.Strings(roles)
+	}
+
+	// Les rôles de l'instance, éditables sur cette même page : c'est ici
+	// que se décide quel modèle sert chaque agent par défaut.
+	if !s.withTx(w, r, func(tx *sql.Tx) error {
+		var err error
+		page.Roles, err = s.modelRoleRows(r.Context(), tx, "")
+		return err
+	}) {
+		return
 	}
 
 	for _, row := range rows {
@@ -284,18 +303,21 @@ func (s *Server) handleLLMClientForm(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, view.AdminLLMClientForm(page))
 }
 
-// llmClientUses énumère ce qui retient un client : les rôles que la
-// configuration lui confie, et les organisations qui l'ont choisi.
+// llmClientUses énumère ce qui retient un client : les rôles de
+// l'instance (org_id vide) et les organisations qui l'ont choisi — tout
+// vit dans la même table.
 func (s *Server) llmClientUses(name string, orgUses []persistence.OrgAgentClient) []string {
 	var uses []string
 
-	for role, defaultName := range llmclients.DefaultRoles(s.cfg) {
-		if defaultName == name {
-			uses = append(uses, "rôle "+role+" (configuration)")
-		}
-	}
 	for _, use := range orgUses {
-		uses = append(uses, "organisation "+use.OrgID+", rôle "+use.Role)
+		if use.ClientName != name {
+			continue
+		}
+		if use.OrgID == "" {
+			uses = append(uses, "défaut de l'instance, rôle "+use.Role)
+		} else {
+			uses = append(uses, "organisation "+use.OrgID+", rôle "+use.Role)
+		}
 	}
 	sort.Strings(uses)
 
@@ -388,12 +410,28 @@ var roleLabels = map[string][2]string{
 		"Compaction de l'historique",
 		"Le modèle qui condense les vieux messages en résumé roulant.",
 	},
+	llmclients.RoleTranscription: {
+		"Transcription des notes vocales",
+		"Le modèle qui transcrit l'audio entrant. Effet au redémarrage du service.",
+	},
+	llmclients.RoleConsolidation: {
+		"Consolidation de la mémoire",
+		"Le modèle de la passe nocturne qui fusionne et oublie les souvenirs. Effet au redémarrage.",
+	},
+	llmclients.RoleRetrieval: {
+		"Recherche mémoire (HyDE)",
+		"Le modèle qui reformule les requêtes de recherche mémoire. Effet au redémarrage.",
+	},
 }
 
-// orgModelRows dresse, pour une organisation, la liste des rôles réglables
-// avec le catalogue propre à chacun : les modèles de conversation, ou ceux
-// de génération d'images — les deux familles ne sont pas interchangeables.
-func (s *Server) orgModelRows(ctx context.Context, tx *sql.Tx, orgID string) ([]view.OrgModelRole, error) {
+// modelRoleRows dresse la liste des rôles réglables avec le catalogue
+// propre à chacun : les modèles de conversation, ou ceux de génération
+// d'images — les deux familles ne sont pas interchangeables.
+//
+// orgID vide dresse les rôles de l'INSTANCE : Chosen est alors le défaut
+// lui-même, et il n'y a pas de niveau au-dessus (Default reste vide, un
+// rôle sans choix est en alerte).
+func (s *Server) modelRoleRows(ctx context.Context, tx *sql.Tx, orgID string) ([]view.OrgModelRole, error) {
 	catalog, err := s.llmClients.List(ctx, tx, "")
 	if err != nil {
 		return nil, err
@@ -404,6 +442,16 @@ func (s *Server) orgModelRows(ctx context.Context, tx *sql.Tx, orgID string) ([]
 		return nil, err
 	}
 
+	// Les défauts d'instance donnent, sur l'écran d'une organisation, le
+	// libellé de l'option « défaut » ; sur l'écran de l'instance ils SONT
+	// le choix.
+	instanceDefaults := chosen
+	if orgID != "" {
+		if instanceDefaults, err = s.orgClients.ListByOrg(ctx, tx, ""); err != nil {
+			return nil, err
+		}
+	}
+
 	models := make(map[string]string, len(catalog))
 	byKind := map[string][]view.OrgModelOption{}
 	for _, row := range catalog {
@@ -411,15 +459,18 @@ func (s *Server) orgModelRows(ctx context.Context, tx *sql.Tx, orgID string) ([]
 		byKind[row.Kind] = append(byKind[row.Kind], view.OrgModelOption{Name: row.Name, Model: row.Model})
 	}
 
-	defaults := llmclients.DefaultRoles(s.cfg)
-	roles := make([]view.OrgModelRole, 0, len(defaults))
-	for role, defaultName := range defaults {
+	roleNames := llmclients.Roles(s.cfg)
+	roles := make([]view.OrgModelRole, 0, len(roleNames))
+	for _, role := range roleNames {
 		entry := view.OrgModelRole{
 			Role:         role,
 			Chosen:       chosen[role],
-			Default:      defaultName,
-			DefaultModel: models[defaultName],
 			Options:      byKind[persistence.LLMClientKindLLM],
+			InstanceView: orgID == "",
+		}
+		if orgID != "" {
+			entry.Default = instanceDefaults[role]
+			entry.DefaultModel = models[entry.Default]
 		}
 
 		switch {
@@ -428,6 +479,10 @@ func (s *Server) orgModelRows(ctx context.Context, tx *sql.Tx, orgID string) ([]
 			entry.Label = "Images de l'agent " + agentName
 			entry.Hint = "Le modèle qui dessine derrière generate_image, distinct de celui qui converse."
 			entry.Options = byKind[persistence.LLMClientKindImage]
+		case strings.HasPrefix(role, llmclients.RoleEmbeddingsPrefix):
+			indexID := strings.TrimPrefix(role, llmclients.RoleEmbeddingsPrefix)
+			entry.Label = "Embeddings de l'index " + indexID
+			entry.Hint = "VERROUILLÉ après le premier démarrage : changer de modèle rendrait les vecteurs déjà écrits incomparables. Effet au redémarrage."
 		case roleLabels[role] != [2]string{}:
 			labels := roleLabels[role]
 			entry.Label, entry.Hint = labels[0], labels[1]
@@ -464,7 +519,24 @@ func (s *Server) handleOrgModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgID := r.PathValue("id")
+	s.saveModelRoles(w, r, r.PathValue("id"), "/admin/orgs/"+r.PathValue("id")+"?tab=models")
+}
+
+// handleInstanceModels enregistre les défauts d'instance : mêmes règles que
+// pour une organisation, org_id vide.
+func (s *Server) handleInstanceModels(w http.ResponseWriter, r *http.Request) {
+	if !checkCSRF(r) {
+		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
+		return
+	}
+
+	s.saveModelRoles(w, r, "", "/admin/llm-clients")
+}
+
+// saveModelRoles enregistre les choix de modèles postés, pour une
+// organisation ou pour l'instance (orgID vide). Un champ laissé vide efface
+// la ligne : personne ne garde un choix qu'il n'a plus exprimé.
+func (s *Server) saveModelRoles(w http.ResponseWriter, r *http.Request, orgID, redirect string) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "formulaire illisible", http.StatusBadRequest)
 		return
@@ -474,18 +546,20 @@ func (s *Server) handleOrgModels(w http.ResponseWriter, r *http.Request) {
 	var unknown string
 
 	if !s.withTx(w, r, func(tx *sql.Tx) error {
-		catalog, err := s.llmClients.List(r.Context(), tx, persistence.LLMClientKindLLM)
+		catalog, err := s.llmClients.List(r.Context(), tx, "")
 		if err != nil {
 			return err
 		}
-		known := make(map[string]bool, len(catalog))
+		kinds := make(map[string]string, len(catalog))
 		for _, row := range catalog {
-			known[row.Name] = true
+			kinds[row.Name] = row.Kind
 		}
 
-		// Seuls les rôles connus de la configuration sont acceptés : un
-		// champ forgé ne doit pas créer une ligne que rien ne lira.
-		for role := range llmclients.DefaultRoles(s.cfg) {
+		// Seuls les rôles que l'instance déclare sont acceptés : un champ
+		// forgé ne doit pas créer une ligne que rien ne lira. Et chaque
+		// rôle n'accepte que sa famille — un générateur d'images ne
+		// conversera jamais.
+		for _, role := range llmclients.Roles(s.cfg) {
 			name := strings.TrimSpace(r.PostFormValue("role:" + role))
 
 			if name == "" {
@@ -495,7 +569,11 @@ func (s *Server) handleOrgModels(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			if !known[name] {
+			wantKind := persistence.LLMClientKindLLM
+			if strings.HasPrefix(role, llmclients.RoleImagePrefix) {
+				wantKind = persistence.LLMClientKindImage
+			}
+			if kinds[name] != wantKind {
 				unknown = name
 				return nil
 			}
@@ -516,13 +594,13 @@ func (s *Server) handleOrgModels(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if unknown != "" {
-		http.Error(w, "modèle inconnu : "+unknown, http.StatusBadRequest)
+		http.Error(w, "modèle inconnu ou de la mauvaise famille : "+unknown, http.StatusBadRequest)
 		return
 	}
 
-	s.logger.InfoContext(r.Context(), "web: modèles d'une organisation modifiés", "org", orgID)
+	s.logger.InfoContext(r.Context(), "web: rôles de modèles modifiés", "org", orgID)
 
-	http.Redirect(w, r, "/admin/orgs/"+orgID+"?tab=models", http.StatusFound)
+	http.Redirect(w, r, redirect, http.StatusFound)
 }
 
 // handleLLMClientDelete supprime un client, sauf si un rôle ou une

@@ -89,10 +89,11 @@ func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error)
 // skills, s'il n'est pas nil, ajoute à chaque orchestrateur et à chaque
 // spécialiste MCP le catalogue des compétences et l'outil load_skill,
 // relus par tour. Nil : aucun des deux n'est exposé.
-// clientResolver, s'il est fourni, permet à chaque agent de servir le
-// modèle que l'organisation du tour a choisi (catalogue administrable,
-// migration 0022) ; le client construit ici depuis la configuration reste
-// le repli. Nil : comportement historique, un seul modèle par agent.
+// clientResolver fournit le modèle de chaque agent : le défaut d'instance
+// du rôle portant son nom, surchargé par organisation (catalogue
+// administrable, migrations 0022-0023). Le YAML ne déclare plus aucun
+// client — aucun n'est donc construit ici. Nil (tests) : les agents
+// n'ont de client que si un test le leur donne directement.
 func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminderTools ReminderTools, profileTools ProfileTools, customizer OrgCustomizer, mcpManager *mcp.Manager, pluginProvider PluginSpecialistProvider, skills SkillsProvider, clientResolver ClientResolver, metrics *observability.Metrics, logger *slog.Logger) (*Registry, error) {
 	// Le même résolveur sert les modèles d'images quand un pool d'images
 	// lui est branché ; sinon les agents gardent le générateur construit
@@ -100,36 +101,27 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 	imageResolver, _ := clientResolver.(ImageClientResolver)
 
 	agents := make(map[string]Agent, len(cfg.Agents))
-	clients := make(map[string]llm.Client, len(cfg.Agents))
 	prompts := make(map[string]string, len(cfg.Agents))
 	// orgPrompts porte, par agent, ses variantes de prompt par organisation
 	// (system_prompt.org_overrides) ; nil pour un agent sans surcharge.
 	orgPrompts := make(map[string]map[string]string, len(cfg.Agents))
 
 	for name, agentCfg := range cfg.Agents {
-		llmClientCfg, ok := cfg.LLMClients[agentCfg.Client]
-		if !ok {
-			return nil, fmt.Errorf("agent: client llm %q (référencé par agents.%s.client) introuvable dans la configuration", agentCfg.Client, name)
-		}
-
-		client, err := BuildLLMClient(context.Background(), llmClientCfg)
-		if err != nil {
-			return nil, fmt.Errorf("agent: construction du client llm %q pour l'agent %q: %w", agentCfg.Client, name, err)
-		}
-
 		systemPrompt := BuildSystemPrompt(name, agentCfg)
 		orgPrompts[name] = BuildOrgSystemPrompts(name, agentCfg)
 
 		// name et agentCfg sont capturés par valeur à chaque itération de
 		// boucle (variables déclarées dans le corps du for range), donc
-		// chaque GenAIAgent obtient bien sa propre chaîne systemPrompt et
-		// son propre client : aucune contamination croisée possible entre
-		// agents.
-		agents[name] = NewGenAIAgent(client, systemPrompt, name).
+		// chaque GenAIAgent obtient bien sa propre chaîne systemPrompt :
+		// aucune contamination croisée possible entre agents.
+		//
+		// Aucun client n'est construit : le modèle de l'agent est résolu à
+		// CHAQUE tour par le résolveur, sous le rôle qui porte son nom. Un
+		// rôle sans défaut d'instance rend une erreur de tour explicite,
+		// jamais un repli silencieux.
+		agents[name] = NewGenAIAgent(nil, systemPrompt, name).
 			WithOrgSystemPrompts(orgPrompts[name]).
-			WithVision(llmClientCfg.SupportsVision()).
 			WithClientResolver(clientResolver, name, logger)
-		clients[name] = client
 		prompts[name] = systemPrompt
 	}
 
@@ -147,22 +139,10 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			continue
 		}
 
-		if len(agentCfg.MCPServers) > 0 || agentCfg.ImageGeneration.Client != "" {
+		if len(agentCfg.MCPServers) > 0 || agentCfg.ImageGeneration {
 			limits := mcp.Limits{
 				ToolTimeout:        agentCfg.Limits.ToolTimeout.Duration(),
 				MaxToolResultBytes: int64(agentCfg.Limits.MaxToolResultBytes.Bytes()),
-			}
-
-			// Générateur d'images de la configuration : il sert de repli
-			// quand l'organisation n'en a pas choisi un autre. L'outil
-			// lui-même est monté par tour (voir MCPToolAgent.Execute).
-			var imageGenerator llm.ImageGenerationClient
-			if clientName := agentCfg.ImageGeneration.Client; clientName != "" {
-				generator, err := BuildImageGenerationClient(context.Background(), cfg.ImageClients[clientName])
-				if err != nil {
-					return nil, fmt.Errorf("agent: construction du client d'images %q pour l'agent %q: %w", clientName, name, err)
-				}
-				imageGenerator = generator
 			}
 
 			// Un seul type de spécialiste MCP, quel que soit le domaine.
@@ -171,7 +151,7 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			// exigeant confirmation, domaine de permission. Le registre
 			// n'a donc aucun nom de service à connaître.
 			specialist := NewMCPToolAgent(
-				clients[name],
+				nil,
 				prompts[name],
 				name,
 				cfg,
@@ -183,12 +163,18 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 
 			agents[name] = specialist.
 				WithOrgSystemPrompts(orgPrompts[name]).
-				WithVision(cfg.LLMClients[agentCfg.Client].SupportsVision()).
 				WithClientResolver(clientResolver, name, logger).
-				WithImageGeneration(imageGenerator, imageResolver, llmclients.ImageRole(name), logger).
 				WithSkills(skills).
 				WithMaxToolContextBytes(int64(agentCfg.Limits.MaxToolContextBytes.Bytes())).
 				WithLogger(logger)
+
+			// generate_image est monté par tour, dès que le rôle
+			// image:<agent> résout un générateur (défaut d'instance ou
+			// choix de l'organisation) : la configuration ne déclare plus
+			// que l'INTENTION (image_generation: true), jamais le modèle.
+			if agentCfg.ImageGeneration && imageResolver != nil {
+				agents[name] = specialist.WithImageGeneration(nil, imageResolver, llmclients.ImageRole(name), logger)
+			}
 		}
 	}
 
@@ -235,9 +221,8 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			specialists[delegateName] = specialist
 		}
 
-		orchestrator := NewOrchestratorAgent(clients[name], prompts[name], name, specialists, agentCfg.Limits.MaxSequentialToolCalls).
+		orchestrator := NewOrchestratorAgent(nil, prompts[name], name, specialists, agentCfg.Limits.MaxSequentialToolCalls).
 			WithOrgSystemPrompts(orgPrompts[name]).
-			WithVision(cfg.LLMClients[agentCfg.Client].SupportsVision()).
 			WithClientResolver(clientResolver, name, logger).
 			WithSpecialistDescriptions(specialistDescriptions).
 			WithSkills(skills)

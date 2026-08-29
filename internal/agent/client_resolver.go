@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"sync"
 
 	"github.com/bornholm/genai/llm"
 
@@ -64,6 +66,11 @@ type clientBinding struct {
 	role     string
 	resolver ClientResolver
 	logger   *slog.Logger
+	// last est le dernier client résolu avec succès : le repli des pannes
+	// TRANSITOIRES (base momentanément illisible), jamais celui d'un rôle
+	// non configuré — qui doit se voir, pas se contourner.
+	mu   sync.Mutex
+	last llmclients.Resolved
 }
 
 // bind déclare le rôle de cet agent et le résolveur à interroger.
@@ -73,26 +80,48 @@ func (b *clientBinding) bind(resolver ClientResolver, role string, logger *slog.
 	b.logger = logger
 }
 
-// resolve retourne le client à utiliser pour cette organisation, et false
-// si l'appelant doit garder celui qu'il a construit au démarrage.
+// errNoResolver distingue « aucun résolveur câblé » (tests, agents
+// construits à la main) d'un échec de résolution.
+var errNoResolver = errors.New("agent: no client resolver wired")
+
+// resolve retourne le client à utiliser pour cette organisation.
 //
-// Une résolution en échec n'est jamais fatale : un catalogue illisible, un
-// client supprimé sous les pieds d'une organisation ou un fournisseur
-// inconnu font retomber l'agent sur son client de configuration, avec une
-// trace — l'assistant continue de répondre.
-func (b *clientBinding) resolve(ctx context.Context, orgID model.OrgID) (llmclients.Resolved, bool) {
+// Le YAML ne fournit plus de client de démarrage : le catalogue est LA
+// source. Un rôle sans défaut d'instance rend l'erreur telle quelle — elle
+// nomme le rôle et pointe vers l'administration. Une panne transitoire de
+// lecture retombe sur le dernier client résolu, avec une trace : une base
+// momentanément indisponible ne doit pas rendre l'assistant muet.
+func (b *clientBinding) resolve(ctx context.Context, orgID model.OrgID) (llmclients.Resolved, error) {
 	if b.resolver == nil || b.role == "" {
-		return llmclients.Resolved{}, false
+		return llmclients.Resolved{}, errNoResolver
 	}
 
 	resolved, err := b.resolver.ResolveClient(ctx, b.role, orgID)
 	if err != nil {
-		if b.logger != nil {
-			b.logger.WarnContext(ctx, "agent: modèle non résolu, repli sur la configuration de démarrage",
-				"role", b.role, "org", string(orgID), "error", err)
+		if errors.Is(err, llmclients.ErrNoDefault) {
+			// Rôle non configuré : pas de repli, l'erreur doit remonter
+			// jusqu'à quelqu'un qui peut la corriger.
+			return llmclients.Resolved{}, err
 		}
-		return llmclients.Resolved{}, false
+
+		b.mu.Lock()
+		last := b.last
+		b.mu.Unlock()
+
+		if last.Client != nil {
+			if b.logger != nil {
+				b.logger.WarnContext(ctx, "agent: résolution du modèle en échec, repli sur le dernier client résolu",
+					"role", b.role, "org", string(orgID), "error", err)
+			}
+			return last, nil
+		}
+
+		return llmclients.Resolved{}, err
 	}
 
-	return resolved, true
+	b.mu.Lock()
+	b.last = resolved
+	b.mu.Unlock()
+
+	return resolved, nil
 }

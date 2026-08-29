@@ -9,9 +9,6 @@ import (
 // dans chaque cas de test.
 func validWebConfig() *Config {
 	return &Config{
-		Courier: Courier{Providers: map[string]CourierProvider{
-			"boite": {Type: "mail"},
-		}},
 		Web: Web{
 			Enabled:       true,
 			Addr:          "127.0.0.1:8081",
@@ -53,12 +50,6 @@ func TestValidateWeb_RequiresAdminCredentials(t *testing.T) {
 	assertHasError(t, validateWeb(cfg), "web.admin.password_hash: requis")
 }
 
-func TestValidateWeb_RejectsUnknownMailProvider(t *testing.T) {
-	cfg := validWebConfig()
-	cfg.Web.MailProvider = "fantome"
-	assertHasError(t, validateWeb(cfg), `web.mail_provider: provider courier "fantome" introuvable`)
-}
-
 func TestValidateWeb_RejectsInvalidPack(t *testing.T) {
 	cfg := validWebConfig()
 	cfg.Web.Credits.Packs = []WebCreditPack{{Credits: 0, PriceEUR: -1}}
@@ -66,13 +57,12 @@ func TestValidateWeb_RejectsInvalidPack(t *testing.T) {
 	assertHasError(t, validateWeb(cfg), "web.credits.packs[0].price_eur")
 }
 
-// La section plugins est refusée incomplète dès l'activation : un client
-// LLM manquant ne doit pas se découvrir au premier tour d'un sous-agent.
+// La section plugins n'exige plus que le répertoire des binaires : le
+// modèle des sous-agents se règle en ligne.
 func TestValidatePlugins(t *testing.T) {
 	base := func() *Config {
 		return &Config{
-			Plugins:    Plugins{Enabled: true, Dir: "./plugins", Client: "main"},
-			LLMClients: map[string]LLMClient{"main": {Provider: "openai", Model: "m", APIKey: "k", BaseURL: "u"}},
+			Plugins: Plugins{Enabled: true, Dir: "./plugins"},
 		}
 	}
 
@@ -81,12 +71,6 @@ func TestValidatePlugins(t *testing.T) {
 	}
 
 	cfg := base()
-	cfg.Plugins.Client = "inconnu"
-	if errs := validatePlugins(cfg); len(errs) == 0 {
-		t.Error("client llm inconnu accepté")
-	}
-
-	cfg = base()
 	cfg.Plugins.Dir = ""
 	if errs := validatePlugins(cfg); len(errs) == 0 {
 		t.Error("répertoire manquant accepté")
@@ -95,7 +79,6 @@ func TestValidatePlugins(t *testing.T) {
 	cfg = base()
 	cfg.Plugins.Enabled = false
 	cfg.Plugins.Dir = ""
-	cfg.Plugins.Client = ""
 	if errs := validatePlugins(cfg); len(errs) != 0 {
 		t.Errorf("section désactivée refusée: %v", errs)
 	}

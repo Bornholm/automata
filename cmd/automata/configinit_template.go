@@ -44,14 +44,9 @@ storage:
       journal_mode: WAL
       busy_timeout: 5s
 
-courier:
-  providers:
-    whatsapp:
-      type: whatsapp
-      # Ce répertoire doit exister et être accessible en écriture avant le
-      # premier démarrage. Il conserve la liaison d'appareil : le supprimer
-      # oblige à scanner un nouveau QR code.
-      session_path: {{ .DataDir }}/courier/whatsapp
+# Les comptes de messagerie (WhatsApp, Signal…) ne se déclarent pas ici :
+# ils se créent dans l'administration (Canaux et plateformes), qui range
+# leur configuration chiffrée en base.
 {{ if .Web }}
 web:
   enabled: true
@@ -70,12 +65,8 @@ web:
 plugins:
   enabled: true
   dir: {{ .PluginsDir }}
-  # Client LLM servant les sous-agents fournis par les plugins : leurs
-  # appels passent par l'instance, donc dans sa comptabilité d'usage.
-  client: main
-  # Client multimodal de l'outil view_file d'un plugin d'atelier : le
-  # client des plugins peut être texte-seul, celui-ci regarde les images.
-  vision_client: vision
+  # Les modèles des sous-agents et de view_file se règlent en ligne :
+  # rôles « plugins » et « plugins.vision » de l'écran des modèles.
 {{ end }}{{ if .Observability }}
 observability:
   enabled: true
@@ -83,7 +74,7 @@ observability:
 {{ end }}{{ if .Audio }}
 audio:
   enabled: true
-  transcription_client: transcription
+  # Le modèle de transcription se règle en ligne : rôle « transcription ».
   max_size: 20MiB
   timeout: 2m
   # Ni l'audio ni sa transcription ne sont conservés.
@@ -117,9 +108,8 @@ conversation:
   history_limit: 20
   compaction:
     enabled: true
-    # Un modèle économique suffit : il s'agit de condenser, pas de
-    # raisonner. L'échec d'une compaction n'est jamais bloquant.
-    client: main
+    # Le modèle se règle en ligne (rôle « compaction ») ; un modèle
+    # économique suffit, et l'échec d'une compaction n'est jamais bloquant.
     max_summary_chars: 2000
     # Les faits durables (préférences, décisions, engagements, dates)
     # rejoignent la mémoire à long terme, dans la portée de la
@@ -136,56 +126,15 @@ conversation:
     # épisodes ne servent qu'avec le drapeau memory.history de l'agent.
     record_episodes: false
 
-llm_clients:
-  main:
-    provider: {{ .LLMProvider }}
-    model: ${{"{"}}{{ .LLMModelVar }}{{"}"}}
-    api_key: ${{"{"}}{{ .LLMKeyVar }}{{"}"}}
-    base_url: ${{"{"}}{{ .LLMBaseVar }}{{"}"}}
-    # Si ce modèle n'accepte PAS les images, décommentez la ligne suivante.
-    # Sans elle, une simple photo reçue en conversation fait échouer la
-    # requête ENTIÈRE (« no endpoints found that support image input »), pas
-    # seulement l'image. Déclarée, les pièces jointes sont décrites en texte
-    # au généraliste, et le spécialiste vision ci-dessous les regarde.
-    # vision: false
-
-  # Modèle multimodal du spécialiste vision : l'orchestrateur peut être
-  # texte-seul, c'est ici que les images sont réellement « vues ».
-  vision:
-    provider: {{ .LLMProvider }}
-    model: ${{"{"}}{{ .VisionModelVar }}{{"}"}}
-    api_key: ${{"{"}}{{ .LLMKeyVar }}{{"}"}}
-    base_url: ${{"{"}}{{ .LLMBaseVar }}{{"}"}}
-{{ if .Plugins }}
-  # Sous-agents fournis par les plugins. Le travail d'atelier — enchaîner
-  # des commandes, choisir un filtre, converger vers un fichier — demande
-  # plus de méthode qu'une réponse de conversation.
-  plugins:
-    provider: {{ .LLMProvider }}
-    model: ${{"{"}}{{ .PluginsModelVar }}{{"}"}}
-    api_key: ${{"{"}}{{ .LLMKeyVar }}{{"}"}}
-    base_url: ${{"{"}}{{ .LLMBaseVar }}{{"}"}}
-{{ end }}{{ if .Audio }}
-  transcription:
-    provider: {{ .LLMProvider }}
-    model: ${{"{"}}{{ .AudioModelVar }}{{"}"}}
-    api_key: ${{"{"}}{{ .AudioKeyVar }}{{"}"}}
-    # Même point d'entrée que le client principal par défaut. À changer si
-    # votre fournisseur de complétion ne transcrit pas l'audio.
-    base_url: ${{"{"}}{{ .LLMBaseVar }}{{"}"}}
-{{ end }}
-# Clients de génération d'images, référencés par
-# agents.<nom>.image_generation.client.
-image_clients:
-  image:
-    provider: openrouter
-    model: ${{"{"}}{{ .ImageModelVar }}{{"}"}}
-    api_key: ${{"{"}}{{ .LLMKeyVar }}{{"}"}}
+# Les modèles (fournisseur, modèle, clé d'API) ne se déclarent pas ici :
+# le catalogue vit en base et s'administre en ligne (/admin/llm-clients),
+# tout comme l'affectation d'un modèle à chaque agent et à chaque fonction
+# (« rôles de l'instance »). Une instance neuve se règle depuis
+# l'administration au premier démarrage. Voir docs/models.md.
 
 agents:
   main:
     type: orchestrator
-    client: main
     system_prompt:
       file: {{ .PromptsDir }}/main.md
 {{- if .Web }}
@@ -224,7 +173,6 @@ agents:
   vision:
     type: specialist
     description: looks at the images and documents attached to the conversation and reports what they contain
-    client: vision
     system_prompt:
       file: {{ .PromptsDir }}/vision.md
     # Sans image, ce spécialiste n'a rien à examiner : l'orchestrateur ne le
@@ -241,11 +189,10 @@ agents:
   imagine:
     type: specialist
     description: generates images from text descriptions
-    client: main
     system_prompt:
       file: {{ .PromptsDir }}/imagine.md
-    image_generation:
-      client: image
+    # Le modèle qui dessine se règle en ligne : rôle « image:imagine ».
+    image_generation: true
     limits:
       max_sequential_tool_calls: 3
       max_actions_per_turn: 2
@@ -261,7 +208,6 @@ agents:
     # c'est là-dessus qu'il décide de déléguer.
     description: {{ .Description }}
 {{- end }}
-    client: main
     system_prompt:
       file: {{ .PromptFile }}
     mcp_servers:
@@ -327,7 +273,7 @@ memory:
   # limite et la recherche se dégrade à mesure qu'elle grossit.
   consolidation:
     enabled: true
-    client: main
+    # Le modèle se règle en ligne : rôle « consolidation ».
     # 4h40, heure locale du serveur.
     cron: "40 4 * * *"
     # En dessous de ce nombre de souvenirs, une portée est laissée intacte :

@@ -1,14 +1,17 @@
 // Package llmclients détient le catalogue des clients de modèles, dont la
 // base de données est la source de vérité depuis la migration 0022.
 //
-// Trois responsabilités :
-//   - le SEMIS initial depuis le YAML (Seed), une fois pour toutes ;
+// Deux responsabilités :
 //   - la traduction entre la ligne de base et la config.LLMClient attendue
 //     par les constructeurs de clients, en ouvrant la clé d'API scellée ;
 //   - un POOL qui garde les clients construits en mémoire et les
 //     reconstruit dès que leur définition change en base, pour qu'une
 //     modification faite dans l'interface d'administration prenne effet
 //     sans redémarrer le processus.
+//
+// Il n'y a PAS de semis : le catalogue se remplit dans l'administration,
+// jamais depuis un fichier. Une instance neuve démarre vide, et chaque
+// rôle sans modèle le dit explicitement au lieu de se replier en silence.
 //
 // Ce paquet ne connaît pas les agents : il ne sait pas quel client sert
 // quel rôle. Cette question relève de la résolution par organisation
@@ -191,75 +194,6 @@ func (s *Store) OrgChoice(ctx context.Context, orgID, role string) (string, bool
 	})
 
 	return name, found, err
-}
-
-// seedTask est le jalon posé dans maintenance_runs après le semis. C'est
-// lui — et non « la table est vide » — qui décide : sans cela, une instance
-// où l'opérateur a volontairement supprimé tous les clients les verrait
-// réapparaître au redémarrage suivant.
-const seedTask = "llm-clients-seed"
-
-// Seed copie en base, une seule fois dans la vie d'une instance, les
-// clients déclarés dans le YAML. Après quoi les sections llm_clients et
-// image_clients du fichier ne sont plus lues : la base fait autorité.
-func Seed(ctx context.Context, db *persistence.DB, box *secretbox.Box, cfg *config.Config, logger *slog.Logger) error {
-	if logger == nil {
-		logger = slog.Default()
-	}
-
-	store := NewStore(db, box)
-	runs := persistence.NewMaintenanceRunRepository()
-	repo := persistence.NewLLMClientRepository()
-	now := time.Now().UTC()
-
-	var seeded int
-
-	err := db.WithTx(ctx, func(tx *sql.Tx) error {
-		if _, done, err := runs.GetLastRun(ctx, tx, seedTask); err != nil {
-			return err
-		} else if done {
-			return nil
-		}
-
-		for name, clientCfg := range cfg.LLMClients {
-			row, err := store.Row(name, persistence.LLMClientKindLLM, clientCfg, now)
-			if err != nil {
-				return err
-			}
-			if err := repo.Upsert(ctx, tx, row); err != nil {
-				return err
-			}
-			seeded++
-		}
-
-		for name, imageCfg := range cfg.ImageClients {
-			row, err := store.Row(name, persistence.LLMClientKindImage, config.LLMClient{
-				Provider: imageCfg.Provider,
-				Model:    imageCfg.Model,
-				APIKey:   imageCfg.APIKey,
-				BaseURL:  imageCfg.BaseURL,
-			}, now)
-			if err != nil {
-				return err
-			}
-			if err := repo.Upsert(ctx, tx, row); err != nil {
-				return err
-			}
-			seeded++
-		}
-
-		return runs.SetLastRun(ctx, tx, seedTask, now)
-	})
-	if err != nil {
-		return fmt.Errorf("llmclients: semis du catalogue: %w", err)
-	}
-
-	if seeded > 0 {
-		logger.InfoContext(ctx, "llmclients: catalogue de modèles initialisé depuis la configuration",
-			"clients", seeded)
-	}
-
-	return nil
 }
 
 // Pool garde en mémoire les clients construits et les reconstruit dès que

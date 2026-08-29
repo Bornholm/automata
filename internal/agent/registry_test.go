@@ -19,26 +19,16 @@ func testRegistryConfig() *config.Config {
 			ID:          "home",
 			DisplayName: "Maison",
 		},
-		LLMClients: map[string]config.LLMClient{
-			"main": {
-				Provider: "openai",
-				Model:    "gpt-test",
-				APIKey:   "sk-test",
-				BaseURL:  "https://api.example.test",
-			},
-		},
 		Agents: map[string]config.Agent{
 			"main": {
-				Type:   config.AgentTypeOrchestrator,
-				Client: "main",
+				Type: config.AgentTypeOrchestrator,
 				SystemPrompt: config.SystemPrompt{
 					Content: "Tu es Automata, l'assistant généraliste du foyer.",
 				},
 				Delegates: []string{"agenda"},
 			},
 			"agenda": {
-				Type:   config.AgentTypeSpecialist,
-				Client: "main",
+				Type: config.AgentTypeSpecialist,
 				SystemPrompt: config.SystemPrompt{
 					Content: "Tu es l'agent Agenda, spécialisé dans le calendrier.",
 				},
@@ -78,18 +68,6 @@ func TestNewRegistry_UnknownAgentRejected(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "inexistant") {
 		t.Errorf("erreur = %v, attendu mention de 'inexistant'", err)
-	}
-}
-
-func TestNewRegistry_UnknownLLMClientRejected(t *testing.T) {
-	cfg := testRegistryConfig()
-	main := cfg.Agents["main"]
-	main.Client = "inexistant"
-	cfg.Agents["main"] = main
-
-	_, err := agent.NewRegistry(cfg, nil)
-	if err == nil {
-		t.Fatal("NewRegistry: erreur attendue pour un client llm inconnu")
 	}
 }
 

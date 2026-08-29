@@ -10,6 +10,7 @@ import (
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/platform"
 )
 
 // orgNotifier porte les alertes de facturation jusqu'à la conversation
@@ -26,9 +27,12 @@ type orgNotifier struct {
 	members  *persistence.MemberRepository
 }
 
-// senderLookup donne accès aux fournisseurs par nom de compte.
+// senderLookup donne accès aux fournisseurs par nom de compte, et à
+// l'état des comptes enregistrés — les comptes vivent en base, jamais dans
+// le fichier de configuration. Implémenté par platform.Manager.
 type senderLookup interface {
 	Get(name string) (courier.Provider, bool)
+	Statuses() map[string]platform.Status
 }
 
 // profileLinkGenerator produit le lien de recharge à insérer dans
@@ -152,16 +156,18 @@ func (n *orgNotifier) NotifyPurchase(ctx context.Context, memberID string, credi
 
 // resolveProviderName traduit un type de plateforme en nom de compte de
 // messagerie : les canaux nomment le compte, les membres retiennent
-// parfois le type.
+// parfois le type. L'état vivant du gestionnaire fait foi.
 func (n *orgNotifier) resolveProviderName(provider string) string {
 	if provider == "" {
 		return ""
 	}
-	if _, ok := n.cfg.Courier.Providers[provider]; ok {
+
+	statuses := n.senders.Statuses()
+	if _, ok := statuses[provider]; ok {
 		return provider
 	}
-	for name, candidate := range n.cfg.Courier.Providers {
-		if candidate.Type == provider {
+	for name, status := range statuses {
+		if status.Type == provider {
 			return name
 		}
 	}

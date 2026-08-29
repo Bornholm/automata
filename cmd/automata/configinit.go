@@ -338,32 +338,18 @@ func askOrganization(w *wizard, a *initAnswers) {
 func askLLM(w *wizard, a *initAnswers) {
 	w.section("Modèle de langage")
 
-	a.LLMProvider = w.askChoice("Fournisseur", []string{"openai", "mistral", "openrouter"}, "openai")
-	a.LLMModelVar = envVarName("main", "model")
-	a.LLMKeyVar = envVarName("main", "api", "key")
-	a.LLMBaseVar = envVarName("main", "base", "url")
-
-	// Trois rôles distincts, trois variables : voir une image, en produire
-	// une, faire travailler un sous-agent de plugin. La clé et l'URL sont
-	// partagées avec le client principal — c'est le même fournisseur.
-	a.VisionModelVar = envVarName("vision", "model")
-	a.ImageModelVar = envVarName("image", "model")
-	if a.Plugins {
-		a.PluginsModelVar = envVarName("plugins", "model")
-	}
-
-	fmt.Fprintf(w.out, "  le modèle et la clé seront lus dans ${%s} et ${%s}.\n", a.LLMModelVar, a.LLMKeyVar)
-	fmt.Fprintf(w.out, "  ${%s} doit accepter les images, ${%s} savoir en produire.\n", a.VisionModelVar, a.ImageModelVar)
+	// Les modèles ne se déclarent plus dans le fichier : le catalogue et
+	// les rôles se règlent dans l'administration, après le premier
+	// démarrage. Le rappeler ici évite de chercher une section disparue.
+	fmt.Fprintln(w.out, "  Les modèles (fournisseur, clé d'API, affectation par agent) se")
+	fmt.Fprintln(w.out, "  configurent dans l'administration après le premier démarrage :")
+	fmt.Fprintln(w.out, "  écran « Modèles », puis « Rôles de l'instance ».")
 }
 
 func askOptions(w *wizard, a *initAnswers) {
 	w.section("Fonctionnalités")
 
 	a.Audio = w.askYesNo("Transcrire les messages vocaux", true)
-	if a.Audio {
-		a.AudioModelVar = envVarName("transcription", "model")
-		a.AudioKeyVar = envVarName("transcription", "api", "key")
-	}
 
 	a.Attachments = w.askYesNo("Accepter les images et documents joints", true)
 
@@ -575,15 +561,6 @@ func (a *initAnswers) collectEnvVars() {
 			a.EnvVars = append(a.EnvVars, name)
 		}
 	}
-
-	add(a.LLMModelVar)
-	add(a.LLMKeyVar)
-	add(a.LLMBaseVar)
-	add(a.AudioModelVar)
-	add(a.AudioKeyVar)
-	add(a.VisionModelVar)
-	add(a.ImageModelVar)
-	add(a.PluginsModelVar)
 
 	// Le chiffrement des contenus est référencé par la section storage,
 	// écrite sans condition.

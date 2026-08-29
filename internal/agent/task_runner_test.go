@@ -16,11 +16,8 @@ import (
 func TestTaskRunner_IdentityIsTheCreatorScheduledTask(t *testing.T) {
 	cfg := &config.Config{
 		Organization: config.Organization{ID: "home", DisplayName: "Maison"},
-		LLMClients: map[string]config.LLMClient{
-			"main": {Provider: "openai", Model: "gpt-test", APIKey: "sk-test", BaseURL: "https://api.example.test/v1"},
-		},
 		Agents: map[string]config.Agent{
-			"main": {Type: config.AgentTypeOrchestrator, Client: "main", SystemPrompt: config.SystemPrompt{Content: "généraliste"}},
+			"main": {Type: config.AgentTypeOrchestrator, SystemPrompt: config.SystemPrompt{Content: "généraliste"}},
 		},
 		Channels: []config.Channel{
 			{Provider: "whatsapp", ChannelID: "group-chan", Kind: config.ChannelKindGroup, OrgID: "home", Scope: "group", ScopeID: "famille"},

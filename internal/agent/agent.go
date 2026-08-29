@@ -139,8 +139,13 @@ func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 	ctx = withUsageAttribution(ctx, req.Identity, a.agentName)
 
 	client, textOnly := a.client, a.textOnly
-	if resolved, ok := a.binding.resolve(ctx, req.Identity.OrgID); ok {
+	if resolved, resolveErr := a.binding.resolve(ctx, req.Identity.OrgID); resolveErr == nil {
 		client, textOnly = resolved.Client, !resolved.SupportsVision
+	} else if !errors.Is(resolveErr, errNoResolver) {
+		return Result{}, fmt.Errorf("agent %q: %w", a.agentName, resolveErr)
+	}
+	if client == nil {
+		return Result{}, fmt.Errorf("agent %q: no model is configured for this agent — set an instance default in the administration (Modèles)", a.agentName)
 	}
 
 	messages := a.buildMessages(req, textOnly)

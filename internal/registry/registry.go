@@ -131,50 +131,32 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	}
 	resolver = resolver.WithDynamicSource(tenants)
 
-	// Comptes de messagerie : ils vivent désormais en base et se gèrent
-	// depuis l'administration (pilier 2). Les comptes encore déclarés dans
-	// courier.providers sont importés une seule fois, configuration
-	// comprise — un ré-appairage ne doit jamais être le prix d'une montée
-	// de version.
+	// Chiffrement des configurations de comptes de messagerie : les
+	// comptes vivent en base et se gèrent dans l'administration — plus
+	// aucun semis depuis le fichier.
 	secrets, err := secretbox.New(cfg.Web.SessionSecret)
 	if err != nil && cfg.Web.Enabled {
 		return fmt.Errorf("registry: dérivation de la clé de chiffrement: %w", err)
 	}
-	if secrets != nil {
-		if err := migratePlatforms(ctx, db, cfg, secrets, logger); err != nil {
-			return err
-		}
+
+	// Catalogue des modèles : LA source des clients ET des rôles — quel
+	// modèle sert quel agent et quelle fonction. Il n'y a pas de semis :
+	// une instance neuve se règle dans l'administration, et chaque rôle
+	// sans modèle se signale à l'usage plutôt que de se taire.
+	llmBox, err := secretbox.NewLLMClients(cfg.Web.SessionSecret)
+	if err != nil {
+		return fmt.Errorf("registry: dérivation de la clé du catalogue de modèles: %w", err)
 	}
 
-	step("comptes de messagerie migrés")
+	modelStore := llmclients.NewStore(db, llmBox)
+	pool := llmclients.NewPool(modelStore, agent.BuildLLMClient, logger)
+	images := llmclients.NewImagePool(modelStore, agent.BuildImageGenerationClient, logger)
+	var clientResolver agent.ClientResolver = llmclients.NewResolver(pool, modelStore, logger).
+		WithImagePool(images)
 
-	// Catalogue des modèles : la base fait autorité depuis la migration
-	// 0022, le YAML n'en est que le semis initial. Sans secret de session
-	// exploitable (instance sans serveur web), le catalogue n'est pas
-	// monté : les agents gardent alors le client de leur configuration,
-	// comme avant.
-	var clientResolver agent.ClientResolver
-	if llmBox, err := secretbox.NewLLMClients(cfg.Web.SessionSecret); err != nil {
-		if cfg.Web.Enabled {
-			return fmt.Errorf("registry: dérivation de la clé du catalogue de modèles: %w", err)
-		}
-		logger.WarnContext(ctx, "registry: catalogue de modèles indisponible, les agents restent sur la configuration",
-			"error", err)
-	} else {
-		if err := llmclients.Seed(ctx, db, llmBox, cfg, logger); err != nil {
-			return fmt.Errorf("registry: %w", err)
-		}
+	step("catalogue de modèles prêt")
 
-		store := llmclients.NewStore(db, llmBox)
-		pool := llmclients.NewPool(store, agent.BuildLLMClient, logger)
-		images := llmclients.NewImagePool(store, agent.BuildImageGenerationClient, logger)
-		clientResolver = llmclients.NewResolver(pool, store, llmclients.DefaultRoles(cfg), logger).
-			WithImagePool(images)
-
-		step("catalogue de modèles prêt")
-	}
-
-	memRes, err := buildMemory(ctx, cfg)
+	memRes, err := buildMemory(ctx, cfg, modelStore)
 	if err != nil {
 		return fmt.Errorf("registry: construction de la mémoire: %w", err)
 	}
@@ -227,7 +209,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	// Provider des sous-agents de plugins et exécuteurs de leurs actions
 	// confirmées. Nil quand le système est désactivé : le registre
 	// d'agents est nil-safe.
-	pluginProvider, err := newPluginSpecialistProvider(ctx, cfg, pluginManager, db, skillsProvider, clientResolver, logger)
+	pluginProvider, err := newPluginSpecialistProvider(cfg, pluginManager, db, skillsProvider, clientResolver, logger)
 	if err != nil {
 		return fmt.Errorf("registry: client llm des sous-agents de plugins: %w", err)
 	}
@@ -267,7 +249,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	step("moteur d'actions prêt")
 
-	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, pluginProvider, newPluginEventStoreResolver(pluginManager, db), skillsProvider, clientResolver, metrics, logger)
+	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, pluginProvider, newPluginEventStoreResolver(pluginManager, db), skillsProvider, clientResolver, modelStore, metrics, logger)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
@@ -353,12 +335,19 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	// indépendante du scheduler et du dispatcher de rappels — une tâche de
 	// maintenance interne, sans agent ni livraison sur un canal.
 	if cfg.Memory.Consolidation.Enabled {
-		if memRes.store == nil {
+		consolidationCfg, clientName, roleOK := roleClientConfig(ctx, modelStore, llmclients.RoleConsolidation)
+		switch {
+		case memRes.store == nil:
 			logger.Warn("registry: memory.consolidation activée sans système de mémoire configuré, consolidation désactivée")
-		} else {
-			consolidationClient, err := agent.BuildLLMClient(ctx, cfg.LLMClients[cfg.Memory.Consolidation.Client])
+		case !roleOK:
+			// Le modèle se règle en ligne : la consolidation reprendra au
+			// redémarrage suivant le réglage.
+			logger.Warn("registry: consolidation désactivée, aucun modèle configuré",
+				"remède", "réglez le rôle consolidation dans l'administration (Modèles)")
+		default:
+			consolidationClient, err := agent.BuildLLMClient(ctx, consolidationCfg)
 			if err != nil {
-				return fmt.Errorf("registry: construction du client de consolidation %q: %w", cfg.Memory.Consolidation.Client, err)
+				return fmt.Errorf("registry: construction du client de consolidation %q: %w", clientName, err)
 			}
 
 			consolidator, err := consolidation.New(db, memRes.store, consolidationClient, cfg.Memory.Consolidation, logger, metrics)
@@ -463,7 +452,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	// Serveur web d'administration et de profil (socle SaaS, maquettes P1).
 	if cfg.Web.Enabled {
-		mailSender, err := web.NewSMTPSender(cfg)
+		mailSender, err := web.NewSMTPSender(cfg, db, secrets)
 		if err != nil {
 			return fmt.Errorf("registry: construction de l'expéditeur de courriels: %w", err)
 		}
@@ -538,7 +527,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 // réutilisé tel quel par internal/scheduler pour exécuter les tâches
 // planifiées (PLAN.md §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, eventStores agent.EventStoreResolver, skillsProvider agent.SkillsProvider, clientResolver agent.ClientResolver, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, eventStores agent.EventStoreResolver, skillsProvider agent.SkillsProvider, clientResolver agent.ClientResolver, modelStore *llmclients.Store, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
 	memoryTools := buildMemoryTools(cfg, authorizer, memStore, metrics)
 
 	// Outil open_profile_link : disponible dès que le serveur web est
@@ -608,22 +597,26 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	var transcriber audio.Transcriber
 
 	if cfg.Audio.Enabled {
-		llmClientCfg, ok := cfg.LLMClients[cfg.Audio.TranscriptionClient]
+		// Le modèle se règle en ligne (rôle « transcription »), construit
+		// au démarrage : sans lui, les notes vocales sont refusées avec le
+		// message habituel, jamais un refus de démarrer.
+		transcriptionCfg, clientName, ok := roleClientConfig(context.Background(), modelStore, llmclients.RoleTranscription)
 		if !ok {
-			return nil, nil, nil, fmt.Errorf("audio: client llm %q (référencé par audio.transcription_client) introuvable dans la configuration", cfg.Audio.TranscriptionClient)
-		}
+			logger.Warn("registry: transcription désactivée, aucun modèle configuré",
+				"remède", "réglez le rôle transcription dans l'administration (Modèles), puis redémarrez")
+		} else {
+			transcriptionClient, err := agent.BuildTranscriptionClient(context.Background(), transcriptionCfg)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("audio: construction du client de transcription %q: %w", clientName, err)
+			}
 
-		transcriptionClient, err := agent.BuildTranscriptionClient(context.Background(), llmClientCfg)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("audio: construction du client de transcription %q: %w", cfg.Audio.TranscriptionClient, err)
+			audioCfg = audio.Config{
+				Enabled: true,
+				MaxSize: int64(cfg.Audio.MaxSize.Bytes()),
+				Timeout: cfg.Audio.Timeout.Duration(),
+			}
+			transcriber = audio.NewGenAITranscriber(transcriptionClient)
 		}
-
-		audioCfg = audio.Config{
-			Enabled: true,
-			MaxSize: int64(cfg.Audio.MaxSize.Bytes()),
-			Timeout: cfg.Audio.Timeout.Duration(),
-		}
-		transcriber = audio.NewGenAITranscriber(transcriptionClient)
 	}
 
 	handler := conversation.NewHandler(db, mainAgent, actionEngine, cfg.Conversation.HistoryLimit, audioCfg, transcriber, cfg.Audio.PersistTranscription, metrics).
@@ -646,20 +639,12 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	}
 
 	if cfg.Conversation.Compaction.Enabled {
-		// Le client référencé est validé par config.Validate ; BuildLLMClient
-		// l'enveloppe des mêmes middlewares de résilience que les agents.
-		compactionClient, err := agent.BuildLLMClient(context.Background(), cfg.LLMClients[cfg.Conversation.Compaction.Client])
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("conversation: construction du client de compaction %q: %w", cfg.Conversation.Compaction.Client, err)
-		}
-
-		compactor := conversation.NewCompactor(db, compactionClient, cfg.Conversation.HistoryLimit, cfg.Conversation.Compaction.MaxSummaryChars, logger, metrics)
-
-		// Une organisation peut compacter avec son propre modèle ; sans
-		// choix de sa part, c'est celui construit ci-dessus.
-		if clientResolver != nil {
-			compactor = compactor.WithClientResolver(clientResolver)
-		}
+		// Le modèle se règle en ligne (rôle « compaction »), résolu à
+		// CHAQUE compaction par le catalogue — défaut d'instance, surchargé
+		// par organisation. Sans modèle configuré, la compaction d'un tour
+		// est sautée avec une trace : l'historique grossit, rien ne casse.
+		compactor := conversation.NewCompactor(db, nil, cfg.Conversation.HistoryLimit, cfg.Conversation.Compaction.MaxSummaryChars, logger, metrics).
+			WithClientResolver(clientResolver)
 
 		if cfg.Conversation.Compaction.ExtractFacts {
 			if memStore != nil {

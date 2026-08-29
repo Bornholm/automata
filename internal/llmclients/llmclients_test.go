@@ -73,54 +73,6 @@ func seedClient(t *testing.T, db *persistence.DB, store *llmclients.Store, name 
 	}
 }
 
-// Le semis reprend les clients du YAML une seule fois : un second appel ne
-// doit rien réécrire, sinon une modification faite dans l'administration
-// serait perdue à chaque redémarrage.
-func TestSeedIsAppliedOnlyOnce(t *testing.T) {
-	db := testDB(t)
-	box := testBox(t)
-	ctx := context.Background()
-
-	cfg := &config.Config{
-		LLMClients: map[string]config.LLMClient{
-			"main": {Provider: "openrouter", Model: "deepseek/deepseek-chat", APIKey: "sk-test", BaseURL: "https://openrouter.ai/api/v1"},
-		},
-		ImageClients: map[string]config.ImageClient{
-			"imagine": {Provider: "openai", Model: "gpt-image-1", APIKey: "sk-image"},
-		},
-	}
-
-	if err := llmclients.Seed(ctx, db, box, cfg, nil); err != nil {
-		t.Fatalf("Seed: %v", err)
-	}
-
-	store := llmclients.NewStore(db, box)
-
-	// Modification faite « depuis l'administration ».
-	seedClient(t, db, store, "main", config.LLMClient{Provider: "openai", Model: "gpt-5", APIKey: "sk-autre"})
-
-	if err := llmclients.Seed(ctx, db, box, cfg, nil); err != nil {
-		t.Fatalf("Seed (2): %v", err)
-	}
-
-	row, found, err := store.Get(ctx, "main")
-	if err != nil || !found {
-		t.Fatalf("Get: %v (trouvé: %t)", err, found)
-	}
-	if row.Model != "gpt-5" {
-		t.Errorf("modèle %q, attendu gpt-5 : le semis a écrasé une modification", row.Model)
-	}
-
-	// Le client d'images a bien été semé, dans sa propre famille.
-	image, found, err := store.Get(ctx, "imagine")
-	if err != nil || !found {
-		t.Fatalf("Get(imagine): %v (trouvé: %t)", err, found)
-	}
-	if image.Kind != persistence.LLMClientKindImage {
-		t.Errorf("famille %q, attendue %q", image.Kind, persistence.LLMClientKindImage)
-	}
-}
-
 // La clé d'API est scellée en base et ne se relit qu'à la construction du
 // client : c'est le seul endroit où elle revient en clair.
 func TestStoreSealsAPIKey(t *testing.T) {
@@ -203,8 +155,23 @@ func TestPoolReportsUnknownClient(t *testing.T) {
 	}
 }
 
-// La surcharge d'une organisation prime sur le défaut de l'instance ; une
-// organisation sans choix, ou inconnue, retombe sur ce défaut.
+// setRole pose un choix de modèle en base — org_id vide pour le défaut de
+// l'instance.
+func setRole(t *testing.T, db *persistence.DB, orgID, role, clientName string) {
+	t.Helper()
+
+	if err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		return persistence.NewOrgAgentClientRepository().Set(context.Background(), tx, persistence.OrgAgentClient{
+			OrgID: orgID, Role: role, ClientName: clientName, UpdatedAt: time.Now(),
+		})
+	}); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+}
+
+// La surcharge d'une organisation prime sur le défaut de l'instance
+// (org_id vide) ; le YAML ne participe plus à la résolution, et un rôle
+// sans défaut rend ErrNoDefault — jamais un repli silencieux.
 func TestResolverPrefersOrganizationChoice(t *testing.T) {
 	db := testDB(t)
 	box := testBox(t)
@@ -214,17 +181,12 @@ func TestResolverPrefersOrganizationChoice(t *testing.T) {
 	seedClient(t, db, store, "instance", config.LLMClient{Provider: "openai", Model: "gpt-5", APIKey: "sk-a"})
 	seedClient(t, db, store, "premium", config.LLMClient{Provider: "openai", Model: "gpt-5-pro", APIKey: "sk-b"})
 
-	if err := db.WithTx(ctx, func(tx *sql.Tx) error {
-		return persistence.NewOrgAgentClientRepository().Set(ctx, tx, persistence.OrgAgentClient{
-			OrgID: "atelier", Role: "main", ClientName: "premium", UpdatedAt: time.Now(),
-		})
-	}); err != nil {
-		t.Fatalf("Set: %v", err)
-	}
+	setRole(t, db, "", "main", "instance")
+	setRole(t, db, "atelier", "main", "premium")
 
 	calls := 0
 	pool := llmclients.NewPool(store, countingBuilder(&calls), nil)
-	resolver := llmclients.NewResolver(pool, store, map[string]string{"main": "instance"}, nil)
+	resolver := llmclients.NewResolver(pool, store, nil)
 
 	resolved, err := resolver.ResolveClient(ctx, "main", model.OrgID("atelier"))
 	if err != nil {
@@ -242,46 +204,51 @@ func TestResolverPrefersOrganizationChoice(t *testing.T) {
 		t.Errorf("client %q, attendu instance (défaut, aucune surcharge)", resolved.Name)
 	}
 
-	// Un rôle inconnu n'a pas de défaut : l'appelant garde son client.
-	if _, err := resolver.ResolveClient(ctx, "inexistant", model.OrgID("atelier")); !errors.Is(err, llmclients.ErrUnknownClient) {
-		t.Errorf("erreur %v, attendue ErrUnknownClient", err)
+	// Un rôle sans défaut d'instance : erreur nommée, à montrer à qui peut
+	// la corriger.
+	if _, err := resolver.ResolveClient(ctx, "inexistant", model.OrgID("atelier")); !errors.Is(err, llmclients.ErrNoDefault) {
+		t.Errorf("erreur %v, attendue ErrNoDefault", err)
 	}
 }
 
-// DefaultRoles dresse la table des rôles depuis la configuration — les
-// clients de la mémoire en sont volontairement absents.
-func TestDefaultRolesExcludesMemoryClients(t *testing.T) {
+// Roles dresse la liste depuis ce que la configuration déclare : agents,
+// génération d'images, fonctions actives, index sémantiques — jamais de
+// noms de clients.
+func TestRolesFollowConfiguredFeatures(t *testing.T) {
 	cfg := &config.Config{
 		Agents: map[string]config.Agent{
-			"main":     {Client: "principal"},
-			"research": {Client: "rapide"},
+			"main":    {},
+			"imagine": {ImageGeneration: true},
 		},
-		Plugins: config.Plugins{Client: "atelier", VisionClient: "regard"},
+		Plugins: config.Plugins{Enabled: true},
 		Conversation: config.Conversation{
-			Compaction: config.Compaction{Client: "resume"},
+			Compaction: config.Compaction{Enabled: true},
 		},
+		Audio: config.Audio{Enabled: true},
 		Memory: config.Memory{
-			Consolidation: config.MemoryConsolidation{Client: "consolidation"},
-			Retrieval:     config.MemoryRetrieval{Client: "hyde"},
+			Consolidation: config.MemoryConsolidation{Enabled: true},
+			Retrieval:     config.MemoryRetrieval{Profile: "balanced"},
+			Indexes: []config.MemoryIndex{
+				{ID: "semantic", Type: "sqlitevec"},
+				{ID: "fulltext", Type: "bleve"},
+			},
 		},
 	}
 
-	roles := llmclients.DefaultRoles(cfg)
-
-	expected := map[string]string{
-		"main":                       "principal",
-		"research":                   "rapide",
-		llmclients.RolePlugins:       "atelier",
-		llmclients.RolePluginsVision: "regard",
-		llmclients.RoleCompaction:    "resume",
+	got := llmclients.Roles(cfg)
+	want := map[string]bool{
+		"main": true, "imagine": true, "image:imagine": true,
+		llmclients.RolePlugins: true, llmclients.RolePluginsVision: true,
+		llmclients.RoleCompaction: true, llmclients.RoleTranscription: true,
+		llmclients.RoleConsolidation: true, llmclients.RoleRetrieval: true,
+		"embeddings:semantic": true,
 	}
-	for role, want := range expected {
-		if roles[role] != want {
-			t.Errorf("rôle %q : client %q, attendu %q", role, roles[role], want)
+	if len(got) != len(want) {
+		t.Fatalf("%d rôles (%v), attendus %d", len(got), got, len(want))
+	}
+	for _, role := range got {
+		if !want[role] {
+			t.Errorf("rôle inattendu %q", role)
 		}
-	}
-	if len(roles) != len(expected) {
-		t.Errorf("%d rôles, attendus %d : les clients de la mémoire ne doivent pas y figurer (%v)",
-			len(roles), len(expected), roles)
 	}
 }

@@ -18,22 +18,17 @@ func TestNewRegistry_DelegatesReachMCPEquippedSpecialist(t *testing.T) {
 	cfg := &config.Config{
 		Version:      1,
 		Organization: config.Organization{ID: "home", DisplayName: "Maison"},
-		LLMClients: map[string]config.LLMClient{
-			"main": {Provider: "openai", Model: "gpt-test", APIKey: "sk-test", BaseURL: "https://api.example.test"},
-		},
 		MCPServers: map[string]config.MCPServer{
 			"internet-search": {Transport: "streamable-http", URL: "https://mcp.example.test/mcp"},
 		},
 		Agents: map[string]config.Agent{
 			"main": {
 				Type:         config.AgentTypeOrchestrator,
-				Client:       "main",
 				SystemPrompt: config.SystemPrompt{Content: "généraliste"},
 				Delegates:    []string{"research"},
 			},
 			"research": {
 				Type:         config.AgentTypeSpecialist,
-				Client:       "main",
 				SystemPrompt: config.SystemPrompt{Content: "spécialiste"},
 				MCPServers:   []string{"internet-search"},
 			},

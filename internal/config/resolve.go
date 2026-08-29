@@ -26,13 +26,6 @@ func resolvePaths(cfg *Config, baseDir string) {
 		cfg.Memory.Indexes[i].Path = resolvePath(baseDir, cfg.Memory.Indexes[i].Path)
 	}
 
-	for name, provider := range cfg.Courier.Providers {
-		if sessionPath, ok := provider.Extra["session_path"].(string); ok {
-			provider.Extra["session_path"] = resolvePath(baseDir, sessionPath)
-			cfg.Courier.Providers[name] = provider
-		}
-	}
-
 	// Les sauvegardes suivent la même règle que le reste : un chemin
 	// relatif se lit depuis le fichier de configuration, pas depuis le
 	// répertoire de lancement — sinon les copies atterrissent où le

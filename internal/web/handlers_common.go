@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"slices"
 	"strconv"
 	"time"
 
@@ -164,26 +163,6 @@ func (s *Server) dailyRate(ctx context.Context, q persistence.Querier, orgID str
 	return float64(total) / 7, nil
 }
 
-// configuredPlatforms liste les providers courier configurés, triés par
-// nom, pour la sidebar et ADM-05.
-func configuredPlatforms(cfg *config.Config) []view.SidebarPlatform {
-	var platforms []view.SidebarPlatform
-	for name, provider := range cfg.Courier.Providers {
-		platforms = append(platforms, view.SidebarPlatform{Type: provider.Type, Name: platformDisplayName(provider.Type, name)})
-	}
-	slices.SortFunc(platforms, func(a, b view.SidebarPlatform) int {
-		if a.Name < b.Name {
-			return -1
-		}
-		if a.Name > b.Name {
-			return 1
-		}
-		return 0
-	})
-
-	return platforms
-}
-
 // platformDisplayName traduit un type de provider en nom de plateforme
 // affiché ; retombe sur le nom configuré pour un type inconnu.
 func platformDisplayName(providerType, fallback string) string {
@@ -203,10 +182,15 @@ func platformDisplayName(providerType, fallback string) string {
 	}
 }
 
-// providerTypeOf retourne le type du provider courier nommé.
-func providerTypeOf(cfg *config.Config, providerName string) string {
-	if provider, ok := cfg.Courier.Providers[providerName]; ok {
-		return provider.Type
+// providerTypeOf retourne le type du compte de messagerie nommé, d'après
+// l'état vivant du gestionnaire de plateformes — les comptes ne se
+// déclarent plus dans le fichier de configuration.
+func (s *Server) providerTypeOf(providerName string) string {
+	if s.platformManager == nil {
+		return ""
+	}
+	if status, ok := s.platformManager.Statuses()[providerName]; ok {
+		return status.Type
 	}
 	return ""
 }

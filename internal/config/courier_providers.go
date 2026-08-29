@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -78,105 +77,6 @@ func (p CourierProvider) DecodeExtra(target any) error {
 		return fmt.Errorf("décodage des champs du fournisseur: %w", err)
 	}
 	return nil
-}
-
-// validateCourierProviders vérifie que chaque fournisseur déclaré a un type
-// connu et ses champs requis : un identifiant manquant doit refuser le
-// chargement, pas échouer au premier message (même principe que
-// validateLLMClients).
-func validateCourierProviders(cfg *Config) []error {
-	var errs []error
-
-	for _, name := range sortedKeys(cfg.Courier.Providers) {
-		cp := cfg.Courier.Providers[name]
-		prefix := fmt.Sprintf("courier.providers.%s", name)
-
-		fail := func(field, message string) {
-			errs = append(errs, fmt.Errorf("%s.%s: %s", prefix, field, message))
-		}
-
-		switch cp.Type {
-		case "whatsapp":
-			var c WhatsAppProviderConfig
-			if err := cp.DecodeExtra(&c); err != nil {
-				fail("", err.Error())
-				continue
-			}
-			if c.SessionPath == "" {
-				fail("session_path", "requis (base SQLite de la session liée)")
-			}
-		case "signal":
-			var c SignalProviderConfig
-			if err := cp.DecodeExtra(&c); err != nil {
-				fail("", err.Error())
-				continue
-			}
-			if c.Account == "" {
-				fail("account", "requis (numéro E.164 du compte, ex: \"+33612345678\")")
-			}
-			// address est facultative : le défaut du provider vise le daemon
-			// local sur son port standard.
-		case "discord":
-			var c DiscordProviderConfig
-			if err := cp.DecodeExtra(&c); err != nil {
-				fail("", err.Error())
-				continue
-			}
-			if c.Token == "" {
-				fail("token", "requis (jeton de bot Discord)")
-			}
-		case "rocket":
-			var c RocketProviderConfig
-			if err := cp.DecodeExtra(&c); err != nil {
-				fail("", err.Error())
-				continue
-			}
-			if c.ServerURL == "" {
-				fail("server_url", "requis")
-			}
-			if c.Username == "" || c.Password == "" {
-				fail("username/password", "requis")
-			}
-		case "mail":
-			var c MailProviderConfig
-			if err := cp.DecodeExtra(&c); err != nil {
-				fail("", err.Error())
-				continue
-			}
-			if c.IMAP.Address == "" || c.IMAP.Username == "" || c.IMAP.Password == "" {
-				fail("imap", "address, username et password requis (réception)")
-			}
-			if c.SMTP.Address == "" || c.SMTP.Issuer == "" {
-				fail("smtp", "address et issuer requis (envoi)")
-			}
-			if interval := c.IMAP.CheckInterval.Duration(); interval < 0 || (interval > 0 && interval < time.Second) {
-				fail("imap.check_interval", "doit valoir au moins 1s")
-			}
-		case "rest":
-			var c RestProviderConfig
-			if err := cp.DecodeExtra(&c); err != nil {
-				fail("", err.Error())
-				continue
-			}
-			if c.Address == "" {
-				fail("address", "requis (adresse d'écoute de l'API)")
-			}
-			if len(c.Users) == 0 {
-				fail("users", "au moins une identité requise : sans jeton, l'API refuse tout")
-			}
-			for i, user := range c.Users {
-				if user.Token == "" || user.ID == "" {
-					fail(fmt.Sprintf("users[%d]", i), "token et id requis")
-				}
-			}
-		case "":
-			errs = append(errs, fmt.Errorf("%s.type: requis (types: %s)", prefix, SupportedCourierProviders))
-		default:
-			errs = append(errs, fmt.Errorf("%s.type: %q non supporté (types: %s)", prefix, cp.Type, SupportedCourierProviders))
-		}
-	}
-
-	return errs
 }
 
 // RestProviderConfig configure un fournisseur REST : une API HTTP JSON où

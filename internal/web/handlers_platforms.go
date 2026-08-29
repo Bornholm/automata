@@ -162,7 +162,7 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 		// Canaux actifs de la configuration.
 		for _, ch := range s.cfg.Channels {
 			page.Channels = append(page.Channels, view.ChannelRow{
-				PlatformType: providerTypeOf(s.cfg, ch.Provider),
+				PlatformType: s.providerTypeOf(ch.Provider),
 				Name:         s.channelDisplayName(ch),
 				Kind:         channelKindLabel(ch.Kind),
 				OrgName:      s.orgDisplayName(r.Context(), tx, ch.OrgID),

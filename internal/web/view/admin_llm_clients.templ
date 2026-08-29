@@ -25,7 +25,11 @@ type LLMClientsPage struct {
 	CSRFToken string
 
 	Clients []LLMClientRow
-	Error   string
+	// Roles sont les rôles de l'instance : quel modèle sert chaque agent
+	// et chaque fonction système par défaut. C'est LA source — le fichier
+	// de configuration ne les connaît plus.
+	Roles []OrgModelRole
+	Error string
 }
 
 templ AdminLLMClients(page LLMClientsPage) {
@@ -41,9 +45,23 @@ templ AdminLLMClients(page LLMClientsPage) {
 			if page.Error != "" {
 				<div class="mb-4 rounded-lg bg-crit-wash px-3 py-2.5 text-[13px] text-crit-deep">{ page.Error }</div>
 			}
+			if len(page.Roles) > 0 {
+				<form method="post" action="/admin/llm-clients/roles" class="mb-5 rounded-[11px] border border-line-2 bg-white p-5.5">
+					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+					<div class="text-[15px] font-semibold text-ink">Rôles de l'instance</div>
+					<div class="mt-1 text-sm leading-normal text-text-3">
+						Le modèle qui sert chaque agent et chaque fonction, par défaut. Une organisation peut ensuite
+						surcharger un rôle depuis sa fiche. Un rôle non configuré est une fonction à l'arrêt.
+					</div>
+					@ModelRoleRows(page.Roles)
+					<div class="mt-4">
+						<button type="submit" class="h-[38px] rounded-lg bg-brand px-5 text-sm font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
+					</div>
+				</form>
+			}
 			if len(page.Clients) == 0 {
 				<div class="rounded-[11px] border border-dashed border-line bg-white px-8 py-14 text-center text-sm text-text-4">
-					Aucun modèle. Les modèles déclarés dans la configuration sont repris au premier démarrage du service.
+					Aucun modèle. Créez le premier avec « Nouveau modèle », puis affectez-le aux rôles de l'instance ci-dessus.
 				</div>
 			} else {
 				<div class="overflow-x-auto rounded-[11px] border border-line-2 bg-white">

@@ -1,7 +1,25 @@
 # Référence de configuration
 
-Un seul fichier YAML décrit toute l'instance. Ce document parcourt chaque
-section dans l'ordre où elle apparaît dans `config/config.example.yaml`.
+## La frontière : le fichier décrit la machine, l'administration le reste
+
+Le fichier YAML ne configure que ce qui démarre le processus : stockage et
+chiffrement, ports et adresses, limites techniques, sauvegardes,
+observabilité — plus, pour cette phase, la définition des agents (prompts,
+délégations, serveurs MCP) et les rôles/permissions.
+
+Tout ce qui décrit un client ou un réglage d'exploitation vit en base et
+s'administre en ligne : les organisations et leurs membres, les comptes de
+messagerie, les modèles et leur affectation à chaque agent
+([models.md](models.md)), les tarifs, les compétences, l'activation des
+plugins. Il n'y a AUCUN semis : rien ne se copie du fichier vers la base, et
+ce qui est supprimé en ligne ne réapparaît jamais au redémarrage. Deux
+exceptions assumées : les compétences embarquées (contenu du projet, semées
+par go:embed) et le bootstrap MANUEL `automata web bootstrap`, qui importe
+une première organisation déclarée dans le fichier — un geste explicite,
+pas un mécanisme silencieux.
+
+Ce document parcourt chaque section du fichier dans l'ordre où elle
+apparaît dans `config/config.example.yaml`.
 
 Trois règles valent partout.
 
@@ -152,135 +170,22 @@ système ; le chiffrement de la base protège ses copies, pas la machine.
 
 ```yaml
 courier:
-  providers:
-    whatsapp:
-      type: whatsapp
-      session_path: /data/courier/whatsapp
-```
-
-Chaque entrée est un fournisseur de messagerie. Le nom de la clé,
-`whatsapp` ici, est celui que vous réutilisez dans `origins`, `channels` et
-`schedules[].delivery.provider` — plusieurs fournisseurs coexistent, chacun
-avec ses canaux et ses origines, et un même principal peut écrire depuis
-plusieurs plateformes.
-
-Cinq types sont livrés. Chacun a ses champs propres, vérifiés au chargement
-comme le reste de la configuration :
-
-```yaml
-courier:
-  providers:
-    whatsapp:
-      type: whatsapp
-      # Conserve la liaison d'appareil : supprimer ce répertoire oblige à
-      # rescanner un QR code. À sauvegarder.
-      session_path: /data/courier/whatsapp
-
-    # Adossé au daemon signal-cli et à son interface JSON-RPC :
-    #   signal-cli -a +33612345678 daemon --tcp 127.0.0.1:7583
-    # C'est le daemon qui porte le compte et son enregistrement.
-    signal:
-      type: signal
-      account: "+33612345678"
-      # tcp://hôte:port ou unix:///chemin/socket. Défaut : tcp://127.0.0.1:7583.
-      address: tcp://127.0.0.1:7583
-
-    discord:
-      type: discord
-      token: ${DISCORD_BOT_TOKEN}
-
-    rocket:
-      type: rocket
-      server_url: https://chat.example.test
-      username: ${ROCKET_USERNAME}
-      password: ${ROCKET_PASSWORD}
-
-    # L'assistant par courriel : relève IMAP, réponses SMTP. Un fil de
-    # discussion devient une conversation.
-    mail:
-      type: mail
-      imap:
-        address: imap.example.test:993
-        username: ${MAIL_USERNAME}
-        password: ${MAIL_PASSWORD}
-        check_interval: 1m      # facultatif
-        folders: [INBOX]        # facultatif
-      smtp:
-        address: smtp.example.test:587
-        issuer: assistant@example.test
-        username: ${MAIL_USERNAME}
-        password: ${MAIL_PASSWORD}
-
-    # Une API HTTP JSON au lieu d'une messagerie : les messages entrants
-    # sont postés, les sortants lus en flux d'événements. C'est le compte
-    # des essais de bout en bout — conversation, rattachement par jeton,
-    # confirmation d'achat — sans dépendre d'un téléphone.
-    rest:
-      type: rest
-      address: 127.0.0.1:8095
-      users:
-        - token: ${REST_TOKEN_TESTEUR}
-          id: testeur
-          display_name: Testeur
-      cors_origins: []          # facultatif
-```
-
-Le compte `rest` n'a pas d'appairage : une identité vaut un jeton porteur,
-et sans jeton l'API refuse tout — un port ouvert donnerait sinon accès aux
-conversations. L'adresse doit rester locale ou derrière un proxy
-authentifiant, et les jetons sont des secrets : ils passent par `env`.
-
-```
-POST /channels/{canal}/messages          message entrant (multipart, champ « message »)
-GET  /channels/{canal}/events            réponses d'Automata (SSE)
-GET  /healthz                            sonde de vie
-```
-
-Un canal dont l'identifiant commence par `group-` est traité comme un
-groupe, les autres comme une conversation privée : les deux régimes de
-mémoire et de permissions s'éprouvent donc dans le même compte. Envoyer un
-premier message :
-
-```bash
-curl -H "Authorization: Bearer $REST_TOKEN_TESTEUR" \
-  -F 'message={"content":"bonjour"}' \
-  http://127.0.0.1:8095/channels/testeur/messages
-
-curl -N -H "Authorization: Bearer $REST_TOKEN_TESTEUR" \
-  http://127.0.0.1:8095/channels/testeur/events
-```
-
-Identifiants de canaux (`channels[].channel_id`), par plateforme : WhatsApp
-utilise les JID (`33612345678@s.whatsapp.net`, groupes `…@g.us`) ; Signal le
-numéro E.164 du pair en direct et `group.<id base64>` pour un groupe ;
-Discord et Rocket.Chat leurs identifiants de salon ; le courriel identifie
-une conversation par le Message-ID racine du fil.
-
-### coalesce_window
-
-```yaml
-courier:
   coalesce_window: 2s
 ```
 
-Fenêtre de coalescence des rafales, commune à tous les fournisseurs. Après
-un message entrant, le pipeline attend que cette durée s'écoule sans
-nouvelle arrivée, puis fusionne les messages texte consécutifs d'un même
-expéditeur sur un même canal en un seul tour de conversation : trois bulles
-envoyées coup sur coup donnent une seule réponse au lieu de trois réponses
-entremêlées, et un seul appel au modèle au lieu de trois.
+Il ne reste ici que la fenêtre de coalescence : les messages texte
+consécutifs d'un même expéditeur arrivés pendant cette fenêtre sont
+fusionnés en un seul tour de conversation. `0s` désactive, deux secondes
+par défaut.
 
-Seuls les messages purement textuels fusionnent. Une pièce jointe, un
-vocal ou une réponse à un message précis interrompt la fusion et forme son
-propre tour, dans l'ordre d'arrivée. Dans un groupe, une seule mention de
-l'assistant dans la rafale suffit : les messages voisins du même expéditeur
-deviennent le contexte du tour. Une rafale est bornée à 10 messages ; un
-flux continu ne repousse donc pas le traitement indéfiniment.
-
-Absente, la fenêtre vaut `2s`. `0s` désactive la coalescence. La valeur est
-plafonnée à `30s` par la validation : chaque réponse attend au moins la
-fenêtre entière, une valeur élevée ferait passer l'assistant pour muet. Le
-compteur `messages_coalesced` de `/metrics` mesure les messages absorbés.
+Les **comptes de messagerie** (WhatsApp, Signal, Rocket.Chat, Discord,
+mail) ne se déclarent plus dans ce fichier : ils se créent dans
+l'administration (« Canaux et plateformes »), qui range leur configuration
+chiffrée en base et applique les changements à chaud. Un compte supprimé
+en ligne ne réapparaît jamais au redémarrage. Les noms de comptes restent
+ce que `origins`, `channels` et `schedules[].delivery.provider`
+référencent, et `web.mail_provider` désigne un compte de type `mail` de
+cette même table.
 
 ## observability
 
@@ -408,153 +313,16 @@ Conserver des images a un coût en vie privée et en volume. Voir
 [operations.md](operations.md) pour la surveillance et la purge, et
 [security-model.md](security-model.md) pour l'analyse.
 
-## llm_clients
+## llm_clients, image_clients (supprimées)
 
-> **Cette section ne sert qu'au premier démarrage.** Les clients y sont
-> alors copiés en base, qui fait ensuite autorité : ils s'éditent dans
-> l'administration, à l'écran « Modèles », et une organisation peut se voir
-> servir un modèle différent des autres. La section reste requise, car
-> c'est elle qui dit quel client sert quel rôle par défaut
-> (`agents.<nom>.client`), mais **modifier un modèle ici n'a plus d'effet**
-> passé le semis. Voir [models.md](models.md).
-
-```yaml
-llm_clients:
-  main:
-    provider: openai
-    model: ${MAIN_MODEL}
-    api_key: ${MAIN_API_KEY}
-    base_url: ${MAIN_BASE_URL}
-
-  transcription:
-    provider: openai
-    model: ${TRANSCRIPTION_MODEL}
-    api_key: ${TRANSCRIPTION_API_KEY}
-    base_url: ${TRANSCRIPTION_BASE_URL}
-```
-
-`provider` accepte `openai`, `mistral` et `openrouter`. Pour un service
-compatible OpenAI — OpenRouter compris — préférez `openai` avec la `base_url`
-du service : le provider `openrouter` construit son client sur l'URL du
-service en dur et ignore `base_url`.
-
-### reasoning
-
-Les modèles à réflexion peuvent voir leur budget réglé par client :
-
-```yaml
-  main:
-    provider: openai
-    model: ${MAIN_MODEL}
-    api_key: ${MAIN_API_KEY}
-    base_url: ${MAIN_BASE_URL}
-    reasoning:
-      effort: low     # minimal | low | medium | high (aussi none, xhigh selon le fournisseur)
-```
-
-Le réglage vaut pour **tous** les appels de ce client : conversation,
-délégation, compaction, consolidation. Sans la clé `reasoning`, le défaut du
-modèle s'applique et rien n'est imposé au fournisseur.
-
-C'est un arbitrage entre qualité et vivacité, et il ne se pose pas de la même
-façon selon l'agent. L'orchestrateur ne fait qu'aiguiller et reformuler : sa
-réflexion se paie sur chaque message, y compris un simple « coucou », pendant
-que la personne regarde l'indicateur « en train d'écrire ». Un spécialiste qui
-recoupe des sources, ou une tâche planifiée que personne n'attend, méritent
-davantage. D'où l'intérêt de déclarer deux clients sur le même modèle, l'un
-bridé pour l'orchestrateur, l'autre non — rien n'oblige les agents à partager
-un client.
-
-Mesuré sur `qwen3.8-27b` via OpenRouter, pour un simple « Coucou ! » : 65
-jetons de réflexion sans réglage, 46 avec `effort: low`.
-
-Les quatre champs sont **obligatoires**, `base_url` comprise, et la
-configuration est refusée au chargement s'il en manque un. Aucun défaut
-implicite n'est appliqué : une `base_url` déduite enverrait vos requêtes
-chez un fournisseur qui n'est pas celui de votre clé, et l'erreur
-n'apparaîtrait qu'au premier appel réel — pour la transcription, au premier
-message vocal reçu, soit potentiellement des semaines après le déploiement.
-
-Le client de transcription se règle indépendamment du client principal : tous
-les fournisseurs de complétion ne transcrivent pas l'audio, et l'inverse est
-vrai aussi. Un même `base_url` pour les deux convient quand le fournisseur
-expose `/audio/transcriptions` (c'est le cas d'OpenRouter et d'OpenAI).
-
-Rien n'oblige tous les agents à partager un client. Donner un modèle rapide et
-bon marché à un spécialiste qui ne fait que reformuler, et un modèle plus
-capable à l'orchestrateur, est un réglage courant.
-
-### extra_fields
-
-```yaml
-llm_clients:
-  main:
-    extra_fields:
-      usage:
-        include: true
-```
-
-Ces champs sont injectés tels quels dans le corps de chaque requête du
-client. Rien n'est validé : les passerelles compatibles OpenAI acceptent des
-paramètres que l'API d'origine ne connaît pas, et un champ inconnu du
-fournisseur fera échouer l'appel.
-
-Le cas qui compte est comptable. **OpenRouter ne rapporte le coût réel d'un
-appel que si la requête porte `usage: {include: true}`.** Sans lui, Automata
-retombe sur son estimation par jetons alors que le fournisseur connaît le
-chiffre exact — et l'écart n'est pas cosmétique : mesuré sur
-`deepseek-v4-flash`, la même conversation coûtait 0,00033 $ réels contre
-0,005 $ estimés, soit quinze fois trop. Une organisation facturée sur cette
-base paierait quinze fois le prix.
-
-Les traces d'usage distinguent les deux : `cost_reported = 1` pour un montant
-rapporté par le fournisseur, `0` pour une estimation. L'écran de tarification
-signale d'ailleurs les appels sans coût rapporté, la marge affichée étant
-optimiste d'autant.
-
-Ce réglage ne concerne que les clients `provider: openai` pointés sur une
-passerelle, et seulement la complétion. Les transcriptions et les
-générations d'images d'OpenRouter portent leur coût sans qu'on le demande :
-il est enregistré tel quel. C'est d'autant plus important pour les images,
-facturées à l'unité — plusieurs centimes l'une, trois ordres de grandeur
-au-dessus d'un tour de conversation, qu'aucune estimation au jeton
-n'approcherait.
-
-### vision
-
-```yaml
-llm_clients:
-  main:
-    vision: false
-```
-
-Déclare si le modèle accepte les images en entrée (true par défaut). À
-`false`, les agents utilisant ce client n'envoient jamais de pièce jointe au
-modèle — un fournisseur texte-seul rejette la requête entière dès qu'un
-message en contient une — et le message utilisateur est annoté en texte pour
-que l'agent délègue à un spécialiste multimodal. Les pièces jointes
-accompagnent toujours les délégations, quel que soit ce réglage.
-
-## image_clients
-
-```yaml
-image_clients:
-  image:
-    provider: openrouter          # openai | openrouter | minimax
-    model: google/gemini-3.1-flash-lite-image
-    api_key: ${OPENROUTER_API_KEY}
-```
-
-Clients de génération d'images, référencés par
-`agents.<nom>.image_generation.client`. Contrairement aux `llm_clients`,
-`base_url` est facultative : chaque provider embarque l'URL de son service —
-`openai`, `openrouter` et `minimax` ne parlent pas le même dialecte et ne
-sont pas interchangeables derrière une URL.
-
-L'interface commune (genai `llm.ImageGenerationClient`) normalise ce que les
-trois renvoient : des octets et un type de média, jamais une URL éphémère ni
-du base64 à décoder côté appelant. Les modèles disponibles sur OpenRouter se
-listent via `GET /api/v1/images/models`.
+Ces sections n'existent plus : le catalogue de modèles vit en base et
+s'administre en ligne, clés d'API comprises (scellées au repos). Les champs
+`agents.<nom>.client`, `plugins.client`, `plugins.vision_client`,
+`audio.transcription_client`, `conversation.compaction.client`,
+`memory.consolidation.client`, `memory.retrieval.client` et
+`memory.indexes[].client` ont disparu avec elles : chaque usage est un
+**rôle de l'instance**, réglé à l'écran « Modèles ». Voir
+[models.md](models.md).
 
 ## agents
 

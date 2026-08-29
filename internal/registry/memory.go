@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/bornholm/amoxtli"
 	amoxtlibleve "github.com/bornholm/amoxtli/index/bleve"
@@ -16,8 +17,11 @@ import (
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/authorization"
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/llmclients"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/observability"
+	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/secretbox"
 )
 
 // memoryCollectionLabel est le label de la collection amoxtli unique créée
@@ -59,7 +63,11 @@ func (r *memoryResources) close(logger interface {
 // agent déclarant memory.search/remember/forget se voit tout de même
 // construit, mais sans aucun outil mémoire exposé (voir
 // agent.NewRegistryWithMemory, qui gère nativement une MemoryTools à zéro).
-func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, error) {
+// models donne accès au catalogue de modèles : le client d'embeddings de
+// chaque index sqlitevec et le client HyDE se règlent en ligne (rôles
+// « embeddings:<id> » et « retrieval »). Nil : ces fonctions sont
+// désactivées avec un avertissement, jamais un crash.
+func buildMemory(ctx context.Context, cfg *config.Config, models *llmclients.Store) (memoryResources, error) {
 	if cfg.Memory.Store.Path == "" {
 		return memoryResources{}, nil
 	}
@@ -151,12 +159,30 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 				}
 			}
 
-			// Le client est garanti présent par config.Validate ; son modèle
-			// (ex: mistral-embed) est celui utilisé pour les embeddings.
-			clientCfg := cfg.LLMClients[idxCfg.Client]
+			// Le client d'embeddings se règle en ligne (rôle
+			// « embeddings:<id> »). Sans catalogue ou sans défaut, l'index
+			// sémantique est ignoré : la recherche mémoire dégrade sur les
+			// autres index, l'instance continue de servir.
+			clientCfg, clientName, ok := embeddingsConfig(ctx, models, idxCfg.ID)
+			if !ok {
+				slog.WarnContext(ctx, "registry: mémoire: index sémantique désactivé, aucun modèle configuré",
+					"index", idxCfg.ID, "remède", "réglez le rôle embeddings:"+idxCfg.ID+" dans l'administration (Modèles)")
+				continue
+			}
+
+			// VERROU : un index vectoriel est physiquement lié au modèle qui
+			// a produit ses vecteurs. La sentinelle posée à côté du fichier
+			// mémorise ce modèle au premier démarrage ; toute divergence est
+			// FATALE — c'est le seul refus de démarrer de tout le catalogue,
+			// et il attrape toutes les voies de contournement (rôle modifié,
+			// client du catalogue édité).
+			if err := checkEmbeddingsSentinel(idxCfg.Path, clientCfg.Provider, clientCfg.Model); err != nil {
+				return res, fmt.Errorf("registry: mémoire: memory.indexes[%q]: %w", idxCfg.ID, err)
+			}
+
 			embeddings, err := agent.BuildEmbeddingsClient(ctx, clientCfg)
 			if err != nil {
-				return res, fmt.Errorf("registry: mémoire: client d'embeddings de memory.indexes[%q]: %w", idxCfg.ID, err)
+				return res, fmt.Errorf("registry: mémoire: client d'embeddings %q de memory.indexes[%q]: %w", clientName, idxCfg.ID, err)
 			}
 
 			// Installe l'extension sqlite-vec (WASM) avant toute ouverture,
@@ -199,10 +225,19 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 	case "", "fast":
 		codexOpts = append(codexOpts, amoxtli.WithDisableHyDE(), amoxtli.WithDisableJudge())
 	case "balanced":
-		// Le client est garanti présent par config.Validate.
-		hydeClient, err := agent.BuildLLMClient(ctx, cfg.LLMClients[cfg.Memory.Retrieval.Client])
+		// Le modèle HyDE se règle en ligne (rôle « retrieval »). Sans
+		// défaut, le profil dégrade en « fast » avec un avertissement :
+		// la recherche continue, sans reformulation.
+		hydeCfg, hydeName, ok := roleClientConfig(ctx, models, llmclients.RoleRetrieval)
+		if !ok {
+			slog.WarnContext(ctx, "registry: mémoire: profil balanced sans modèle HyDE, recherche en profil fast",
+				"remède", "réglez le rôle retrieval dans l'administration (Modèles)")
+			codexOpts = append(codexOpts, amoxtli.WithDisableHyDE(), amoxtli.WithDisableJudge())
+			break
+		}
+		hydeClient, err := agent.BuildLLMClient(ctx, hydeCfg)
 		if err != nil {
-			return res, fmt.Errorf("registry: mémoire: client HyDE (memory.retrieval.client): %w", err)
+			return res, fmt.Errorf("registry: mémoire: client HyDE %q: %w", hydeName, err)
 		}
 		codexOpts = append(codexOpts, amoxtli.WithDisableJudge(), amoxtli.WithLLMClient(hydeClient))
 	default:
@@ -242,10 +277,25 @@ func buildMemory(ctx context.Context, cfg *config.Config) (memoryResources, erro
 // la commande CLI "automata memory reindex" (PLAN.md §8.6, Phase 10). Les
 // ressources construites sont fermées avant le retour, quel que soit le
 // résultat.
+//
+// Le client d'embeddings d'un index sémantique vit au catalogue de modèles
+// (base applicative) : la commande ouvre donc la base — le service doit
+// être ARRÊTÉ, ce que le verrou d'instance garantit de toute façon.
 func MemoryReindex(ctx context.Context, logger interface {
 	Error(msg string, args ...any)
 }, cfg *config.Config) error {
-	res, err := buildMemory(ctx, cfg)
+	db, err := persistence.OpenWithEncryption(ctx, cfg.Storage.Application, cfg.Storage.EncryptionKey)
+	if err != nil {
+		return fmt.Errorf("registry: ouverture de la persistance: %w", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	llmBox, err := secretbox.NewLLMClients(cfg.Web.SessionSecret)
+	if err != nil {
+		return fmt.Errorf("registry: dérivation de la clé du catalogue de modèles: %w", err)
+	}
+
+	res, err := buildMemory(ctx, cfg, llmclients.NewStore(db, llmBox))
 	defer res.close(logger)
 	if err != nil {
 		return fmt.Errorf("registry: construction de la mémoire: %w", err)
@@ -288,5 +338,69 @@ func buildMemoryTools(cfg *config.Config, authorizer *authorization.Authorizer, 
 		Recall:     true,
 		MaxResults: 5,
 		Metrics:    metrics,
+	}
+}
+
+// roleClientConfig résout la définition du client servant un rôle
+// d'instance : défaut du rôle en base, puis ligne du catalogue. Retourne
+// false — jamais d'erreur — quand le catalogue est absent, le rôle non
+// configuré ou le client disparu : ces fonctions se DÉGRADENT, l'appelant
+// journalise le remède.
+func roleClientConfig(ctx context.Context, models *llmclients.Store, role string) (config.LLMClient, string, bool) {
+	if models == nil {
+		return config.LLMClient{}, "", false
+	}
+
+	name, found, err := models.OrgChoice(ctx, "", role)
+	if err != nil || !found || name == "" {
+		return config.LLMClient{}, "", false
+	}
+
+	row, found, err := models.Get(ctx, name)
+	if err != nil || !found {
+		return config.LLMClient{}, "", false
+	}
+
+	cfg, err := models.Config(row)
+	if err != nil {
+		return config.LLMClient{}, "", false
+	}
+
+	return cfg, name, true
+}
+
+// embeddingsConfig résout le client d'embeddings d'un index sémantique.
+func embeddingsConfig(ctx context.Context, models *llmclients.Store, indexID string) (config.LLMClient, string, bool) {
+	return roleClientConfig(ctx, models, llmclients.EmbeddingsRole(indexID))
+}
+
+// checkEmbeddingsSentinel verrouille le modèle d'embeddings d'un index sur
+// son premier démarrage réussi : le fichier « <index>.embedding » mémorise
+// provider/model, et toute divergence ultérieure refuse de démarrer.
+//
+// Changer de modèle rendrait les vecteurs déjà écrits incomparables aux
+// nouveaux : la recherche mémoire dégraderait EN SILENCE, sans erreur. Le
+// geste de déverrouillage est volontairement manuel — supprimer l'index et
+// sa sentinelle, puis laisser la réindexation reconstruire.
+func checkEmbeddingsSentinel(indexPath, provider, model string) error {
+	sentinelPath := indexPath + ".embedding"
+	want := provider + "/" + model + "\n"
+
+	existing, err := os.ReadFile(sentinelPath)
+	switch {
+	case err == nil:
+		if string(existing) != want {
+			return fmt.Errorf("cet index a été construit avec le modèle %q, le rôle désigne maintenant %q — "+
+				"pour changer de modèle d'embeddings, supprimez l'index (%s) et sa sentinelle (%s), la réindexation le reconstruira",
+				strings.TrimSpace(string(existing)), provider+"/"+model, indexPath, sentinelPath)
+		}
+		return nil
+	case os.IsNotExist(err):
+		if writeErr := os.WriteFile(sentinelPath, []byte(want), 0o600); writeErr != nil {
+			return fmt.Errorf("écriture de la sentinelle d'embeddings %q: %w", sentinelPath, writeErr)
+		}
+		return nil
+	default:
+		return fmt.Errorf("lecture de la sentinelle d'embeddings %q: %w", sentinelPath, err)
 	}
 }

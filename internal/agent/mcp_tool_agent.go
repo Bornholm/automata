@@ -118,11 +118,17 @@ func NewMCPToolAgent(client llm.ChatCompletionClient, systemPrompt, agentName st
 func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error) {
 	ctx = withUsageAttribution(ctx, req.Identity, a.agentName)
 
-	// Modèle du tour : celui que l'organisation a choisi si elle en a
-	// choisi un, celui de la configuration sinon.
+	// Modèle du tour : résolu par le catalogue (défaut d'instance,
+	// surchargé par organisation). Le client du constructeur ne sert plus
+	// qu'aux tests, qui n'ont pas de résolveur.
 	client, textOnly := a.client, a.textOnly
-	if resolved, ok := a.binding.resolve(ctx, req.Identity.OrgID); ok {
+	if resolved, resolveErr := a.binding.resolve(ctx, req.Identity.OrgID); resolveErr == nil {
 		client, textOnly = resolved.Client, !resolved.SupportsVision
+	} else if !errors.Is(resolveErr, errNoResolver) {
+		return Result{}, fmt.Errorf("agent %q: %w", a.agentName, resolveErr)
+	}
+	if client == nil {
+		return Result{}, fmt.Errorf("agent %q: no model is configured for this agent — set an instance default in the administration (Modèles)", a.agentName)
 	}
 
 	sessionKey := mcp.SessionKey(req.Conversation.ID)

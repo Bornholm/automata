@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/bornholm/genai/llm"
-
 	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/config"
@@ -23,60 +21,35 @@ import (
 // agent.PluginSpecialistProvider : par tour, il relit l'activation de
 // l'organisation, interroge ListTools avec l'identité (le plugin taille
 // ses outils selon les réglages du membre) et fabrique les sous-agents.
-// Le client LLM est construit UNE fois — c'est un client de l'instance,
-// décoré par la comptabilité d'usage comme tous les autres.
+// Les modèles (sous-agent et view_file) sont résolus À CHAQUE tour par le
+// catalogue, sous les rôles « plugins » et « plugins.vision » : rien n'est
+// construit au démarrage.
 type pluginSpecialistProvider struct {
 	manager *plugin.Manager
 	db      *persistence.DB
-	client  llm.ChatCompletionClient
-	// vision sert l'outil view_file des sous-agents : le client ci-dessus
-	// est texte-seul. nil quand plugins.vision_client n'est pas
-	// configuré — l'outil n'est alors pas monté.
-	vision llm.ChatCompletionClient
 	// maxFileBytes borne un fichier échangé avec un plugin, dans les deux
 	// sens (attachments.max_tool_size).
 	maxFileBytes int64
-	// textOnly reflète llm_clients.<plugins.client>.vision : un modèle
-	// texte-seul ne doit recevoir aucune pièce jointe.
-	textOnly bool
 	// skills est la bibliothèque de compétences. Le nom d'agent vu par
 	// elle est celui du plugin : une compétence ciblée
 	// `agents: [workspace]` n'apparaît qu'au sous-agent du plugin
 	// workspace.
 	skills agent.SkillsProvider
-	// clientResolver permet à chaque organisation d'avoir son propre modèle
-	// pour les sous-agents de plugins et pour view_file ; nil quand le
-	// catalogue n'est pas monté (les clients ci-dessus servent alors seuls).
+	// clientResolver fournit les modèles des sous-agents et de view_file.
 	clientResolver agent.ClientResolver
 	logger         *slog.Logger
 }
 
 // newPluginSpecialistProvider construit le provider ; nil si le système de
 // plugins est désactivé.
-func newPluginSpecialistProvider(ctx context.Context, cfg *config.Config, manager *plugin.Manager, db *persistence.DB, skills agent.SkillsProvider, clientResolver agent.ClientResolver, logger *slog.Logger) (agent.PluginSpecialistProvider, error) {
+func newPluginSpecialistProvider(cfg *config.Config, manager *plugin.Manager, db *persistence.DB, skills agent.SkillsProvider, clientResolver agent.ClientResolver, logger *slog.Logger) (agent.PluginSpecialistProvider, error) {
 	if manager == nil {
 		return nil, nil
-	}
-
-	client, err := agent.BuildLLMClient(ctx, cfg.LLMClients[cfg.Plugins.Client])
-	if err != nil {
-		return nil, err
-	}
-
-	var vision llm.ChatCompletionClient
-	if cfg.Plugins.VisionClient != "" {
-		vision, err = agent.BuildLLMClient(ctx, cfg.LLMClients[cfg.Plugins.VisionClient])
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	return &pluginSpecialistProvider{
 		manager:        manager,
 		db:             db,
-		client:         client,
-		vision:         vision,
-		textOnly:       !cfg.LLMClients[cfg.Plugins.Client].SupportsVision(),
 		maxFileBytes:   int64(cfg.Attachments.MaxToolSize.Bytes()),
 		skills:         skills,
 		clientResolver: clientResolver,
@@ -118,18 +91,15 @@ func (p *pluginSpecialistProvider) SpecialistsFor(ctx context.Context, identity 
 			})
 		}
 
-		subAgent := agent.NewPluginSubAgent(agentSpec, p.client, pluginToolCaller{p.manager}, 0, p.logger).
-			WithTextOnly(p.textOnly).
+		subAgent := agent.NewPluginSubAgent(agentSpec, nil, pluginToolCaller{p.manager}, 0, p.logger).
 			WithSkills(p.skills).
 			WithClientResolver(p.clientResolver, llmclients.RolePlugins, llmclients.RolePluginsVision, p.logger)
 		if agentSpec.SupportsFiles {
 			// La borne des fichiers échangés est celle des pièces jointes
 			// « outillage seulement » : c'est la même taille qui entre par
-			// la messagerie et qui doit pouvoir en ressortir.
+			// la messagerie et qui doit pouvoir en ressortir. view_file, lui,
+			// se monte au tour, quand le rôle plugins.vision résout.
 			subAgent = subAgent.WithFiles(pluginFileTransfer{p.manager}, p.maxFileBytes)
-			if p.vision != nil {
-				subAgent = subAgent.WithVisionClient(p.vision)
-			}
 		}
 
 		specialists[spec.PluginName] = subAgent

@@ -136,7 +136,6 @@ func newConsolidator(t *testing.T, store memory.Store, client llm.ChatCompletion
 
 	c, err := New(openTestDB(t), store, client, config.MemoryConsolidation{
 		Enabled:     true,
-		Client:      "test",
 		MinMemories: minMemories,
 	}, nil, nil)
 	if err != nil {

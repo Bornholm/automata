@@ -35,7 +35,7 @@ func (s *Server) orgSubtitle(orgID string, bound []persistence.ChannelBinding) s
 		}
 		count++
 		if firstType == "" {
-			firstType = providerTypeOf(s.cfg, ch.Provider)
+			firstType = s.providerTypeOf(ch.Provider)
 		}
 	}
 
@@ -45,7 +45,7 @@ func (s *Server) orgSubtitle(orgID string, bound []persistence.ChannelBinding) s
 		}
 		count++
 		if firstType == "" {
-			firstType = providerTypeOf(s.cfg, binding.Provider)
+			firstType = s.providerTypeOf(binding.Provider)
 		}
 	}
 
@@ -345,7 +345,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 		}
 		page.PluginRows = pluginRows
 
-		modelRoles, err := s.orgModelRows(r.Context(), tx, orgID)
+		modelRoles, err := s.modelRoleRows(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
@@ -453,7 +453,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 
 		for _, binding := range bound {
 			page.Channels = append(page.Channels, view.OrgChannelRow{
-				PlatformType: providerTypeOf(s.cfg, binding.Provider),
+				PlatformType: s.providerTypeOf(binding.Provider),
 				Name:         binding.DisplayName,
 				Kind:         channelKindLabelFromScope(binding.Kind),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
@@ -465,7 +465,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			page.Channels = append(page.Channels, view.OrgChannelRow{
-				PlatformType: providerTypeOf(s.cfg, ch.Provider),
+				PlatformType: s.providerTypeOf(ch.Provider),
 				Name:         s.channelDisplayName(ch),
 				Kind:         channelKindLabel(ch.Kind),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
