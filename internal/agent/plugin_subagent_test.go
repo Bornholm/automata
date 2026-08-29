@@ -149,6 +149,56 @@ func TestPluginSubAgent_WriteToolProposesInsteadOfExecuting(t *testing.T) {
 	}
 }
 
+// Rappeler un outil d'écriture avec les mêmes arguments ne duplique pas
+// l'action dans le plan : observé en production, publish_space proposé
+// trois fois dans le même tour par un modèle qui ne comprenait pas
+// « en attente de confirmation ». Le doublon reçoit un résultat qui le dit
+// sans ambiguïté.
+func TestPluginSubAgent_DuplicateWriteProposalIsCollapsed(t *testing.T) {
+	caller := &fakePluginCaller{}
+
+	var duplicateResult string
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			switch turn {
+			case 0:
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "email_send", `{"to":"yann@example.test","body":"Salut"}`)), nil
+			case 1:
+				return scriptedToolCallResponse(llm.NewToolCall("c2", "email_send", `{"body":"Salut","to":"yann@example.test"}`)), nil
+			case 2:
+				return scriptedToolCallResponse(llm.NewToolCall("c3", "email_send", `{"to":"yann@example.test","body":"Autre corps"}`)), nil
+			default:
+				for _, m := range opts.Messages {
+					if strings.Contains(m.Content(), "ALREADY recorded") {
+						duplicateResult = m.Content()
+					}
+				}
+				return scriptedFinalResponse("Deux envois préparés, en attente de ta confirmation."), nil
+			}
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(testPluginSpec(), client, caller, 0, nil)
+
+	result, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "email",
+		Goal:     "Send hello emails",
+		Identity: pluginTestIdentity(),
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// Le rappel à arguments identiques (ordre des clés indifférent) est
+	// absorbé ; l'action aux arguments différents passe.
+	if len(result.ProposedActions) != 2 {
+		t.Fatalf("%d action(s) proposée(s), attendu 2: %+v", len(result.ProposedActions), result.ProposedActions)
+	}
+	if duplicateResult == "" {
+		t.Fatal("le doublon doit recevoir un résultat qui dit que l'action est déjà enregistrée")
+	}
+}
+
 // Le PrincipalID est un identifiant interne : il part au plugin (processus
 // de confiance) mais jamais dans les messages envoyés au modèle.
 func TestPluginSubAgent_PrincipalIDNeverReachesTheModel(t *testing.T) {
@@ -298,8 +348,64 @@ func TestPluginSubAgent_ImportAttachmentMissingGuidesTheAgent(t *testing.T) {
 	if !strings.Contains(toolResult, "list_files") {
 		t.Fatalf("il doit d'abord renvoyer l'agent vers son workspace: %q", toolResult)
 	}
+	if !strings.Contains(toolResult, "NO file is attached") {
+		t.Fatalf("sans aucune pièce jointe, le résultat doit le dire pour couper court aux devinettes: %q", toolResult)
+	}
 	if transfer.putFilename != "" {
 		t.Fatal("aucun PutFile ne devait être tenté")
+	}
+}
+
+// Quand des pièces existent mais que le nom demandé est faux, le résultat
+// liste les noms réellement disponibles : observé en production, douze
+// noms devinés avant le bon.
+func TestPluginSubAgent_ImportAttachmentMissListsAvailableNames(t *testing.T) {
+	transfer := &fakeFileTransfer{putPath: "input.mp4"}
+	caller := &fakePluginCaller{result: "ok"}
+
+	var toolResult string
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "import_attachment", `{"filename":"photo.jpg"}`)), nil
+			}
+			for _, m := range opts.Messages {
+				if strings.Contains(m.Content(), "available for import") {
+					toolResult = m.Content()
+				}
+			}
+			return scriptedFinalResponse("Je prends le bon nom."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(fileCapableSpec(), client, caller, 0, nil).
+		WithFiles(transfer, 32<<20)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "workspace",
+		Goal:     "Use the photo",
+		Identity: pluginTestIdentity(),
+		Attachments: []media.Media{
+			{Kind: media.KindImage, MimeType: "image/jpeg", Filename: "IMG_20260829.jpg", Data: []byte("jpeg")},
+		},
+		RecentAttachments: []media.Media{
+			{Kind: media.KindVideo, MimeType: "video/mp4", Filename: "clip.mp4", Data: []byte("mp4")},
+			{Kind: media.KindImage, MimeType: "image/jpeg", Filename: "IMG_20260829.jpg", Data: []byte("jpeg-ancien")},
+		},
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if toolResult == "" {
+		t.Fatal("le résultat d'outil doit lister les fichiers disponibles")
+	}
+	for _, name := range []string{"IMG_20260829.jpg", "clip.mp4"} {
+		if !strings.Contains(toolResult, name) {
+			t.Errorf("le nom %q manque dans le résultat: %q", name, toolResult)
+		}
+	}
+	if strings.Count(toolResult, "IMG_20260829.jpg") != 1 {
+		t.Errorf("les noms doivent être dédoublonnés: %q", toolResult)
 	}
 }
 

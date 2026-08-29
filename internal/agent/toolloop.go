@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -30,6 +31,9 @@ import (
 type proposalCollector struct {
 	mu        sync.Mutex
 	proposals []delegation.ProposedAction
+	// seen porte les clés canoniques des propositions déjà retenues, pour
+	// addIfNew.
+	seen map[string]struct{}
 }
 
 func newProposalCollector() *proposalCollector {
@@ -45,6 +49,42 @@ func (c *proposalCollector) add(p delegation.ProposedAction) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.proposals = append(c.proposals, p)
+}
+
+// addIfNew enregistre la proposition, sauf si une proposition identique —
+// même agent, même outil, mêmes arguments — est déjà retenue pour le tour.
+// Les modèles rappellent volontiers un outil d'écriture dont le résultat
+// dit « en attente de confirmation » ; sans ce garde-fou, chaque rappel
+// dupliquerait l'action dans le plan soumis à l'utilisateur. Retourne faux
+// pour un doublon.
+func (c *proposalCollector) addIfNew(p delegation.ProposedAction) bool {
+	if c == nil {
+		return false
+	}
+
+	// json.Marshal trie les clés des maps : la forme sérialisée est
+	// canonique, deux appels aux mêmes arguments donnent le même octet à
+	// octet.
+	args, err := json.Marshal(p.Arguments)
+	if err != nil {
+		// Arguments non sérialisables : impossible de comparer, on
+		// enregistre plutôt que de perdre une action.
+		c.add(p)
+		return true
+	}
+	key := p.AgentID + "\x00" + p.ToolName + "\x00" + string(args)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.seen == nil {
+		c.seen = map[string]struct{}{}
+	}
+	if _, duplicate := c.seen[key]; duplicate {
+		return false
+	}
+	c.seen[key] = struct{}{}
+	c.proposals = append(c.proposals, p)
+	return true
 }
 
 // take retourne les propositions accumulées. Sûr à appeler avec un

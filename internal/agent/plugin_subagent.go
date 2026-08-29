@@ -329,7 +329,12 @@ func (a *PluginSubAgent) buildTool(spec PluginToolSpec, identity model.Execution
 			args[k] = v
 		}
 
-		collector.add(delegation.ProposedAction{
+		// addIfNew : les modèles rappellent volontiers un outil dont le
+		// résultat dit « en attente de confirmation » — observé en
+		// production avec publish_space, proposé trois fois dans le même
+		// tour. Le doublon n'entre pas dans le plan, et le résultat le dit
+		// sans ambiguïté.
+		added := collector.addIfNew(delegation.ProposedAction{
 			Summary:            summarizeAction(spec.Name, args),
 			AgentID:            "plugin:" + a.spec.PluginName,
 			MCPServer:          "plugin:" + a.spec.PluginName,
@@ -339,11 +344,19 @@ func (a *PluginSubAgent) buildTool(spec PluginToolSpec, identity model.Execution
 			Scope:              identity.Scope,
 			ScopeID:            identity.ScopeID,
 		})
+		if !added {
+			return llm.NewToolResult(
+				"This exact action is ALREADY recorded and awaiting the user's confirmation. " +
+					"Calling the tool again does nothing and will not speed it up. " +
+					"Finish your turn now and tell the user the action awaits their confirmation.",
+			), nil
+		}
 
 		return llm.NewToolResult(
-			"Action enregistrée, en attente de la confirmation de l'utilisateur : elle n'a PAS encore été exécutée. " +
-				"Tu peux en enregistrer d'autres dans le même tour, elles seront confirmées ensemble. " +
-				"N'essaie pas de les confirmer toi-même.",
+			"Action recorded, awaiting the user's confirmation: it has NOT been executed yet, and you cannot execute or confirm it yourself. " +
+				"Do not call this tool again for the same action. " +
+				"You may record other, different actions in the same turn; they will be confirmed together. " +
+				"When done, tell the user what awaits their confirmation.",
 		), nil
 	}
 
@@ -397,10 +410,22 @@ func (a *PluginSubAgent) newImportAttachmentTool(req delegation.Request) llm.Too
 
 			found, ok := findAttachment(attachments, filename)
 			if !ok {
+				// Nommer les fichiers réellement disponibles coupe court
+				// aux devinettes : observé en production, douze noms
+				// essayés avant le bon.
+				names := attachmentNames(attachments)
+				if len(names) == 0 {
+					return llm.NewToolResult(
+						"error: no file named " + filename + " was found, and NO file is attached to this conversation's recent messages. " +
+							"Do not guess other names. Check list_files: it may already be in your workspace. " +
+							"Otherwise ask the user to send it again.",
+					), nil
+				}
 				return llm.NewToolResult(
 					"error: no file named " + filename + " was found in this conversation. " +
-						"Check list_files: it may already be in your workspace. " +
-						"Otherwise ask the user to send it again.",
+						"The files available for import are, by exact name: " + strings.Join(names, ", ") + ". " +
+						"Use one of these names verbatim — do not guess variations. " +
+						"If none is the right file, check list_files (it may already be in your workspace) or ask the user to send it again.",
 				), nil
 			}
 
@@ -587,6 +612,31 @@ func (a *PluginSubAgent) newViewFileTool(req delegation.Request) llm.Tool {
 // findAttachment retrouve une pièce jointe du tour par son nom. La
 // comparaison insensible à la casse rattrape les modèles qui recopient
 // approximativement le nom listé.
+// attachmentNames retourne les noms de fichiers importables, dédoublonnés
+// dans l'ordre d'arrivée (tour courant d'abord), bornés pour tenir dans un
+// résultat d'outil. Les noms sont déjà exposés au modèle par les notices
+// de pièces jointes : les répéter ici ne divulgue rien de neuf.
+func attachmentNames(attachments []media.Media) []string {
+	const maxNames = 15
+
+	seen := map[string]struct{}{}
+	names := make([]string, 0, min(len(attachments), maxNames))
+	for _, m := range attachments {
+		if m.Filename == "" {
+			continue
+		}
+		if _, done := seen[m.Filename]; done {
+			continue
+		}
+		seen[m.Filename] = struct{}{}
+		names = append(names, m.Filename)
+		if len(names) == maxNames {
+			break
+		}
+	}
+	return names
+}
+
 func findAttachment(attachments []media.Media, filename string) (media.Media, bool) {
 	for _, m := range attachments {
 		if m.Filename == filename {
