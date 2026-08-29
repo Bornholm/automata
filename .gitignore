@@ -29,3 +29,9 @@
 # Binaires de plugins compilés localement (make build-plugins les range dans local/plugins/)
 plugins/email/email
 plugins/pages/pages
+
+# Binaires des plugins compilés sur place (make build-plugins)
+plugins/caldav/caldav
+plugins/email/email
+plugins/pages/pages
+plugins/workspace/workspace
