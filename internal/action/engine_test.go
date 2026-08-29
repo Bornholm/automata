@@ -403,6 +403,112 @@ func TestEngine_PlanExpire(t *testing.T) {
 	}
 }
 
+// Les plans expirés ne participent plus à la levée d'ambiguïté : après
+// leur échéance, « confirmer » vise directement le seul plan vivant, et
+// les morts sont soldés en base — vu en production, trois plans listés
+// dont deux expirés depuis plus d'une heure.
+func TestEngine_ExpiredPlansLeaveTheListing(t *testing.T) {
+	db := openTestDB(t, testStorageConfig(t))
+	store := newFakeMemoryStore()
+	store.seed("m1", "vieille note", "alice")
+	store.seed("m2", "note récente", "alice")
+
+	now := time.Now()
+	clock := &now
+	engine := action.NewEngine(db, authorization.NewAuthorizer(appConfig(true)), nil, appConfig(true),
+		action.WithMemoryStore(store),
+		action.WithPlanTTL(time.Minute),
+		action.WithClock(func() time.Time { return *clock }),
+	)
+
+	identity := privateIdentity("alice", "conv-1")
+	conv := testConversation("conv-1")
+	ensureConversation(t, db, conv)
+
+	if _, _, err := engine.CreatePlan(context.Background(), identity, []delegation.ProposedAction{
+		memoryForgetProposal("m1", "Supprimer m1"),
+	}); err != nil {
+		t.Fatalf("CreatePlan 1: %v", err)
+	}
+
+	// Le premier plan meurt, un second naît après l'échéance. La création
+	// solde le plan expiré (elle ne le remplace pas : il est mort).
+	later := now.Add(2 * time.Minute)
+	clock = &later
+	if _, _, err := engine.CreatePlan(context.Background(), identity, []delegation.ProposedAction{
+		memoryForgetProposal("m2", "Supprimer m2"),
+	}); err != nil {
+		t.Fatalf("CreatePlan 2: %v", err)
+	}
+
+	cmd, _ := action.ParseCommand("confirmer")
+	report, err := engine.HandleCommand(context.Background(), identity, conv, cmd)
+	if err != nil {
+		t.Fatalf("HandleCommand: %v", err)
+	}
+	if strings.Contains(report, "Plusieurs plans") {
+		t.Fatalf("aucune ambiguïté attendue avec un seul plan vivant: %q", report)
+	}
+
+	if _, found, _ := store.GetByID(context.Background(), "home", model.ScopePersonal, "alice", "m2"); found {
+		t.Fatal("le plan vivant devait s'exécuter (m2 supprimée)")
+	}
+	if _, found, _ := store.GetByID(context.Background(), "home", model.ScopePersonal, "alice", "m1"); !found {
+		t.Fatal("le plan expiré ne devait jamais s'exécuter (m1 conservée)")
+	}
+}
+
+// Une nouvelle proposition portant les mêmes actions (même serveur, même
+// outil — les arguments sont l'itération) REMPLACE la précédente restée
+// sans réponse : « confirmer » redevient sans ambiguïté.
+func TestEngine_NewPlanSupersedesSameAction(t *testing.T) {
+	db := openTestDB(t, testStorageConfig(t))
+	store := newFakeMemoryStore()
+	store.seed("m1", "première itération", "alice")
+	store.seed("m2", "seconde itération", "alice")
+
+	engine := action.NewEngine(db, authorization.NewAuthorizer(appConfig(true)), nil, appConfig(true),
+		action.WithMemoryStore(store),
+	)
+
+	identity := privateIdentity("alice", "conv-1")
+	conv := testConversation("conv-1")
+	ensureConversation(t, db, conv)
+
+	if _, _, err := engine.CreatePlan(context.Background(), identity, []delegation.ProposedAction{
+		memoryForgetProposal("m1", "Supprimer m1"),
+	}); err != nil {
+		t.Fatalf("CreatePlan 1: %v", err)
+	}
+
+	_, text, err := engine.CreatePlan(context.Background(), identity, []delegation.ProposedAction{
+		memoryForgetProposal("m2", "Supprimer m2"),
+	})
+	if err != nil {
+		t.Fatalf("CreatePlan 2: %v", err)
+	}
+	if !strings.Contains(text, "remplace") {
+		t.Errorf("la proposition doit annoncer le remplacement: %q", text)
+	}
+
+	cmd, _ := action.ParseCommand("confirmer")
+	report, err := engine.HandleCommand(context.Background(), identity, conv, cmd)
+	if err != nil {
+		t.Fatalf("HandleCommand: %v", err)
+	}
+	if strings.Contains(report, "Plusieurs plans") {
+		t.Fatalf("le plan remplacé ne doit plus créer d'ambiguïté: %q", report)
+	}
+
+	// Seule la DERNIÈRE itération s'exécute.
+	if _, found, _ := store.GetByID(context.Background(), "home", model.ScopePersonal, "alice", "m2"); found {
+		t.Fatal("le nouveau plan devait s'exécuter (m2 supprimée)")
+	}
+	if _, found, _ := store.GetByID(context.Background(), "home", model.ScopePersonal, "alice", "m1"); !found {
+		t.Fatal("le plan remplacé ne devait jamais s'exécuter (m1 conservée)")
+	}
+}
+
 func TestEngine_PlanAnnule(t *testing.T) {
 	storageCfg := testStorageConfig(t)
 	db := openTestDB(t, storageCfg)

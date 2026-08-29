@@ -33,6 +33,9 @@ const (
 	StatusFailed               = "failed"
 	StatusExpired              = "expired"
 	StatusCancelled            = "cancelled"
+	// StatusSuperseded marque un plan remplacé par une proposition plus
+	// récente portant les mêmes actions : voir CreatePlan.
+	StatusSuperseded = "superseded"
 )
 
 // InternalServer est la valeur conventionnelle de Action.MCPServer pour une
@@ -241,7 +244,58 @@ func (e *Engine) CreatePlan(ctx context.Context, identity model.ExecutionIdentit
 		})
 	}
 
+	// Signatures des actions du nouveau plan : « même action, itération
+	// différente » se reconnaît au couple (serveur, outil) — les arguments
+	// sont précisément ce qui change d'une itération à l'autre.
+	newKeys := map[string]struct{}{}
+	for _, pa := range proposed {
+		newKeys[pa.MCPServer+"\x00"+pa.ToolName] = struct{}{}
+	}
+
+	superseded := 0
 	err := e.db.WithTx(ctx, func(tx *sql.Tx) error {
+		// Un nouveau plan REMPLACE les propositions plus anciennes de la
+		// même conversation restées sans réponse, quand toutes leurs
+		// actions sont reproposées ici : sans cela, chaque itération avec
+		// l'agent empile un plan et « confirmer » finit par exiger un
+		// numéro — vu en production, trois plans dont deux morts. Les
+		// plans expirés rencontrés au passage sont soldés.
+		actives, err := e.plans.ListActiveByConversation(ctx, tx, identity.ConversationID)
+		if err != nil {
+			return fmt.Errorf("liste des plans actifs: %w", err)
+		}
+		for _, old := range actives {
+			if e.isExpired(old) {
+				if err := e.plans.UpdateStatus(ctx, tx, old.ID, StatusExpired, nowText); err != nil {
+					return fmt.Errorf("expiration du plan %q: %w", old.ID, err)
+				}
+				continue
+			}
+			if old.Scope != plan.Scope || old.ScopeID != plan.ScopeID {
+				continue
+			}
+
+			oldActions, err := e.actions.ListByPlanID(ctx, tx, old.ID)
+			if err != nil {
+				return fmt.Errorf("liste des actions du plan %q: %w", old.ID, err)
+			}
+			covered := len(oldActions) > 0
+			for _, a := range oldActions {
+				if _, ok := newKeys[a.MCPServer+"\x00"+a.ToolName]; !ok {
+					covered = false
+					break
+				}
+			}
+			if !covered {
+				continue
+			}
+
+			if err := e.plans.UpdateStatus(ctx, tx, old.ID, StatusSuperseded, nowText); err != nil {
+				return fmt.Errorf("remplacement du plan %q: %w", old.ID, err)
+			}
+			superseded++
+		}
+
 		if err := e.plans.Insert(ctx, tx, plan); err != nil {
 			return err
 		}
@@ -258,7 +312,12 @@ func (e *Engine) CreatePlan(ctx context.Context, identity model.ExecutionIdentit
 
 	e.metrics.IncActionProposed()
 
-	return plan, formatPlanProposal(rows, e.planTTL), nil
+	text := formatPlanProposal(rows, e.planTTL)
+	if superseded > 0 {
+		text += "\n(remplace la proposition précédente restée sans réponse)"
+	}
+
+	return plan, text, nil
 }
 
 // RecoverInterrupted recherche, au démarrage du processus, les plans
@@ -389,7 +448,28 @@ func (e *Engine) HandleCommand(ctx context.Context, identity model.ExecutionIden
 		return "", fmt.Errorf("action: recherche des plans actifs de la conversation %q: %w", conv.ID, err)
 	}
 
+	// Expiration paresseuse AVANT toute sélection : un plan mort ne doit
+	// ni recevoir de confirmation, ni surtout encombrer la levée
+	// d'ambiguïté — vu en production, « confirmer » exigeait un numéro
+	// parmi trois plans dont deux expirés depuis plus d'une heure.
+	expired := 0
+	live := activePlans[:0]
+	for _, plan := range activePlans {
+		if e.isExpired(plan) {
+			if err := e.setPlanStatus(ctx, plan.ID, StatusExpired); err != nil {
+				return "", fmt.Errorf("action: expiration du plan %q: %w", plan.ID, err)
+			}
+			expired++
+			continue
+		}
+		live = append(live, plan)
+	}
+	activePlans = live
+
 	if len(activePlans) == 0 {
+		if expired > 0 {
+			return "La proposition en attente a expiré : redemandez l'action pour en obtenir une nouvelle.", nil
+		}
 		return "Aucun plan d'actions en attente de confirmation dans cette conversation.", nil
 	}
 
