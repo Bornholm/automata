@@ -84,6 +84,8 @@ type Server struct {
 	pricingRepo       *persistence.PricingRepository
 	modelPrices       *persistence.ModelPriceRepository
 	bindings          *persistence.ChannelBindingRepository
+	pluginObjects     *persistence.PluginObjectRepository
+	pluginSites       *persistence.PluginPublicSiteRepository
 }
 
 // PlatformManager est la vue qu'a le serveur web du gestionnaire de
@@ -133,6 +135,8 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 		bindings:          persistence.NewChannelBindingRepository(),
 		pluginActivations: persistence.NewPluginActivationRepository(),
 		skills:            persistence.NewSkillRepository(),
+		pluginObjects:     persistence.NewPluginObjectRepository(),
+		pluginSites:       persistence.NewPluginPublicSiteRepository(),
 	}
 
 	// La clé de chiffrement des secrets dérive du secret de session : la
@@ -232,6 +236,11 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	mux.HandleFunc("GET /p/{link}/privacy/export", s.handleProfileExport)
 	mux.HandleFunc("POST /p/{link}/privacy/delete", s.handleProfileDelete)
 	mux.HandleFunc("POST /stripe/webhook", s.handleStripeWebhook)
+
+	// Pages publiques publiées par les plugins (magasin d'objets). Servies
+	// sans session, sous CSP sandbox : voir handlers_public_site.go.
+	mux.HandleFunc("GET /s/{slug}", s.handlePublicSiteRoot)
+	mux.HandleFunc("GET /s/{slug}/{path...}", s.handlePublicSite)
 
 	s.httpServer = &http.Server{Addr: cfg.Web.Addr, Handler: mux}
 
