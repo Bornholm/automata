@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -299,6 +300,42 @@ func TestObjectStorePublication(t *testing.T) {
 	})
 	if err != nil || unpub.Existed {
 		t.Errorf("seconde dépublication = (%+v, %v)", unpub, err)
+	}
+}
+
+// PreviewCollection : refus sans fabrique câblée, refus d'une collection
+// vide, sinon l'URL et l'échéance de la fabrique.
+func TestObjectStorePreview(t *testing.T) {
+	scoped, _ := newObjectHost(t, ObjectStoreLimits{})
+	ctx := context.Background()
+
+	request := &proto.PreviewCollectionRequest{OrgId: "atelier", MemberId: "cam", Collection: "spaces/demo/draft"}
+
+	if _, err := scoped.PreviewCollection(ctx, request); status.Code(err) != codes.Unavailable {
+		t.Errorf("sans fabrique = %v, attendu Unavailable", err)
+	}
+
+	expires := time.Now().Add(time.Hour).UTC()
+	scoped.HostService.WithPreviewMinter(func(pluginName, orgID, memberID, collection string) (string, time.Time, error) {
+		if pluginName != "pages" || orgID != "atelier" || memberID != "cam" || collection != "spaces/demo/draft" {
+			t.Errorf("fabrique appelée avec (%q, %q, %q, %q)", pluginName, orgID, memberID, collection)
+		}
+		return "https://automata.test/d/jeton/", expires, nil
+	})
+
+	if _, err := scoped.PreviewCollection(ctx, request); status.Code(err) != codes.FailedPrecondition {
+		t.Errorf("collection vide = %v, attendu FailedPrecondition", err)
+	}
+
+	if err := putTestObject(t, scoped, "cam", "spaces/demo/draft", "index.html", "<html></html>"); err != nil {
+		t.Fatalf("PutObject: %v", err)
+	}
+	resp, err := scoped.PreviewCollection(ctx, request)
+	if err != nil {
+		t.Fatalf("PreviewCollection: %v", err)
+	}
+	if resp.Url != "https://automata.test/d/jeton/" || resp.ExpiresAt != expires.Format(time.RFC3339) {
+		t.Errorf("réponse = %+v", resp)
 	}
 }
 

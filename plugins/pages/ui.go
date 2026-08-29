@@ -56,6 +56,13 @@ button.danger{color:#b42318;border-color:#f2c6c2}
 		<button type="button" onclick="copyLink('url-{{.Name}}', this)">Copier</button>
 	</div>
 	{{end}}
+	{{if .PreviewURL}}
+	<div class="link">
+		<input type="text" value="{{.PreviewURL}}" readonly id="preview-{{.Name}}" title="Lien de prévisualisation du brouillon">
+		<button type="button" onclick="copyLink('preview-{{.Name}}', this)">Copier</button>
+	</div>
+	<div class="hint">Aperçu du brouillon — lien personnel, valable environ une heure.</div>
+	{{end}}
 	<div class="actions">
 		<a class="btn" href="{{$.Base}}spaces/{{.Name}}/archive.zip">Télécharger l'archive</a>
 		<form method="post" action="{{$.Base}}spaces/{{.Name}}/delete" class="confirm" style="display:flex;gap:8px;align-items:center;margin:0">
@@ -78,10 +85,11 @@ function copyLink(id, btn){
 </body></html>`))
 
 type uiSpace struct {
-	Name      string
-	URL       string
-	FileCount int
-	SizeLabel string
+	Name       string
+	URL        string
+	PreviewURL string
+	FileCount  int
+	SizeLabel  string
 }
 
 type uiData struct {
@@ -158,6 +166,12 @@ func loadSpaces(r *http.Request) []uiSpace {
 	spaces := make([]uiSpace, 0, len(names))
 	for name := range names {
 		space := uiSpace{Name: name, URL: published[name]}
+		// Lien de prévisualisation du brouillon : signé et éphémère, il
+		// est refabriqué à chaque affichage. Un échec (brouillon vide)
+		// laisse simplement le champ absent.
+		if url, _, err := host.PreviewCollection(ctx, orgID, memberID, draftCollection(name)); err == nil {
+			space.PreviewURL = url
+		}
 		if entries, err := host.ListObjects(ctx, orgID, memberID, draftCollection(name)); err == nil {
 			var total int64
 			for _, entry := range entries {

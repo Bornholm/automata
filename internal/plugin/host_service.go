@@ -41,6 +41,7 @@ type HostService struct {
 	sites        *persistence.PluginPublicSiteRepository
 	baseURL      string
 	objectLimits ObjectStoreLimits
+	previewMint  PreviewMinter
 }
 
 // NewHostService crée le service hôte.

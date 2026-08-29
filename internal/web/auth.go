@@ -191,6 +191,61 @@ func (s *Server) pluginUIToken(view, orgID, memberID, name string, now time.Time
 	return base64.RawURLEncoding.EncodeToString([]byte(s.signer.sign(payload)))
 }
 
+// draftPreviewTTL borne la vie d'un lien de prévisualisation de brouillon
+// (route /d/). Même raisonnement que pluginUITokenTTL : le jeton voyage
+// dans un chemin d'URL, donc dans les journaux du reverse proxy — une
+// heure pour regarder son brouillon, puis l'agent en refait un.
+const draftPreviewTTL = time.Hour
+
+// DraftPreviewMinter retourne la fabrique de liens de prévisualisation,
+// construite sur les seuls secret de session et URL de base : le service
+// hôte des plugins peut la recevoir en closure (via le registre) sans
+// dépendre de ce paquet ni détenir le secret. Le sujet garde l'ordre
+// plugin/org/membre/collection ; seuls les trois premiers segments sont
+// sans « / », la collection récupère le reste au découpage.
+func DraftPreviewMinter(sessionSecret, baseURL string) func(pluginName, orgID, memberID, collection string) (url string, expiresAt time.Time, err error) {
+	sig := signer{secret: []byte(sessionSecret)}
+	base := strings.TrimRight(baseURL, "/")
+
+	return func(pluginName, orgID, memberID, collection string) (string, time.Time, error) {
+		for _, segment := range []string{pluginName, orgID, memberID} {
+			if segment == "" || strings.Contains(segment, "/") {
+				return "", time.Time{}, fmt.Errorf("web: sujet de prévisualisation invalide")
+			}
+		}
+		if collection == "" {
+			return "", time.Time{}, fmt.Errorf("web: collection de prévisualisation vide")
+		}
+
+		expires := time.Now().Add(draftPreviewTTL)
+		subject := pluginName + "/" + orgID + "/" + memberID + "/" + collection
+		payload := sessionPayload("draft-preview", subject, expires)
+		token := base64.RawURLEncoding.EncodeToString([]byte(sig.sign(payload)))
+		return base + "/d/" + token + "/", expires, nil
+	}
+}
+
+// parseDraftPreviewToken vérifie un jeton de prévisualisation et rend ce
+// qu'il désigne.
+func (s *Server) parseDraftPreviewToken(token string, now time.Time) (pluginName, orgID, memberID, collection string, ok bool) {
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		return "", "", "", "", false
+	}
+
+	subject, _, valid := s.signer.parseSession(string(raw), "draft-preview", now)
+	if !valid {
+		return "", "", "", "", false
+	}
+
+	parts := strings.SplitN(subject, "/", 4)
+	if len(parts) != 4 || parts[0] == "" || parts[1] == "" || parts[2] == "" || parts[3] == "" {
+		return "", "", "", "", false
+	}
+
+	return parts[0], parts[1], parts[2], parts[3], true
+}
+
 // parsePluginUIToken vérifie un jeton et rend ce qu'il porte.
 func (s *Server) parsePluginUIToken(token string, now time.Time) (view, orgID, memberID, name string, ok bool) {
 	raw, err := base64.RawURLEncoding.DecodeString(token)

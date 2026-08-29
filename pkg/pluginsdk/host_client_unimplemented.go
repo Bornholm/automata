@@ -77,6 +77,10 @@ func (UnimplementedHostClient) UnpublishCollection(context.Context, string, stri
 	return false, ErrNotImplemented
 }
 
+func (UnimplementedHostClient) PreviewCollection(context.Context, string, string, string) (string, string, error) {
+	return "", "", ErrNotImplemented
+}
+
 func (UnimplementedHostClient) ListPublications(context.Context, string, string) ([]Publication, error) {
 	return nil, ErrNotImplemented
 }

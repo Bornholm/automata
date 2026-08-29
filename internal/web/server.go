@@ -241,6 +241,9 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail MailSender, logger *
 	// sans session, sous CSP sandbox : voir handlers_public_site.go.
 	mux.HandleFunc("GET /s/{slug}", s.handlePublicSiteRoot)
 	mux.HandleFunc("GET /s/{slug}/{path...}", s.handlePublicSite)
+	// Prévisualisation d'un brouillon derrière un jeton signé éphémère.
+	mux.HandleFunc("GET /d/{token}", s.handleDraftPreviewRoot)
+	mux.HandleFunc("GET /d/{token}/{path...}", s.handleDraftPreview)
 
 	s.httpServer = &http.Server{Addr: cfg.Web.Addr, Handler: mux}
 

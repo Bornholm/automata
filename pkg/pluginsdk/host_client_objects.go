@@ -174,6 +174,16 @@ func (c *grpcHostClient) UnpublishCollection(ctx context.Context, orgID, memberI
 	return resp.Existed, nil
 }
 
+func (c *grpcHostClient) PreviewCollection(ctx context.Context, orgID, memberID, collection string) (url, expiresAt string, err error) {
+	resp, err := c.client.PreviewCollection(ctx, &proto.PreviewCollectionRequest{
+		OrgId: orgID, MemberId: memberID, Collection: collection,
+	})
+	if err != nil {
+		return "", "", fmt.Errorf("PreviewCollection: %w", err)
+	}
+	return resp.Url, resp.ExpiresAt, nil
+}
+
 func (c *grpcHostClient) ListPublications(ctx context.Context, orgID, memberID string) ([]Publication, error) {
 	resp, err := c.client.ListPublications(ctx, &proto.ListPublicationsRequest{
 		OrgId: orgID, MemberId: memberID,

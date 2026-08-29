@@ -31,6 +31,17 @@ Un espace `<nom>` occupe deux collections :
 Modifier une page déjà publiée ne change donc **rien en ligne** avant le
 prochain `publish_space`, lui-même confirmé.
 
+Le membre peut **prévisualiser son brouillon sans confirmation** :
+`preview_space` (outil `read_only`) rend un lien signé éphémère
+(`/d/<jeton>/`, TTL 1 h — le jeton voyage dans l'URL, donc dans les
+journaux du proxy, même raisonnement que les jetons d'iframe) servi avec
+les mêmes en-têtes d'isolement que `/s/` mais en `Cache-Control:
+no-store`. C'est une capacité personnelle remise dans le canal privé —
+rien ne devient public, d'où l'absence de confirmation. Le secret de
+signature reste côté hôte (`web.DraftPreviewMinter`, câblé au service
+hôte par le registre) ; l'UI de profil affiche le même lien, refabriqué
+à chaque affichage.
+
 Les pièces jointes importées (`import_attachment`) atterrissent dans la
 collection `imports`, puis `use_file` les place dans un espace.
 

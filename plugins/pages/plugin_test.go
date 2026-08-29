@@ -119,6 +119,20 @@ func (h *memoryHost) UnpublishCollection(_ context.Context, _, _, collection str
 	return found, nil
 }
 
+func (h *memoryHost) PreviewCollection(_ context.Context, _, _, collection string) (string, string, error) {
+	hasObject := false
+	for full := range h.objects {
+		if strings.HasPrefix(full, collection+"|") {
+			hasObject = true
+			break
+		}
+	}
+	if !hasObject {
+		return "", "", fmt.Errorf("cannot preview an empty collection")
+	}
+	return "https://automata.test/d/jeton-signe/", "2026-08-29T13:00:00Z", nil
+}
+
 func (h *memoryHost) ListPublications(_ context.Context, _, _ string) ([]pluginsdk.Publication, error) {
 	var publications []pluginsdk.Publication
 	for collection, slug := range h.sites {
@@ -191,6 +205,28 @@ func TestPagesLifecycle(t *testing.T) {
 	// list_spaces annonce l'URL publique.
 	if out := call(t, plugin, "list_spaces", "", ""); !strings.Contains(out.ResultText, "published: https://automata.test/s/") {
 		t.Errorf("list_spaces = %q", out.ResultText)
+	}
+}
+
+// preview_space rend un lien de brouillon sans passer par la
+// confirmation : c'est une capacité privée du membre, pas une exposition
+// publique.
+func TestPagesPreviewSpace(t *testing.T) {
+	plugin, _ := newTestPlugin()
+
+	if out := call(t, plugin, "preview_space", `{"space":"absent"}`, ""); !out.IsError {
+		t.Error("prévisualiser un espace inexistant doit échouer")
+	}
+
+	call(t, plugin, "create_space", `{"name":"demo"}`, "")
+	out := call(t, plugin, "preview_space", `{"space":"demo"}`, "")
+	if out.IsError {
+		t.Fatalf("preview_space: %s", out.ResultText)
+	}
+	for _, fragment := range []string{"https://automata.test/d/jeton-signe/", "expires", "confirmation"} {
+		if !strings.Contains(out.ResultText, fragment) {
+			t.Errorf("le résultat ne contient pas %q: %q", fragment, out.ResultText)
+		}
 	}
 }
 

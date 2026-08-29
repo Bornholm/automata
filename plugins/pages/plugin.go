@@ -135,7 +135,9 @@ const pagesSystemPrompt = "You are a web page builder. You create and edit small
 	"5. Edits always go to the user's private draft. Nothing is visible online until publish_space, " +
 	"and publish_space always requires the user's explicit confirmation — never claim a page is published or updated online before that. " +
 	"After a page is published, changing it online requires publishing again (also confirmed).\n" +
-	"6. After publish_space is confirmed, give the user the public URL exactly as returned.\n\n" +
+	"6. After meaningful changes, call preview_space and give the user the private preview link so they can check the draft " +
+	"on their phone before publishing. The preview needs no confirmation; it is temporary and for their eyes only.\n" +
+	"7. After publish_space is confirmed, give the user the public URL exactly as returned.\n\n" +
 	"Keep pages self-contained (relative links only), accessible and mobile-first. " +
 	"If the user asks for something impossible here (forms with a backend, logins, payments), say so plainly and offer the static alternative."
 
@@ -199,6 +201,16 @@ func (p *Plugin) ListTools(context.Context, *proto.ListToolsInput) (*proto.ListT
 				ReadOnly:        true,
 			},
 			{
+				Name: "preview_space",
+				Description: "Get a private, temporary link (about an hour) showing the CURRENT DRAFT of a space, for the user's eyes only. " +
+					"Nothing becomes public. Use it so the user can check the page before deciding to publish.",
+				InputSchemaJson: `{"type":"object","properties":{"space":{"type":"string"}},"required":["space"]}`,
+				// read_only à dessein : le lien est une capacité signée,
+				// éphémère, remise dans le canal privé du membre — aucune
+				// exposition publique, rien d'écrit.
+				ReadOnly: true,
+			},
+			{
 				Name: "publish_space",
 				Description: "Publish the current draft of a space under its public link (a copy is taken: later draft edits stay private " +
 					"until the next publish). Returns the public URL. Requires the user's confirmation.",
@@ -258,6 +270,8 @@ func (p *Plugin) CallTool(ctx context.Context, in *proto.CallToolInput) (*proto.
 		return p.deleteFile(ctx, scope, args.Space, args.Path)
 	case "use_file":
 		return p.useFile(ctx, scope, args.Space, args.ImportPath, args.TargetPath)
+	case "preview_space":
+		return p.previewSpace(ctx, scope, args.Space)
 	case "publish_space":
 		return p.publishSpace(ctx, scope, args.Space, in.Ctx.IdempotencyKey)
 	case "unpublish_space":
@@ -571,6 +585,24 @@ func (p *Plugin) useFile(ctx context.Context, s callScope, space, importPath, ta
 		return toolError("the file could not be placed in the space: " + err.Error()), nil
 	}
 	return &proto.CallToolOutput{ResultText: fmt.Sprintf("%s placed in space %q (%d bytes): reference it as \"%s\" in the HTML.", targetPath, space, len(data), targetPath)}, nil
+}
+
+func (p *Plugin) previewSpace(ctx context.Context, s callScope, space string) (*proto.CallToolOutput, error) {
+	space, fail := checkSpace(ctx, s, space)
+	if fail != nil {
+		return fail, nil
+	}
+
+	url, expiresAt, err := s.host.PreviewCollection(ctx, s.orgID, s.memberID, draftCollection(space))
+	if err != nil {
+		return toolError("the preview link could not be created: " + err.Error()), nil
+	}
+
+	return &proto.CallToolOutput{ResultText: fmt.Sprintf(
+		"Draft preview link for space %q (give it to the user): %s\n"+
+			"It shows the CURRENT draft, is meant for the user's eyes only and expires around %s. "+
+			"Nothing is published: going live still requires publish_space and the user's confirmation.",
+		space, url, expiresAt)}, nil
 }
 
 func (p *Plugin) publishSpace(ctx context.Context, s callScope, space, idempotencyKey string) (*proto.CallToolOutput, error) {

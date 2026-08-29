@@ -62,6 +62,55 @@ func (s *Server) handlePublicSiteRoot(w http.ResponseWriter, r *http.Request) {
 // handlePublicSite sert un fichier d'une collection publiée.
 func (s *Server) handlePublicSite(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
+
+	var (
+		site      persistence.PluginPublicSite
+		siteFound bool
+	)
+	ok := s.withTx(w, r, func(tx *sql.Tx) error {
+		var err error
+		site, siteFound, err = s.pluginSites.FindBySlug(r.Context(), tx, slug)
+		return err
+	})
+	if !ok {
+		return
+	}
+	if !siteFound {
+		http.NotFound(w, r)
+		return
+	}
+
+	s.servePluginObject(w, r, site.PluginName, site.OrgID, site.MemberID, site.Collection,
+		"public, max-age=300")
+}
+
+// handleDraftPreviewRoot redirige /d/<token> vers /d/<token>/, pour les
+// mêmes liens relatifs que la route publique.
+func (s *Server) handleDraftPreviewRoot(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/d/"+r.PathValue("token")+"/", http.StatusMovedPermanently)
+}
+
+// handleDraftPreview sert un brouillon derrière un jeton signé éphémère :
+// la capacité du membre à regarder sa propre page avant de la publier —
+// remise dans son canal privé, jamais listée. Un jeton expiré ou forgé
+// donne un 404 indistinct.
+func (s *Server) handleDraftPreview(w http.ResponseWriter, r *http.Request) {
+	pluginName, orgID, memberID, collection, ok := s.parseDraftPreviewToken(r.PathValue("token"), s.now())
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	// no-store : un brouillon change à chaque itération avec l'agent, et
+	// rien d'un contenu non publié ne doit rester dans un cache partagé.
+	s.servePluginObject(w, r, pluginName, orgID, memberID, collection, "no-store")
+}
+
+// servePluginObject sert un fichier du magasin d'objets avec les en-têtes
+// d'isolement communs aux pages publiées et aux prévisualisations. Le
+// contenu vient d'un modèle piloté par un membre : il est traité en
+// contenu hostile quelle que soit la route.
+func (s *Server) servePluginObject(w http.ResponseWriter, r *http.Request, pluginName, orgID, memberID, collection, cacheControl string) {
 	filePath := r.PathValue("path")
 	if filePath == "" {
 		filePath = "index.html"
@@ -80,18 +129,10 @@ func (s *Server) handlePublicSite(w http.ResponseWriter, r *http.Request) {
 		found  bool
 	)
 	ok := s.withTx(w, r, func(tx *sql.Tx) error {
-		site, siteFound, err := s.pluginSites.FindBySlug(r.Context(), tx, slug)
-		if err != nil {
-			return err
-		}
-		if !siteFound {
-			return nil
-		}
-
 		// Désactiver le plugin pour l'organisation coupe ses pages : la
 		// désactivation est le coupe-circuit de l'opérateur. Le contenu
 		// reste en base, la réactivation ressuscite les liens.
-		enabled, err := s.pluginActivations.IsEnabled(r.Context(), tx, site.PluginName, site.OrgID)
+		enabled, err := s.pluginActivations.IsEnabled(r.Context(), tx, pluginName, orgID)
 		if err != nil {
 			return err
 		}
@@ -99,7 +140,7 @@ func (s *Server) handlePublicSite(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 
-		object, found, err = s.pluginObjects.Get(r.Context(), tx, site.PluginName, site.OrgID, site.MemberID, site.Collection, filePath)
+		object, found, err = s.pluginObjects.Get(r.Context(), tx, pluginName, orgID, memberID, collection, filePath)
 		return err
 	})
 	if !ok {
@@ -127,7 +168,7 @@ func (s *Server) handlePublicSite(w http.ResponseWriter, r *http.Request) {
 	// Pages non listées, non devinables : elles n'ont rien à faire dans
 	// un index de recherche.
 	header.Set("X-Robots-Tag", "noindex")
-	header.Set("Cache-Control", "public, max-age=300")
+	header.Set("Cache-Control", cacheControl)
 
 	// ServeContent apporte HEAD, If-Modified-Since et les requêtes Range —
 	// indispensables pour les vidéos — et respecte le Content-Type posé.

@@ -64,6 +64,10 @@ type HostClient interface {
 	PublishCollection(ctx context.Context, orgID, memberID, collection string) (slug, url string, err error)
 	// UnpublishCollection kills the public link. The content stays.
 	UnpublishCollection(ctx context.Context, orgID, memberID, collection string) (bool, error)
+	// PreviewCollection mints a signed, short-lived URL serving the
+	// collection — for the member's own eyes, nothing becomes public.
+	// expiresAt is RFC3339 UTC.
+	PreviewCollection(ctx context.Context, orgID, memberID, collection string) (url, expiresAt string, err error)
 	// ListPublications returns the member's published collections.
 	ListPublications(ctx context.Context, orgID, memberID string) ([]Publication, error)
 }

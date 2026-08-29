@@ -183,7 +183,10 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			WithObjectStore(cfg.Web.BaseURL, plugin.ObjectStoreLimits{
 				MaxObjectBytes: int64(cfg.Plugins.ObjectStoreMaxObjectBytes),
 				MaxMemberBytes: int64(cfg.Plugins.ObjectStoreMaxMemberBytes),
-			})
+			}).
+			// La fabrique vient du paquet web : le secret de signature ne
+			// traverse jamais internal/plugin.
+			WithPreviewMinter(web.DraftPreviewMinter(cfg.Web.SessionSecret, cfg.Web.BaseURL))
 		pluginManager = plugin.NewManager(cfg.Plugins, pluginHost, agentNames)
 		if err := pluginManager.Start(ctx); err != nil {
 			logger.WarnContext(ctx, "registry: démarrage des plugins incomplet", "error", err)

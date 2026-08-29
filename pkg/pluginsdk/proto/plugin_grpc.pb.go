@@ -514,6 +514,7 @@ const (
 	AutomataHostService_PublishCollection_FullMethodName   = "/automata.plugin.v1.AutomataHostService/PublishCollection"
 	AutomataHostService_UnpublishCollection_FullMethodName = "/automata.plugin.v1.AutomataHostService/UnpublishCollection"
 	AutomataHostService_ListPublications_FullMethodName    = "/automata.plugin.v1.AutomataHostService/ListPublications"
+	AutomataHostService_PreviewCollection_FullMethodName   = "/automata.plugin.v1.AutomataHostService/PreviewCollection"
 )
 
 // AutomataHostServiceClient is the client API for AutomataHostService service.
@@ -550,6 +551,11 @@ type AutomataHostServiceClient interface {
 	PublishCollection(ctx context.Context, in *PublishCollectionRequest, opts ...grpc.CallOption) (*PublishCollectionResponse, error)
 	UnpublishCollection(ctx context.Context, in *UnpublishCollectionRequest, opts ...grpc.CallOption) (*UnpublishCollectionResponse, error)
 	ListPublications(ctx context.Context, in *ListPublicationsRequest, opts ...grpc.CallOption) (*ListPublicationsResponse, error)
+	// PreviewCollection mints a signed, short-lived URL serving a collection
+	// under the host's /d/ route — a capability for the member's own eyes,
+	// handed out in their private channel. Nothing becomes public and the
+	// signing secret never reaches the plugin.
+	PreviewCollection(ctx context.Context, in *PreviewCollectionRequest, opts ...grpc.CallOption) (*PreviewCollectionResponse, error)
 }
 
 type automataHostServiceClient struct {
@@ -742,6 +748,16 @@ func (c *automataHostServiceClient) ListPublications(ctx context.Context, in *Li
 	return out, nil
 }
 
+func (c *automataHostServiceClient) PreviewCollection(ctx context.Context, in *PreviewCollectionRequest, opts ...grpc.CallOption) (*PreviewCollectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PreviewCollectionResponse)
+	err := c.cc.Invoke(ctx, AutomataHostService_PreviewCollection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AutomataHostServiceServer is the server API for AutomataHostService service.
 // All implementations must embed UnimplementedAutomataHostServiceServer
 // for forward compatibility.
@@ -776,6 +792,11 @@ type AutomataHostServiceServer interface {
 	PublishCollection(context.Context, *PublishCollectionRequest) (*PublishCollectionResponse, error)
 	UnpublishCollection(context.Context, *UnpublishCollectionRequest) (*UnpublishCollectionResponse, error)
 	ListPublications(context.Context, *ListPublicationsRequest) (*ListPublicationsResponse, error)
+	// PreviewCollection mints a signed, short-lived URL serving a collection
+	// under the host's /d/ route — a capability for the member's own eyes,
+	// handed out in their private channel. Nothing becomes public and the
+	// signing secret never reaches the plugin.
+	PreviewCollection(context.Context, *PreviewCollectionRequest) (*PreviewCollectionResponse, error)
 	mustEmbedUnimplementedAutomataHostServiceServer()
 }
 
@@ -836,6 +857,9 @@ func (UnimplementedAutomataHostServiceServer) UnpublishCollection(context.Contex
 }
 func (UnimplementedAutomataHostServiceServer) ListPublications(context.Context, *ListPublicationsRequest) (*ListPublicationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListPublications not implemented")
+}
+func (UnimplementedAutomataHostServiceServer) PreviewCollection(context.Context, *PreviewCollectionRequest) (*PreviewCollectionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PreviewCollection not implemented")
 }
 func (UnimplementedAutomataHostServiceServer) mustEmbedUnimplementedAutomataHostServiceServer() {}
 func (UnimplementedAutomataHostServiceServer) testEmbeddedByValue()                             {}
@@ -1146,6 +1170,24 @@ func _AutomataHostService_ListPublications_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AutomataHostService_PreviewCollection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreviewCollectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataHostServiceServer).PreviewCollection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataHostService_PreviewCollection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataHostServiceServer).PreviewCollection(ctx, req.(*PreviewCollectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AutomataHostService_ServiceDesc is the grpc.ServiceDesc for AutomataHostService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1212,6 +1254,10 @@ var AutomataHostService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListPublications",
 			Handler:    _AutomataHostService_ListPublications_Handler,
+		},
+		{
+			MethodName: "PreviewCollection",
+			Handler:    _AutomataHostService_PreviewCollection_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

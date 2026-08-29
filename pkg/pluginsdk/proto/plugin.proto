@@ -61,6 +61,11 @@ service AutomataHostService {
   rpc PublishCollection(PublishCollectionRequest) returns (PublishCollectionResponse);
   rpc UnpublishCollection(UnpublishCollectionRequest) returns (UnpublishCollectionResponse);
   rpc ListPublications(ListPublicationsRequest) returns (ListPublicationsResponse);
+  // PreviewCollection mints a signed, short-lived URL serving a collection
+  // under the host's /d/ route — a capability for the member's own eyes,
+  // handed out in their private channel. Nothing becomes public and the
+  // signing secret never reaches the plugin.
+  rpc PreviewCollection(PreviewCollectionRequest) returns (PreviewCollectionResponse);
 }
 
 message DescribeRequest {}
@@ -478,6 +483,17 @@ message UnpublishCollectionRequest {
 }
 message UnpublishCollectionResponse {
   bool existed = 1;
+}
+
+message PreviewCollectionRequest {
+  string org_id = 1;
+  string member_id = 2;
+  string collection = 3;
+}
+message PreviewCollectionResponse {
+  // url is absolute and expires; expires_at is RFC3339 UTC.
+  string url = 1;
+  string expires_at = 2;
 }
 
 message Publication {

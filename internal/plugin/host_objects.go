@@ -60,6 +60,11 @@ func (l ObjectStoreLimits) withDefaults() ObjectStoreLimits {
 	return l
 }
 
+// PreviewMinter fabrique une URL de prévisualisation signée pour une
+// collection. Fournie par le serveur web via le registre : le secret de
+// signature ne traverse jamais ce paquet.
+type PreviewMinter func(pluginName, orgID, memberID, collection string) (url string, expiresAt time.Time, err error)
+
 // WithObjectStore branche le magasin d'objets et les publications. baseURL
 // est l'URL publique du serveur web, dont dérivent les URLs /s/<slug>.
 func (h *HostService) WithObjectStore(baseURL string, limits ObjectStoreLimits) *HostService {
@@ -67,6 +72,13 @@ func (h *HostService) WithObjectStore(baseURL string, limits ObjectStoreLimits) 
 	h.sites = persistence.NewPluginPublicSiteRepository()
 	h.baseURL = strings.TrimRight(baseURL, "/")
 	h.objectLimits = limits.withDefaults()
+	return h
+}
+
+// WithPreviewMinter branche la fabrique de liens de prévisualisation ;
+// sans elle, PreviewCollection répond une erreur claire.
+func (h *HostService) WithPreviewMinter(mint PreviewMinter) *HostService {
+	h.previewMint = mint
 	return h
 }
 
@@ -527,6 +539,46 @@ func (s *scopedHostService) PublishCollection(ctx context.Context, req *proto.Pu
 		"plugin", s.plugin, "org_id", req.OrgId, "slug", slug)
 
 	return &proto.PublishCollectionResponse{Slug: slug, Url: s.publicURL(slug)}, nil
+}
+
+// PreviewCollection implémente proto.AutomataHostServiceServer : une URL
+// signée éphémère vers la collection, pour les yeux du membre — aucune
+// exposition publique, rien d'écrit en base.
+func (s *scopedHostService) PreviewCollection(ctx context.Context, req *proto.PreviewCollectionRequest) (*proto.PreviewCollectionResponse, error) {
+	if err := s.objectStoreReady(); err != nil {
+		return nil, err
+	}
+	if s.previewMint == nil {
+		return nil, status.Error(codes.Unavailable, "preview links not wired")
+	}
+	if err := checkObjectNames(req.Collection, ""); err != nil {
+		return nil, err
+	}
+
+	err := s.db.WithTx(ctx, func(tx *sql.Tx) error {
+		if err := s.checkScope(ctx, tx, req.OrgId, req.MemberId); err != nil {
+			return err
+		}
+
+		metas, err := s.objects.List(ctx, tx, s.plugin, req.OrgId, req.MemberId, req.Collection)
+		if err != nil {
+			return status.Error(codes.Internal, "object listing failed")
+		}
+		if len(metas) == 0 {
+			return status.Error(codes.FailedPrecondition, "cannot preview an empty collection")
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, grpcErr(err)
+	}
+
+	url, expires, err := s.previewMint(s.plugin, req.OrgId, req.MemberId, req.Collection)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "preview link minting failed")
+	}
+
+	return &proto.PreviewCollectionResponse{Url: url, ExpiresAt: expires.UTC().Format(time.RFC3339)}, nil
 }
 
 // UnpublishCollection implémente proto.AutomataHostServiceServer.

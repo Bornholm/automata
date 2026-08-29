@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"io"
 	"net/http"
 	"strings"
@@ -175,6 +176,121 @@ func TestPublicSite_NotFound(t *testing.T) {
 		if resp.StatusCode != http.StatusNotFound {
 			t.Errorf("%s = %d, attendu 404", url, resp.StatusCode)
 		}
+	}
+}
+
+// seedDraft dépose un brouillon (non publié) pour org-a/cam.
+func seedDraft(t *testing.T, server *Server, enabled bool) {
+	t.Helper()
+
+	seedOrg(t, server, persistence.Organization{ID: "org-a", DisplayName: "Org A"}, 0)
+	seedMember(t, server, persistence.Member{ID: "cam", OrgID: "org-a", DisplayName: "Camille", Role: "member"})
+
+	now := time.Now().UTC()
+	err := server.db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		ctx := context.Background()
+		if err := persistence.NewPluginActivationRepository().Upsert(ctx, tx, persistence.PluginActivation{
+			PluginName: "pages", OrgID: "org-a", Enabled: enabled, CreatedAt: now, UpdatedAt: now,
+		}); err != nil {
+			return err
+		}
+		return persistence.NewPluginObjectRepository().Upsert(ctx, tx, persistence.PluginObject{
+			PluginName: "pages", OrgID: "org-a", MemberID: "cam",
+			Collection: "spaces/demo/draft", Key: "index.html",
+			Size: 22, Data: []byte("<html>brouillon</html>"),
+			CreatedAt: now, UpdatedAt: now,
+		})
+	})
+	if err != nil {
+		t.Fatalf("semis du brouillon: %v", err)
+	}
+}
+
+// Le lien de prévisualisation signé sert le brouillon — jamais mis en
+// cache — et meurt avec son échéance ou une signature invalide.
+func TestDraftPreview_ServesTheDraftBehindASignedToken(t *testing.T) {
+	server, ts, _ := testServer(t)
+	seedDraft(t, server, true)
+	client := noRedirectClient()
+
+	mint := DraftPreviewMinter(server.cfg.Web.SessionSecret, server.cfg.Web.BaseURL)
+	url, _, err := mint("pages", "org-a", "cam", "spaces/demo/draft")
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	token := strings.TrimSuffix(strings.TrimPrefix(url, server.cfg.Web.BaseURL+"/d/"), "/")
+
+	// Racine sans slash : redirection, comme la route publique.
+	resp, err := client.Get(ts.URL + "/d/" + token)
+	if err != nil {
+		t.Fatalf("GET racine: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusMovedPermanently {
+		t.Errorf("racine = %d, attendu 301", resp.StatusCode)
+	}
+
+	resp, err = client.Get(ts.URL + "/d/" + token + "/")
+	if err != nil {
+		t.Fatalf("GET brouillon: %v", err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), "brouillon") {
+		t.Fatalf("brouillon = (%d, %q)", resp.StatusCode, body)
+	}
+	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+		t.Errorf("Cache-Control = %q, attendu no-store", got)
+	}
+	if got := resp.Header.Get("Content-Security-Policy"); got != "sandbox allow-scripts" {
+		t.Errorf("CSP = %q", got)
+	}
+
+	// Jeton expiré : 404 indistinct.
+	sig := signer{secret: []byte(server.cfg.Web.SessionSecret)}
+	expired := base64.RawURLEncoding.EncodeToString([]byte(sig.sign(
+		sessionPayload("draft-preview", "pages/org-a/cam/spaces/demo/draft", time.Now().Add(-time.Minute)))))
+	resp, err = client.Get(ts.URL + "/d/" + expired + "/")
+	if err != nil {
+		t.Fatalf("GET expiré: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("jeton expiré = %d, attendu 404", resp.StatusCode)
+	}
+
+	// Jeton forgé (mauvais secret) : 404 aussi.
+	forged := base64.RawURLEncoding.EncodeToString([]byte(signer{secret: []byte("mauvais-secret-de-32-octets-....")}.sign(
+		sessionPayload("draft-preview", "pages/org-a/cam/spaces/demo/draft", time.Now().Add(time.Hour)))))
+	resp, err = client.Get(ts.URL + "/d/" + forged + "/")
+	if err != nil {
+		t.Fatalf("GET forgé: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("jeton forgé = %d, attendu 404", resp.StatusCode)
+	}
+}
+
+// Le coupe-circuit opérateur vaut aussi pour les prévisualisations.
+func TestDraftPreview_DisabledPluginIs404(t *testing.T) {
+	server, ts, _ := testServer(t)
+	seedDraft(t, server, false)
+
+	mint := DraftPreviewMinter(server.cfg.Web.SessionSecret, server.cfg.Web.BaseURL)
+	url, _, err := mint("pages", "org-a", "cam", "spaces/demo/draft")
+	if err != nil {
+		t.Fatalf("mint: %v", err)
+	}
+	token := strings.TrimSuffix(strings.TrimPrefix(url, server.cfg.Web.BaseURL+"/d/"), "/")
+
+	resp, err := noRedirectClient().Get(ts.URL + "/d/" + token + "/")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("plugin désactivé = %d, attendu 404", resp.StatusCode)
 	}
 }
 
