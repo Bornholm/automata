@@ -47,6 +47,10 @@ type NewMemory struct {
 	OwnerPrincipalID     model.PrincipalID
 	CreatedBy            model.PrincipalID
 	SourceConversationID model.ConversationID
+	// CreatedAt force la date du souvenir ; zéro = maintenant. Sert à
+	// l'édition d'un souvenir par la personne concernée : réécrire le
+	// texte ne doit pas faire croire qu'Automata vient de l'apprendre.
+	CreatedAt time.Time
 	// Origin identifie le mécanisme applicatif ayant produit la mémoire :
 	// vide pour l'outil conversationnel remember, "compaction" pour
 	// l'extraction de faits durables (internal/conversation.Compactor),
@@ -71,6 +75,14 @@ type Store interface {
 	// Search retourne les mémoires correspondant à query.Text dans la
 	// portée exacte décrite par query.
 	Search(ctx context.Context, query Query) ([]Memory, error)
+	// ListByScope retourne TOUS les souvenirs d'une portée, sans texte de
+	// recherche, du plus récent au plus ancien.
+	//
+	// C'est le pendant cloisonné de List : là où List sert la maintenance
+	// interne et ignore les portées, celle-ci est sûre à exposer — elle ne
+	// rend jamais un souvenir d'une autre portée. C'est ce qui permet à
+	// quelqu'un de voir ce qu'Automata retient de lui.
+	ListByScope(ctx context.Context, orgID model.OrgID, scope model.Scope, scopeID model.ScopeID) ([]Memory, error)
 	// GetByID retourne la mémoire identifiée par id, si elle existe dans la
 	// portée (orgID, scope, scopeID) donnée. ok vaut false si aucune
 	// mémoire de cet identifiant n'existe dans cette portée précise (elle

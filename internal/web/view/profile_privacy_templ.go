@@ -171,7 +171,20 @@ func ProfilePrivacy(page PrivacyPage) templ.Component {
 						return templ_7745c5c3_Err
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div><div class=\"mt-6\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "</div><div class=\"mt-5 rounded-xl border border-brand-line bg-brand-wash-2 p-4\"><div class=\"text-base font-semibold leading-snug text-ink\">Corriger ce que je retiens</div><div class=\"mt-1 text-sm leading-normal text-text-2\">Vos souvenirs se lisent et se modifient un par un — un souvenir faux vaut moins que pas de souvenir du tout.</div><a href=\"")
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				var templ_7745c5c3_Var8 templ.SafeURL
+				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/p/" + page.LinkID + "/memories"))
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/profile_privacy.templ`, Line: 60, Col: 62}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "\" class=\"mt-3 flex h-11 w-fit items-center rounded-[10px] bg-brand px-5 text-[15px] font-semibold text-white hover:bg-brand-strong hover:no-underline\">Voir mes souvenirs</a></div><div class=\"mt-6\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -179,20 +192,20 @@ func ProfilePrivacy(page PrivacyPage) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "</div><a href=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "</div><a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var8 templ.SafeURL
-				templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/p/" + page.LinkID + "/privacy/export"))
+				var templ_7745c5c3_Var9 templ.SafeURL
+				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/p/" + page.LinkID + "/privacy/export"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/profile_privacy.templ`, Line: 61, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/profile_privacy.templ`, Line: 66, Col: 65}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "\" class=\"mt-3 flex h-12 w-full items-center justify-center rounded-[10px] border border-line text-base font-semibold text-text hover:bg-panel hover:no-underline\">Télécharger mes données</a><div class=\"mt-2 text-[13px] leading-normal text-text-4\">Un fichier lisible, à conserver où vous voulez.</div><div class=\"mt-6\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "\" class=\"mt-3 flex h-12 w-full items-center justify-center rounded-[10px] border border-line text-base font-semibold text-text hover:bg-panel hover:no-underline\">Télécharger mes données</a><div class=\"mt-2 text-[13px] leading-normal text-text-4\">Un fichier lisible, à conserver où vous voulez.</div><div class=\"mt-6\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -200,33 +213,33 @@ func ProfilePrivacy(page PrivacyPage) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "</div><form method=\"post\" action=\"")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "</div><form method=\"post\" action=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var9 templ.SafeURL
-				templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/p/" + page.LinkID + "/privacy/delete"))
+				var templ_7745c5c3_Var10 templ.SafeURL
+				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinURLErrs(templ.SafeURL("/p/" + page.LinkID + "/privacy/delete"))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/profile_privacy.templ`, Line: 70, Col: 86}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/profile_privacy.templ`, Line: 75, Col: 86}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
-				if templ_7745c5c3_Err != nil {
-					return templ_7745c5c3_Err
-				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\" class=\"mt-3 rounded-xl border border-crit-wash bg-crit-row p-4.5\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var10 string
-				templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
-				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/profile_privacy.templ`, Line: 71, Col: 65}
-				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var10)
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\" class=\"mt-3 rounded-xl border border-crit-wash bg-crit-row p-4.5\"><input type=\"hidden\" name=\"csrf_token\" value=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\"><div class=\"text-base font-semibold leading-snug text-crit-deep\">Supprimer définitivement</div><div class=\"mt-1.5 text-sm leading-normal text-text-2\">Vos messages privés, vos souvenirs et vos rappels seront effacés, et votre compte détaché de votre messagerie. Les échanges de groupe restent : ils appartiennent aussi aux autres participants. Vos relevés de consommation sont conservés sans vous être rattachés, parce qu'ils servent de pièces comptables.</div><label class=\"mt-3.5 block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Pour confirmer, écrivez <span class=\"font-mono font-semibold\">SUPPRIMER</span></span> <input type=\"text\" name=\"confirmation\" required autocomplete=\"off\" class=\"h-12 w-full rounded-[10px] border border-line bg-white px-3.5 font-mono text-base text-ink outline-none focus:border-crit\"></label> <button type=\"submit\" class=\"mt-3 h-12 w-full rounded-[10px] bg-crit text-base font-semibold text-white hover:opacity-90\">Supprimer mes données</button></form>")
+				var templ_7745c5c3_Var11 string
+				templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(page.CSRFToken)
+				if templ_7745c5c3_Err != nil {
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/profile_privacy.templ`, Line: 76, Col: 65}
+				}
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
+				if templ_7745c5c3_Err != nil {
+					return templ_7745c5c3_Err
+				}
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"><div class=\"text-base font-semibold leading-snug text-crit-deep\">Supprimer définitivement</div><div class=\"mt-1.5 text-sm leading-normal text-text-2\">Vos messages privés, vos souvenirs et vos rappels seront effacés, et votre compte détaché de votre messagerie. Les échanges de groupe restent : ils appartiennent aussi aux autres participants. Vos relevés de consommation sont conservés sans vous être rattachés, parce qu'ils servent de pièces comptables.</div><label class=\"mt-3.5 block\"><span class=\"mb-1.5 block text-[13px] font-medium text-text-2\">Pour confirmer, écrivez <span class=\"font-mono font-semibold\">SUPPRIMER</span></span> <input type=\"text\" name=\"confirmation\" required autocomplete=\"off\" class=\"h-12 w-full rounded-[10px] border border-line bg-white px-3.5 font-mono text-base text-ink outline-none focus:border-crit\"></label> <button type=\"submit\" class=\"mt-3 h-12 w-full rounded-[10px] bg-crit text-base font-semibold text-white hover:opacity-90\">Supprimer mes données</button></form>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

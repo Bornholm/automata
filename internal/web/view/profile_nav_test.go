@@ -17,8 +17,8 @@ func TestProfileNav_ListsPluginsAsTabs(t *testing.T) {
 	}
 
 	tabs := view.ProfileTabs("abc", "plugin:agenda", plugins)
-	if len(tabs) != 7 {
-		t.Fatalf("cinq pages fixes et deux plugins attendus, %d onglets obtenus", len(tabs))
+	if len(tabs) != 8 {
+		t.Fatalf("six pages fixes et deux plugins attendus, %d onglets obtenus", len(tabs))
 	}
 
 	agenda := tabs[len(tabs)-1]

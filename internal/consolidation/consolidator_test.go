@@ -102,6 +102,12 @@ func (s *fakeStore) Forget(ctx context.Context, id string) error {
 
 func (s *fakeStore) Reindex(ctx context.Context) error { return nil }
 
+// ListByScope n'est pas exercé par ces tests : la portée est appliquée par
+// le store réel, jamais par ce double.
+func (s *fakeStore) ListByScope(context.Context, model.OrgID, model.Scope, model.ScopeID) ([]memory.Memory, error) {
+	return nil, nil
+}
+
 func (s *fakeStore) List(ctx context.Context) ([]memory.Memory, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -142,6 +143,12 @@ func (s *AmoxtliStore) Remember(ctx context.Context, mem NewMemory) (Memory, err
 	}
 
 	now := time.Now().UTC()
+	if !mem.CreatedAt.IsZero() {
+		// Édition d'un souvenir existant : sa date d'origine est ce qui
+		// permet à la personne de se rappeler DEPUIS QUAND Automata sait
+		// cela. La réécrire à l'instant présent effacerait cette trace.
+		now = mem.CreatedAt.UTC()
+	}
 
 	metadata := map[string]any{
 		"org_id":                 string(mem.OrgID),
@@ -339,6 +346,39 @@ func (s *AmoxtliStore) List(ctx context.Context) ([]Memory, error) {
 			return memories, nil
 		}
 	}
+}
+
+// ListByScope implémente Store.
+//
+// Le filtrage se fait après lecture, sur les métadonnées : amoxtli n'expose
+// pas de filtre par métadonnée sur l'énumération documentaire (seule la
+// recherche plein texte en accepte, et elle exige un texte). Le coût est
+// donc celui d'un parcours complet du store — acceptable pour un écran
+// consulté de temps en temps, à revoir si le nombre de souvenirs d'une
+// instance devenait grand.
+func (s *AmoxtliStore) ListByScope(ctx context.Context, orgID model.OrgID, scope model.Scope, scopeID model.ScopeID) ([]Memory, error) {
+	all, err := s.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	scoped := make([]Memory, 0, len(all))
+	for _, m := range all {
+		if m.Metadata["org_id"] != string(orgID) ||
+			m.Metadata["scope"] != string(scope) ||
+			m.Metadata["scope_id"] != string(scopeID) {
+			continue
+		}
+		scoped = append(scoped, m)
+	}
+
+	// Du plus récent au plus ancien : c'est ce qu'on vient de dire à
+	// Automata qu'on veut vérifier en premier.
+	sort.Slice(scoped, func(i, j int) bool {
+		return scoped[i].CreatedAt.After(scoped[j].CreatedAt)
+	})
+
+	return scoped, nil
 }
 
 // Reindex implémente Store.

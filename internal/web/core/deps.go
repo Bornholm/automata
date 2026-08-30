@@ -26,6 +26,8 @@ import (
 	"github.com/a-h/templ"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/memory"
+	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/platform"
 	"github.com/bornholm/automata/internal/privacy"
@@ -45,6 +47,21 @@ type PrivacyService interface {
 	Export(ctx context.Context, memberID string) (privacy.Export, error)
 	Delete(ctx context.Context, memberID string) (privacy.DeletionReport, error)
 	DeleteOrganization(ctx context.Context, orgID string) (privacy.OrgDeletionReport, error)
+}
+
+// MemoryService est la vue qu'a le serveur web de la mémoire : de quoi
+// montrer à quelqu'un ce qu'Automata retient de lui, corriger un souvenir et
+// l'effacer.
+//
+// L'interface est délibérément étroite. memory.Store porte aussi List, qui
+// ignore les portées et ne doit JAMAIS être atteignable depuis une page :
+// ne pas la déclarer ici est ce qui garantit qu'aucun handler ne pourra
+// l'appeler par mégarde.
+type MemoryService interface {
+	ListByScope(ctx context.Context, orgID model.OrgID, scope model.Scope, scopeID model.ScopeID) ([]memory.Memory, error)
+	GetByID(ctx context.Context, orgID model.OrgID, scope model.Scope, scopeID model.ScopeID, id string) (memory.Memory, bool, error)
+	Remember(ctx context.Context, mem memory.NewMemory) (memory.Memory, error)
+	Forget(ctx context.Context, id string) error
 }
 
 // PlatformManager est la vue qu'a le serveur web du gestionnaire de
@@ -84,6 +101,9 @@ type Deps struct {
 	// Privacy sert l'export et la suppression des données personnelles ;
 	// nil désactive l'écran de confidentialité.
 	Privacy PrivacyService
+	// Memory donne accès aux souvenirs d'un membre ; nil désactive l'écran
+	// des souvenirs.
+	Memory MemoryService
 	// PluginMgr, s'il est renseigné, porte l'état des plugins et le
 	// redémarrage manuel.
 	PluginMgr PluginManager

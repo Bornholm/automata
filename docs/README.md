@@ -38,7 +38,10 @@ section de `configuration.md` correspondant à ce que vous voulez activer.
 - Un agent généraliste qui délègue à des spécialistes. Chacun a son prompt,
   ses serveurs MCP, ses permissions et ses limites.
 - Une mémoire persistante cloisonnée par portée, consultable, inscriptible et
-  supprimable.
+  supprimable — y compris **par la personne concernée**, qui voit dans son
+  profil ce qu'Automata retient d'elle, mot pour mot, et peut le corriger ou
+  l'effacer. Seuls ses souvenirs personnels y figurent : ceux d'un groupe
+  appartiennent au groupe.
 - Des plans d'actions confirmés en toutes lettres avant toute écriture
   externe.
 - Des tâches planifiées qui s'exécutent sous une identité de service, en

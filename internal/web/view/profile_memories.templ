@@ -1,0 +1,93 @@
+package view
+
+// --- Ce qu'Automata retient ---
+//
+// L'écran répond à une question que personne ne devrait avoir à poser : que
+// sais-tu de moi ? Il montre les souvenirs personnels tels qu'ils sont
+// écrits — pas un résumé, pas une reformulation — parce que c'est le texte
+// exact qui sera relu par le modèle lors des prochaines conversations.
+//
+// Chaque souvenir se corrige et s'efface sur place. Un souvenir faux est
+// pire qu'un souvenir absent : il fera dire des bêtises à l'assistant, avec
+// aplomb, pendant des mois.
+
+// MemoryRow est un souvenir affiché.
+type MemoryRow struct {
+	ID      string
+	Content string
+	// At est la date d'acquisition, mise en forme.
+	At string
+	// Origin dit d'où vient le souvenir, en clair (« vous me l'avez dit »,
+	// « déduit d'une conversation »). Vide s'il n'y a rien d'utile à dire.
+	Origin string
+}
+
+type MemoriesPage struct {
+	LinkID    string
+	Header    ProfileHeader
+	CSRFToken string
+	PluginUIs []ProfilePluginUI
+
+	Memories []MemoryRow
+	// EditID est le souvenir en cours d'édition ; vide = simple lecture.
+	EditID string
+	Error  string
+	Notice string
+}
+
+templ ProfileMemories(page MemoriesPage) {
+	@ProfileLayout("Ce que je retiens — Automata", page.Header) {
+		@profileNav(page.LinkID, "memories", page.PluginUIs)
+		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Ce que je retiens de vous</h1>
+		<p class="mt-2 text-[15px] leading-normal text-text-3">Voici, mot pour mot, ce dont je me sers pour vous répondre. Corrigez ou effacez ce qui ne va pas — je m'y fie.</p>
+		if page.Error != "" {
+			<div class="mt-4 rounded-lg bg-crit-wash px-3.5 py-2.5 text-sm text-crit-deep">{ page.Error }</div>
+		}
+		if page.Notice != "" {
+			<div class="mt-4 rounded-lg bg-ok-wash-2 px-3.5 py-2.5 text-sm text-ok-deep">{ page.Notice }</div>
+		}
+		if len(page.Memories) == 0 {
+			<div class="mt-5 rounded-[11px] border border-dashed border-line px-3.5 py-6 text-center text-sm text-text-4">Je ne retiens rien de vous pour l'instant. Dites-moi « retiens que… » dans notre conversation.</div>
+		}
+		<div class="mt-5 flex flex-col gap-3">
+			for _, memory := range page.Memories {
+				<div class="rounded-xl border border-line-2 p-4">
+					if page.EditID == memory.ID {
+						<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/memories/" + memory.ID) }>
+							<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+							<textarea
+								name="content"
+								rows="4"
+								required
+								autofocus
+								class="w-full rounded-[10px] border border-brand-line-2 bg-white p-3 text-[15px] leading-normal text-ink outline-none focus:border-brand"
+							>{ memory.Content }</textarea>
+							<div class="mt-2.5 flex gap-2">
+								<button type="submit" class="h-11 flex-1 rounded-[10px] bg-brand text-[15px] font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
+								<a href={ templ.SafeURL("/p/" + page.LinkID + "/memories") } class="flex h-11 flex-1 items-center justify-center rounded-[10px] border border-line-2 text-[15px] font-medium text-text-2 hover:no-underline">Annuler</a>
+							</div>
+						</form>
+					} else {
+						<div class="text-[15px] leading-normal text-ink">{ memory.Content }</div>
+						<div class="mt-1.5 text-xs text-text-4">
+							{ memory.At }
+							if memory.Origin != "" {
+								<span> · { memory.Origin }</span>
+							}
+						</div>
+						<div class="mt-3 flex gap-2">
+							<a href={ templ.SafeURL("/p/" + page.LinkID + "/memories?edit=" + memory.ID) } class="flex h-10 items-center rounded-[10px] border border-line-2 px-4 text-sm font-medium text-text-2 hover:no-underline">Corriger</a>
+							<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/memories/" + memory.ID + "/delete") } onsubmit="return confirm('Effacer définitivement ce souvenir ?')">
+								<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+								<button type="submit" class="h-10 rounded-[10px] border border-crit-line px-4 text-sm font-medium text-crit-deep">Effacer</button>
+							</form>
+						</div>
+					}
+				</div>
+			}
+		</div>
+		<div class="mt-6 rounded-[11px] bg-panel p-3.5 text-sm leading-normal text-text-3">
+			Ce que je retiens des conversations de groupe n'apparaît pas ici : ces souvenirs appartiennent au groupe, pas à vous seul.
+		</div>
+	}
+}

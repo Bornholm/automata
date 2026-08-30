@@ -518,6 +518,9 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 				return err
 			}).
 			WithPrivacy(privacyService)
+		if memRes.store != nil {
+			webServer = webServer.WithMemory(memRes.store)
+		}
 		if pluginManager != nil {
 			webServer = webServer.WithPluginManager(pluginManager)
 		}

@@ -54,6 +54,11 @@ templ ProfilePrivacy(page PrivacyPage) {
 					</div>
 				}
 			</div>
+			<div class="mt-5 rounded-xl border border-brand-line bg-brand-wash-2 p-4">
+				<div class="text-base font-semibold leading-snug text-ink">Corriger ce que je retiens</div>
+				<div class="mt-1 text-sm leading-normal text-text-2">Vos souvenirs se lisent et se modifient un par un — un souvenir faux vaut moins que pas de souvenir du tout.</div>
+				<a href={ templ.SafeURL("/p/" + page.LinkID + "/memories") } class="mt-3 flex h-11 w-fit items-center rounded-[10px] bg-brand px-5 text-[15px] font-semibold text-white hover:bg-brand-strong hover:no-underline">Voir mes souvenirs</a>
+			</div>
 			<div class="mt-6">
 				@Eyebrow("Emporter vos données", "text-text-4")
 			</div>

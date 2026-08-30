@@ -148,6 +148,9 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 	mux.HandleFunc("GET /p/{link}/plugins/{name}", prof.HandleProfilePluginPage)
 	mux.HandleFunc("GET /p/{link}", prof.HandleProfile)
 	mux.HandleFunc("GET /p/{link}/discover", prof.HandleProfileDiscover)
+	mux.HandleFunc("GET /p/{link}/memories", prof.HandleProfileMemories)
+	mux.HandleFunc("POST /p/{link}/memories/{id}", prof.HandleProfileMemoryUpdate)
+	mux.HandleFunc("POST /p/{link}/memories/{id}/delete", prof.HandleProfileMemoryDelete)
 	mux.HandleFunc("GET /p/{link}/credits", prof.HandleProfileCredits)
 	mux.HandleFunc("POST /p/{link}/email", prof.HandleProfileEmail)
 	mux.HandleFunc("POST /p/{link}/email/verify", prof.HandleProfileEmailVerify)
@@ -205,6 +208,13 @@ func (s *Server) WithPurchaseNotifier(notifier core.PurchaseNotifier) *Server {
 // WithPrivacy branche le service de confidentialité (PRO-04).
 func (s *Server) WithPrivacy(service core.PrivacyService) *Server {
 	s.Privacy = service
+	return s
+}
+
+// WithMemory branche l'accès aux souvenirs (écran « Ce que je retiens »).
+// Sans cet appel, l'écran n'existe pas et son onglet n'apparaît pas.
+func (s *Server) WithMemory(service core.MemoryService) *Server {
+	s.Memory = service
 	return s
 }
 
