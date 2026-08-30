@@ -21,6 +21,7 @@ func ProfileTabs(linkID string, active string, plugins []ProfilePluginUI) []Prof
 	base := "/p/" + linkID
 	tabs := []ProfileTab{
 		{Label: "Profil", Href: base, Active: active == "profile"},
+		{Label: "Découvrir", Href: base + "/discover", Active: active == "discover"},
 		{Label: "Crédits", Href: base + "/credits", Active: active == "credits"},
 		{Label: "Ma consommation", Href: base + "/usage", Active: active == "usage"},
 		{Label: "Confidentialité", Href: base + "/privacy", Active: active == "privacy"},

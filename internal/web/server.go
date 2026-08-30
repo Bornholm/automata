@@ -145,6 +145,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 
 	mux.HandleFunc("GET /p/{link}/plugins/{name}", prof.HandleProfilePluginPage)
 	mux.HandleFunc("GET /p/{link}", prof.HandleProfile)
+	mux.HandleFunc("GET /p/{link}/discover", prof.HandleProfileDiscover)
 	mux.HandleFunc("GET /p/{link}/credits", prof.HandleProfileCredits)
 	mux.HandleFunc("POST /p/{link}/email", prof.HandleProfileEmail)
 	mux.HandleFunc("POST /p/{link}/email/verify", prof.HandleProfileEmailVerify)

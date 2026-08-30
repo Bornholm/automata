@@ -53,8 +53,13 @@ type Member struct {
 	Provider       string
 	ExternalUserID string
 	LinkedAt       time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// OnboardingState suit la visite d'accueil (migration 0025) : ''
+	// jamais proposée, 'offered', 'q1'…, 'done', 'skipped'. Il vit sur le
+	// membre, pas sur la conversation : changer de canal ne refait pas la
+	// visite, et l'écarter vaut partout.
+	OnboardingState string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // Linked indique si le membre est rattaché à une identité de messagerie.

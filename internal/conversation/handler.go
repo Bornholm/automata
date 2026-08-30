@@ -72,6 +72,9 @@ type Handler struct {
 	// metrics peut être nil (PLAN.md Phase 20, registre de métriques
 	// désactivé) : toutes ses méthodes sont alors no-op.
 	metrics *observability.Metrics
+	// onboarding conduit la visite d'accueil ; nil = aucune visite (voir
+	// WithOnboarding et internal/onboarding).
+	onboarding OnboardingService
 	// wallet, profileLinks et pauseNotices ne sont renseignés que si la
 	// facturation est active (voir WithBilling, pause.go) : sans eux,
 	// aucune conversation n'est jamais interrompue faute de crédits.
@@ -300,6 +303,24 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 	// de la portée ou des permissions s'applique à la confirmation d'une
 	// action sensible. Cette interception a lieu AVANT tout appel à
 	// h.agent.Execute, et le LLM n'est jamais consulté pour ce cas.
+	// La visite d'accueil s'intercale ici, pour les mêmes raisons que la
+	// confirmation d'action juste en dessous : c'est l'application qui
+	// conduit ces échanges, pas le modèle. Elle vient APRÈS la
+	// transcription, de sorte qu'on puisse lui répondre en vocal, et après
+	// l'enregistrement du message, pour que l'historique reste fidèle.
+	if h.onboarding != nil {
+		reply, handled, err := h.onboarding.Handle(ctx, identity, text)
+		if err != nil {
+			return "", nil, fmt.Errorf("conversation: visite d'accueil: %w", err)
+		}
+		if handled {
+			if err := h.persistAssistantReply(ctx, identity, conv, reply); err != nil {
+				return "", nil, err
+			}
+			return reply, nil, nil
+		}
+	}
+
 	if h.actions != nil {
 		if cmd, ok := action.ParseCommand(text); ok {
 			reply, err := h.actions.HandleCommand(ctx, identity, conv, cmd)

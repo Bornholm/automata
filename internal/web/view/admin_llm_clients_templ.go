@@ -124,7 +124,7 @@ func AdminLLMClients(page LLMClientsPage) templ.Component {
 				}
 			}
 			if len(page.Clients) == 0 {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"rounded-[11px] border border-dashed border-line bg-white px-8 py-14 text-center text-sm text-text-4\">Aucun modèle. Les modèles déclarés dans la configuration sont repris au premier démarrage du service.</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div class=\"rounded-[11px] border border-dashed border-line bg-white px-8 py-14 text-center text-sm text-text-4\">Aucun modèle. Créez le premier avec « Nouveau modèle », puis affectez-le aux rôles de l'instance ci-dessus.</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}

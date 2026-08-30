@@ -11,6 +11,7 @@ import (
 	"github.com/bornholm/go-courier"
 
 	"github.com/bornholm/automata/internal/model"
+	"github.com/bornholm/automata/internal/onboarding"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/weblink"
 )
@@ -192,10 +193,19 @@ func (p *Pipeline) linkPersonal(ctx context.Context, tx *sql.Tx, token persisten
 		}
 	}
 
+	// La visite d'accueil est PROPOSÉE ici, jamais imposée : l'état du
+	// membre passe à « offered », et c'est sa réponse au message suivant
+	// qui décide (internal/onboarding).
+	if err := persistence.NewMemberRepository().SetOnboardingState(ctx, tx, member.ID, onboarding.StateOffered); err != nil {
+		return linkResult{}, err
+	}
+
 	return linkResult{
 		Linked: true,
 		Reply: "Bonjour " + member.DisplayName + " ! Votre compte est rattaché, je suis à votre disposition. " +
-			"Écrivez-moi comme à quelqu'un : je peux retenir ce qui compte, vous rappeler des choses et chercher pour vous.",
+			"Écrivez-moi comme à quelqu'un : je peux retenir ce qui compte, vous rappeler des choses, " +
+			"travailler sur les fichiers que vous m'envoyez et garder vos documents. " +
+			onboarding.Offer(),
 	}, nil
 }
 

@@ -1,0 +1,60 @@
+package view
+
+// --- Découvrir Automata ---
+//
+// La page qui répond à « qu'est-ce que je peux te demander ? ». Elle
+// n'énumère pas des fonctionnalités : elle donne des phrases à recopier
+// telles quelles dans la conversation. Quelqu'un qui découvre un assistant
+// ne sait pas quoi lui dire ; un exemple qu'on peut copier lève ce blocage
+// mieux qu'un paragraphe d'explication.
+//
+// Les capacités listées suivent ce qui est RÉELLEMENT disponible pour
+// l'organisation du membre : promettre un plugin désactivé produirait un
+// « je n'ai pas d'outil pour ça » quelques secondes plus tard.
+
+// DiscoverCapability est une chose que l'assistant sait faire, avec de quoi
+// l'essayer tout de suite.
+type DiscoverCapability struct {
+	Title string
+	// Detail dit à quoi cela sert, en une phrase.
+	Detail string
+	// Example est la phrase à recopier dans la conversation.
+	Example string
+}
+
+type DiscoverPage struct {
+	LinkID    string
+	Header    ProfileHeader
+	PluginUIs []ProfilePluginUI
+
+	Capabilities []DiscoverCapability
+	// VisitState reprend l'état de la visite d'accueil : 'done', 'skipped',
+	// 'running' ou '' (jamais proposée).
+	VisitState string
+}
+
+templ DiscoverHome(page DiscoverPage) {
+	@ProfileLayout("Découvrir — Automata", page.Header) {
+		@profileNav(page.LinkID, "discover", page.PluginUIs)
+		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Ce que vous pouvez me demander</h1>
+		<p class="mt-2 text-[15px] leading-normal text-text-3">Écrivez-moi comme à quelqu'un, dans votre conversation habituelle. Voici de quoi commencer — recopiez un exemple tel quel.</p>
+		if page.VisitState == "running" {
+			<div class="mt-5 rounded-xl border border-brand-line bg-brand-wash-2 p-4">
+				<div class="text-base font-semibold leading-snug text-ink">Nous étions en train de faire connaissance</div>
+				<div class="mt-1 text-sm leading-normal text-text-2">Reprenez la conversation quand vous voulez : je vous reposerai ma question. Répondez « passe » pour arrêter là.</div>
+			</div>
+		}
+		<div class="mt-5 flex flex-col gap-3">
+			for _, capability := range page.Capabilities {
+				<div class="rounded-xl border border-line-2 p-4">
+					<div class="text-base font-semibold leading-snug text-ink">{ capability.Title }</div>
+					<div class="mt-1 text-sm leading-normal text-text-2">{ capability.Detail }</div>
+					<div class="mt-3 rounded-[10px] bg-panel px-3.5 py-2.5 font-mono text-[13px] leading-normal text-text-2">{ capability.Example }</div>
+				</div>
+			}
+		</div>
+		<div class="mt-6 rounded-[11px] bg-panel p-3.5 text-sm leading-normal text-text-3">
+			Vous pouvez à tout moment me demander ce que je retiens de vous, et me demander de l'oublier. Tout est aussi dans l'onglet Confidentialité.
+		</div>
+	}
+}

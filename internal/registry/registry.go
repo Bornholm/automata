@@ -36,6 +36,7 @@ import (
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
+	"github.com/bornholm/automata/internal/onboarding"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/platform"
 	"github.com/bornholm/automata/internal/plugin"
@@ -647,6 +648,15 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	// organisations et un moyen de le recharger.
 	if cfg.Web.Enabled {
 		handler = handler.WithBilling(tenants)
+
+		// Visite d'accueil : elle suppose des membres en base, donc le même
+		// socle que la facturation. memStore peut être nil — la visite se
+		// déroule alors sans rien retenir.
+		var memWriter onboarding.MemoryWriter
+		if memStore != nil {
+			memWriter = memStore
+		}
+		handler = handler.WithOnboarding(onboarding.New(db, memWriter, logger))
 	}
 
 	if cfg.Conversation.Compaction.Enabled {
