@@ -1,4 +1,4 @@
-package web
+package admin
 
 import (
 	"context"
@@ -18,33 +18,33 @@ import (
 // incident d'il y a trois semaines n'appelle plus d'action.
 const deliveryLookback = 7 * 24 * time.Hour
 
-// handleDashboard — ADM-01.
-func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	now := s.Now()
+// HandleDashboard — ADM-01.
+func (h *Handlers) HandleDashboard(w http.ResponseWriter, r *http.Request) {
+	now := h.Now()
 	monthFrom, monthTo := core.MonthBounds(now)
 
 	page := view.DashboardPage{
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
 		Period:    strings.ToLower(view.FormatMonth(now)) + " " + fmt.Sprintf("%d", now.Year()),
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		orgs, err := s.Orgs.List(r.Context(), tx, "")
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		orgs, err := h.Orgs.List(r.Context(), tx, "")
 		if err != nil {
 			return err
 		}
-		balances, err := s.Wallet.Balances(r.Context(), tx)
+		balances, err := h.Wallet.Balances(r.Context(), tx)
 		if err != nil {
 			return err
 		}
-		monthUsage, err := s.OrgUsageCredits(r.Context(), tx, monthFrom, monthTo)
+		monthUsage, err := h.OrgUsageCredits(r.Context(), tx, monthFrom, monthTo)
 		if err != nil {
 			return err
 		}
 
 		// Repères : ce qu'on veut savoir sans cliquer.
-		connected, total := s.platformCounts(r.Context(), tx)
+		connected, total := h.platformCounts(r.Context(), tx)
 		platformTone := ""
 		if connected < total {
 			platformTone = "warn"
@@ -55,11 +55,11 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			totalUsage += credits
 		}
 
-		pricingSettings, err := s.Pricing(r.Context(), tx)
+		pricingSettings, err := h.Pricing(r.Context(), tx)
 		if err != nil {
 			return err
 		}
-		m, err := s.ComputeMargin(r.Context(), tx, pricingSettings, monthFrom, monthTo)
+		m, err := h.ComputeMargin(r.Context(), tx, pricingSettings, monthFrom, monthTo)
 		if err != nil {
 			return err
 		}
@@ -70,7 +70,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 
 		page.Figures = []view.DashboardFigure{
-			{Label: "Organisations", Value: fmt.Sprintf("%d", len(orgs)), Hint: countActiveMembers(r.Context(), tx, s)},
+			{Label: "Organisations", Value: fmt.Sprintf("%d", len(orgs)), Hint: h.countActiveMembers(r.Context(), tx)},
 			{Label: "Comptes de messagerie", Value: fmt.Sprintf("%d/%d", connected, total), Hint: "connectés", Tone: platformTone},
 			{Label: "Consommation", Value: view.FormatCredits(totalUsage), Hint: fmt.Sprintf("%.2f $ mesurés", m.CostUSD)},
 			{Label: "Marge estimée", Value: core.FormatEuros(m.MarginEUR), Hint: m.Ratio(), Tone: marginTone},
@@ -78,7 +78,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 		// Organisations à surveiller : solde faible ou épuisé.
 		for _, org := range orgs {
-			lastCredit, err := s.Wallet.LastCredit(r.Context(), tx, org.ID)
+			lastCredit, err := h.Wallet.LastCredit(r.Context(), tx, org.ID)
 			if err != nil {
 				return err
 			}
@@ -105,12 +105,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Comptes de messagerie en défaut.
-		if s.PlatformMgr != nil {
-			accounts, err := s.Platforms.List(r.Context(), tx)
+		if h.PlatformMgr != nil {
+			accounts, err := h.Platforms.List(r.Context(), tx)
 			if err != nil {
 				return err
 			}
-			statuses := s.PlatformMgr.Statuses()
+			statuses := h.PlatformMgr.Statuses()
 
 			for _, account := range accounts {
 				if !account.Enabled {
@@ -140,7 +140,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 		// Échecs de livraison récents : un rappel qui n'est pas parti est
 		// invisible du client comme de l'exploitant sans cette remontée.
-		if failures, err := s.recentDeliveryFailures(r.Context(), tx, now.Add(-deliveryLookback)); err != nil {
+		if failures, err := h.recentDeliveryFailures(r.Context(), tx, now.Add(-deliveryLookback)); err != nil {
 			return err
 		} else if failures > 0 {
 			page.Alerts = append(page.Alerts, view.DashboardAlert{
@@ -199,20 +199,20 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Render(w, r, http.StatusOK, view.AdminDashboard(page))
+	h.Render(w, r, http.StatusOK, view.AdminDashboard(page))
 }
 
 // platformCounts compte les comptes actifs et ceux qui répondent.
-func (s *Server) platformCounts(ctx context.Context, q persistence.Querier) (connected, total int) {
-	accounts, err := s.Platforms.List(ctx, q)
+func (h *Handlers) platformCounts(ctx context.Context, q persistence.Querier) (connected, total int) {
+	accounts, err := h.Platforms.List(ctx, q)
 	if err != nil {
 		return 0, 0
 	}
 
 	var statuses map[string]platformStatus
-	if s.PlatformMgr != nil {
+	if h.PlatformMgr != nil {
 		statuses = map[string]platformStatus{}
-		for id, status := range s.PlatformMgr.Statuses() {
+		for id, status := range h.PlatformMgr.Statuses() {
 			statuses[id] = platformStatus{State: string(status.State)}
 		}
 	}
@@ -235,7 +235,7 @@ func (s *Server) platformCounts(ctx context.Context, q persistence.Querier) (con
 type platformStatus struct{ State string }
 
 // recentDeliveryFailures compte les échecs de livraison depuis since.
-func (s *Server) recentDeliveryFailures(ctx context.Context, q persistence.Querier, since time.Time) (int, error) {
+func (h *Handlers) recentDeliveryFailures(ctx context.Context, q persistence.Querier, since time.Time) (int, error) {
 	row := q.QueryRowContext(ctx, `SELECT COUNT(*) FROM delivery_attempts
 		WHERE status = 'failed' AND created_at >= ?`, since.UTC().Format(time.RFC3339))
 
@@ -248,8 +248,8 @@ func (s *Server) recentDeliveryFailures(ctx context.Context, q persistence.Queri
 }
 
 // countActiveMembers décrit le nombre de membres rattachés.
-func countActiveMembers(ctx context.Context, q persistence.Querier, s *Server) string {
-	counts, err := s.Members.CountByOrg(ctx, q)
+func (h *Handlers) countActiveMembers(ctx context.Context, q persistence.Querier) string {
+	counts, err := h.Members.CountByOrg(ctx, q)
 	if err != nil {
 		return ""
 	}

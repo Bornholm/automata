@@ -1,4 +1,4 @@
-package web
+package admin
 
 import (
 	"database/sql"
@@ -12,23 +12,23 @@ import (
 	"github.com/bornholm/automata/internal/web/view"
 )
 
-// handlePricing — ADM-08.
-func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
-	now := s.Now()
+// HandlePricing — ADM-08.
+func (h *Handlers) HandlePricing(w http.ResponseWriter, r *http.Request) {
+	now := h.Now()
 	from, to := core.MonthBounds(now)
 
 	page := view.PricingPage{
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		p, err := s.Pricing(r.Context(), tx)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		p, err := h.Pricing(r.Context(), tx)
 		if err != nil {
 			return err
 		}
 
-		m, err := s.ComputeMargin(r.Context(), tx, p, from, to)
+		m, err := h.ComputeMargin(r.Context(), tx, p, from, to)
 		if err != nil {
 			return err
 		}
@@ -62,7 +62,7 @@ func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
 			page.Margin.Ratio = "aucune recette sur la période"
 		}
 
-		prices, err := s.ModelPrices.List(r.Context(), tx)
+		prices, err := h.ModelPrices.List(r.Context(), tx)
 		if err != nil {
 			return err
 		}
@@ -124,7 +124,7 @@ func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
 		page.Flash = "Réglages enregistrés. Ils s'appliquent aux prochains débits et aux pages de crédits."
 	}
 
-	s.Render(w, r, http.StatusOK, view.AdminPricing(page))
+	h.Render(w, r, http.StatusOK, view.AdminPricing(page))
 }
 
 // trimFloat rend un nombre sans zéros inutiles, pour un champ de saisie.
@@ -132,8 +132,8 @@ func trimFloat(value float64) string {
 	return strconv.FormatFloat(value, 'f', -1, 64)
 }
 
-// handlePricingPackCreate ajoute une offre.
-func (s *Server) handlePricingPackCreate(w http.ResponseWriter, r *http.Request) {
+// HandlePricingPackCreate ajoute une offre.
+func (h *Handlers) HandlePricingPackCreate(w http.ResponseWriter, r *http.Request) {
 	credits, errCredits := strconv.ParseInt(r.PostFormValue("credits"), 10, 64)
 	if errCredits != nil || credits <= 0 {
 		http.Redirect(w, r, "/admin/pricing", http.StatusFound)
@@ -156,46 +156,46 @@ func (s *Server) handlePricingPackCreate(w http.ResponseWriter, r *http.Request)
 		price = parsed
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
 		if rawPrice == "" {
-			p, err := s.Pricing(r.Context(), tx)
+			p, err := h.Pricing(r.Context(), tx)
 			if err != nil {
 				return err
 			}
 			price = p.RecommendedPrice(credits)
 		}
 
-		packs, err := s.PricingRepo.ListPacks(r.Context(), tx)
+		packs, err := h.PricingRepo.ListPacks(r.Context(), tx)
 		if err != nil {
 			return err
 		}
 
-		return s.PricingRepo.InsertPack(r.Context(), tx, persistence.CreditPack{
+		return h.PricingRepo.InsertPack(r.Context(), tx, persistence.CreditPack{
 			Credits:   credits,
 			PriceEUR:  price,
 			Position:  len(packs),
-			CreatedAt: s.Now(),
+			CreatedAt: h.Now(),
 		})
 	})
 	if !ok {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: offre de crédits ajoutée",
+	h.Logger.InfoContext(r.Context(), "web: offre de crédits ajoutée",
 		"credits", credits, "price_computed", rawPrice == "")
 	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
 }
 
-// handlePricingPackDelete retire une offre.
-func (s *Server) handlePricingPackDelete(w http.ResponseWriter, r *http.Request) {
+// HandlePricingPackDelete retire une offre.
+func (h *Handlers) HandlePricingPackDelete(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PostFormValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		http.Redirect(w, r, "/admin/pricing", http.StatusFound)
 		return
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.PricingRepo.DeletePack(r.Context(), tx, id)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.PricingRepo.DeletePack(r.Context(), tx, id)
 	})
 	if !ok {
 		return
@@ -204,19 +204,19 @@ func (s *Server) handlePricingPackDelete(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
 }
 
-// handlePricingPackFeature met une offre en avant, une seule à la fois.
-func (s *Server) handlePricingPackFeature(w http.ResponseWriter, r *http.Request) {
+// HandlePricingPackFeature met une offre en avant, une seule à la fois.
+func (h *Handlers) HandlePricingPackFeature(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PostFormValue("id"), 10, 64)
 	if err != nil || id <= 0 {
 		http.Redirect(w, r, "/admin/pricing", http.StatusFound)
 		return
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		if err := s.PricingRepo.ClearFeatured(r.Context(), tx); err != nil {
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		if err := h.PricingRepo.ClearFeatured(r.Context(), tx); err != nil {
 			return err
 		}
-		return s.PricingRepo.SetFeatured(r.Context(), tx, id)
+		return h.PricingRepo.SetFeatured(r.Context(), tx, id)
 	})
 	if !ok {
 		return
@@ -225,11 +225,11 @@ func (s *Server) handlePricingPackFeature(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
 }
 
-// handlePricingSettings enregistre les réglages de conversion.
-func (s *Server) handlePricingSettings(w http.ResponseWriter, r *http.Request) {
-	now := s.Now()
+// HandlePricingSettings enregistre les réglages de conversion.
+func (h *Handlers) HandlePricingSettings(w http.ResponseWriter, r *http.Request) {
+	now := h.Now()
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
 		for key, raw := range map[string]string{
 			persistence.SettingUSDPerCredit:       r.PostFormValue("usd_per_credit"),
 			persistence.SettingEURPerUSD:          r.PostFormValue("eur_per_usd"),
@@ -248,7 +248,7 @@ func (s *Server) handlePricingSettings(w http.ResponseWriter, r *http.Request) {
 			if _, err := strconv.ParseFloat(value, 64); err != nil {
 				continue
 			}
-			if err := s.PricingRepo.SetSetting(r.Context(), tx, key, value, now); err != nil {
+			if err := h.PricingRepo.SetSetting(r.Context(), tx, key, value, now); err != nil {
 				return err
 			}
 		}
@@ -259,12 +259,12 @@ func (s *Server) handlePricingSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: réglages de tarification enregistrés")
+	h.Logger.InfoContext(r.Context(), "web: réglages de tarification enregistrés")
 	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
 }
 
-// handleModelPriceUpsert enregistre le tarif de repli d'un modèle.
-func (s *Server) handleModelPriceUpsert(w http.ResponseWriter, r *http.Request) {
+// HandleModelPriceUpsert enregistre le tarif de repli d'un modèle.
+func (h *Handlers) HandleModelPriceUpsert(w http.ResponseWriter, r *http.Request) {
 	model := strings.TrimSpace(r.PostFormValue("model"))
 	input, errInput := parseRate(r.PostFormValue("input"))
 	output, errOutput := parseRate(r.PostFormValue("output"))
@@ -274,32 +274,32 @@ func (s *Server) handleModelPriceUpsert(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.ModelPrices.Upsert(r.Context(), tx, persistence.ModelPrice{
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.ModelPrices.Upsert(r.Context(), tx, persistence.ModelPrice{
 			Model:            model,
 			InputPerMillion:  input,
 			OutputPerMillion: output,
-			UpdatedAt:        s.Now(),
+			UpdatedAt:        h.Now(),
 		})
 	})
 	if !ok {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: tarif de modèle enregistré", "model", model)
+	h.Logger.InfoContext(r.Context(), "web: tarif de modèle enregistré", "model", model)
 	http.Redirect(w, r, "/admin/pricing?saved=1", http.StatusFound)
 }
 
-// handleModelPriceDelete retire le tarif d'un modèle.
-func (s *Server) handleModelPriceDelete(w http.ResponseWriter, r *http.Request) {
+// HandleModelPriceDelete retire le tarif d'un modèle.
+func (h *Handlers) HandleModelPriceDelete(w http.ResponseWriter, r *http.Request) {
 	model := strings.TrimSpace(r.PostFormValue("model"))
 	if model == "" {
 		http.Redirect(w, r, "/admin/pricing", http.StatusFound)
 		return
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.ModelPrices.Delete(r.Context(), tx, model)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.ModelPrices.Delete(r.Context(), tx, model)
 	})
 	if !ok {
 		return

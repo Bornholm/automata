@@ -18,6 +18,7 @@ import (
 
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/web/admin"
 	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/profile"
 	"github.com/bornholm/automata/internal/web/public"
@@ -47,6 +48,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 
 	// Une surface, un paquet : chacun reçoit les mêmes dépendances et
 	// monte ses routes ici, seul endroit qui les connaisse toutes.
+	adm := admin.New(s.Deps)
 	pub := public.New(s.Deps)
 	prof := profile.New(s.Deps)
 
@@ -63,79 +65,79 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 		http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
 	})
 
-	mux.HandleFunc("GET /admin/login", s.handleLoginForm)
-	mux.HandleFunc("POST /admin/login", s.handleLogin)
-	mux.HandleFunc("POST /admin/logout", s.handleLogout)
+	mux.HandleFunc("GET /admin/login", adm.HandleLoginForm)
+	mux.HandleFunc("POST /admin/login", adm.HandleLogin)
+	mux.HandleFunc("POST /admin/logout", adm.HandleLogout)
 	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
 	})
 
-	admin := func(h http.HandlerFunc) http.HandlerFunc { return s.requireAdmin(h) }
-	mux.HandleFunc("GET /admin/dashboard", admin(s.handleDashboard))
-	mux.HandleFunc("GET /admin/orgs", admin(s.handleOrgs))
-	mux.HandleFunc("GET /admin/orgs/new", admin(s.handleOrgNewForm))
-	mux.HandleFunc("POST /admin/orgs", admin(s.handleOrgCreate))
-	mux.HandleFunc("GET /admin/orgs/{id}", admin(s.handleOrg))
-	mux.HandleFunc("GET /admin/orgs/{id}/wallet.csv", admin(s.handleOrgWalletCSV))
-	mux.HandleFunc("POST /admin/orgs/{id}/grant", admin(s.handleOrgGrant))
-	mux.HandleFunc("POST /admin/orgs/{id}/offered", admin(s.handleOrgOffered))
-	mux.HandleFunc("POST /admin/orgs/{id}/unlimited", admin(s.handleOrgUnlimited))
-	mux.HandleFunc("POST /admin/orgs/{id}/models", admin(s.handleOrgModels))
-	mux.HandleFunc("POST /admin/orgs/{id}/group-token", admin(s.handleOrgGroupToken))
-	mux.HandleFunc("POST /admin/orgs/{id}/customization", admin(s.handleOrgCustomization))
-	mux.HandleFunc("POST /admin/orgs/{id}/delete", admin(s.handleOrgDelete))
-	mux.HandleFunc("GET /admin/orgs/{id}/members/new", admin(s.handleMemberNewForm))
-	mux.HandleFunc("POST /admin/orgs/{id}/members", admin(s.handleMemberCreate))
-	mux.HandleFunc("GET /admin/members/{id}", admin(s.handleMember))
-	mux.HandleFunc("POST /admin/members/{id}", admin(s.handleMemberUpdate))
-	mux.HandleFunc("POST /admin/members/{id}/token", admin(s.handleMemberToken))
-	mux.HandleFunc("POST /admin/members/{id}/token/revoke", admin(s.handleMemberTokenRevoke))
-	mux.HandleFunc("POST /admin/members/{id}/profile-link", admin(s.handleMemberProfileLink))
-	mux.HandleFunc("GET /admin/platforms", admin(s.handlePlatforms))
-	mux.HandleFunc("POST /admin/platforms/group-token", admin(s.handlePlatformsGroupToken))
-	mux.HandleFunc("POST /admin/platforms", admin(s.handlePlatformCreate))
-	mux.HandleFunc("POST /admin/platforms/{id}/toggle", admin(s.handlePlatformToggle))
-	mux.HandleFunc("POST /admin/platforms/{id}/delete", admin(s.handlePlatformDelete))
-	mux.HandleFunc("GET /admin/pricing", admin(s.handlePricing))
-	mux.HandleFunc("POST /admin/pricing/packs", admin(s.handlePricingPackCreate))
-	mux.HandleFunc("POST /admin/pricing/packs/delete", admin(s.handlePricingPackDelete))
-	mux.HandleFunc("POST /admin/pricing/packs/feature", admin(s.handlePricingPackFeature))
-	mux.HandleFunc("POST /admin/pricing/settings", admin(s.handlePricingSettings))
-	mux.HandleFunc("POST /admin/pricing/models", admin(s.handleModelPriceUpsert))
-	mux.HandleFunc("POST /admin/pricing/models/delete", admin(s.handleModelPriceDelete))
+	admin := func(h http.HandlerFunc) http.HandlerFunc { return adm.RequireAdmin(h) }
+	mux.HandleFunc("GET /admin/dashboard", admin(adm.HandleDashboard))
+	mux.HandleFunc("GET /admin/orgs", admin(adm.HandleOrgs))
+	mux.HandleFunc("GET /admin/orgs/new", admin(adm.HandleOrgNewForm))
+	mux.HandleFunc("POST /admin/orgs", admin(adm.HandleOrgCreate))
+	mux.HandleFunc("GET /admin/orgs/{id}", admin(adm.HandleOrg))
+	mux.HandleFunc("GET /admin/orgs/{id}/wallet.csv", admin(adm.HandleOrgWalletCSV))
+	mux.HandleFunc("POST /admin/orgs/{id}/grant", admin(adm.HandleOrgGrant))
+	mux.HandleFunc("POST /admin/orgs/{id}/offered", admin(adm.HandleOrgOffered))
+	mux.HandleFunc("POST /admin/orgs/{id}/unlimited", admin(adm.HandleOrgUnlimited))
+	mux.HandleFunc("POST /admin/orgs/{id}/models", admin(adm.HandleOrgModels))
+	mux.HandleFunc("POST /admin/orgs/{id}/group-token", admin(adm.HandleOrgGroupToken))
+	mux.HandleFunc("POST /admin/orgs/{id}/customization", admin(adm.HandleOrgCustomization))
+	mux.HandleFunc("POST /admin/orgs/{id}/delete", admin(adm.HandleOrgDelete))
+	mux.HandleFunc("GET /admin/orgs/{id}/members/new", admin(adm.HandleMemberNewForm))
+	mux.HandleFunc("POST /admin/orgs/{id}/members", admin(adm.HandleMemberCreate))
+	mux.HandleFunc("GET /admin/members/{id}", admin(adm.HandleMember))
+	mux.HandleFunc("POST /admin/members/{id}", admin(adm.HandleMemberUpdate))
+	mux.HandleFunc("POST /admin/members/{id}/token", admin(adm.HandleMemberToken))
+	mux.HandleFunc("POST /admin/members/{id}/token/revoke", admin(adm.HandleMemberTokenRevoke))
+	mux.HandleFunc("POST /admin/members/{id}/profile-link", admin(adm.HandleMemberProfileLink))
+	mux.HandleFunc("GET /admin/platforms", admin(adm.HandlePlatforms))
+	mux.HandleFunc("POST /admin/platforms/group-token", admin(adm.HandlePlatformsGroupToken))
+	mux.HandleFunc("POST /admin/platforms", admin(adm.HandlePlatformCreate))
+	mux.HandleFunc("POST /admin/platforms/{id}/toggle", admin(adm.HandlePlatformToggle))
+	mux.HandleFunc("POST /admin/platforms/{id}/delete", admin(adm.HandlePlatformDelete))
+	mux.HandleFunc("GET /admin/pricing", admin(adm.HandlePricing))
+	mux.HandleFunc("POST /admin/pricing/packs", admin(adm.HandlePricingPackCreate))
+	mux.HandleFunc("POST /admin/pricing/packs/delete", admin(adm.HandlePricingPackDelete))
+	mux.HandleFunc("POST /admin/pricing/packs/feature", admin(adm.HandlePricingPackFeature))
+	mux.HandleFunc("POST /admin/pricing/settings", admin(adm.HandlePricingSettings))
+	mux.HandleFunc("POST /admin/pricing/models", admin(adm.HandleModelPriceUpsert))
+	mux.HandleFunc("POST /admin/pricing/models/delete", admin(adm.HandleModelPriceDelete))
 	// Bibliothèque de compétences (ADM — voir docs/skills.md). Le nom
 	// d'une compétence est sa clé : les routes d'édition le portent.
-	mux.HandleFunc("GET /admin/skills", admin(s.handleSkills))
-	mux.HandleFunc("GET /admin/skills/new", admin(s.handleSkillNewForm))
-	mux.HandleFunc("POST /admin/skills", admin(s.handleSkillCreate))
-	mux.HandleFunc("GET /admin/skills/{name}", admin(s.handleSkillForm))
-	mux.HandleFunc("POST /admin/skills/{name}", admin(s.handleSkillUpdate))
-	mux.HandleFunc("POST /admin/skills/{name}/delete", admin(s.handleSkillDelete))
-	mux.HandleFunc("POST /admin/skills/{name}/restore", admin(s.handleSkillRestore))
+	mux.HandleFunc("GET /admin/skills", admin(adm.HandleSkills))
+	mux.HandleFunc("GET /admin/skills/new", admin(adm.HandleSkillNewForm))
+	mux.HandleFunc("POST /admin/skills", admin(adm.HandleSkillCreate))
+	mux.HandleFunc("GET /admin/skills/{name}", admin(adm.HandleSkillForm))
+	mux.HandleFunc("POST /admin/skills/{name}", admin(adm.HandleSkillUpdate))
+	mux.HandleFunc("POST /admin/skills/{name}/delete", admin(adm.HandleSkillDelete))
+	mux.HandleFunc("POST /admin/skills/{name}/restore", admin(adm.HandleSkillRestore))
 
 	// Catalogue de modèles : la base fait autorité, une modification
 	// s'applique au message suivant (voir internal/llmclients).
-	mux.HandleFunc("GET /admin/llm-clients", admin(s.handleLLMClients))
-	mux.HandleFunc("POST /admin/llm-clients/roles", admin(s.handleInstanceModels))
-	mux.HandleFunc("GET /admin/llm-clients/new", admin(s.handleLLMClientNewForm))
-	mux.HandleFunc("POST /admin/llm-clients", admin(s.handleLLMClientCreate))
-	mux.HandleFunc("GET /admin/llm-clients/{name}", admin(s.handleLLMClientForm))
-	mux.HandleFunc("POST /admin/llm-clients/{name}", admin(s.handleLLMClientUpdate))
-	mux.HandleFunc("POST /admin/llm-clients/{name}/delete", admin(s.handleLLMClientDelete))
+	mux.HandleFunc("GET /admin/llm-clients", admin(adm.HandleLLMClients))
+	mux.HandleFunc("POST /admin/llm-clients/roles", admin(adm.HandleInstanceModels))
+	mux.HandleFunc("GET /admin/llm-clients/new", admin(adm.HandleLLMClientNewForm))
+	mux.HandleFunc("POST /admin/llm-clients", admin(adm.HandleLLMClientCreate))
+	mux.HandleFunc("GET /admin/llm-clients/{name}", admin(adm.HandleLLMClientForm))
+	mux.HandleFunc("POST /admin/llm-clients/{name}", admin(adm.HandleLLMClientUpdate))
+	mux.HandleFunc("POST /admin/llm-clients/{name}/delete", admin(adm.HandleLLMClientDelete))
 
-	mux.HandleFunc("GET /admin/plugins", admin(s.handlePlugins))
-	mux.HandleFunc("POST /admin/plugins/{name}/restart", admin(s.handlePluginRestart))
-	mux.HandleFunc("POST /admin/orgs/{id}/plugins", admin(s.handleOrgPlugins))
-	mux.HandleFunc("GET /admin/instance", admin(s.handleInstance))
-	mux.HandleFunc("GET /admin/usage", admin(s.handleUsage))
-	mux.HandleFunc("GET /admin/usage.csv", admin(s.handleUsageCSV))
+	mux.HandleFunc("GET /admin/plugins", admin(adm.HandlePlugins))
+	mux.HandleFunc("POST /admin/plugins/{name}/restart", admin(adm.HandlePluginRestart))
+	mux.HandleFunc("POST /admin/orgs/{id}/plugins", admin(adm.HandleOrgPlugins))
+	mux.HandleFunc("GET /admin/instance", admin(adm.HandleInstance))
+	mux.HandleFunc("GET /admin/usage", admin(adm.HandleUsage))
+	mux.HandleFunc("GET /admin/usage.csv", admin(adm.HandleUsageCSV))
 
-	mux.HandleFunc("GET /plugins/{name}/oauth/callback", s.handlePluginOAuthCallback)
+	mux.HandleFunc("GET /plugins/{name}/oauth/callback", adm.HandlePluginOAuthCallback)
 	// Interfaces des plugins : une seule porte pour l'opérateur et pour
 	// les membres, authentifiée par le jeton du chemin — une iframe
 	// sandbouclée ne transporte aucun cookie.
-	mux.HandleFunc("GET /plugin-ui/{token}/{path...}", s.handlePluginUI)
-	mux.HandleFunc("POST /plugin-ui/{token}/{path...}", s.handlePluginUI)
+	mux.HandleFunc("GET /plugin-ui/{token}/{path...}", adm.HandlePluginUI)
+	mux.HandleFunc("POST /plugin-ui/{token}/{path...}", adm.HandlePluginUI)
 
 	// Lien temporaire de téléchargement d'un fichier de plugin : la
 	// seconde voie de sortie, pour ce qui ne tient pas en pièce jointe.

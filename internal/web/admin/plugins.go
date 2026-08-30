@@ -1,4 +1,4 @@
-package web
+package admin
 
 import (
 	"database/sql"
@@ -9,33 +9,33 @@ import (
 	"github.com/bornholm/automata/internal/web/view"
 )
 
-// handlePlugins — ADM-09 : état des plugins chargés et organisations où
+// HandlePlugins — ADM-09 : état des plugins chargés et organisations où
 // chacun est actif.
-func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandlePlugins(w http.ResponseWriter, r *http.Request) {
 	page := view.PluginsPage{
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
 	}
 
-	if s.PluginMgr == nil {
-		s.Render(w, r, http.StatusOK, view.AdminPlugins(page))
+	if h.PluginMgr == nil {
+		h.Render(w, r, http.StatusOK, view.AdminPlugins(page))
 		return
 	}
 
-	statuses := s.PluginMgr.Statuses()
+	statuses := h.PluginMgr.Statuses()
 
 	orgsByPlugin := map[string][]string{}
 	orgNames := map[string]string{}
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
 		for _, st := range statuses {
-			orgs, err := s.PluginActivations.EnabledOrgs(r.Context(), tx, st.Name)
+			orgs, err := h.PluginActivations.EnabledOrgs(r.Context(), tx, st.Name)
 			if err != nil {
 				return err
 			}
 			orgsByPlugin[st.Name] = orgs
 		}
 
-		orgs, err := s.Orgs.List(r.Context(), tx, "")
+		orgs, err := h.Orgs.List(r.Context(), tx, "")
 		if err != nil {
 			return err
 		}
@@ -68,13 +68,13 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 		page.Plugins = append(page.Plugins, row)
 	}
 
-	s.Render(w, r, http.StatusOK, view.AdminPlugins(page))
+	h.Render(w, r, http.StatusOK, view.AdminPlugins(page))
 }
 
-// handlePluginRestart relance un plugin sur décision de l'opérateur, sans
+// HandlePluginRestart relance un plugin sur décision de l'opérateur, sans
 // délai de refroidissement : l'humain qui clique a vu l'état.
-func (s *Server) handlePluginRestart(w http.ResponseWriter, r *http.Request) {
-	if s.PluginMgr == nil {
+func (h *Handlers) HandlePluginRestart(w http.ResponseWriter, r *http.Request) {
+	if h.PluginMgr == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -84,18 +84,18 @@ func (s *Server) handlePluginRestart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name := r.PathValue("name")
-	restarted := s.PluginMgr.Restart(r.Context(), name)
+	restarted := h.PluginMgr.Restart(r.Context(), name)
 
-	s.Logger.InfoContext(r.Context(), "web: redémarrage de plugin demandé",
+	h.Logger.InfoContext(r.Context(), "web: redémarrage de plugin demandé",
 		"plugin", name, "restarted", restarted)
 
 	http.Redirect(w, r, "/admin/plugins", http.StatusFound)
 }
 
-// handleOrgPlugins enregistre l'activation des plugins pour une
+// HandleOrgPlugins enregistre l'activation des plugins pour une
 // organisation : le formulaire coche les plugins actifs, tout plugin
 // chargé absent des cases est désactivé.
-func (s *Server) handleOrgPlugins(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleOrgPlugins(w http.ResponseWriter, r *http.Request) {
 	if !core.CheckCSRF(r) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
@@ -113,23 +113,23 @@ func (s *Server) handleOrgPlugins(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var loaded []string
-	if s.PluginMgr != nil {
-		for _, st := range s.PluginMgr.Statuses() {
+	if h.PluginMgr != nil {
+		for _, st := range h.PluginMgr.Statuses() {
 			loaded = append(loaded, st.Name)
 		}
 	}
 
-	now := s.Now()
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+	now := h.Now()
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
 		// Organisation inconnue : non-opération silencieuse, comme les
 		// autres actions de la fiche — la contrainte de clé étrangère
 		// protège de toute écriture orpheline.
-		if _, found, err := s.Orgs.FindByID(r.Context(), tx, orgID); err != nil || !found {
+		if _, found, err := h.Orgs.FindByID(r.Context(), tx, orgID); err != nil || !found {
 			return err
 		}
 
 		for _, name := range loaded {
-			if err := s.PluginActivations.Upsert(r.Context(), tx, persistence.PluginActivation{
+			if err := h.PluginActivations.Upsert(r.Context(), tx, persistence.PluginActivation{
 				PluginName: name,
 				OrgID:      orgID,
 				Enabled:    checked[name],
@@ -145,19 +145,19 @@ func (s *Server) handleOrgPlugins(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: activation de plugins mise à jour",
+	h.Logger.InfoContext(r.Context(), "web: activation de plugins mise à jour",
 		"org_id", orgID, "enabled_count", len(checked))
 
 	http.Redirect(w, r, "/admin/orgs/"+orgID+"?tab=plugins&saved=1", http.StatusFound)
 }
 
 // pluginActivationRows prépare l'onglet Plugins de la fiche organisation.
-func (s *Server) pluginActivationRows(r *http.Request, tx *sql.Tx, orgID string) ([]view.PluginActivationRow, error) {
-	if s.PluginMgr == nil {
+func (h *Handlers) pluginActivationRows(r *http.Request, tx *sql.Tx, orgID string) ([]view.PluginActivationRow, error) {
+	if h.PluginMgr == nil {
 		return nil, nil
 	}
 
-	enabled, err := s.PluginActivations.EnabledPlugins(r.Context(), tx, orgID)
+	enabled, err := h.PluginActivations.EnabledPlugins(r.Context(), tx, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -166,10 +166,10 @@ func (s *Server) pluginActivationRows(r *http.Request, tx *sql.Tx, orgID string)
 		enabledSet[name] = true
 	}
 
-	endpoint, _ := s.PluginMgr.(core.PluginUIEndpoint)
+	endpoint, _ := h.PluginMgr.(core.PluginUIEndpoint)
 
 	var rows []view.PluginActivationRow
-	for _, st := range s.PluginMgr.Statuses() {
+	for _, st := range h.PluginMgr.Statuses() {
 		row := view.PluginActivationRow{
 			Name:        st.Name,
 			Description: st.Description,
@@ -180,7 +180,7 @@ func (s *Server) pluginActivationRows(r *http.Request, tx *sql.Tx, orgID string)
 			if _, _, hasUI := endpoint.UIEndpoint(st.Name); hasUI {
 				// Même raison que côté profil : l'iframe est sandbouclée,
 				// aucun cookie ne l'accompagne, le jeton porte l'identité.
-				row.UISrc = core.PluginUIPrefix + s.PluginUIToken(core.PluginViewAdmin, orgID, "", st.Name, s.Now()) + "/"
+				row.UISrc = core.PluginUIPrefix + h.PluginUIToken(core.PluginViewAdmin, orgID, "", st.Name, h.Now()) + "/"
 			}
 		}
 		rows = append(rows, row)

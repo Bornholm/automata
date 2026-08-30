@@ -1,4 +1,4 @@
-package web
+package admin
 
 import (
 	"database/sql"
@@ -30,17 +30,17 @@ func parseAgents(raw string) []string {
 	return agents
 }
 
-// handleSkills liste la bibliothèque.
-func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
+// HandleSkills liste la bibliothèque.
+func (h *Handlers) HandleSkills(w http.ResponseWriter, r *http.Request) {
 	page := view.SkillsPage{
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
 	}
 
 	var rows []persistence.Skill
-	if !s.WithTx(w, r, func(tx *sql.Tx) error {
+	if !h.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		rows, err = s.Skills.List(r.Context(), tx)
+		rows, err = h.Skills.List(r.Context(), tx)
 		return err
 	}) {
 		return
@@ -57,28 +57,28 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	s.Render(w, r, http.StatusOK, view.AdminSkills(page))
+	h.Render(w, r, http.StatusOK, view.AdminSkills(page))
 }
 
-// handleSkillNewForm affiche le formulaire de création.
-func (s *Server) handleSkillNewForm(w http.ResponseWriter, r *http.Request) {
-	s.Render(w, r, http.StatusOK, view.AdminSkillForm(view.SkillFormPage{
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
+// HandleSkillNewForm affiche le formulaire de création.
+func (h *Handlers) HandleSkillNewForm(w http.ResponseWriter, r *http.Request) {
+	h.Render(w, r, http.StatusOK, view.AdminSkillForm(view.SkillFormPage{
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
 		New:       true,
 	}))
 }
 
-// handleSkillCreate enregistre une nouvelle compétence.
-func (s *Server) handleSkillCreate(w http.ResponseWriter, r *http.Request) {
+// HandleSkillCreate enregistre une nouvelle compétence.
+func (h *Handlers) HandleSkillCreate(w http.ResponseWriter, r *http.Request) {
 	if !core.CheckCSRF(r) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
 	}
 
 	form := view.SkillFormPage{
-		Platforms:   s.SidebarPlatforms(),
-		CSRFToken:   s.CSRFToken(w, r),
+		Platforms:   h.SidebarPlatforms(),
+		CSRFToken:   h.CSRFToken(w, r),
 		New:         true,
 		Name:        strings.TrimSpace(r.PostFormValue("name")),
 		Description: strings.TrimSpace(r.PostFormValue("description")),
@@ -89,7 +89,7 @@ func (s *Server) handleSkillCreate(w http.ResponseWriter, r *http.Request) {
 
 	fail := func(status int, message string) {
 		form.Error = message
-		s.Render(w, r, status, view.AdminSkillForm(form))
+		h.Render(w, r, status, view.AdminSkillForm(form))
 	}
 
 	if !skills.ValidName(form.Name) {
@@ -101,10 +101,10 @@ func (s *Server) handleSkillCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := s.Now()
+	now := h.Now()
 	var exists bool
-	if !s.WithTx(w, r, func(tx *sql.Tx) error {
-		_, found, err := s.Skills.Get(r.Context(), tx, form.Name)
+	if !h.WithTx(w, r, func(tx *sql.Tx) error {
+		_, found, err := h.Skills.Get(r.Context(), tx, form.Name)
 		if err != nil {
 			return err
 		}
@@ -113,7 +113,7 @@ func (s *Server) handleSkillCreate(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 
-		return s.Skills.Upsert(r.Context(), tx, persistence.Skill{
+		return h.Skills.Upsert(r.Context(), tx, persistence.Skill{
 			Name:        form.Name,
 			Description: form.Description,
 			Content:     form.Content,
@@ -130,24 +130,24 @@ func (s *Server) handleSkillCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: compétence créée", "skill", form.Name)
+	h.Logger.InfoContext(r.Context(), "web: compétence créée", "skill", form.Name)
 
 	http.Redirect(w, r, "/admin/skills", http.StatusFound)
 }
 
-// handleSkillForm affiche le formulaire d'édition. Le nom n'y est pas
+// HandleSkillForm affiche le formulaire d'édition. Le nom n'y est pas
 // modifiable : c'est la clé primaire, et le ciblage des compétences s'y
 // réfère. Renommer, c'est créer puis supprimer.
-func (s *Server) handleSkillForm(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleSkillForm(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 
 	var (
 		skill persistence.Skill
 		found bool
 	)
-	if !s.WithTx(w, r, func(tx *sql.Tx) error {
+	if !h.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		skill, found, err = s.Skills.Get(r.Context(), tx, name)
+		skill, found, err = h.Skills.Get(r.Context(), tx, name)
 		return err
 	}) {
 		return
@@ -157,9 +157,9 @@ func (s *Server) handleSkillForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Render(w, r, http.StatusOK, view.AdminSkillForm(view.SkillFormPage{
-		Platforms:   s.SidebarPlatforms(),
-		CSRFToken:   s.CSRFToken(w, r),
+	h.Render(w, r, http.StatusOK, view.AdminSkillForm(view.SkillFormPage{
+		Platforms:   h.SidebarPlatforms(),
+		CSRFToken:   h.CSRFToken(w, r),
 		Name:        skill.Name,
 		Description: skill.Description,
 		Content:     skill.Content,
@@ -171,8 +171,8 @@ func (s *Server) handleSkillForm(w http.ResponseWriter, r *http.Request) {
 	}))
 }
 
-// handleSkillUpdate enregistre l'édition d'une compétence.
-func (s *Server) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
+// HandleSkillUpdate enregistre l'édition d'une compétence.
+func (h *Handlers) HandleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 	if !core.CheckCSRF(r) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
@@ -189,8 +189,8 @@ func (s *Server) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 		builtin bool
 	)
 	if description == "" || content == "" {
-		if !s.WithTx(w, r, func(tx *sql.Tx) error {
-			existing, ok, err := s.Skills.Get(r.Context(), tx, name)
+		if !h.WithTx(w, r, func(tx *sql.Tx) error {
+			existing, ok, err := h.Skills.Get(r.Context(), tx, name)
 			found, builtin = ok, existing.Builtin
 			return err
 		}) {
@@ -201,9 +201,9 @@ func (s *Server) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		s.Render(w, r, http.StatusBadRequest, view.AdminSkillForm(view.SkillFormPage{
-			Platforms:   s.SidebarPlatforms(),
-			CSRFToken:   s.CSRFToken(w, r),
+		h.Render(w, r, http.StatusBadRequest, view.AdminSkillForm(view.SkillFormPage{
+			Platforms:   h.SidebarPlatforms(),
+			CSRFToken:   h.CSRFToken(w, r),
 			Name:        name,
 			Description: description,
 			Content:     content,
@@ -215,8 +215,8 @@ func (s *Server) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.WithTx(w, r, func(tx *sql.Tx) error {
-		existing, ok, err := s.Skills.Get(r.Context(), tx, name)
+	if !h.WithTx(w, r, func(tx *sql.Tx) error {
+		existing, ok, err := h.Skills.Get(r.Context(), tx, name)
 		if err != nil || !ok {
 			return err
 		}
@@ -229,9 +229,9 @@ func (s *Server) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 		// Marquée éditée : le semis ne la remplacera plus par le contenu
 		// embarqué au prochain démarrage. « Restaurer » lève ce marqueur.
 		existing.Edited = true
-		existing.UpdatedAt = s.Now()
+		existing.UpdatedAt = h.Now()
 
-		return s.Skills.Upsert(r.Context(), tx, existing)
+		return h.Skills.Upsert(r.Context(), tx, existing)
 	}) {
 		return
 	}
@@ -240,35 +240,35 @@ func (s *Server) handleSkillUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: compétence modifiée", "skill", name, "enabled", enabled)
+	h.Logger.InfoContext(r.Context(), "web: compétence modifiée", "skill", name, "enabled", enabled)
 
 	http.Redirect(w, r, "/admin/skills/"+name+"?saved=1", http.StatusFound)
 }
 
-// handleSkillDelete supprime une compétence. Une compétence fournie par
+// HandleSkillDelete supprime une compétence. Une compétence fournie par
 // le projet sera re-semée au prochain démarrage : la vue le dit.
-func (s *Server) handleSkillDelete(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleSkillDelete(w http.ResponseWriter, r *http.Request) {
 	if !core.CheckCSRF(r) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
 	}
 
 	name := r.PathValue("name")
-	if !s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.Skills.Delete(r.Context(), tx, name)
+	if !h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.Skills.Delete(r.Context(), tx, name)
 	}) {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: compétence supprimée", "skill", name)
+	h.Logger.InfoContext(r.Context(), "web: compétence supprimée", "skill", name)
 
 	http.Redirect(w, r, "/admin/skills", http.StatusFound)
 }
 
-// handleSkillRestore réécrit une compétence fournie par le projet depuis
+// HandleSkillRestore réécrit une compétence fournie par le projet depuis
 // sa version embarquée. Sans effet sur une compétence écrite à la main :
 // le dépôt n'en a aucune version d'origine.
-func (s *Server) handleSkillRestore(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleSkillRestore(w http.ResponseWriter, r *http.Request) {
 	if !core.CheckCSRF(r) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
@@ -281,9 +281,9 @@ func (s *Server) handleSkillRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := s.Now()
-	if !s.WithTx(w, r, func(tx *sql.Tx) error {
-		existing, found, err := s.Skills.Get(r.Context(), tx, name)
+	now := h.Now()
+	if !h.WithTx(w, r, func(tx *sql.Tx) error {
+		existing, found, err := h.Skills.Get(r.Context(), tx, name)
 		if err != nil {
 			return err
 		}
@@ -299,12 +299,12 @@ func (s *Server) handleSkillRestore(w http.ResponseWriter, r *http.Request) {
 		existing.Edited = false
 		existing.UpdatedAt = now
 
-		return s.Skills.Upsert(r.Context(), tx, existing)
+		return h.Skills.Upsert(r.Context(), tx, existing)
 	}) {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: compétence restaurée", "skill", name)
+	h.Logger.InfoContext(r.Context(), "web: compétence restaurée", "skill", name)
 
 	http.Redirect(w, r, "/admin/skills/"+name+"?saved=1", http.StatusFound)
 }

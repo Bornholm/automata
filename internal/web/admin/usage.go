@@ -1,4 +1,4 @@
-package web
+package admin
 
 import (
 	"database/sql"
@@ -61,13 +61,13 @@ func usageQuery(r *http.Request, now time.Time) (from, to time.Time, dimensions 
 }
 
 // usageRows agrège la consommation et convertit les coûts en crédits.
-func (s *Server) usageRows(r *http.Request, tx *sql.Tx, from, to time.Time, dimensions []string) ([]view.UsageRow, view.UsagePage, error) {
-	aggregates, err := s.Usage.AggregateUsage(r.Context(), tx, from, to, dimensions, persistence.UsageFilter{})
+func (h *Handlers) usageRows(r *http.Request, tx *sql.Tx, from, to time.Time, dimensions []string) ([]view.UsageRow, view.UsagePage, error) {
+	aggregates, err := h.Usage.AggregateUsage(r.Context(), tx, from, to, dimensions, persistence.UsageFilter{})
 	if err != nil {
 		return nil, view.UsagePage{}, err
 	}
 
-	rate := s.CreditRate(r.Context(), tx)
+	rate := h.CreditRate(r.Context(), tx)
 
 	var (
 		rows    []view.UsageRow
@@ -80,7 +80,7 @@ func (s *Server) usageRows(r *http.Request, tx *sql.Tx, from, to time.Time, dime
 			Keys:       agg.Keys,
 			Calls:      agg.Calls,
 			Tokens:     agg.TotalTokens,
-			Credits:    s.UsageCredits(agg.CostAmount, rate),
+			Credits:    h.UsageCredits(agg.CostAmount, rate),
 			CostUSD:    fmt.Sprintf("%.4f $", agg.CostAmount),
 			Unreported: agg.Calls - agg.ReportedCalls,
 		}
@@ -97,13 +97,13 @@ func (s *Server) usageRows(r *http.Request, tx *sql.Tx, from, to time.Time, dime
 	return rows, totals, nil
 }
 
-// handleUsage — ADM-06.
-func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
-	from, to, dimensions := usageQuery(r, s.Now())
+// HandleUsage — ADM-06.
+func (h *Handlers) HandleUsage(w http.ResponseWriter, r *http.Request) {
+	from, to, dimensions := usageQuery(r, h.Now())
 
 	page := view.UsagePage{
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
 		From:      from.Format("2006-01-02"),
 		To:        to.Format("2006-01-02"),
 	}
@@ -123,8 +123,8 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		rows, totals, err := s.usageRows(r, tx, from, to, dimensions)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		rows, totals, err := h.usageRows(r, tx, from, to, dimensions)
 		if err != nil {
 			return err
 		}
@@ -141,7 +141,7 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 		if len(dimensions) > 0 && dimensions[0] == "org" {
 			for i := range page.Rows {
 				if id := page.Rows[i].Keys[0]; id != "" {
-					page.Rows[i].Keys[0] = s.OrgDisplayName(r.Context(), tx, id)
+					page.Rows[i].Keys[0] = h.OrgDisplayName(r.Context(), tx, id)
 				}
 			}
 		}
@@ -158,17 +158,17 @@ func (s *Server) handleUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	page.ExportURL = "/admin/usage.csv?" + query.Encode()
 
-	s.Render(w, r, http.StatusOK, view.AdminUsage(page))
+	h.Render(w, r, http.StatusOK, view.AdminUsage(page))
 }
 
-// handleUsageCSV exporte l'agrégation courante, filtres compris.
-func (s *Server) handleUsageCSV(w http.ResponseWriter, r *http.Request) {
-	from, to, dimensions := usageQuery(r, s.Now())
+// HandleUsageCSV exporte l'agrégation courante, filtres compris.
+func (h *Handlers) HandleUsageCSV(w http.ResponseWriter, r *http.Request) {
+	from, to, dimensions := usageQuery(r, h.Now())
 
 	var rows []view.UsageRow
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		rows, _, err = s.usageRows(r, tx, from, to, dimensions)
+		rows, _, err = h.usageRows(r, tx, from, to, dimensions)
 		return err
 	})
 	if !ok {

@@ -1,4 +1,4 @@
-package web
+package admin
 
 import (
 	"context"
@@ -27,16 +27,16 @@ import (
 // affichait « Aucun canal lié » à des organisations dont toutes les
 // conversations étaient rattachées — la liste contredisait alors l'écran
 // des canaux.
-func (s *Server) orgSubtitle(orgID string, bound []persistence.ChannelBinding) string {
+func (h *Handlers) orgSubtitle(orgID string, bound []persistence.ChannelBinding) string {
 	var count int
 	firstType := ""
-	for _, ch := range s.Cfg.Channels {
+	for _, ch := range h.Cfg.Channels {
 		if ch.OrgID != orgID {
 			continue
 		}
 		count++
 		if firstType == "" {
-			firstType = s.ProviderTypeOf(ch.Provider)
+			firstType = h.ProviderTypeOf(ch.Provider)
 		}
 	}
 
@@ -46,7 +46,7 @@ func (s *Server) orgSubtitle(orgID string, bound []persistence.ChannelBinding) s
 		}
 		count++
 		if firstType == "" {
-			firstType = s.ProviderTypeOf(binding.Provider)
+			firstType = h.ProviderTypeOf(binding.Provider)
 		}
 	}
 
@@ -61,42 +61,42 @@ func (s *Server) orgSubtitle(orgID string, bound []persistence.ChannelBinding) s
 	return fmt.Sprintf("%s · %d %s", core.PlatformDisplayName(firstType, firstType), count, label)
 }
 
-// handleOrgs — ADM-02.
-func (s *Server) handleOrgs(w http.ResponseWriter, r *http.Request) {
+// HandleOrgs — ADM-02.
+func (h *Handlers) HandleOrgs(w http.ResponseWriter, r *http.Request) {
 	search := strings.TrimSpace(r.URL.Query().Get("q"))
-	now := s.Now()
+	now := h.Now()
 	monthFrom, monthTo := core.MonthBounds(now)
 
 	page := view.OrgsPage{
 		Search:    search,
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		orgs, err := s.Orgs.List(r.Context(), tx, search)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		orgs, err := h.Orgs.List(r.Context(), tx, search)
 		if err != nil {
 			return err
 		}
-		balances, err := s.Wallet.Balances(r.Context(), tx)
+		balances, err := h.Wallet.Balances(r.Context(), tx)
 		if err != nil {
 			return err
 		}
-		memberCounts, err := s.Members.CountByOrg(r.Context(), tx)
+		memberCounts, err := h.Members.CountByOrg(r.Context(), tx)
 		if err != nil {
 			return err
 		}
-		bound, err := s.Bindings.ListAll(r.Context(), tx)
+		bound, err := h.Bindings.ListAll(r.Context(), tx)
 		if err != nil {
 			return err
 		}
-		monthUsage, err := s.OrgUsageCredits(r.Context(), tx, monthFrom, monthTo)
+		monthUsage, err := h.OrgUsageCredits(r.Context(), tx, monthFrom, monthTo)
 		if err != nil {
 			return err
 		}
 
 		for _, org := range orgs {
-			lastCredit, err := s.Wallet.LastCredit(r.Context(), tx, org.ID)
+			lastCredit, err := h.Wallet.LastCredit(r.Context(), tx, org.ID)
 			if err != nil {
 				return err
 			}
@@ -111,7 +111,7 @@ func (s *Server) handleOrgs(w http.ResponseWriter, r *http.Request) {
 			page.Rows = append(page.Rows, view.OrgRow{
 				ID:           org.ID,
 				Name:         org.DisplayName,
-				Subtitle:     s.orgSubtitle(org.ID, bound),
+				Subtitle:     h.orgSubtitle(org.ID, bound),
 				Chip:         state.Chip,
 				BalanceLabel: state.BalanceLabel,
 				GaugePct:     state.GaugePct,
@@ -133,13 +133,13 @@ func (s *Server) handleOrgs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Render(w, r, http.StatusOK, view.AdminOrgs(page))
+	h.Render(w, r, http.StatusOK, view.AdminOrgs(page))
 }
 
-func (s *Server) handleOrgNewForm(w http.ResponseWriter, r *http.Request) {
-	s.Render(w, r, http.StatusOK, view.AdminOrgNew(view.OrgNewPage{
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
+func (h *Handlers) HandleOrgNewForm(w http.ResponseWriter, r *http.Request) {
+	h.Render(w, r, http.StatusOK, view.AdminOrgNew(view.OrgNewPage{
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
 	}))
 }
 
@@ -181,12 +181,12 @@ func slugify(name string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleOrgCreate(w http.ResponseWriter, r *http.Request) {
 	name := strings.TrimSpace(r.PostFormValue("display_name"))
 	if name == "" {
-		s.Render(w, r, http.StatusBadRequest, view.AdminOrgNew(view.OrgNewPage{
-			Platforms: s.SidebarPlatforms(),
-			CSRFToken: s.CSRFToken(w, r),
+		h.Render(w, r, http.StatusBadRequest, view.AdminOrgNew(view.OrgNewPage{
+			Platforms: h.SidebarPlatforms(),
+			CSRFToken: h.CSRFToken(w, r),
 			Error:     "Le nom de l'organisation est requis.",
 		}))
 		return
@@ -194,7 +194,7 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 
 	welcome, _ := strconv.ParseInt(r.PostFormValue("welcome_credits"), 10, 64)
 	ownerName := strings.TrimSpace(r.PostFormValue("owner_name"))
-	now := s.Now()
+	now := h.Now()
 
 	orgID := slugify(name)
 	if orgID == "" {
@@ -207,8 +207,8 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 	// création refaite, pas d'une intention — mieux vaut le dire que le
 	// laisser passer et devoir démêler ensuite quel canal est allé où.
 	var duplicate bool
-	if !s.WithTx(w, r, func(tx *sql.Tx) error {
-		existing, err := s.Orgs.List(r.Context(), tx, "")
+	if !h.WithTx(w, r, func(tx *sql.Tx) error {
+		existing, err := h.Orgs.List(r.Context(), tx, "")
 		if err != nil {
 			return err
 		}
@@ -224,19 +224,19 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if duplicate {
-		s.Render(w, r, http.StatusConflict, view.AdminOrgNew(view.OrgNewPage{
-			Platforms: s.SidebarPlatforms(),
-			CSRFToken: s.CSRFToken(w, r),
+		h.Render(w, r, http.StatusConflict, view.AdminOrgNew(view.OrgNewPage{
+			Platforms: h.SidebarPlatforms(),
+			CSRFToken: h.CSRFToken(w, r),
 			Error:     "Une organisation nommée « " + name + " » existe déjà. Choisissez un autre nom, ou ouvrez l'existante.",
 		}))
 		return
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
 		// Suffixe numérique en cas de collision d'identifiant.
 		candidate := orgID
 		for i := 2; ; i++ {
-			_, exists, err := s.Orgs.FindByID(r.Context(), tx, candidate)
+			_, exists, err := h.Orgs.FindByID(r.Context(), tx, candidate)
 			if err != nil {
 				return err
 			}
@@ -253,12 +253,12 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:   now,
 			UpdatedAt:   now,
 		}
-		if err := s.Orgs.Insert(r.Context(), tx, org, false); err != nil {
+		if err := h.Orgs.Insert(r.Context(), tx, org, false); err != nil {
 			return err
 		}
 
 		if welcome > 0 {
-			if err := s.Wallet.Insert(r.Context(), tx, persistence.WalletEntry{
+			if err := h.Wallet.Insert(r.Context(), tx, persistence.WalletEntry{
 				OrgID:     orgID,
 				Kind:      persistence.WalletKindWelcome,
 				Label:     "Crédits de bienvenue",
@@ -274,7 +274,7 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return err
 			}
-			return s.Members.Insert(r.Context(), tx, persistence.Member{
+			return h.Members.Insert(r.Context(), tx, persistence.Member{
 				ID:          strings.ToLower(memberID),
 				OrgID:       orgID,
 				DisplayName: ownerName,
@@ -290,63 +290,63 @@ func (s *Server) handleOrgCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: organisation créée", "org_id", orgID)
+	h.Logger.InfoContext(r.Context(), "web: organisation créée", "org_id", orgID)
 	http.Redirect(w, r, "/admin/orgs/"+orgID, http.StatusFound)
 }
 
-// handleOrg — ADM-03.
-func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
+// HandleOrg — ADM-03.
+func (h *Handlers) HandleOrg(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	tab := r.URL.Query().Get("tab")
 	if tab != "members" && tab != "channels" && tab != "customization" && tab != "models" && tab != "plugins" {
 		tab = "credits"
 	}
-	now := s.Now()
+	now := h.Now()
 	monthFrom, monthTo := core.MonthBounds(now)
 
 	page := view.OrgPage{
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
 		ID:        orgID,
 		Tab:       tab,
 	}
 
 	found := false
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		org, exists, err := s.Orgs.FindByID(r.Context(), tx, orgID)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		org, exists, err := h.Orgs.FindByID(r.Context(), tx, orgID)
 		if err != nil || !exists {
 			return err
 		}
 		found = true
 
-		balance, err := s.Wallet.Balance(r.Context(), tx, orgID)
+		balance, err := h.Wallet.Balance(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
-		lastCredit, err := s.Wallet.LastCredit(r.Context(), tx, orgID)
+		lastCredit, err := h.Wallet.LastCredit(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
-		monthUsage, err := s.SingleOrgUsageCredits(r.Context(), tx, orgID, monthFrom, monthTo)
+		monthUsage, err := h.SingleOrgUsageCredits(r.Context(), tx, orgID, monthFrom, monthTo)
 		if err != nil {
 			return err
 		}
-		members, err := s.Members.ListByOrg(r.Context(), tx, orgID)
+		members, err := h.Members.ListByOrg(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
-		rate, err := s.DailyRate(r.Context(), tx, orgID, now)
+		rate, err := h.DailyRate(r.Context(), tx, orgID, now)
 		if err != nil {
 			return err
 		}
 
-		pluginRows, err := s.pluginActivationRows(r, tx, orgID)
+		pluginRows, err := h.pluginActivationRows(r, tx, orgID)
 		if err != nil {
 			return err
 		}
 		page.PluginRows = pluginRows
 
-		modelRoles, err := s.modelRoleRows(r.Context(), tx, orgID)
+		modelRoles, err := h.modelRoleRows(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
@@ -373,13 +373,13 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 		// Les canaux d'une organisation viennent de deux sources : la
 		// configuration et les liaisons par jeton. Lues une seule fois,
 		// elles servent au compteur d'en-tête comme à l'onglet Canaux.
-		bound, err := s.Bindings.ListByOrg(r.Context(), tx, orgID)
+		bound, err := h.Bindings.ListByOrg(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
 
 		channelCount := len(bound)
-		for _, ch := range s.Cfg.Channels {
+		for _, ch := range h.Cfg.Channels {
 			if ch.OrgID == orgID {
 				channelCount++
 			}
@@ -393,7 +393,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 
 		// Mouvements avec solde après coup : la liste est antichronologique,
 		// le solde « après » se déroule depuis le solde courant.
-		entries, err := s.Wallet.List(r.Context(), tx, orgID, 50)
+		entries, err := h.Wallet.List(r.Context(), tx, orgID, 50)
 		if err != nil {
 			return err
 		}
@@ -413,7 +413,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 			running -= entry.Amount
 		}
 
-		if page.Weeks, err = s.weeklyUsage(r.Context(), tx, orgID, now); err != nil {
+		if page.Weeks, err = h.weeklyUsage(r.Context(), tx, orgID, now); err != nil {
 			return err
 		}
 
@@ -433,14 +433,14 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 
 		// Personnalisation : les spécialistes déclarés dans l'instance,
 		// cochés selon ce que l'organisation conserve.
-		settings, _, err := s.OrgSettings.Get(r.Context(), tx, orgID)
+		settings, _, err := h.OrgSettings.Get(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
 		page.PromptExtra = settings.PromptExtra
 		page.MaxToolCalls = settings.MaxToolCalls
 
-		for name, agentCfg := range s.Cfg.Agents {
+		for name, agentCfg := range h.Cfg.Agents {
 			if agentCfg.Type == config.AgentTypeOrchestrator {
 				continue
 			}
@@ -454,20 +454,20 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 
 		for _, binding := range bound {
 			page.Channels = append(page.Channels, view.OrgChannelRow{
-				PlatformType: s.ProviderTypeOf(binding.Provider),
+				PlatformType: h.ProviderTypeOf(binding.Provider),
 				Name:         binding.DisplayName,
 				Kind:         core.ChannelKindLabelFromScope(binding.Kind),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
 			})
 		}
 
-		for _, ch := range s.Cfg.Channels {
+		for _, ch := range h.Cfg.Channels {
 			if ch.OrgID != orgID {
 				continue
 			}
 			page.Channels = append(page.Channels, view.OrgChannelRow{
-				PlatformType: s.ProviderTypeOf(ch.Provider),
-				Name:         s.ChannelDisplayName(ch),
+				PlatformType: h.ProviderTypeOf(ch.Provider),
+				Name:         h.ChannelDisplayName(ch),
 				Kind:         core.ChannelKindLabel(ch.Kind),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
 			})
@@ -484,7 +484,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if key := r.URL.Query().Get("reveal"); key != "" {
-		if value, ok := s.Reveals.Pop(key, now); ok {
+		if value, ok := h.Reveals.Pop(key, now); ok {
 			page.FlashToken = &view.TokenPanelData{
 				Eyebrow:   "Jeton de groupe",
 				Display:   value.Display,
@@ -505,18 +505,18 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	// toujours là.
 	page.Error = r.URL.Query().Get("error")
 
-	s.Render(w, r, http.StatusOK, view.AdminOrg(page))
+	h.Render(w, r, http.StatusOK, view.AdminOrg(page))
 }
 
 // weeklyUsage construit les 5 dernières semaines de consommation (barres
 // d'ADM-03), normalisées sur 96px de haut.
-func (s *Server) weeklyUsage(ctx context.Context, tx *sql.Tx, orgID string, now time.Time) ([]view.WeekBar, error) {
+func (h *Handlers) weeklyUsage(ctx context.Context, tx *sql.Tx, orgID string, now time.Time) ([]view.WeekBar, error) {
 	const weeks = 5
 
-	rate := s.CreditRate(ctx, tx)
+	rate := h.CreditRate(ctx, tx)
 	start := now.AddDate(0, 0, -7*weeks)
 
-	aggregates, err := s.Usage.AggregateUsage(ctx, tx, start, now, []string{"day"}, persistence.UsageFilter{OrgID: orgID})
+	aggregates, err := h.Usage.AggregateUsage(ctx, tx, start, now, []string{"day"}, persistence.UsageFilter{OrgID: orgID})
 	if err != nil {
 		return nil, err
 	}
@@ -531,7 +531,7 @@ func (s *Server) weeklyUsage(ctx context.Context, tx *sql.Tx, orgID string, now 
 		if index < 0 || index >= weeks {
 			continue
 		}
-		totals[index] += s.UsageCredits(agg.CostAmount, rate)
+		totals[index] += h.UsageCredits(agg.CostAmount, rate)
 	}
 
 	var max int64 = 1
@@ -572,7 +572,7 @@ func memberRoleLabel(role string) string {
 	}
 }
 
-func (s *Server) handleOrgGrant(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleOrgGrant(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	amount, _ := strconv.ParseInt(r.PostFormValue("amount"), 10, 64)
 	label := strings.TrimSpace(r.PostFormValue("label"))
@@ -581,30 +581,30 @@ func (s *Server) handleOrgGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.Wallet.Insert(r.Context(), tx, persistence.WalletEntry{
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.Wallet.Insert(r.Context(), tx, persistence.WalletEntry{
 			OrgID:     orgID,
 			Kind:      persistence.WalletKindGrant,
 			Label:     label,
 			Amount:    amount,
-			CreatedAt: s.Now(),
+			CreatedAt: h.Now(),
 		})
 	})
 	if !ok {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: crédits offerts", "org_id", orgID, "amount", amount)
+	h.Logger.InfoContext(r.Context(), "web: crédits offerts", "org_id", orgID, "amount", amount)
 	http.Redirect(w, r, "/admin/orgs/"+orgID+"?granted=1", http.StatusFound)
 }
 
-func (s *Server) handleOrgOffered(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleOrgOffered(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	offered := r.PostFormValue("offered") == "true"
 	allowance, _ := strconv.ParseInt(r.PostFormValue("allowance"), 10, 64)
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		org, exists, err := s.Orgs.FindByID(r.Context(), tx, orgID)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		org, exists, err := h.Orgs.FindByID(r.Context(), tx, orgID)
 		if err != nil || !exists {
 			return err
 		}
@@ -612,8 +612,8 @@ func (s *Server) handleOrgOffered(w http.ResponseWriter, r *http.Request) {
 		if allowance >= 0 && offered {
 			org.MonthlyAllowance = allowance
 		}
-		org.UpdatedAt = s.Now()
-		if err := s.Orgs.Update(r.Context(), tx, org); err != nil {
+		org.UpdatedAt = h.Now()
+		if err := h.Orgs.Update(r.Context(), tx, org); err != nil {
 			return err
 		}
 
@@ -624,7 +624,7 @@ func (s *Server) handleOrgOffered(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 
-		balance, err := s.Wallet.Balance(r.Context(), tx, orgID)
+		balance, err := h.Wallet.Balance(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
@@ -632,12 +632,12 @@ func (s *Server) handleOrgOffered(w http.ResponseWriter, r *http.Request) {
 			return nil
 		}
 
-		return s.Wallet.Insert(r.Context(), tx, persistence.WalletEntry{
+		return h.Wallet.Insert(r.Context(), tx, persistence.WalletEntry{
 			OrgID:     orgID,
 			Kind:      persistence.WalletKindAllowance,
 			Label:     "Allocation mensuelle offerte",
 			Amount:    org.MonthlyAllowance - balance,
-			CreatedAt: s.Now(),
+			CreatedAt: h.Now(),
 		})
 	})
 	if !ok {
@@ -647,46 +647,46 @@ func (s *Server) handleOrgOffered(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/orgs/"+orgID, http.StatusFound)
 }
 
-// handleOrgUnlimited bascule le mode gratuit sans limite : l'organisation
+// HandleOrgUnlimited bascule le mode gratuit sans limite : l'organisation
 // n'est plus jamais débitée ni mise en pause, et son allocation mensuelle
 // devient sans objet. Sa consommation reste mesurée : le coût réel demeure
 // visible dans les écrans d'usage et de marge.
-func (s *Server) handleOrgUnlimited(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleOrgUnlimited(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	unlimited := r.PostFormValue("unlimited") == "true"
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		org, exists, err := s.Orgs.FindByID(r.Context(), tx, orgID)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		org, exists, err := h.Orgs.FindByID(r.Context(), tx, orgID)
 		if err != nil || !exists {
 			return err
 		}
 		org.Unlimited = unlimited
-		org.UpdatedAt = s.Now()
+		org.UpdatedAt = h.Now()
 
-		return s.Orgs.Update(r.Context(), tx, org)
+		return h.Orgs.Update(r.Context(), tx, org)
 	})
 	if !ok {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: mode gratuit sans limite modifié",
+	h.Logger.InfoContext(r.Context(), "web: mode gratuit sans limite modifié",
 		"org", orgID, "unlimited", unlimited)
 
 	http.Redirect(w, r, "/admin/orgs/"+orgID, http.StatusFound)
 }
 
-func (s *Server) handleOrgGroupToken(w http.ResponseWriter, r *http.Request) {
-	s.createGroupToken(w, r, r.PathValue("id"), "/admin/orgs/"+r.PathValue("id"))
+func (h *Handlers) HandleOrgGroupToken(w http.ResponseWriter, r *http.Request) {
+	h.createGroupToken(w, r, r.PathValue("id"), "/admin/orgs/"+r.PathValue("id"))
 }
 
 // createGroupToken génère un jeton de groupe pour orgID et redirige vers
 // redirectBase avec la clé de révélation.
-func (s *Server) createGroupToken(w http.ResponseWriter, r *http.Request, orgID, redirectBase string) {
-	now := s.Now()
+func (h *Handlers) createGroupToken(w http.ResponseWriter, r *http.Request, orgID, redirectBase string) {
+	now := h.Now()
 
 	clear, hash, display, err := weblink.NewLinkToken()
 	if err != nil {
-		s.Logger.ErrorContext(r.Context(), "web: génération d'un jeton de groupe", "error", err)
+		h.Logger.ErrorContext(r.Context(), "web: génération d'un jeton de groupe", "error", err)
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
@@ -697,8 +697,8 @@ func (s *Server) createGroupToken(w http.ResponseWriter, r *http.Request, orgID,
 		return
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.LinkTokens.Insert(r.Context(), tx, persistence.LinkToken{
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.LinkTokens.Insert(r.Context(), tx, persistence.LinkToken{
 			ID:        strings.ToLower(tokenID),
 			Kind:      persistence.LinkTokenKindGroup,
 			OrgID:     orgID,
@@ -712,13 +712,13 @@ func (s *Server) createGroupToken(w http.ResponseWriter, r *http.Request, orgID,
 		return
 	}
 
-	key, err := s.Reveals.Put(core.RevealValue{Clear: clear, Display: display}, now)
+	key, err := h.Reveals.Put(core.RevealValue{Clear: clear, Display: display}, now)
 	if err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: jeton de groupe généré", "org_id", orgID, "token_id", tokenID)
+	h.Logger.InfoContext(r.Context(), "web: jeton de groupe généré", "org_id", orgID, "token_id", tokenID)
 
 	separator := "?"
 	if strings.Contains(redirectBase, "?") {
@@ -727,14 +727,14 @@ func (s *Server) createGroupToken(w http.ResponseWriter, r *http.Request, orgID,
 	http.Redirect(w, r, redirectBase+separator+"reveal="+key, http.StatusFound)
 }
 
-// handleOrgWalletCSV exporte les mouvements du portefeuille.
-func (s *Server) handleOrgWalletCSV(w http.ResponseWriter, r *http.Request) {
+// HandleOrgWalletCSV exporte les mouvements du portefeuille.
+func (h *Handlers) HandleOrgWalletCSV(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 
 	var entries []persistence.WalletEntry
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		entries, err = s.Wallet.List(r.Context(), tx, orgID, 0)
+		entries, err = h.Wallet.List(r.Context(), tx, orgID, 0)
 		return err
 	})
 	if !ok {
@@ -757,10 +757,10 @@ func (s *Server) handleOrgWalletCSV(w http.ResponseWriter, r *http.Request) {
 	writer.Flush()
 }
 
-// handleOrgCustomization enregistre la personnalisation d'une
+// HandleOrgCustomization enregistre la personnalisation d'une
 // organisation : consigne ajoutée, spécialistes conservés, plafond
 // d'outils.
-func (s *Server) handleOrgCustomization(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleOrgCustomization(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 
 	// Les cases cochées disent ce qui reste : ce qui est retiré est le
@@ -771,7 +771,7 @@ func (s *Server) handleOrgCustomization(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var disabled []string
-	for name, agentCfg := range s.Cfg.Agents {
+	for name, agentCfg := range h.Cfg.Agents {
 		if agentCfg.Type == config.AgentTypeOrchestrator {
 			continue
 		}
@@ -786,37 +786,37 @@ func (s *Server) handleOrgCustomization(w http.ResponseWriter, r *http.Request) 
 		maxToolCalls = 0
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.OrgSettings.Upsert(r.Context(), tx, persistence.OrgSettings{
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.OrgSettings.Upsert(r.Context(), tx, persistence.OrgSettings{
 			OrgID:          orgID,
 			PromptExtra:    strings.TrimSpace(r.PostFormValue("prompt_extra")),
 			DisabledAgents: disabled,
 			MaxToolCalls:   maxToolCalls,
-			UpdatedAt:      s.Now(),
+			UpdatedAt:      h.Now(),
 		})
 	})
 	if !ok {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: personnalisation d'organisation enregistrée",
+	h.Logger.InfoContext(r.Context(), "web: personnalisation d'organisation enregistrée",
 		"org_id", orgID, "disabled_agents", len(disabled), "max_tool_calls", maxToolCalls)
 
 	http.Redirect(w, r, "/admin/orgs/"+orgID+"?tab=customization&saved=1", http.StatusFound)
 }
 
-// handleOrgDelete supprime une organisation et tout ce qui n'existe que
+// HandleOrgDelete supprime une organisation et tout ce qui n'existe que
 // par elle.
 //
 // La confirmation demande de retaper le nom : la liste d'administration
 // peut présenter deux organisations homonymes, et se tromper de ligne
 // n'aurait aucun recours — l'effacement est complet et définitif.
-func (s *Server) handleOrgDelete(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleOrgDelete(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	typed := strings.TrimSpace(r.PostFormValue("confirm_name"))
 
-	if s.Privacy == nil {
-		s.redirectOrgError(w, r, orgID, "La suppression n'est pas disponible sur cette instance.")
+	if h.Privacy == nil {
+		h.redirectOrgError(w, r, orgID, "La suppression n'est pas disponible sur cette instance.")
 		return
 	}
 
@@ -825,8 +825,8 @@ func (s *Server) handleOrgDelete(w http.ResponseWriter, r *http.Request) {
 		missing  bool
 	)
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		org, found, err := s.Orgs.FindByID(r.Context(), tx, orgID)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		org, found, err := h.Orgs.FindByID(r.Context(), tx, orgID)
 		if err != nil {
 			return err
 		}
@@ -849,22 +849,22 @@ func (s *Server) handleOrgDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if mismatch {
-		s.redirectOrgError(w, r, orgID, "Le nom saisi ne correspond pas : rien n'a été supprimé.")
+		h.redirectOrgError(w, r, orgID, "Le nom saisi ne correspond pas : rien n'a été supprimé.")
 		return
 	}
 
 	// La suppression touche la base mémoire autant que la base
 	// applicative : elle passe par le service de confidentialité, qui
 	// possède les deux.
-	report, err := s.Privacy.DeleteOrganization(r.Context(), orgID)
+	report, err := h.Privacy.DeleteOrganization(r.Context(), orgID)
 	if err != nil {
-		s.Logger.ErrorContext(r.Context(), "web: échec de la suppression d'une organisation", "org_id", orgID, "error", err)
-		s.redirectOrgError(w, r, orgID, "La suppression a échoué. Rien n'a été supprimé, ou seulement une partie : consultez les journaux.")
+		h.Logger.ErrorContext(r.Context(), "web: échec de la suppression d'une organisation", "org_id", orgID, "error", err)
+		h.redirectOrgError(w, r, orgID, "La suppression a échoué. Rien n'a été supprimé, ou seulement une partie : consultez les journaux.")
 		return
 	}
 
 	// Compteurs seulement : ce qui a été effacé ne se journalise pas.
-	s.Logger.InfoContext(r.Context(), "web: organisation supprimée",
+	h.Logger.InfoContext(r.Context(), "web: organisation supprimée",
 		"org_id", orgID,
 		"members", report.Members,
 		"orphan_members", report.OrphanMembers,
@@ -879,6 +879,6 @@ func (s *Server) handleOrgDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // redirectOrgError renvoie sur la fiche avec un message d'échec.
-func (s *Server) redirectOrgError(w http.ResponseWriter, r *http.Request, orgID, message string) {
+func (h *Handlers) redirectOrgError(w http.ResponseWriter, r *http.Request, orgID, message string) {
 	http.Redirect(w, r, "/admin/orgs/"+orgID+"?tab=customization&error="+url.QueryEscape(message), http.StatusFound)
 }

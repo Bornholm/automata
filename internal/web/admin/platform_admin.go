@@ -1,4 +1,4 @@
-package web
+package admin
 
 import (
 	"database/sql"
@@ -106,9 +106,9 @@ func formToConfig(r *http.Request, providerType string) map[string]any {
 	return config
 }
 
-// handlePlatformCreate enregistre un nouveau compte de messagerie et
+// HandlePlatformCreate enregistre un nouveau compte de messagerie et
 // demande au gestionnaire de le démarrer.
-func (s *Server) handlePlatformCreate(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandlePlatformCreate(w http.ResponseWriter, r *http.Request) {
 	providerType := r.PostFormValue("type")
 	if platformFields(providerType) == nil {
 		http.Redirect(w, r, "/admin/platforms?error=type", http.StatusFound)
@@ -134,9 +134,9 @@ func (s *Server) handlePlatformCreate(w http.ResponseWriter, r *http.Request) {
 
 	// La configuration doit produire un fournisseur : la vérifier ici évite
 	// d'enregistrer un compte qui échouerait indéfiniment au démarrage.
-	if s.ValidatePlatform != nil {
-		if err := s.ValidatePlatform(providerType, config); err != nil {
-			s.Logger.WarnContext(r.Context(), "web: configuration de compte refusée",
+	if h.ValidatePlatform != nil {
+		if err := h.ValidatePlatform(providerType, config); err != nil {
+			h.Logger.WarnContext(r.Context(), "web: configuration de compte refusée",
 				"platform_id", id, "type", providerType, "error", err)
 			http.Redirect(w, r, "/admin/platforms?pairing="+pairingModeFor(providerType)+
 				"&platform="+providerType+"&error=invalide", http.StatusFound)
@@ -150,16 +150,16 @@ func (s *Server) handlePlatformCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sealed, err := s.Secrets.Seal(string(raw))
+	sealed, err := h.Secrets.Seal(string(raw))
 	if err != nil {
-		s.Logger.ErrorContext(r.Context(), "web: chiffrement de la configuration d'un compte", "platform_id", id, "error", err)
+		h.Logger.ErrorContext(r.Context(), "web: chiffrement de la configuration d'un compte", "platform_id", id, "error", err)
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
 
-	now := s.Now()
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.Platforms.Insert(r.Context(), tx, persistence.Platform{
+	now := h.Now()
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.Platforms.Insert(r.Context(), tx, persistence.Platform{
 			ID:          id,
 			Type:        providerType,
 			DisplayName: strings.TrimSpace(r.PostFormValue("display_name")),
@@ -175,8 +175,8 @@ func (s *Server) handlePlatformCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Le secret n'apparaît jamais dans les journaux : seuls l'identifiant
 	// et le type du compte.
-	s.Logger.InfoContext(r.Context(), "web: compte de messagerie ajouté", "platform_id", id, "type", providerType)
-	s.wakePlatforms()
+	h.Logger.InfoContext(r.Context(), "web: compte de messagerie ajouté", "platform_id", id, "type", providerType)
+	h.wakePlatforms()
 
 	http.Redirect(w, r, "/admin/platforms?added="+id, http.StatusFound)
 }
@@ -199,45 +199,45 @@ func lookupConfig(config map[string]any, name string) (string, bool) {
 	return value, ok && value != ""
 }
 
-// handlePlatformToggle active ou désactive un compte : le gestionnaire
+// HandlePlatformToggle active ou désactive un compte : le gestionnaire
 // démarre ou arrête son pipeline sans redémarrage du processus.
-func (s *Server) handlePlatformToggle(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandlePlatformToggle(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	enabled := r.PostFormValue("enabled") == "true"
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		p, found, err := s.Platforms.FindByID(r.Context(), tx, id)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		p, found, err := h.Platforms.FindByID(r.Context(), tx, id)
 		if err != nil || !found {
 			return err
 		}
 		p.Enabled = enabled
-		p.UpdatedAt = s.Now()
-		return s.Platforms.Update(r.Context(), tx, p)
+		p.UpdatedAt = h.Now()
+		return h.Platforms.Update(r.Context(), tx, p)
 	})
 	if !ok {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: compte de messagerie basculé", "platform_id", id, "enabled", enabled)
-	s.wakePlatforms()
+	h.Logger.InfoContext(r.Context(), "web: compte de messagerie basculé", "platform_id", id, "enabled", enabled)
+	h.wakePlatforms()
 
 	http.Redirect(w, r, "/admin/platforms", http.StatusFound)
 }
 
-// handlePlatformDelete retire un compte. La session sur disque n'est pas
+// HandlePlatformDelete retire un compte. La session sur disque n'est pas
 // supprimée : la détruire relève d'une décision explicite de l'exploitant.
-func (s *Server) handlePlatformDelete(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandlePlatformDelete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.Platforms.Delete(r.Context(), tx, id)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.Platforms.Delete(r.Context(), tx, id)
 	})
 	if !ok {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: compte de messagerie supprimé", "platform_id", id)
-	s.wakePlatforms()
+	h.Logger.InfoContext(r.Context(), "web: compte de messagerie supprimé", "platform_id", id)
+	h.wakePlatforms()
 
 	http.Redirect(w, r, "/admin/platforms", http.StatusFound)
 }
@@ -245,9 +245,9 @@ func (s *Server) handlePlatformDelete(w http.ResponseWriter, r *http.Request) {
 // wakePlatforms demande au gestionnaire d'appliquer immédiatement les
 // changements ; sans lui, la prochaine synchronisation périodique s'en
 // chargerait, mais l'écran mentirait entre-temps.
-func (s *Server) wakePlatforms() {
-	if s.PlatformMgr != nil {
-		s.PlatformMgr.Wake()
+func (h *Handlers) wakePlatforms() {
+	if h.PlatformMgr != nil {
+		h.PlatformMgr.Wake()
 	}
 }
 

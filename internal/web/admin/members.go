@@ -1,4 +1,4 @@
-package web
+package admin
 
 import (
 	"context"
@@ -13,29 +13,29 @@ import (
 	"github.com/bornholm/automata/internal/weblink"
 )
 
-func (s *Server) handleMemberNewForm(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleMemberNewForm(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 
 	var orgName string
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		orgName = s.OrgDisplayName(r.Context(), tx, orgID)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		orgName = h.OrgDisplayName(r.Context(), tx, orgID)
 		return nil
 	})
 	if !ok {
 		return
 	}
 
-	s.Render(w, r, http.StatusOK, view.AdminMemberNew(view.MemberNewPage{
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
+	h.Render(w, r, http.StatusOK, view.AdminMemberNew(view.MemberNewPage{
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
 		OrgID:     orgID,
 		OrgName:   orgName,
 	}))
 }
 
-// handleMemberCreate pré-crée le membre puis génère immédiatement son
+// HandleMemberCreate pré-crée le membre puis génère immédiatement son
 // jeton (« Créer et générer le jeton », parcours A).
-func (s *Server) handleMemberCreate(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleMemberCreate(w http.ResponseWriter, r *http.Request) {
 	orgID := r.PathValue("id")
 	name := strings.TrimSpace(r.PostFormValue("display_name"))
 	role := r.PostFormValue("role")
@@ -49,7 +49,7 @@ func (s *Server) handleMemberCreate(w http.ResponseWriter, r *http.Request) {
 		role = persistence.MemberRoleMember
 	}
 
-	now := s.Now()
+	now := h.Now()
 	rawID, err := weblink.RandomCrockford(10)
 	if err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
@@ -57,8 +57,8 @@ func (s *Server) handleMemberCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	memberID := strings.ToLower(rawID)
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.Members.Insert(r.Context(), tx, persistence.Member{
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.Members.Insert(r.Context(), tx, persistence.Member{
 			ID:          memberID,
 			OrgID:       orgID,
 			DisplayName: name,
@@ -72,14 +72,14 @@ func (s *Server) handleMemberCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: membre pré-créé", "org_id", orgID, "member_id", memberID)
-	s.generateMemberToken(w, r, memberID)
+	h.Logger.InfoContext(r.Context(), "web: membre pré-créé", "org_id", orgID, "member_id", memberID)
+	h.generateMemberToken(w, r, memberID)
 }
 
 // generateMemberToken révoque les jetons en attente du membre, en crée un
 // nouveau et redirige vers sa fiche avec la clé de révélation.
-func (s *Server) generateMemberToken(w http.ResponseWriter, r *http.Request, memberID string) {
-	now := s.Now()
+func (h *Handlers) generateMemberToken(w http.ResponseWriter, r *http.Request, memberID string) {
+	now := h.Now()
 
 	clear, hash, display, err := weblink.NewLinkToken()
 	if err != nil {
@@ -93,17 +93,17 @@ func (s *Server) generateMemberToken(w http.ResponseWriter, r *http.Request, mem
 	}
 
 	var orgID string
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		member, found, err := s.Members.FindByID(r.Context(), tx, memberID)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		member, found, err := h.Members.FindByID(r.Context(), tx, memberID)
 		if err != nil || !found {
 			return err
 		}
 		orgID = member.OrgID
 
-		if err := s.LinkTokens.RevokePendingByMember(r.Context(), tx, memberID); err != nil {
+		if err := h.LinkTokens.RevokePendingByMember(r.Context(), tx, memberID); err != nil {
 			return err
 		}
-		return s.LinkTokens.Insert(r.Context(), tx, persistence.LinkToken{
+		return h.LinkTokens.Insert(r.Context(), tx, persistence.LinkToken{
 			ID:        strings.ToLower(rawID),
 			Kind:      persistence.LinkTokenKindPersonal,
 			MemberID:  memberID,
@@ -118,31 +118,31 @@ func (s *Server) generateMemberToken(w http.ResponseWriter, r *http.Request, mem
 		return
 	}
 
-	key, err := s.Reveals.Put(core.RevealValue{Clear: clear, Display: display}, now)
+	key, err := h.Reveals.Put(core.RevealValue{Clear: clear, Display: display}, now)
 	if err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: jeton personnel généré", "member_id", memberID, "org_id", orgID)
+	h.Logger.InfoContext(r.Context(), "web: jeton personnel généré", "member_id", memberID, "org_id", orgID)
 	http.Redirect(w, r, "/admin/members/"+memberID+"?reveal="+key, http.StatusFound)
 }
 
-func (s *Server) handleMemberToken(w http.ResponseWriter, r *http.Request) {
-	s.generateMemberToken(w, r, r.PathValue("id"))
+func (h *Handlers) HandleMemberToken(w http.ResponseWriter, r *http.Request) {
+	h.generateMemberToken(w, r, r.PathValue("id"))
 }
 
-func (s *Server) handleMemberTokenRevoke(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleMemberTokenRevoke(w http.ResponseWriter, r *http.Request) {
 	memberID := r.PathValue("id")
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.LinkTokens.RevokePendingByMember(r.Context(), tx, memberID)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.LinkTokens.RevokePendingByMember(r.Context(), tx, memberID)
 	})
 	if !ok {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: jeton personnel révoqué", "member_id", memberID)
+	h.Logger.InfoContext(r.Context(), "web: jeton personnel révoqué", "member_id", memberID)
 	http.Redirect(w, r, "/admin/members/"+memberID, http.StatusFound)
 }
 
@@ -168,13 +168,13 @@ func maskedIdentity(providerType, externalUserID string) string {
 }
 
 // buildMemberPage assemble la fiche ADM-04.
-func (s *Server) buildMemberPage(ctx context.Context, tx *sql.Tx, w http.ResponseWriter, r *http.Request, member persistence.Member) (view.MemberPage, error) {
+func (h *Handlers) buildMemberPage(ctx context.Context, tx *sql.Tx, w http.ResponseWriter, r *http.Request, member persistence.Member) (view.MemberPage, error) {
 	page := view.MemberPage{
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
 		ID:        member.ID,
 		OrgID:     member.OrgID,
-		OrgName:   s.OrgDisplayName(ctx, tx, member.OrgID),
+		OrgName:   h.OrgDisplayName(ctx, tx, member.OrgID),
 		Name:      member.DisplayName,
 		Role:      member.Role,
 		Email:     member.Email,
@@ -183,22 +183,22 @@ func (s *Server) buildMemberPage(ctx context.Context, tx *sql.Tx, w http.Respons
 
 	if member.Linked() {
 		page.Chips = append(page.Chips, view.Chip{Label: "Lié", Tone: "ok", Dot: true})
-		providerType := s.ProviderTypeOf(member.Provider)
+		providerType := h.ProviderTypeOf(member.Provider)
 		if providerType == "" {
 			providerType = member.Provider
 		}
 		page.LinkedIdentity = maskedIdentity(providerType, member.ExternalUserID)
-		page.LinkedChannels = s.MemberChannels(ctx, tx, member.ID, member.OrgID)
+		page.LinkedChannels = h.MemberChannels(ctx, tx, member.ID, member.OrgID)
 
-		monthFrom, monthTo := core.MonthBounds(s.Now())
-		aggregates, err := s.Usage.AggregateUsage(ctx, tx, monthFrom, monthTo, nil, persistence.UsageFilter{PrincipalID: member.ID})
+		monthFrom, monthTo := core.MonthBounds(h.Now())
+		aggregates, err := h.Usage.AggregateUsage(ctx, tx, monthFrom, monthTo, nil, persistence.UsageFilter{PrincipalID: member.ID})
 		if err != nil {
 			return page, err
 		}
-		rate := s.CreditRate(ctx, tx)
+		rate := h.CreditRate(ctx, tx)
 		var total int64
 		for _, agg := range aggregates {
-			total += s.UsageCredits(agg.CostAmount, rate)
+			total += h.UsageCredits(agg.CostAmount, rate)
 		}
 		page.MonthUsage = view.FormatCredits(total)
 	} else {
@@ -214,13 +214,13 @@ func (s *Server) buildMemberPage(ctx context.Context, tx *sql.Tx, w http.Respons
 		page.Chips = append(page.Chips, view.Chip{Label: "Courriel vérifié", Tone: "ok"})
 	}
 
-	token, found, err := s.LinkTokens.LatestByMember(ctx, tx, member.ID)
+	token, found, err := h.LinkTokens.LatestByMember(ctx, tx, member.ID)
 	if err != nil {
 		return page, err
 	}
 	if found {
 		status := token.Status
-		if token.Expired(s.Now()) {
+		if token.Expired(h.Now()) {
 			status = "expired"
 		}
 		page.Token = &view.TokenPanelData{
@@ -237,23 +237,23 @@ func (s *Server) buildMemberPage(ctx context.Context, tx *sql.Tx, w http.Respons
 	return page, nil
 }
 
-// handleMember — ADM-04.
-func (s *Server) handleMember(w http.ResponseWriter, r *http.Request) {
+// HandleMember — ADM-04.
+func (h *Handlers) HandleMember(w http.ResponseWriter, r *http.Request) {
 	memberID := r.PathValue("id")
-	now := s.Now()
+	now := h.Now()
 
 	var (
 		page  view.MemberPage
 		found bool
 	)
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		member, exists, err := s.Members.FindByID(r.Context(), tx, memberID)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		member, exists, err := h.Members.FindByID(r.Context(), tx, memberID)
 		if err != nil || !exists {
 			return err
 		}
 		found = true
 
-		page, err = s.buildMemberPage(r.Context(), tx, w, r, member)
+		page, err = h.buildMemberPage(r.Context(), tx, w, r, member)
 		return err
 	})
 	if !ok {
@@ -265,13 +265,13 @@ func (s *Server) handleMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if key := r.URL.Query().Get("reveal"); key != "" {
-		if value, ok := s.Reveals.Pop(key, now); ok && page.Token != nil {
+		if value, ok := h.Reveals.Pop(key, now); ok && page.Token != nil {
 			page.Token.Display = value.Display
 			page.Token.Clipboard = value.Clear
 		}
 	}
 	if key := r.URL.Query().Get("link"); key != "" {
-		if value, ok := s.Reveals.Pop(key, now); ok {
+		if value, ok := h.Reveals.Pop(key, now); ok {
 			page.ProfileLink = value.Clear
 		}
 	}
@@ -279,15 +279,15 @@ func (s *Server) handleMember(w http.ResponseWriter, r *http.Request) {
 		page.Flash = "Fiche enregistrée."
 	}
 
-	s.Render(w, r, http.StatusOK, view.AdminMember(page))
+	h.Render(w, r, http.StatusOK, view.AdminMember(page))
 }
 
-func (s *Server) handleMemberUpdate(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleMemberUpdate(w http.ResponseWriter, r *http.Request) {
 	memberID := r.PathValue("id")
-	now := s.Now()
+	now := h.Now()
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		member, found, err := s.Members.FindByID(r.Context(), tx, memberID)
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		member, found, err := h.Members.FindByID(r.Context(), tx, memberID)
 		if err != nil || !found {
 			return err
 		}
@@ -306,7 +306,7 @@ func (s *Server) handleMemberUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		member.UpdatedAt = now
 
-		return s.Members.Update(r.Context(), tx, member)
+		return h.Members.Update(r.Context(), tx, member)
 	})
 	if !ok {
 		return
@@ -315,11 +315,11 @@ func (s *Server) handleMemberUpdate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/members/"+memberID+"?saved=1", http.StatusFound)
 }
 
-// handleMemberProfileLink génère un lien de profil de test (lot A : la
+// HandleMemberProfileLink génère un lien de profil de test (lot A : la
 // génération conversationnelle par l'agent arrive au lot B).
-func (s *Server) handleMemberProfileLink(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleMemberProfileLink(w http.ResponseWriter, r *http.Request) {
 	memberID := r.PathValue("id")
-	now := s.Now()
+	now := h.Now()
 
 	id, secretHash, urlPath, err := weblink.NewProfileLink()
 	if err != nil {
@@ -327,8 +327,8 @@ func (s *Server) handleMemberProfileLink(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.ProfileLinks.Insert(r.Context(), tx, persistence.ProfileLink{
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.ProfileLinks.Insert(r.Context(), tx, persistence.ProfileLink{
 			ID:        id,
 			MemberID:  memberID,
 			TokenHash: secretHash,
@@ -341,13 +341,13 @@ func (s *Server) handleMemberProfileLink(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	fullURL := strings.TrimSuffix(s.Cfg.Web.BaseURL, "/") + "/p/" + urlPath
-	key, err := s.Reveals.Put(core.RevealValue{Clear: fullURL}, now)
+	fullURL := strings.TrimSuffix(h.Cfg.Web.BaseURL, "/") + "/p/" + urlPath
+	key, err := h.Reveals.Put(core.RevealValue{Clear: fullURL}, now)
 	if err != nil {
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: lien de profil généré", "member_id", memberID, "link_id", id)
+	h.Logger.InfoContext(r.Context(), "web: lien de profil généré", "member_id", memberID, "link_id", id)
 	http.Redirect(w, r, "/admin/members/"+memberID+"?link="+key, http.StatusFound)
 }

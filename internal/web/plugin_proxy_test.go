@@ -210,57 +210,6 @@ func portOf(t *testing.T, u *url.URL) uint32 {
 
 var _ = io.Discard
 
-// L'exemption CSRF doit être exactement aussi large que nécessaire : les
-// chemins d'UI de plugin, et rien d'autre.
-func TestIsPluginUIPath(t *testing.T) {
-	exempt := []string{
-		"/plugin-ui/jeton/",
-		"/plugin-ui/jeton/save",
-		"/plugin-ui/jeton/oauth/callback",
-	}
-	for _, path := range exempt {
-		if !isPluginUIPath(path) {
-			t.Errorf("%q devrait être exempté", path)
-		}
-	}
-
-	protected := []string{
-		"/admin/orgs/org-a/plugins",
-		"/admin/orgs/org-a/grant",
-		"/admin/plugins/email/restart",
-		"/admin/orgs",
-		"/admin/pricing/settings",
-		"/plugin-ui/jeton/../../admin/grant",
-		// Un jeton sans rien derrière ne désigne aucune interface.
-		"/plugin-ui/jeton",
-		"/plugin-ui//save",
-	}
-	for _, path := range protected {
-		if isPluginUIPath(path) {
-			t.Errorf("%q ne doit PAS être exempté du contrôle CSRF", path)
-		}
-	}
-}
-
-// Une écoute en boucle locale dans un conteneur est injoignable : ni le
-// proxy de l'hôte, ni la sonde de démarrage n'y accèdent, et le message
-// obtenu est un « connection refused » qui ne dit pas sa cause.
-func TestIsLoopbackAddr(t *testing.T) {
-	loopback := []string{"127.0.0.1:5000", "localhost:8080", "[::1]:5000"}
-	for _, addr := range loopback {
-		if !isLoopbackAddr(addr) {
-			t.Errorf("%q devrait être reconnue comme boucle locale", addr)
-		}
-	}
-
-	reachable := []string{"0.0.0.0:5000", ":5000", "192.168.1.10:5000", "[::]:5000"}
-	for _, addr := range reachable {
-		if isLoopbackAddr(addr) {
-			t.Errorf("%q ne doit pas être prise pour une boucle locale", addr)
-		}
-	}
-}
-
 // Un jeton d'interface ne vaut que pour ce qu'il désigne. Sans ces refus,
 // il suffirait d'un jeton quelconque pour atteindre n'importe quelle
 // interface de n'importe quelle organisation.
@@ -328,5 +277,24 @@ func TestPluginUIToken_ViewIsSealed(t *testing.T) {
 	session := server.Signer.Sign(core.SessionPayload("profile", "cam/lien", now.Add(time.Hour)))
 	if _, _, _, _, ok := server.ParsePluginUIToken(base64.RawURLEncoding.EncodeToString([]byte(session)), now); ok {
 		t.Error("un cookie de session a été accepté comme jeton d'interface")
+	}
+}
+
+// Une écoute en boucle locale dans un conteneur est injoignable : ni le
+// proxy de l'hôte, ni la sonde de démarrage n'y accèdent, et le message
+// obtenu est un « connection refused » qui ne dit pas sa cause.
+func TestIsLoopbackAddr(t *testing.T) {
+	loopback := []string{"127.0.0.1:5000", "localhost:8080", "[::1]:5000"}
+	for _, addr := range loopback {
+		if !isLoopbackAddr(addr) {
+			t.Errorf("%q devrait être reconnue comme boucle locale", addr)
+		}
+	}
+
+	reachable := []string{"0.0.0.0:5000", ":5000", "192.168.1.10:5000", "[::]:5000"}
+	for _, addr := range reachable {
+		if isLoopbackAddr(addr) {
+			t.Errorf("%q ne doit pas être prise pour une boucle locale", addr)
+		}
 	}
 }

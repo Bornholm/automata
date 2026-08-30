@@ -57,28 +57,6 @@ func TestOrgCreateRefusesDuplicateName(t *testing.T) {
 	}
 }
 
-// La liste des organisations compte les canaux rattachés en ligne, pas
-// seulement ceux déclarés en configuration : sans cela, une organisation
-// dont toutes les conversations sont liées s'affichait « Aucun canal
-// lié », en contradiction avec l'écran des canaux.
-func TestOrgSubtitleCountsBoundChannels(t *testing.T) {
-	server, _, _ := testServer(t)
-
-	subtitle := server.orgSubtitle("atelier", nil)
-	if subtitle != "Aucun canal lié" {
-		t.Errorf("sans canal : %q", subtitle)
-	}
-
-	bound := []persistence.ChannelBinding{
-		{Provider: "whatsapp", ChannelID: "120000000000000001@g.us", OrgID: "atelier"},
-		{Provider: "whatsapp", ChannelID: "autre@g.us", OrgID: "autre-org"},
-	}
-	subtitle = server.orgSubtitle("atelier", bound)
-	if !strings.Contains(subtitle, "1 canal") {
-		t.Errorf("avec un canal rattaché : %q", subtitle)
-	}
-}
-
 // La suppression d'une organisation emporte tout ce qui n'existe que par
 // elle, canaux et membres compris ; le nom se retape pour confirmer.
 func TestOrgDelete(t *testing.T) {

@@ -1,4 +1,4 @@
-package web
+package admin
 
 import (
 	"database/sql"
@@ -12,12 +12,12 @@ import (
 	"github.com/bornholm/automata/internal/web/view"
 )
 
-// handleInstance — ADM-07, en lecture seule.
-func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
+// HandleInstance — ADM-07, en lecture seule.
+func (h *Handlers) HandleInstance(w http.ResponseWriter, r *http.Request) {
 	page := view.InstancePage{
-		Platforms: s.SidebarPlatforms(),
-		CSRFToken: s.CSRFToken(w, r),
-		Version:   fmt.Sprintf("configuration version %d", s.Cfg.Version),
+		Platforms: h.SidebarPlatforms(),
+		CSRFToken: h.CSRFToken(w, r),
+		Version:   fmt.Sprintf("configuration version %d", h.Cfg.Version),
 	}
 
 	// Catalogue des modèles et défauts d'instance : lus une fois, ils
@@ -26,12 +26,12 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		catalog          []persistence.LLMClient
 		instanceDefaults map[string]string
 	)
-	if !s.WithTx(w, r, func(tx *sql.Tx) error {
+	if !h.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		if catalog, err = s.LLMClients.List(r.Context(), tx, ""); err != nil {
+		if catalog, err = h.LLMClients.List(r.Context(), tx, ""); err != nil {
 			return err
 		}
-		instanceDefaults, err = s.OrgClients.ListByOrg(r.Context(), tx, "")
+		instanceDefaults, err = h.OrgClients.ListByOrg(r.Context(), tx, "")
 		return err
 	}) {
 		return
@@ -49,13 +49,13 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		HrefLabel: "Personnaliser par organisation",
 	}
 	var agentNames []string
-	for name := range s.Cfg.Agents {
+	for name := range h.Cfg.Agents {
 		agentNames = append(agentNames, name)
 	}
 	sort.Strings(agentNames)
 
 	for _, name := range agentNames {
-		agentCfg := s.Cfg.Agents[name]
+		agentCfg := h.Cfg.Agents[name]
 
 		// Le modèle d'un agent est le défaut d'instance de son rôle,
 		// réglé en ligne — le fichier ne le connaît plus.
@@ -109,12 +109,12 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 		Detail: "Les capacités externes que les spécialistes peuvent appeler",
 	}
 	var mcpNames []string
-	for name := range s.Cfg.MCPServers {
+	for name := range h.Cfg.MCPServers {
 		mcpNames = append(mcpNames, name)
 	}
 	sort.Strings(mcpNames)
 	for _, name := range mcpNames {
-		server := s.Cfg.MCPServers[name]
+		server := h.Cfg.MCPServers[name]
 		// L'URL d'un serveur distant, ou la commande d'un serveur local :
 		// c'est ce qui dit d'où viennent réellement les outils.
 		hint := server.URL
@@ -133,19 +133,19 @@ func (s *Server) handleInstance(w http.ResponseWriter, r *http.Request) {
 	// Services de fond : ce qui tourne en plus des conversations.
 	services := view.InstanceSection{Title: "Services de fond"}
 	services.Rows = append(services.Rows,
-		booleanRow("Compaction des conversations", s.Cfg.Conversation.Compaction.Enabled,
+		booleanRow("Compaction des conversations", h.Cfg.Conversation.Compaction.Enabled,
 			"résume les échanges anciens pour tenir le contexte"),
-		booleanRow("Consolidation de la mémoire", s.Cfg.Memory.Consolidation.Enabled,
+		booleanRow("Consolidation de la mémoire", h.Cfg.Memory.Consolidation.Enabled,
 			"réorganise les souvenirs, la nuit"),
-		booleanRow("Sauvegardes", s.Cfg.Backup.Enabled, sauvegardeHint(s.Cfg)),
-		booleanRow("Paiement en ligne", s.Cfg.Web.Stripe.Enabled(),
+		booleanRow("Sauvegardes", h.Cfg.Backup.Enabled, sauvegardeHint(h.Cfg)),
+		booleanRow("Paiement en ligne", h.Cfg.Web.Stripe.Enabled(),
 			"achat de crédits par carte depuis le profil"),
-		booleanRow("Envoi de courriels", s.Cfg.Web.MailProvider != "",
+		booleanRow("Envoi de courriels", h.Cfg.Web.MailProvider != "",
 			"codes de vérification de l'adresse de récupération"),
 	)
 	page.Sections = append(page.Sections, services)
 
-	s.Render(w, r, http.StatusOK, view.AdminInstance(page))
+	h.Render(w, r, http.StatusOK, view.AdminInstance(page))
 }
 
 // booleanRow décrit un service actif ou non.
