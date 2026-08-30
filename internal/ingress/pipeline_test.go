@@ -932,6 +932,7 @@ func TestPipeline_TypingIndicatorDuringHandling(t *testing.T) {
 type recordingHandler struct {
 	mu       sync.Mutex
 	contents []string
+	parts    [][]string
 }
 
 func (h *recordingHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error) {
@@ -940,11 +941,28 @@ func (h *recordingHandler) Handle(ctx context.Context, identity model.ExecutionI
 		content = "<erreur: " + err.Error() + ">"
 	}
 
+	var names []string
+	for _, part := range message.Parts() {
+		if part.Name() != courier.PartMain {
+			names = append(names, part.Name())
+		}
+	}
+
 	h.mu.Lock()
 	h.contents = append(h.contents, content)
+	h.parts = append(h.parts, names)
 	h.mu.Unlock()
 
 	return "", nil, nil
+}
+
+// Parts relève, pour chaque tour, le nom des parts autres que la principale
+// — les pièces jointes que la fusion des rafales doit préserver.
+func (h *recordingHandler) Parts() [][]string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return append([][]string(nil), h.parts...)
 }
 
 func (h *recordingHandler) Contents() []string {
@@ -1064,5 +1082,123 @@ func TestPipeline_GroupBurstWithoutMentionIgnored(t *testing.T) {
 
 	if got := len(handler.Contents()); got != 0 {
 		t.Errorf("tours traités = %d, attendu 0 (rafale de groupe sans mention)", got)
+	}
+}
+
+// deliverGroupVoice remet un message vocal sur le canal de groupe. Le canal
+// y est typé explicitement : c'est le type porté par le message qui décide
+// du sursis de mention, avant toute résolution d'identité.
+func deliverGroupVoice(t *testing.T, provider *readyProvider, funcs ...courier.BaseMessageOptionFunc) {
+	t.Helper()
+
+	options := append([]courier.BaseMessageOptionFunc{
+		courier.WithMessagePart(courier.NewMessagePart("vocal.ogg", "audio/ogg", courier.OpenerFromString("octets"))),
+	}, funcs...)
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannel("group-chan", courier.ChannelKindGroup, "Groupe"),
+		courier.NewUser("alice-ext", "Alice"),
+		options...,
+	)
+
+	if err := provider.Deliver(context.Background(), msg); err != nil {
+		t.Fatalf("provider.Deliver: %v", err)
+	}
+}
+
+// deliverGroupText remet un message texte sur le canal de groupe, canal typé.
+func deliverGroupText(t *testing.T, provider *readyProvider, text string, funcs ...courier.BaseMessageOptionFunc) {
+	t.Helper()
+
+	options := append([]courier.BaseMessageOptionFunc{courier.WithMessageMainPart(text)}, funcs...)
+
+	msg := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannel("group-chan", courier.ChannelKindGroup, "Groupe"),
+		courier.NewUser("alice-ext", "Alice"),
+		options...,
+	)
+
+	if err := provider.Deliver(context.Background(), msg); err != nil {
+		t.Fatalf("provider.Deliver: %v", err)
+	}
+}
+
+func selfMention() courier.BaseMessageOptionFunc {
+	return courier.WithMessageMentions(courier.Mention{UserID: selfUser.ID(), DisplayName: selfUser.DisplayName()})
+}
+
+// Un vocal ne peut porter aucune mention : sur WhatsApp, un message audio
+// n'a pas de légende. Envoyé dans un groupe, il était donc TOUJOURS jeté,
+// quoi qu'écrive ensuite la personne — le seul geste possible, « le vocal
+// puis @assistant », restait sans effet. Le texte qui suit adresse
+// désormais le vocal, et les deux ne font qu'un seul tour.
+func TestPipeline_GroupVoiceAddressedByFollowingMention(t *testing.T) {
+	handler := &recordingHandler{}
+	pipeline, provider := newCoalescingTestPipeline(t, handler, 150*time.Millisecond)
+	pipeline.WithMentionGraceWindow(600 * time.Millisecond)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	deliverGroupVoice(t, provider)
+	deliverGroupText(t, provider, "@assistant tu peux m'écouter ça ?", selfMention())
+
+	if !waitUntil(t, 3*time.Second, func() bool { return len(handler.Contents()) == 1 }) {
+		t.Fatalf("tours traités = %d, attendu 1 (le vocal et sa mention sont un seul geste) ; contenus: %q", len(handler.Contents()), handler.Contents())
+	}
+
+	if got, want := handler.Contents()[0], "@assistant tu peux m'écouter ça ?"; got != want {
+		t.Errorf("contenu = %q, attendu %q", got, want)
+	}
+
+	// Le vocal doit survivre à la fusion : le jeter au moment même où la
+	// mention vient de le rendre adressé donnerait un tour sans son objet.
+	if got := handler.Parts(); len(got) != 1 || !slices.Contains(got[0], "vocal.ogg") {
+		t.Errorf("parts du message traité = %v, le vocal devrait y figurer", got)
+	}
+}
+
+// La mention arrive après la fenêtre de coalescence : taper « @assistant »
+// prend plus de temps que les quelques secondes d'une rafale. Sans le
+// sursis, le vocal serait jugé non adressé et jeté juste avant.
+func TestPipeline_GroupVoiceMentionArrivesAfterCoalesceWindow(t *testing.T) {
+	handler := &recordingHandler{}
+	pipeline, provider := newCoalescingTestPipeline(t, handler, 100*time.Millisecond)
+	pipeline.WithMentionGraceWindow(2 * time.Second)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	deliverGroupVoice(t, provider)
+	time.Sleep(400 * time.Millisecond) // au-delà de la fenêtre de coalescence
+	deliverGroupText(t, provider, "@assistant écoute", selfMention())
+
+	if !waitUntil(t, 4*time.Second, func() bool { return len(handler.Contents()) == 1 }) {
+		t.Fatalf("tours traités = %d, attendu 1 (le sursis laisse arriver la mention) ; contenus: %q", len(handler.Contents()), handler.Contents())
+	}
+}
+
+// Le sursis ne rend pas l'assistant bavard : un vocal que personne ne lui
+// adresse reste ignoré, comme n'importe quel message de groupe sans mention.
+func TestPipeline_GroupVoiceWithoutMentionStillIgnored(t *testing.T) {
+	handler := &recordingHandler{}
+	pipeline, provider := newCoalescingTestPipeline(t, handler, 100*time.Millisecond)
+	pipeline.WithMentionGraceWindow(300 * time.Millisecond)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	deliverGroupVoice(t, provider)
+	deliverGroupText(t, provider, "c'était rigolo hier")
+
+	time.Sleep(1 * time.Second)
+
+	if got := len(handler.Contents()); got != 0 {
+		t.Errorf("tours traités = %d, attendu 0 (vocal de groupe non adressé)", got)
 	}
 }

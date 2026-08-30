@@ -128,6 +128,9 @@ type Pipeline struct {
 	logger            *slog.Logger
 	metrics           *observability.Metrics
 	coalesceWindow    time.Duration
+	// graceWindow est le délai total laissé pour adresser un média de
+	// groupe (voir defaultMentionGrace et WithMentionGraceWindow).
+	graceWindow time.Duration
 
 	// linking active la liaison par jeton d'un expéditeur inconnu (socle
 	// SaaS, voir linking.go et WithLinking).
@@ -186,13 +189,18 @@ func (p *Pipeline) Run(ctx context.Context) error {
 				return nil
 			}
 
-			burst := p.collectBurst(ctx, messages, msg)
+			burst := p.collectBurst(ctx, messages, msg, self)
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
 
-			for _, group := range groupBurst(burst) {
-				p.processBatch(ctx, self, group)
+			// Les mentions se relèvent sur la rafale entière avant tout
+			// découpage : c'est ce qui permet à « @assistant » écrit juste
+			// après un vocal de le rendre adressé (voir addressedOrigins).
+			addressed := addressedOrigins(burst, self)
+
+			for _, group := range groupBurst(burst, self) {
+				p.processBatch(ctx, self, group, addressed)
 			}
 		}
 	}
@@ -216,7 +224,7 @@ func (p *Pipeline) WithCoalesceWindow(window time.Duration) *Pipeline {
 // arrivée la réinitialise —, dans la limite de maxBurstMessages. Le prix de
 // la coalescence est un délai fixe de coalesceWindow ajouté à chaque tour :
 // c'est pour cela que la fenêtre se compte en secondes, pas en minutes.
-func (p *Pipeline) collectBurst(ctx context.Context, messages chan courier.Message, first courier.Message) []courier.Message {
+func (p *Pipeline) collectBurst(ctx context.Context, messages chan courier.Message, first courier.Message, self courier.User) []courier.Message {
 	batch := []courier.Message{first}
 	if p.coalesceWindow <= 0 {
 		return batch
@@ -224,6 +232,10 @@ func (p *Pipeline) collectBurst(ctx context.Context, messages chan courier.Messa
 
 	timer := time.NewTimer(p.coalesceWindow)
 	defer timer.Stop()
+
+	// La prolongation de grâce ne s'accorde qu'une fois : sans cela, une
+	// suite de vocaux non adressés repousserait le traitement indéfiniment.
+	graceUsed := false
 
 	for len(batch) < maxBurstMessages {
 		select {
@@ -241,11 +253,117 @@ func (p *Pipeline) collectBurst(ctx context.Context, messages chan courier.Messa
 			}
 			timer.Reset(p.coalesceWindow)
 		case <-timer.C:
+			if !graceUsed && awaitsMention(batch, self) {
+				// Le sursis se compte depuis le début de l'attente : une
+				// fenêtre de coalescence déjà plus longue l'a épuisé.
+				if remaining := p.effectiveGrace() - p.coalesceWindow; remaining > 0 {
+					graceUsed = true
+					timer.Reset(remaining)
+					continue
+				}
+			}
+
 			return batch
 		}
 	}
 
 	return batch
+}
+
+// defaultMentionGrace est le délai total laissé à quelqu'un pour adresser un
+// média à l'assistant dans un groupe.
+//
+// Un vocal ne peut porter aucune mention : sur WhatsApp, un message audio n'a
+// pas de légende. Le geste possible est d'envoyer le vocal puis d'écrire
+// « @assistant » — mais taper cette mention prend bien plus que la fenêtre de
+// coalescence, qui se compte en secondes. Sans ce sursis, le vocal serait
+// jugé non adressé et jeté avant que la mention n'arrive.
+//
+// Le sursis ne coûte rien au cas courant : il ne s'ouvre que pour un média
+// reçu en groupe et encore non adressé (voir awaitsMention). Une conversation
+// privée, un message mentionné, un simple texte de groupe partent à la
+// fenêtre habituelle.
+const defaultMentionGrace = 15 * time.Second
+
+// WithMentionGraceWindow règle le sursis accordé à un média de groupe encore
+// non adressé. window <= 0 le désactive : un vocal non mentionné dans la
+// fenêtre de coalescence est alors ignoré comme n'importe quel message.
+func (p *Pipeline) WithMentionGraceWindow(window time.Duration) *Pipeline {
+	p.graceWindow = window
+	return p
+}
+
+// effectiveGrace retourne le sursis à appliquer, la valeur par défaut tant
+// qu'aucune n'a été réglée.
+func (p *Pipeline) effectiveGrace() time.Duration {
+	if p.graceWindow == 0 {
+		return defaultMentionGrace
+	}
+	return p.graceWindow
+}
+
+// awaitsMention indique si la rafale contient un média de groupe qu'aucune
+// mention du même expéditeur ne rend encore adressé à l'assistant — le seul
+// cas où il vaut la peine d'attendre encore.
+func awaitsMention(batch []courier.Message, self courier.User) bool {
+	if self == nil {
+		return false
+	}
+
+	addressed := addressedOrigins(batch, self)
+
+	for _, msg := range batch {
+		if msg.Channel() == nil || msg.Channel().Kind() != courier.ChannelKindGroup {
+			continue
+		}
+		if coalescable(msg) {
+			// Du texte : s'il devait être adressé, il porterait sa mention.
+			continue
+		}
+		if !addressed[originOf(msg)] {
+			return true
+		}
+	}
+
+	return false
+}
+
+// origin identifie un expéditeur sur un canal : la granularité à laquelle
+// une mention rend adressés les messages voisins.
+type origin struct {
+	channelID courier.ChannelID
+	userID    courier.UserID
+}
+
+func originOf(msg courier.Message) origin {
+	o := origin{userID: msg.From().ID()}
+	if msg.Channel() != nil {
+		o.channelID = msg.Channel().ChannelID()
+	}
+	return o
+}
+
+// addressedOrigins relève les expéditeurs qui ont mentionné l'assistant
+// quelque part dans la rafale.
+//
+// La portée est la rafale entière, pas le seul groupe fusionné : un vocal
+// forme toujours son propre groupe (mergeBurst ne joint que du texte et
+// perdrait la pièce jointe), donc une mention écrite juste après ne le
+// couvrirait jamais si l'on s'en tenait au groupe. À l'échelle de la rafale,
+// « le vocal, puis @assistant » se lit comme le geste unique qu'il est.
+func addressedOrigins(batch []courier.Message, self courier.User) map[origin]bool {
+	addressed := map[origin]bool{}
+	if self == nil {
+		return addressed
+	}
+
+	for _, msg := range batch {
+		if courier.IsMentioned(msg, self.ID()) {
+			addressed[originOf(msg)] = true
+		}
+	}
+
+	return addressed
 }
 
 // groupBurst découpe une rafale en groupes de messages fusionnables : les
@@ -255,14 +373,15 @@ func (p *Pipeline) collectBurst(ctx context.Context, messages chan courier.Messa
 // Ne regrouper que les runs consécutifs préserve strictement l'ordre
 // d'arrivée : un texte, une image, puis un texte donnent trois tours, jamais
 // une fusion des deux textes qui enjamberait l'image.
-func groupBurst(msgs []courier.Message) [][]courier.Message {
+func groupBurst(msgs []courier.Message, self courier.User) [][]courier.Message {
 	var groups [][]courier.Message
 
 	for _, msg := range msgs {
 		if len(groups) > 0 {
 			current := groups[len(groups)-1]
 			prev := current[len(current)-1]
-			if coalescable(prev) && coalescable(msg) && sameOrigin(prev, msg) {
+			if sameOrigin(prev, msg) &&
+				((coalescable(prev) && coalescable(msg)) || captions(prev, msg, self)) {
 				groups[len(groups)-1] = append(current, msg)
 				continue
 			}
@@ -272,6 +391,39 @@ func groupBurst(msgs []courier.Message) [][]courier.Message {
 	}
 
 	return groups
+}
+
+// captions indique si l'un de ces deux messages consécutifs sert de légende à
+// l'autre : un média de groupe et le texte qui l'adresse à l'assistant.
+//
+// C'est la seule fusion qui traverse la frontière texte/média, et elle
+// n'existe que pour un geste précis. Un vocal ne peut porter aucune mention —
+// sur WhatsApp un message audio n'a pas de légende —, alors on l'envoie et on
+// écrit « @assistant » juste après. Les deux messages sont une seule phrase :
+// les traiter séparément donnerait deux tours, deux réponses et deux fois le
+// coût, pour une seule demande.
+//
+// Hors de ce cas, un média casse la rafale comme avant : en conversation
+// privée, ou sans mention, l'ordre d'arrivée reste strictement préservé.
+func captions(a, b courier.Message, self courier.User) bool {
+	if self == nil {
+		return false
+	}
+
+	media, text := a, b
+	if coalescable(a) {
+		media, text = b, a
+	}
+
+	if coalescable(media) || !coalescable(text) {
+		// Deux médias, ou deux textes : ce n'est pas ce cas de figure.
+		return false
+	}
+	if media.Channel() == nil || media.Channel().Kind() != courier.ChannelKindGroup {
+		return false
+	}
+
+	return courier.IsMentioned(text, self.ID())
 }
 
 // coalescable indique si un message peut être fusionné avec ses voisins de
@@ -333,6 +485,18 @@ func mergeBurst(ctx context.Context, msgs []courier.Message) (courier.Message, e
 		options = append(options, courier.WithMessageMentions(mentions...))
 	}
 
+	// Les parts autres que la principale — vocal, image, document — suivent
+	// le message fusionné. Les oublier ici reviendrait à jeter la pièce
+	// jointe au moment même où la mention voisine vient de la rendre
+	// adressée (voir captions).
+	for _, msg := range msgs {
+		for _, part := range msg.Parts() {
+			if part.Name() != courier.PartMain {
+				options = append(options, courier.WithMessagePart(part))
+			}
+		}
+	}
+
 	return courier.NewMessage(last.ID(), last.Channel(), last.From(), options...), nil
 }
 
@@ -342,7 +506,9 @@ func mergeBurst(ctx context.Context, msgs []courier.Message) (courier.Message, e
 // message isolé, soit un groupe fusionnable produit par groupBurst : des
 // messages texte consécutifs d'un même expéditeur sur un même canal, à
 // traiter comme un seul tour de conversation.
-func (p *Pipeline) processBatch(ctx context.Context, self courier.User, msgs []courier.Message) {
+// addressed relève, pour la rafale entière, les expéditeurs ayant mentionné
+// l'assistant ; il peut être nil quand le groupe se suffit à lui-même.
+func (p *Pipeline) processBatch(ctx context.Context, self courier.User, msgs []courier.Message, addressed map[origin]bool) {
 	for range msgs {
 		p.metrics.IncMessagesReceived()
 	}
@@ -422,13 +588,15 @@ func (p *Pipeline) processBatch(ctx context.Context, self courier.User, msgs []c
 	}
 
 	if conversation.Kind == model.ChannelGroup {
-		// Dans une rafale fusionnée, une seule mention suffit : les messages
-		// voisins du même expéditeur sont le contexte de celle-ci. Sans
-		// aucune mention, tout le groupe est ignoré, comme chaque message
-		// l'aurait été isolément.
+		// Une seule mention du même expéditeur suffit, où qu'elle se trouve
+		// dans la rafale : les messages voisins sont le contexte de
+		// celle-ci. Cette portée est ce qui rend un vocal adressable — il ne
+		// peut porter aucune mention lui-même, seul un message voisin le
+		// peut. Sans aucune mention, tout le groupe est ignoré, comme chaque
+		// message l'aurait été isolément.
 		mentioned := false
 		for _, msg := range msgs {
-			if courier.IsMentioned(msg, self.ID()) {
+			if courier.IsMentioned(msg, self.ID()) || addressed[originOf(msg)] {
 				mentioned = true
 				break
 			}

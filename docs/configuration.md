@@ -930,6 +930,16 @@ accès. Un canal privé exige `principal_id`, un canal de groupe exige
 `activation: mention` impose la mention explicite de l'assistant. Sans
 mention, aucun appel au modèle.
 
+La mention porte sur la rafale, pas sur le seul message : une mention écrite
+par quelqu'un adresse aussi ses messages voisins immédiats. C'est ce qui rend
+un vocal utilisable en groupe, car un message audio ne peut porter aucune
+mention — sur WhatsApp, il n'a pas de légende. Le geste est donc d'envoyer le
+vocal puis d'écrire « @assistant … » : les deux ne font qu'un seul tour, le
+texte servant de légende au vocal. L'assistant patiente une quinzaine de
+secondes après un média de groupe non adressé pour laisser le temps de taper
+cette mention ; ce sursis ne s'ouvre que dans ce cas précis, jamais en
+conversation privée ni pour un simple texte.
+
 `resources` associe la portée aux identifiants externes réels. Ces
 identifiants ne sont jamais montrés au modèle ni acceptés de sa part :
 l'application les résout, y compris une seconde fois au moment d'exécuter une
