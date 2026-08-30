@@ -1,4 +1,4 @@
-package web
+package profile
 
 import (
 	"crypto/rand"
@@ -22,23 +22,23 @@ import (
 // les visites suivantes sur cette session tant que le lien du chemin lui
 // correspond. Retourne (membre, minutes restantes, true) ou rend l'état de
 // lien approprié (PRO-90) et retourne false.
-func (s *Server) resolveProfile(w http.ResponseWriter, r *http.Request) (persistence.Member, int, bool) {
-	now := s.Now()
+func (h *Handlers) resolveProfile(w http.ResponseWriter, r *http.Request) (persistence.Member, int, bool) {
+	now := h.Now()
 	segment := r.PathValue("link")
 
 	linkID, secret, wellFormed := weblink.SplitProfileLink(segment)
 	if !wellFormed {
-		s.Render(w, r, http.StatusNotFound, view.ProfileLinkState(view.LinkStatePage{State: "expired"}))
+		h.Render(w, r, http.StatusNotFound, view.ProfileLinkState(view.LinkStatePage{State: "expired"}))
 		return persistence.Member{}, 0, false
 	}
 
 	// Session courte déjà ouverte pour ce lien ? (navigation entre pages,
 	// soumissions de formulaires après consommation du lien.)
 	if cookie, err := r.Cookie(core.ProfileCookieName); err == nil {
-		if subject, expires, ok := s.Signer.ParseSession(cookie.Value, "profile", now); ok {
+		if subject, expires, ok := h.Signer.ParseSession(cookie.Value, "profile", now); ok {
 			memberID, sessionLink, found := strings.Cut(subject, "/")
 			if found && sessionLink == linkID {
-				member, exists, err := s.findMember(r, memberID)
+				member, exists, err := h.findMember(r, memberID)
 				if err == nil && exists {
 					return member, minutesLeft(now, expires), true
 				}
@@ -50,9 +50,9 @@ func (s *Server) resolveProfile(w http.ResponseWriter, r *http.Request) (persist
 		link      persistence.ProfileLink
 		linkFound bool
 	)
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		link, linkFound, err = s.ProfileLinks.FindByID(r.Context(), tx, linkID)
+		link, linkFound, err = h.ProfileLinks.FindByID(r.Context(), tx, linkID)
 		return err
 	})
 	if !ok {
@@ -63,13 +63,13 @@ func (s *Server) resolveProfile(w http.ResponseWriter, r *http.Request) (persist
 	case !linkFound || weblink.HashToken(secret) != link.TokenHash:
 		// Lien inconnu ou secret faux : même réponse qu'un lien périmé —
 		// aucune information sur l'existence du lien.
-		s.Render(w, r, http.StatusNotFound, view.ProfileLinkState(view.LinkStatePage{State: "expired"}))
+		h.Render(w, r, http.StatusNotFound, view.ProfileLinkState(view.LinkStatePage{State: "expired"}))
 		return persistence.Member{}, 0, false
 	case link.Status == persistence.ProfileLinkStatusOpened:
-		s.Render(w, r, http.StatusGone, view.ProfileLinkState(view.LinkStatePage{State: "used"}))
+		h.Render(w, r, http.StatusGone, view.ProfileLinkState(view.LinkStatePage{State: "used"}))
 		return persistence.Member{}, 0, false
 	case now.After(link.ExpiresAt):
-		s.Render(w, r, http.StatusGone, view.ProfileLinkState(view.LinkStatePage{State: "expired"}))
+		h.Render(w, r, http.StatusGone, view.ProfileLinkState(view.LinkStatePage{State: "expired"}))
 		return persistence.Member{}, 0, false
 	}
 
@@ -78,16 +78,16 @@ func (s *Server) resolveProfile(w http.ResponseWriter, r *http.Request) (persist
 	// et ce robot arriverait avant la personne. L'ouverture demande donc
 	// un geste — un POST, que nul aperçu n'émet.
 	if r.Method != http.MethodPost || r.URL.Path != "/p/"+segment+"/open" {
-		member, exists, err := s.findMember(r, link.MemberID)
+		member, exists, err := h.findMember(r, link.MemberID)
 		if err != nil || !exists {
-			s.Logger.ErrorContext(r.Context(), "web: lien de profil vers un membre introuvable", "link_id", linkID)
-			s.Render(w, r, http.StatusInternalServerError, view.ProfileLinkState(view.LinkStatePage{State: "error", Ref: linkID}))
+			h.Logger.ErrorContext(r.Context(), "web: lien de profil vers un membre introuvable", "link_id", linkID)
+			h.Render(w, r, http.StatusInternalServerError, view.ProfileLinkState(view.LinkStatePage{State: "error", Ref: linkID}))
 			return persistence.Member{}, 0, false
 		}
 
-		s.Render(w, r, http.StatusOK, view.ProfileLinkOpen(view.LinkOpenPage{
+		h.Render(w, r, http.StatusOK, view.ProfileLinkOpen(view.LinkOpenPage{
 			LinkID:    segment,
-			CSRFToken: s.CSRFToken(w, r),
+			CSRFToken: h.CSRFToken(w, r),
 			Name:      firstName(member.DisplayName),
 		}))
 		return persistence.Member{}, 0, false
@@ -95,31 +95,31 @@ func (s *Server) resolveProfile(w http.ResponseWriter, r *http.Request) (persist
 
 	// Ouverture demandée : consommation atomique.
 	consumed := false
-	ok = s.WithTx(w, r, func(tx *sql.Tx) error {
+	ok = h.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		consumed, err = s.ProfileLinks.MarkOpened(r.Context(), tx, linkID, now)
+		consumed, err = h.ProfileLinks.MarkOpened(r.Context(), tx, linkID, now)
 		return err
 	})
 	if !ok {
 		return persistence.Member{}, 0, false
 	}
 	if !consumed {
-		s.Render(w, r, http.StatusGone, view.ProfileLinkState(view.LinkStatePage{State: "used"}))
+		h.Render(w, r, http.StatusGone, view.ProfileLinkState(view.LinkStatePage{State: "used"}))
 		return persistence.Member{}, 0, false
 	}
 
-	member, exists, err := s.findMember(r, link.MemberID)
+	member, exists, err := h.findMember(r, link.MemberID)
 	if err != nil || !exists {
-		s.Logger.ErrorContext(r.Context(), "web: lien de profil vers un membre introuvable", "link_id", linkID)
-		s.Render(w, r, http.StatusInternalServerError, view.ProfileLinkState(view.LinkStatePage{State: "error", Ref: linkID}))
+		h.Logger.ErrorContext(r.Context(), "web: lien de profil vers un membre introuvable", "link_id", linkID)
+		h.Render(w, r, http.StatusInternalServerError, view.ProfileLinkState(view.LinkStatePage{State: "error", Ref: linkID}))
 		return persistence.Member{}, 0, false
 	}
 
 	expires := now.Add(core.ProfileSessionTTL)
 	subject := member.ID + "/" + linkID
-	core.SetSessionCookie(w, core.ProfileCookieName, s.Signer.Sign(core.SessionPayload("profile", subject, expires)), expires)
+	core.SetSessionCookie(w, core.ProfileCookieName, h.Signer.Sign(core.SessionPayload("profile", subject, expires)), expires)
 
-	s.Logger.InfoContext(r.Context(), "web: lien de profil ouvert", "link_id", linkID, "member_id", member.ID)
+	h.Logger.InfoContext(r.Context(), "web: lien de profil ouvert", "link_id", linkID, "member_id", member.ID)
 
 	return member, minutesLeft(now, expires), true
 }
@@ -133,24 +133,24 @@ func minutesLeft(now, expires time.Time) int {
 }
 
 // findMember lit un membre hors transaction longue.
-func (s *Server) findMember(r *http.Request, memberID string) (persistence.Member, bool, error) {
+func (h *Handlers) findMember(r *http.Request, memberID string) (persistence.Member, bool, error) {
 	var (
 		member persistence.Member
 		found  bool
 	)
-	err := s.DB.WithTx(r.Context(), func(tx *sql.Tx) error {
+	err := h.DB.WithTx(r.Context(), func(tx *sql.Tx) error {
 		var err error
-		member, found, err = s.Members.FindByID(r.Context(), tx, memberID)
+		member, found, err = h.Members.FindByID(r.Context(), tx, memberID)
 		return err
 	})
 	return member, found, err
 }
 
 // profileHeader construit l'en-tête d'identification des pages de profil.
-func (s *Server) profileHeader(r *http.Request, member persistence.Member, minutes int) view.ProfileHeader {
+func (h *Handlers) profileHeader(r *http.Request, member persistence.Member, minutes int) view.ProfileHeader {
 	orgName := member.OrgID
-	_ = s.DB.WithTx(r.Context(), func(tx *sql.Tx) error {
-		orgName = s.OrgDisplayName(r.Context(), tx, member.OrgID)
+	_ = h.DB.WithTx(r.Context(), func(tx *sql.Tx) error {
+		orgName = h.OrgDisplayName(r.Context(), tx, member.OrgID)
 		return nil
 	})
 
@@ -161,27 +161,27 @@ func (s *Server) profileHeader(r *http.Request, member persistence.Member, minut
 	}
 }
 
-// handleProfile — PRO-01.
-func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := s.resolveProfile(w, r)
+// HandleProfile — PRO-01.
+func (h *Handlers) HandleProfile(w http.ResponseWriter, r *http.Request) {
+	member, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
-	now := s.Now()
+	now := h.Now()
 
 	page := view.ProfilePage{
 		LinkID:         r.PathValue("link"),
-		Header:         s.profileHeader(r, member, minutes),
-		CSRFToken:      s.CSRFToken(w, r),
+		Header:         h.profileHeader(r, member, minutes),
+		CSRFToken:      h.CSRFToken(w, r),
 		Email:          member.Email,
-		MailConfigured: s.Mail != nil,
+		MailConfigured: h.Mail != nil,
 	}
 
 	switch {
 	case !member.EmailVerifiedAt.IsZero():
 		page.EmailState = "verified"
 	default:
-		if email, pending := s.Codes.Pending(member.ID, now); pending {
+		if email, pending := h.Codes.Pending(member.ID, now); pending {
 			page.EmailState = "pending"
 			page.Email = email
 		} else {
@@ -192,15 +192,15 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		page.Error = "Ce code ne correspond pas. Vérifiez les six chiffres, ou renvoyez-en un."
 	}
 
-	plugins, ok := s.profilePluginUIs(w, r, member)
+	plugins, ok := h.profilePluginUIs(w, r, member)
 	if !ok {
 		return
 	}
 	page.PluginUIs = plugins
 
 	var channels []view.OrgChannelRow
-	if ok := s.WithTx(w, r, func(tx *sql.Tx) error {
-		channels = s.memberChannels(r.Context(), tx, member.ID, member.OrgID)
+	if ok := h.WithTx(w, r, func(tx *sql.Tx) error {
+		channels = h.MemberChannels(r.Context(), tx, member.ID, member.OrgID)
 		return nil
 	}); !ok {
 		return
@@ -218,29 +218,29 @@ func (s *Server) handleProfile(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	s.Render(w, r, http.StatusOK, view.ProfileHome(page))
+	h.Render(w, r, http.StatusOK, view.ProfileHome(page))
 }
 
 // profilePluginUIs liste les plugins actifs pour l'organisation du membre
 // et dotés d'une interface. Chaque page du profil en a besoin : ils
 // forment des onglets, donc ils doivent apparaître partout, pas seulement
 // là où ils sont affichés.
-func (s *Server) profilePluginUIs(w http.ResponseWriter, r *http.Request, member persistence.Member) ([]view.ProfilePluginUI, bool) {
-	endpoint, ok := s.PluginMgr.(PluginUIEndpoint)
-	if !ok || s.PluginMgr == nil {
+func (h *Handlers) profilePluginUIs(w http.ResponseWriter, r *http.Request, member persistence.Member) ([]view.ProfilePluginUI, bool) {
+	endpoint, ok := h.PluginMgr.(core.PluginUIEndpoint)
+	if !ok || h.PluginMgr == nil {
 		return nil, true
 	}
 
 	var enabled []string
-	if ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+	if ok := h.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		enabled, err = s.PluginActivations.EnabledPlugins(r.Context(), tx, member.OrgID)
+		enabled, err = h.PluginActivations.EnabledPlugins(r.Context(), tx, member.OrgID)
 		return err
 	}); !ok {
 		return nil, false
 	}
 
-	now := s.Now()
+	now := h.Now()
 	uis := make([]view.ProfilePluginUI, 0, len(enabled))
 	for _, name := range enabled {
 		if _, _, hasUI := endpoint.UIEndpoint(name); !hasUI {
@@ -251,21 +251,21 @@ func (s *Server) profilePluginUIs(w http.ResponseWriter, r *http.Request, member
 			Title: upperFirst(name),
 			// L'iframe s'authentifie par ce jeton : sandbouclée, elle ne
 			// transporte pas le cookie de profil.
-			Src: pluginUIPrefix + s.PluginUIToken(pluginViewMember, member.OrgID, member.ID, name, now) + "/",
+			Src: core.PluginUIPrefix + h.PluginUIToken(core.PluginViewMember, member.OrgID, member.ID, name, now) + "/",
 		})
 	}
 	return uis, true
 }
 
-// handleProfilePluginPage rend l'onglet d'un plugin. Un plugin inactif ou
+// HandleProfilePluginPage rend l'onglet d'un plugin. Un plugin inactif ou
 // sans interface n'a pas d'onglet : sa page n'existe pas non plus.
-func (s *Server) handleProfilePluginPage(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := s.resolveProfile(w, r)
+func (h *Handlers) HandleProfilePluginPage(w http.ResponseWriter, r *http.Request) {
+	member, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
 
-	plugins, ok := s.profilePluginUIs(w, r, member)
+	plugins, ok := h.profilePluginUIs(w, r, member)
 	if !ok {
 		return
 	}
@@ -283,17 +283,17 @@ func (s *Server) handleProfilePluginPage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	s.Render(w, r, http.StatusOK, view.ProfilePlugin(view.ProfilePluginPage{
+	h.Render(w, r, http.StatusOK, view.ProfilePlugin(view.ProfilePluginPage{
 		LinkID:    r.PathValue("link"),
-		Header:    s.profileHeader(r, member, minutes),
+		Header:    h.profileHeader(r, member, minutes),
 		Current:   current,
 		PluginUIs: plugins,
 	}))
 }
 
-// handleProfileEmail enregistre l'adresse et envoie le code (PRO-01).
-func (s *Server) handleProfileEmail(w http.ResponseWriter, r *http.Request) {
-	member, _, ok := s.resolveProfile(w, r)
+// HandleProfileEmail enregistre l'adresse et envoie le code (PRO-01).
+func (h *Handlers) HandleProfileEmail(w http.ResponseWriter, r *http.Request) {
+	member, _, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -304,7 +304,7 @@ func (s *Server) handleProfileEmail(w http.ResponseWriter, r *http.Request) {
 
 	email := strings.TrimSpace(r.PostFormValue("email"))
 	linkPath := "/p/" + r.PathValue("link")
-	if email == "" || !strings.Contains(email, "@") || s.Mail == nil {
+	if email == "" || !strings.Contains(email, "@") || h.Mail == nil {
 		http.Redirect(w, r, linkPath, http.StatusFound)
 		return
 	}
@@ -315,15 +315,15 @@ func (s *Server) handleProfileEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Mail.SendVerificationCode(r.Context(), email, code); err != nil {
+	if err := h.Mail.SendVerificationCode(r.Context(), email, code); err != nil {
 		// L'adresse n'est pas journalisée : identifiants seulement.
-		s.Logger.ErrorContext(r.Context(), "web: échec d'envoi d'un code de vérification", "member_id", member.ID, "error", err)
+		h.Logger.ErrorContext(r.Context(), "web: échec d'envoi d'un code de vérification", "member_id", member.ID, "error", err)
 		http.Redirect(w, r, linkPath, http.StatusFound)
 		return
 	}
 
-	s.Codes.Put(member.ID, email, code, s.Now())
-	s.Logger.InfoContext(r.Context(), "web: code de vérification envoyé", "member_id", member.ID)
+	h.Codes.Put(member.ID, email, code, h.Now())
+	h.Logger.InfoContext(r.Context(), "web: code de vérification envoyé", "member_id", member.ID)
 
 	http.Redirect(w, r, linkPath, http.StatusFound)
 }
@@ -359,9 +359,9 @@ func upperFirst(s string) string {
 	return string(unicode.ToUpper(r)) + s[size:]
 }
 
-// handleProfileEmailVerify vérifie le code à six chiffres (PRO-01b).
-func (s *Server) handleProfileEmailVerify(w http.ResponseWriter, r *http.Request) {
-	member, _, ok := s.resolveProfile(w, r)
+// HandleProfileEmailVerify vérifie le code à six chiffres (PRO-01b).
+func (h *Handlers) HandleProfileEmailVerify(w http.ResponseWriter, r *http.Request) {
+	member, _, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -370,51 +370,51 @@ func (s *Server) handleProfileEmailVerify(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	now := s.Now()
+	now := h.Now()
 	code := strings.TrimSpace(r.PostFormValue("code"))
 	linkPath := "/p/" + r.PathValue("link")
 
-	email, valid := s.Codes.Verify(member.ID, code, now)
+	email, valid := h.Codes.Verify(member.ID, code, now)
 	if !valid {
 		http.Redirect(w, r, linkPath+"?bad_code=1", http.StatusFound)
 		return
 	}
 
-	txOK := s.WithTx(w, r, func(tx *sql.Tx) error {
-		fresh, found, err := s.Members.FindByID(r.Context(), tx, member.ID)
+	txOK := h.WithTx(w, r, func(tx *sql.Tx) error {
+		fresh, found, err := h.Members.FindByID(r.Context(), tx, member.ID)
 		if err != nil || !found {
 			return err
 		}
 		fresh.Email = email
 		fresh.EmailVerifiedAt = now
 		fresh.UpdatedAt = now
-		return s.Members.Update(r.Context(), tx, fresh)
+		return h.Members.Update(r.Context(), tx, fresh)
 	})
 	if !txOK {
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: courriel de récupération vérifié", "member_id", member.ID)
+	h.Logger.InfoContext(r.Context(), "web: courriel de récupération vérifié", "member_id", member.ID)
 	http.Redirect(w, r, linkPath, http.StatusFound)
 }
 
-// handleProfileCredits — PRO-02.
-func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := s.resolveProfile(w, r)
+// HandleProfileCredits — PRO-02.
+func (h *Handlers) HandleProfileCredits(w http.ResponseWriter, r *http.Request) {
+	member, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
-	now := s.Now()
+	now := h.Now()
 	monthFrom, monthTo := core.MonthBounds(now)
 
 	page := view.CreditsPage{
 		LinkID:        r.PathValue("link"),
-		Header:        s.profileHeader(r, member, minutes),
-		CSRFToken:     s.CSRFToken(w, r),
-		StripeEnabled: s.Stripe != nil,
+		Header:        h.profileHeader(r, member, minutes),
+		CSRFToken:     h.CSRFToken(w, r),
+		StripeEnabled: h.Stripe != nil,
 	}
 
-	plugins, ok := s.profilePluginUIs(w, r, member)
+	plugins, ok := h.profilePluginUIs(w, r, member)
 	if !ok {
 		return
 	}
@@ -430,24 +430,24 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 		page.Notice = "Nous n'avons pas pu ouvrir la page de paiement. Réessayez dans un instant."
 	}
 
-	txOK := s.WithTx(w, r, func(tx *sql.Tx) error {
-		org, found, err := s.Orgs.FindByID(r.Context(), tx, member.OrgID)
+	txOK := h.WithTx(w, r, func(tx *sql.Tx) error {
+		org, found, err := h.Orgs.FindByID(r.Context(), tx, member.OrgID)
 		if err != nil || !found {
 			return err
 		}
-		balance, err := s.Wallet.Balance(r.Context(), tx, org.ID)
+		balance, err := h.Wallet.Balance(r.Context(), tx, org.ID)
 		if err != nil {
 			return err
 		}
-		lastCredit, err := s.Wallet.LastCredit(r.Context(), tx, org.ID)
+		lastCredit, err := h.Wallet.LastCredit(r.Context(), tx, org.ID)
 		if err != nil {
 			return err
 		}
-		monthUsage, err := s.SingleOrgUsageCredits(r.Context(), tx, org.ID, monthFrom, monthTo)
+		monthUsage, err := h.SingleOrgUsageCredits(r.Context(), tx, org.ID, monthFrom, monthTo)
 		if err != nil {
 			return err
 		}
-		rate, err := s.DailyRate(r.Context(), tx, org.ID, now)
+		rate, err := h.DailyRate(r.Context(), tx, org.ID, now)
 		if err != nil {
 			return err
 		}
@@ -464,13 +464,13 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 			// et on s'arrête là — pas de solde, pas d'offres.
 			page.UsedCredits = monthUsage
 			page.BalanceHint = "Votre accès est sans limite"
-			return s.fillUsageSplit(r, tx, &page, org.ID, monthFrom, monthTo)
+			return h.fillUsageSplit(r, tx, &page, org.ID, monthFrom, monthTo)
 		case "offered":
 			page.Allowance = org.MonthlyAllowance
 			page.UsedCredits = monthUsage
 			page.NextReset = "le 1ᵉʳ " + strings.ToLower(view.FormatMonth(monthTo))
 			page.BalanceHint = offeredHint(monthUsage, org.MonthlyAllowance)
-			return s.fillUsageSplit(r, tx, &page, org.ID, monthFrom, monthTo)
+			return h.fillUsageSplit(r, tx, &page, org.ID, monthFrom, monthTo)
 		case "empty":
 			page.BalanceHint = "Solde épuisé"
 		case "low":
@@ -481,7 +481,7 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 
 		// Offres effectives : celles de l'écran de tarification, sinon
 		// celles de la configuration (voir Pricing.go).
-		pricingSettings, err := s.Pricing(r.Context(), tx)
+		pricingSettings, err := h.Pricing(r.Context(), tx)
 		if err != nil {
 			return err
 		}
@@ -494,7 +494,7 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 				// TVA applicable au moment du paiement, et un prix
 				// annoncé plus bas que le prix débité se découvrirait à
 				// la première facture.
-				PriceEUR: formatEuros(pack.PriceEUR) + " HT",
+				PriceEUR: core.FormatEuros(pack.PriceEUR) + " HT",
 				Featured: pack.Featured,
 			}
 			if pack.Featured {
@@ -513,7 +513,7 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 		for i := 0; i < 3; i++ {
 			from := monthFrom.AddDate(0, -i, 0)
 			to := from.AddDate(0, 1, 0)
-			credits, err := s.SingleOrgUsageCredits(r.Context(), tx, org.ID, from, to)
+			credits, err := h.SingleOrgUsageCredits(r.Context(), tx, org.ID, from, to)
 			if err != nil {
 				return err
 			}
@@ -530,7 +530,7 @@ func (s *Server) handleProfileCredits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Render(w, r, http.StatusOK, view.ProfileCredits(page))
+	h.Render(w, r, http.StatusOK, view.ProfileCredits(page))
 }
 
 // offeredHint décrit l'usage du mois d'une organisation offerte.
@@ -554,17 +554,17 @@ func offeredHint(used, allowance int64) string {
 
 // fillUsageSplit remplit la répartition « Ce mois-ci, en gros » (PRO-02
 // offerte) : Conversations / Recherches / Images, sans jargon.
-func (s *Server) fillUsageSplit(r *http.Request, tx *sql.Tx, page *view.CreditsPage, orgID string, from, to time.Time) error {
-	aggregates, err := s.Usage.AggregateUsage(r.Context(), tx, from, to, []string{"agent", "kind"}, persistence.UsageFilter{OrgID: orgID})
+func (h *Handlers) fillUsageSplit(r *http.Request, tx *sql.Tx, page *view.CreditsPage, orgID string, from, to time.Time) error {
+	aggregates, err := h.Usage.AggregateUsage(r.Context(), tx, from, to, []string{"agent", "kind"}, persistence.UsageFilter{OrgID: orgID})
 	if err != nil {
 		return err
 	}
 
-	rate := s.CreditRate(r.Context(), tx)
+	rate := h.CreditRate(r.Context(), tx)
 	buckets := map[string]int64{}
 	var total int64
 	for _, agg := range aggregates {
-		credits := s.UsageCredits(agg.CostAmount, rate)
+		credits := h.UsageCredits(agg.CostAmount, rate)
 		label := "Conversations"
 		switch {
 		case agg.Keys[1] == "image":
@@ -596,14 +596,6 @@ func (s *Server) fillUsageSplit(r *http.Request, tx *sql.Tx, page *view.CreditsP
 	return nil
 }
 
-// formatEuros rend un prix : « 35 € », « 8,50 € ».
-func formatEuros(amount float64) string {
-	if amount == float64(int64(amount)) {
-		return fmt.Sprintf("%d €", int64(amount))
-	}
-	return strings.Replace(fmt.Sprintf("%.2f €", amount), ".", ",", 1)
-}
-
 // firstName ne garde que le premier mot d'un nom affiché : la page
 // d'ouverture salue, elle n'établit pas une identité.
 func firstName(displayName string) string {
@@ -612,11 +604,11 @@ func firstName(displayName string) string {
 	return first
 }
 
-// handleProfileOpen consomme le lien et ouvre la session, puis renvoie
+// HandleProfileOpen consomme le lien et ouvre la session, puis renvoie
 // sur le profil. Séparé du GET pour que le préchargement d'un aperçu de
 // messagerie ne grille pas le lien.
-func (s *Server) handleProfileOpen(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := s.resolveProfile(w, r); !ok {
+func (h *Handlers) HandleProfileOpen(w http.ResponseWriter, r *http.Request) {
+	if _, _, ok := h.resolveProfile(w, r); !ok {
 		return
 	}
 

@@ -456,7 +456,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 			page.Channels = append(page.Channels, view.OrgChannelRow{
 				PlatformType: s.ProviderTypeOf(binding.Provider),
 				Name:         binding.DisplayName,
-				Kind:         channelKindLabelFromScope(binding.Kind),
+				Kind:         core.ChannelKindLabelFromScope(binding.Kind),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
 			})
 		}

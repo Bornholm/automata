@@ -153,7 +153,7 @@ func (s *Server) handlePlatforms(w http.ResponseWriter, r *http.Request) {
 			page.Channels = append(page.Channels, view.ChannelRow{
 				PlatformType: platformTypeOf(accounts, binding.Provider),
 				Name:         binding.DisplayName,
-				Kind:         channelKindLabelFromScope(binding.Kind),
+				Kind:         core.ChannelKindLabelFromScope(binding.Kind),
 				OrgName:      s.OrgDisplayName(r.Context(), tx, binding.OrgID),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
 			})
@@ -238,14 +238,6 @@ func platformTypeOf(accounts []persistence.Platform, id string) string {
 		}
 	}
 	return ""
-}
-
-// channelKindLabelFromScope traduit le genre d'un canal lié dynamiquement.
-func channelKindLabelFromScope(kind string) string {
-	if kind == "group" {
-		return "Groupe"
-	}
-	return "Privé"
 }
 
 // platformTypeLabel nomme un type de compte pour l'affichage.

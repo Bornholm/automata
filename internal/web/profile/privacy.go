@@ -1,4 +1,4 @@
-package web
+package profile
 
 import (
 	"encoding/json"
@@ -15,29 +15,29 @@ import (
 // d'un clic distrait.
 const deletionConfirmation = "SUPPRIMER"
 
-// handleProfilePrivacy — PRO-04.
-func (s *Server) handleProfilePrivacy(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := s.resolveProfile(w, r)
+// HandleProfilePrivacy — PRO-04.
+func (h *Handlers) HandleProfilePrivacy(w http.ResponseWriter, r *http.Request) {
+	member, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
 
 	page := view.PrivacyPage{
 		LinkID:    r.PathValue("link"),
-		Header:    s.profileHeader(r, member, minutes),
-		CSRFToken: s.CSRFToken(w, r),
+		Header:    h.profileHeader(r, member, minutes),
+		CSRFToken: h.CSRFToken(w, r),
 	}
 
-	plugins, ok := s.profilePluginUIs(w, r, member)
+	plugins, ok := h.profilePluginUIs(w, r, member)
 	if !ok {
 		return
 	}
 	page.PluginUIs = plugins
 
-	if s.Privacy != nil {
+	if h.Privacy != nil {
 		// L'inventaire vient de l'export lui-même : ce que la page annonce
 		// est exactement ce que le fichier contient.
-		if export, err := s.Privacy.Export(r.Context(), member.ID); err == nil {
+		if export, err := h.Privacy.Export(r.Context(), member.ID); err == nil {
 			page.Items = []view.PrivacyItem{
 				{
 					Title:  "Vos conversations privées",
@@ -68,7 +68,7 @@ func (s *Server) handleProfilePrivacy(w http.ResponseWriter, r *http.Request) {
 		page.Error = "Pour supprimer vos données, écrivez exactement " + deletionConfirmation + "."
 	}
 
-	s.Render(w, r, http.StatusOK, view.ProfilePrivacy(page))
+	h.Render(w, r, http.StatusOK, view.ProfilePrivacy(page))
 }
 
 // countLabel accorde un décompte (« 1 souvenir », « 12 souvenirs »).
@@ -79,20 +79,20 @@ func countLabel(n int, singular, plural string) string {
 	return fmt.Sprintf("%d %s", n, plural)
 }
 
-// handleProfileExport sert l'export des données en JSON.
-func (s *Server) handleProfileExport(w http.ResponseWriter, r *http.Request) {
-	member, _, ok := s.resolveProfile(w, r)
+// HandleProfileExport sert l'export des données en JSON.
+func (h *Handlers) HandleProfileExport(w http.ResponseWriter, r *http.Request) {
+	member, _, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
-	if s.Privacy == nil {
+	if h.Privacy == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	export, err := s.Privacy.Export(r.Context(), member.ID)
+	export, err := h.Privacy.Export(r.Context(), member.ID)
 	if err != nil {
-		s.Logger.ErrorContext(r.Context(), "web: export des données impossible", "member_id", member.ID, "error", err)
+		h.Logger.ErrorContext(r.Context(), "web: export des données impossible", "member_id", member.ID, "error", err)
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
@@ -103,15 +103,15 @@ func (s *Server) handleProfileExport(w http.ResponseWriter, r *http.Request) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(export); err != nil {
-		s.Logger.ErrorContext(r.Context(), "web: écriture de l'export", "member_id", member.ID, "error", err)
+		h.Logger.ErrorContext(r.Context(), "web: écriture de l'export", "member_id", member.ID, "error", err)
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: données exportées", "member_id", member.ID)
+	h.Logger.InfoContext(r.Context(), "web: données exportées", "member_id", member.ID)
 }
 
-// handleProfileDelete efface les données personnelles après confirmation.
-func (s *Server) handleProfileDelete(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := s.resolveProfile(w, r)
+// HandleProfileDelete efface les données personnelles après confirmation.
+func (h *Handlers) HandleProfileDelete(w http.ResponseWriter, r *http.Request) {
+	member, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -119,7 +119,7 @@ func (s *Server) handleProfileDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
 		return
 	}
-	if s.Privacy == nil {
+	if h.Privacy == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -130,19 +130,19 @@ func (s *Server) handleProfileDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	report, err := s.Privacy.Delete(r.Context(), member.ID)
+	report, err := h.Privacy.Delete(r.Context(), member.ID)
 	if err != nil {
-		s.Logger.ErrorContext(r.Context(), "web: suppression des données impossible", "member_id", member.ID, "error", err)
+		h.Logger.ErrorContext(r.Context(), "web: suppression des données impossible", "member_id", member.ID, "error", err)
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: données personnelles supprimées",
+	h.Logger.InfoContext(r.Context(), "web: données personnelles supprimées",
 		"member_id", member.ID, "messages", report.Messages, "memories", report.Memories)
 
-	s.Render(w, r, http.StatusOK, view.ProfilePrivacy(view.PrivacyPage{
+	h.Render(w, r, http.StatusOK, view.ProfilePrivacy(view.PrivacyPage{
 		LinkID:  r.PathValue("link"),
-		Header:  s.profileHeader(r, member, minutes),
+		Header:  h.profileHeader(r, member, minutes),
 		Deleted: true,
 		Report: fmt.Sprintf("%s et %s ont été effacés, ainsi que vos rappels et votre adresse de secours.",
 			countLabel(report.Messages, "message", "messages"),

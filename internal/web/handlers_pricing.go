@@ -46,12 +46,12 @@ func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
 
 		page.Margin = view.MarginPanel{
 			SoldCredits:  m.SoldCredits,
-			SoldEUR:      formatEuros(m.SoldEUR),
+			SoldEUR:      core.FormatEuros(m.SoldEUR),
 			GivenCredits: m.GivenCredits,
 			UsedCredits:  m.UsedCredits,
 			CostUSD:      fmt.Sprintf("%.2f $", m.CostUSD),
-			CostEUR:      formatEuros(m.CostEUR),
-			MarginEUR:    formatEuros(m.MarginEUR),
+			CostEUR:      core.FormatEuros(m.CostEUR),
+			MarginEUR:    core.FormatEuros(m.MarginEUR),
 			Positive:     m.MarginEUR >= 0,
 			Unreported:   m.Calls - m.ReportedCalls,
 			Period:       strings.ToLower(view.FormatMonth(now)) + " " + strconv.Itoa(now.Year()),
@@ -87,12 +87,12 @@ func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
 			row := view.PricingPack{
 				ID:         pack.ID,
 				Credits:    pack.Credits,
-				PriceEUR:   formatEuros(pack.PriceEUR),
+				PriceEUR:   core.FormatEuros(pack.PriceEUR),
 				Featured:   pack.Featured,
 				FromConfig: pack.ID < 0,
 			}
 			if pack.Credits > 0 {
-				row.PerThousand = formatEuros(pack.PriceEUR / float64(pack.Credits) * 1000)
+				row.PerThousand = core.FormatEuros(pack.PriceEUR / float64(pack.Credits) * 1000)
 			}
 
 			// Marge de l'offre : c'est le seul endroit où l'on voit, avant
@@ -107,7 +107,7 @@ func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
 					row.MarginTone = "warn"
 				}
 				if margin < p.TargetMargin {
-					row.Recommended = formatEuros(p.RecommendedPrice(pack.Credits))
+					row.Recommended = core.FormatEuros(p.RecommendedPrice(pack.Credits))
 				}
 			}
 

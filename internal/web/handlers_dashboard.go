@@ -73,7 +73,7 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			{Label: "Organisations", Value: fmt.Sprintf("%d", len(orgs)), Hint: countActiveMembers(r.Context(), tx, s)},
 			{Label: "Comptes de messagerie", Value: fmt.Sprintf("%d/%d", connected, total), Hint: "connectés", Tone: platformTone},
 			{Label: "Consommation", Value: view.FormatCredits(totalUsage), Hint: fmt.Sprintf("%.2f $ mesurés", m.CostUSD)},
-			{Label: "Marge estimée", Value: formatEuros(m.MarginEUR), Hint: m.Ratio(), Tone: marginTone},
+			{Label: "Marge estimée", Value: core.FormatEuros(m.MarginEUR), Hint: m.Ratio(), Tone: marginTone},
 		}
 
 		// Organisations à surveiller : solde faible ou épuisé.

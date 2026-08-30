@@ -41,15 +41,6 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// csrfToken retourne le jeton CSRF courant, en le posant au besoin.
-func (s *Server) CSRFToken(w http.ResponseWriter, r *http.Request) string {
-	token, err := core.EnsureCSRFCookie(w, r)
-	if err != nil {
-		s.Logger.ErrorContext(r.Context(), "web: échec de la création du jeton CSRF", "error", err)
-	}
-	return token
-}
-
 func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 	page := view.LoginPage{CSRFToken: s.CSRFToken(w, r)}
 	if r.URL.Query().Get("expired") == "1" {

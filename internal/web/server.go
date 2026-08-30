@@ -19,6 +19,7 @@ import (
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/core"
+	"github.com/bornholm/automata/internal/web/profile"
 	"github.com/bornholm/automata/internal/web/public"
 	"github.com/bornholm/automata/internal/web/view"
 )
@@ -47,6 +48,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 	// Une surface, un paquet : chacun reçoit les mêmes dépendances et
 	// monte ses routes ici, seul endroit qui les connaisse toutes.
 	pub := public.New(s.Deps)
+	prof := profile.New(s.Deps)
 
 	mux := http.NewServeMux()
 
@@ -139,18 +141,18 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 	// seconde voie de sortie, pour ce qui ne tient pas en pièce jointe.
 	mux.HandleFunc("GET /f/{token}", pub.HandleFileLink)
 
-	mux.HandleFunc("GET /p/{link}/plugins/{name}", s.handleProfilePluginPage)
-	mux.HandleFunc("GET /p/{link}", s.handleProfile)
-	mux.HandleFunc("GET /p/{link}/credits", s.handleProfileCredits)
-	mux.HandleFunc("POST /p/{link}/email", s.handleProfileEmail)
-	mux.HandleFunc("POST /p/{link}/email/verify", s.handleProfileEmailVerify)
-	mux.HandleFunc("POST /p/{link}/checkout", s.handleCheckout)
-	mux.HandleFunc("GET /p/{link}/usage", s.handleProfileUsage)
-	mux.HandleFunc("POST /p/{link}/open", s.handleProfileOpen)
-	mux.HandleFunc("GET /p/{link}/privacy", s.handleProfilePrivacy)
-	mux.HandleFunc("GET /p/{link}/privacy/export", s.handleProfileExport)
-	mux.HandleFunc("POST /p/{link}/privacy/delete", s.handleProfileDelete)
-	mux.HandleFunc("POST /stripe/webhook", s.handleStripeWebhook)
+	mux.HandleFunc("GET /p/{link}/plugins/{name}", prof.HandleProfilePluginPage)
+	mux.HandleFunc("GET /p/{link}", prof.HandleProfile)
+	mux.HandleFunc("GET /p/{link}/credits", prof.HandleProfileCredits)
+	mux.HandleFunc("POST /p/{link}/email", prof.HandleProfileEmail)
+	mux.HandleFunc("POST /p/{link}/email/verify", prof.HandleProfileEmailVerify)
+	mux.HandleFunc("POST /p/{link}/checkout", prof.HandleCheckout)
+	mux.HandleFunc("GET /p/{link}/usage", prof.HandleProfileUsage)
+	mux.HandleFunc("POST /p/{link}/open", prof.HandleProfileOpen)
+	mux.HandleFunc("GET /p/{link}/privacy", prof.HandleProfilePrivacy)
+	mux.HandleFunc("GET /p/{link}/privacy/export", prof.HandleProfileExport)
+	mux.HandleFunc("POST /p/{link}/privacy/delete", prof.HandleProfileDelete)
+	mux.HandleFunc("POST /stripe/webhook", prof.HandleStripeWebhook)
 
 	// Pages publiques publiées par les plugins (magasin d'objets). Servies
 	// sans session, sous CSP sandbox : voir handlers_public_site.go.

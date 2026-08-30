@@ -95,7 +95,7 @@ func TestPluginProxy_InjectsContractAndStripsCookies(t *testing.T) {
 	server.PluginMgr = &fakePluginManager{port: port, token: "jeton-ui-secret"}
 	seedPluginProfile(t, server)
 
-	uiPath := pluginUIPrefix + server.PluginUIToken(pluginViewMember, "org-a", "cam", "echo", server.Now())
+	uiPath := core.PluginUIPrefix + server.PluginUIToken(core.PluginViewMember, "org-a", "cam", "echo", server.Now())
 
 	// SANS cookie, délibérément : une iframe sandbouclée n'en transporte
 	// aucun. C'est la régression du 2026-08-23 — le proxy rendait alors
@@ -151,7 +151,7 @@ func TestPluginProxy_HiddenWhenInactive(t *testing.T) {
 	// Le jeton est valide : c'est l'activation, revérifiée à chaque
 	// requête, qui doit refuser. Un plugin désactivé après l'émission
 	// devient injoignable sur-le-champ.
-	uiPath := pluginUIPrefix + server.PluginUIToken(pluginViewMember, "org-b", "zoe", "echo", server.Now())
+	uiPath := core.PluginUIPrefix + server.PluginUIToken(core.PluginViewMember, "org-b", "zoe", "echo", server.Now())
 
 	resp, err := client.Get(ts.URL + uiPath + "/")
 	if err != nil {
@@ -277,14 +277,14 @@ func TestPluginUIToken_ScopeIsEnforced(t *testing.T) {
 	seedPluginProfile(t, server)
 
 	now := server.Now()
-	valid := server.PluginUIToken(pluginViewMember, "org-a", "cam", "echo", now)
+	valid := server.PluginUIToken(core.PluginViewMember, "org-a", "cam", "echo", now)
 
 	cases := map[string]string{
 		// Émis pour un autre plugin : le nom voyage DANS le jeton, il ne
 		// peut pas être changé en chemin.
-		"autre plugin": server.PluginUIToken(pluginViewMember, "org-a", "cam", "autre", now),
+		"autre plugin": server.PluginUIToken(core.PluginViewMember, "org-a", "cam", "autre", now),
 		// Émis il y a plus longtemps que sa durée de vie.
-		"périmé": server.PluginUIToken(pluginViewMember, "org-a", "cam", "echo", now.Add(-core.PluginUITokenTTL-time.Minute)),
+		"périmé": server.PluginUIToken(core.PluginViewMember, "org-a", "cam", "echo", now.Add(-core.PluginUITokenTTL-time.Minute)),
 		// Signature invalide : un octet modifié suffit.
 		"falsifié": valid[:len(valid)-3] + "AAA",
 		// Pas un jeton du tout.
@@ -292,7 +292,7 @@ func TestPluginUIToken_ScopeIsEnforced(t *testing.T) {
 	}
 
 	for name, token := range cases {
-		resp, err := (&http.Client{}).Get(ts.URL + pluginUIPrefix + token + "/")
+		resp, err := (&http.Client{}).Get(ts.URL + core.PluginUIPrefix + token + "/")
 		if err != nil {
 			t.Fatalf("%s: GET: %v", name, err)
 		}
@@ -314,12 +314,12 @@ func TestPluginUIToken_ViewIsSealed(t *testing.T) {
 	server, _, _ := testServer(t)
 	now := server.Now()
 
-	token := server.PluginUIToken(pluginViewMember, "org-a", "cam", "echo", now)
+	token := server.PluginUIToken(core.PluginViewMember, "org-a", "cam", "echo", now)
 	view, orgID, memberID, name, ok := server.ParsePluginUIToken(token, now)
 	if !ok {
 		t.Fatal("un jeton fraîchement émis doit être accepté")
 	}
-	if view != pluginViewMember || orgID != "org-a" || memberID != "cam" || name != "echo" {
+	if view != core.PluginViewMember || orgID != "org-a" || memberID != "cam" || name != "echo" {
 		t.Errorf("jeton mal relu: %q %q %q %q", view, orgID, memberID, name)
 	}
 

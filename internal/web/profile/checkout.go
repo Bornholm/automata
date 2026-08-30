@@ -1,4 +1,4 @@
-package web
+package profile
 
 import (
 	"database/sql"
@@ -26,11 +26,11 @@ const maxWebhookBody = 1 << 20
 // — juste après avoir payé.
 const checkoutReturnTTL = time.Hour
 
-// handleCheckout crée une session de paiement pour le pack choisi et
+// HandleCheckout crée une session de paiement pour le pack choisi et
 // redirige vers Stripe. Accessible depuis la page de crédits du profil,
 // donc protégé par le lien temporaire comme le reste du profil.
-func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
-	member, _, ok := s.resolveProfile(w, r)
+func (h *Handlers) HandleCheckout(w http.ResponseWriter, r *http.Request) {
+	member, _, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -41,7 +41,7 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 
 	linkPath := "/p/" + r.PathValue("link")
 
-	if s.Stripe == nil {
+	if h.Stripe == nil {
 		http.Redirect(w, r, linkPath+"/credits", http.StatusSeeOther)
 		return
 	}
@@ -49,22 +49,22 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	// Le pack est désigné par son rang dans la configuration : le
 	// navigateur ne choisit jamais un montant ni un prix.
 	index, err := strconv.Atoi(r.PostFormValue("pack"))
-	if err != nil || index < 0 || index >= len(s.Cfg.Web.Credits.Packs) {
+	if err != nil || index < 0 || index >= len(h.Cfg.Web.Credits.Packs) {
 		http.Redirect(w, r, linkPath+"/credits", http.StatusSeeOther)
 		return
 	}
-	pack := s.Cfg.Web.Credits.Packs[index]
+	pack := h.Cfg.Web.Credits.Packs[index]
 
 	returnID, returnHash, returnPath, err := weblink.NewProfileLink()
 	if err != nil {
-		s.Logger.ErrorContext(r.Context(), "web: génération du lien de retour de paiement",
+		h.Logger.ErrorContext(r.Context(), "web: génération du lien de retour de paiement",
 			"member_id", member.ID, "error", err)
 		http.Redirect(w, r, linkPath+"/credits?payment_error=1", http.StatusSeeOther)
 		return
 	}
-	now := s.Now()
-	if !s.WithTx(w, r, func(tx *sql.Tx) error {
-		return s.ProfileLinks.Insert(r.Context(), tx, persistence.ProfileLink{
+	now := h.Now()
+	if !h.WithTx(w, r, func(tx *sql.Tx) error {
+		return h.ProfileLinks.Insert(r.Context(), tx, persistence.ProfileLink{
 			ID:        returnID,
 			MemberID:  member.ID,
 			TokenHash: returnHash,
@@ -76,27 +76,27 @@ func (s *Server) handleCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	base := strings.TrimSuffix(s.Cfg.Web.BaseURL, "/") + "/p/" + returnPath + "/credits"
-	sessionURL, err := s.Stripe.CheckoutSession(r.Context(), member.OrgID, member.ID, pack.Credits, pack.PriceEUR,
+	base := strings.TrimSuffix(h.Cfg.Web.BaseURL, "/") + "/p/" + returnPath + "/credits"
+	sessionURL, err := h.Stripe.CheckoutSession(r.Context(), member.OrgID, member.ID, pack.Credits, pack.PriceEUR,
 		base+"?paid=1", base+"?canceled=1")
 	if err != nil {
-		s.Logger.ErrorContext(r.Context(), "web: création de session de paiement",
+		h.Logger.ErrorContext(r.Context(), "web: création de session de paiement",
 			"org_id", member.OrgID, "credits", pack.Credits, "error", err)
 		http.Redirect(w, r, linkPath+"/credits?payment_error=1", http.StatusSeeOther)
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: session de paiement ouverte",
+	h.Logger.InfoContext(r.Context(), "web: session de paiement ouverte",
 		"org_id", member.OrgID, "member_id", member.ID, "credits", pack.Credits)
 
 	http.Redirect(w, r, sessionURL, http.StatusSeeOther)
 }
 
-// handleStripeWebhook crédite le portefeuille à réception d'un paiement
+// HandleStripeWebhook crédite le portefeuille à réception d'un paiement
 // confirmé. Idempotent : la référence externe de la session est unique en
 // base (migration 0011), un événement rejoué ne crédite jamais deux fois.
-func (s *Server) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
-	if s.Stripe == nil {
+func (h *Handlers) HandleStripeWebhook(w http.ResponseWriter, r *http.Request) {
+	if h.Stripe == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -107,11 +107,11 @@ func (s *Server) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	event, err := core.VerifyStripeSignature(payload, r.Header.Get("Stripe-Signature"), s.Cfg.Web.Stripe.WebhookSecret, s.Now())
+	event, err := core.VerifyStripeSignature(payload, r.Header.Get("Stripe-Signature"), h.Cfg.Web.Stripe.WebhookSecret, h.Now())
 	if err != nil {
 		// Journalisé sans le corps ni la signature : une tentative de
 		// forge ne doit pas remplir les journaux de contenu attaquant.
-		s.Logger.WarnContext(r.Context(), "web: événement Stripe rejeté", "error", err)
+		h.Logger.WarnContext(r.Context(), "web: événement Stripe rejeté", "error", err)
 		http.Error(w, "signature invalide", http.StatusBadRequest)
 		return
 	}
@@ -126,7 +126,7 @@ func (s *Server) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	orgID := event.Data.Object.Metadata.OrgID
 	credits, convErr := strconv.ParseInt(event.Data.Object.Metadata.Credits, 10, 64)
 	if orgID == "" || convErr != nil || credits <= 0 {
-		s.Logger.ErrorContext(r.Context(), "web: paiement sans métadonnées exploitables", "session_id", event.Data.Object.ID)
+		h.Logger.ErrorContext(r.Context(), "web: paiement sans métadonnées exploitables", "session_id", event.Data.Object.ID)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
@@ -137,14 +137,14 @@ func (s *Server) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	priceEUR, _ := strconv.ParseFloat(event.Data.Object.Metadata.PriceEUR, 64)
 
 	credited := false
-	err = s.DB.WithTx(r.Context(), func(tx *sql.Tx) error {
-		insertErr := s.Wallet.Insert(r.Context(), tx, persistence.WalletEntry{
+	err = h.DB.WithTx(r.Context(), func(tx *sql.Tx) error {
+		insertErr := h.Wallet.Insert(r.Context(), tx, persistence.WalletEntry{
 			OrgID:       orgID,
 			Kind:        persistence.WalletKindPurchase,
 			Label:       "Achat de crédits",
 			Amount:      credits,
 			PriceEUR:    priceEUR,
-			CreatedAt:   s.Now(),
+			CreatedAt:   h.Now(),
 			ExternalRef: event.Data.Object.ID,
 		})
 		if insertErr != nil {
@@ -158,7 +158,7 @@ func (s *Server) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
-		s.Logger.ErrorContext(r.Context(), "web: échec du crédit d'un paiement",
+		h.Logger.ErrorContext(r.Context(), "web: échec du crédit d'un paiement",
 			"org_id", orgID, "session_id", event.Data.Object.ID, "error", err)
 		// 500 : Stripe réessaiera, et l'idempotence protège du doublon.
 		http.Error(w, "erreur interne", http.StatusInternalServerError)
@@ -166,9 +166,9 @@ func (s *Server) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if credited {
-		s.Logger.InfoContext(r.Context(), "web: paiement crédité",
+		h.Logger.InfoContext(r.Context(), "web: paiement crédité",
 			"org_id", orgID, "credits", credits, "session_id", event.Data.Object.ID)
-		s.confirmPurchase(r, event.Data.Object.Metadata.MemberID, orgID, credits)
+		h.confirmPurchase(r, event.Data.Object.Metadata.MemberID, orgID, credits)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -178,24 +178,24 @@ func (s *Server) handleStripeWebhook(w http.ResponseWriter, r *http.Request) {
 // l'acheteur. Un échec d'envoi n'est jamais remonté à Stripe : le
 // paiement est encaissé et les crédits sont inscrits, rejouer
 // l'événement pour un message manqué ne réparerait rien.
-func (s *Server) confirmPurchase(r *http.Request, memberID, orgID string, credits int64) {
-	if s.Purchases == nil || memberID == "" {
+func (h *Handlers) confirmPurchase(r *http.Request, memberID, orgID string, credits int64) {
+	if h.Purchases == nil || memberID == "" {
 		return
 	}
 
 	var balance int64
-	if err := s.DB.WithTx(r.Context(), func(tx *sql.Tx) error {
+	if err := h.DB.WithTx(r.Context(), func(tx *sql.Tx) error {
 		var err error
-		balance, err = s.Wallet.Balance(r.Context(), tx, orgID)
+		balance, err = h.Wallet.Balance(r.Context(), tx, orgID)
 		return err
 	}); err != nil {
-		s.Logger.ErrorContext(r.Context(), "web: solde indisponible pour la confirmation d'achat",
+		h.Logger.ErrorContext(r.Context(), "web: solde indisponible pour la confirmation d'achat",
 			"org_id", orgID, "error", err)
 		return
 	}
 
-	if err := s.Purchases.NotifyPurchase(r.Context(), memberID, credits, balance); err != nil {
-		s.Logger.WarnContext(r.Context(), "web: confirmation d'achat non remise",
+	if err := h.Purchases.NotifyPurchase(r.Context(), memberID, credits, balance); err != nil {
+		h.Logger.WarnContext(r.Context(), "web: confirmation d'achat non remise",
 			"org_id", orgID, "member_id", memberID, "error", err)
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+
+	"github.com/bornholm/automata/internal/web/core"
 )
 
 // Reverse proxy des interfaces embarquées des plugins. Patron repris du
@@ -22,41 +24,18 @@ import (
 // jeton. La protection vient de la session (admin ou lien de profil), du
 // jeton d'UI et de la sandbox.
 
-// Vues d'une interface de plugin : l'opérateur depuis l'administration, un
-// membre depuis son profil. Elles ne diffèrent que par ce que le proxy
-// vérifie avant de relayer, et par les en-têtes d'identité transmis.
-const (
-	pluginViewAdmin  = "admin"
-	pluginViewMember = "member"
-	// pluginViewPublic ne dessert que le retour OAuth : aucune identité,
-	// aucun jeton, un seul chemin atteignable.
-	pluginViewPublic = "public"
-
-	// pluginUIPrefix préfixe toutes les interfaces de plugins, quelle que
-	// soit la vue : un seul chemin à reconnaître pour l'exemption CSRF, un
-	// seul endroit où l'authentification par jeton s'applique.
-	pluginUIPrefix = "/plugin-ui/"
-)
-
 // isPluginUIPath reconnaît les chemins servis par le reverse proxy des
 // interfaces de plugins, seuls exemptés du contrôle CSRF de
 // l'application (voir le commentaire de tête).
 func isPluginUIPath(path string) bool {
-	if !strings.HasPrefix(path, pluginUIPrefix) {
+	if !strings.HasPrefix(path, core.PluginUIPrefix) {
 		return false
 	}
 
 	// Un jeton seul ne suffit pas : le chemin doit désigner quelque chose
 	// dans l'interface du plugin, et jamais remonter hors du préfixe.
-	token, uiPath, found := strings.Cut(strings.TrimPrefix(path, pluginUIPrefix), "/")
+	token, uiPath, found := strings.Cut(strings.TrimPrefix(path, core.PluginUIPrefix), "/")
 	return found && token != "" && !strings.Contains(uiPath, "..")
-}
-
-// PluginUIEndpoint est la part du gestionnaire de plugins dont le proxy a
-// besoin. Le port et le jeton sont relus à CHAQUE requête : ils changent à
-// chaque redémarrage du plugin.
-type PluginUIEndpoint interface {
-	UIEndpoint(name string) (port uint32, token string, ok bool)
 }
 
 // handlePluginUI proxifie l'interface d'un plugin, pour l'opérateur comme
@@ -75,7 +54,7 @@ func (s *Server) handlePluginUI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch view {
-	case pluginViewAdmin:
+	case core.PluginViewAdmin:
 		exists := false
 		if ok := s.WithTx(w, r, func(tx *sql.Tx) error {
 			_, found, err := s.Orgs.FindByID(r.Context(), tx, orgID)
@@ -89,7 +68,7 @@ func (s *Server) handlePluginUI(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-	case pluginViewMember:
+	case core.PluginViewMember:
 		enabled := false
 		if ok := s.WithTx(w, r, func(tx *sql.Tx) error {
 			var err error
@@ -108,7 +87,7 @@ func (s *Server) handlePluginUI(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.proxyPluginUI(w, r, name, orgID, memberID, view, pluginUIPrefix+token)
+	s.proxyPluginUI(w, r, name, orgID, memberID, view, core.PluginUIPrefix+token)
 }
 
 // handlePluginOAuthCallback relaie le retour d'un fournisseur OAuth vers
@@ -119,7 +98,7 @@ func (s *Server) handlePluginUI(w http.ResponseWriter, r *http.Request) {
 // flux repose sur le paramètre state, généré et vérifié par le plugin.
 func (s *Server) handlePluginOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	s.proxyPluginUI(w, r, name, "", "", pluginViewPublic, "/plugins/"+name+"/oauth")
+	s.proxyPluginUI(w, r, name, "", "", core.PluginViewPublic, "/plugins/"+name+"/oauth")
 }
 
 // proxyPluginUI relaie la requête vers le serveur HTTP embarqué du plugin.
@@ -129,7 +108,7 @@ func (s *Server) proxyPluginUI(w http.ResponseWriter, r *http.Request, name, org
 		return
 	}
 
-	endpoint, ok := s.PluginMgr.(PluginUIEndpoint)
+	endpoint, ok := s.PluginMgr.(core.PluginUIEndpoint)
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -144,7 +123,7 @@ func (s *Server) proxyPluginUI(w http.ResponseWriter, r *http.Request, name, org
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
 	uiPath := "/" + r.PathValue("path")
-	if view == pluginViewPublic {
+	if view == core.PluginViewPublic {
 		// La route publique ne dessert que le retour OAuth, rien d'autre.
 		uiPath = "/oauth/callback"
 	}

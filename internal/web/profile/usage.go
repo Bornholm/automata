@@ -1,4 +1,4 @@
-package web
+package profile
 
 import (
 	"database/sql"
@@ -10,35 +10,35 @@ import (
 	"github.com/bornholm/automata/internal/web/view"
 )
 
-// handleProfileUsage — PRO-03. Les chiffres sont exprimés en crédits et en
+// HandleProfileUsage — PRO-03. Les chiffres sont exprimés en crédits et en
 // catégories parlantes ; le mot « token » n'apparaît nulle part, il ne dit
 // rien à qui n'écrit pas de logiciel.
-func (s *Server) handleProfileUsage(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := s.resolveProfile(w, r)
+func (h *Handlers) HandleProfileUsage(w http.ResponseWriter, r *http.Request) {
+	member, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
 
-	now := s.Now()
+	now := h.Now()
 	monthFrom, monthTo := core.MonthBounds(now)
 
 	page := view.ProfileUsagePage{
 		LinkID: r.PathValue("link"),
-		Header: s.profileHeader(r, member, minutes),
+		Header: h.profileHeader(r, member, minutes),
 		Shared: true,
 	}
 
-	plugins, ok := s.profilePluginUIs(w, r, member)
+	plugins, ok := h.profilePluginUIs(w, r, member)
 	if !ok {
 		return
 	}
 	page.PluginUIs = plugins
 
-	txOK := s.WithTx(w, r, func(tx *sql.Tx) error {
-		rate := s.CreditRate(r.Context(), tx)
+	txOK := h.WithTx(w, r, func(tx *sql.Tx) error {
+		rate := h.CreditRate(r.Context(), tx)
 
 		// Répartition du mois par nature d'usage.
-		aggregates, err := s.Usage.AggregateUsage(r.Context(), tx, monthFrom, monthTo,
+		aggregates, err := h.Usage.AggregateUsage(r.Context(), tx, monthFrom, monthTo,
 			[]string{"agent", "kind"}, persistence.UsageFilter{OrgID: member.OrgID})
 		if err != nil {
 			return err
@@ -47,7 +47,7 @@ func (s *Server) handleProfileUsage(w http.ResponseWriter, r *http.Request) {
 		buckets := map[string]int64{}
 		var monthTotal int64
 		for _, agg := range aggregates {
-			credits := s.UsageCredits(agg.CostAmount, rate)
+			credits := h.UsageCredits(agg.CostAmount, rate)
 			label := "Conversations"
 			switch {
 			case agg.Keys[1] == "image":
@@ -86,7 +86,7 @@ func (s *Server) handleProfileUsage(w http.ResponseWriter, r *http.Request) {
 		for i := 5; i >= 0; i-- {
 			from := monthFrom.AddDate(0, -i, 0)
 			to := from.AddDate(0, 1, 0)
-			credits, err := s.SingleOrgUsageCredits(r.Context(), tx, member.OrgID, from, to)
+			credits, err := h.SingleOrgUsageCredits(r.Context(), tx, member.OrgID, from, to)
 			if err != nil {
 				return err
 			}
@@ -112,7 +112,7 @@ func (s *Server) handleProfileUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.Render(w, r, http.StatusOK, view.ProfileUsage(page))
+	h.Render(w, r, http.StatusOK, view.ProfileUsage(page))
 }
 
 // usageSummary énonce l'usage du mois avant tout chiffre, et le compare au

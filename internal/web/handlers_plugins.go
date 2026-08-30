@@ -166,7 +166,7 @@ func (s *Server) pluginActivationRows(r *http.Request, tx *sql.Tx, orgID string)
 		enabledSet[name] = true
 	}
 
-	endpoint, _ := s.PluginMgr.(PluginUIEndpoint)
+	endpoint, _ := s.PluginMgr.(core.PluginUIEndpoint)
 
 	var rows []view.PluginActivationRow
 	for _, st := range s.PluginMgr.Statuses() {
@@ -180,7 +180,7 @@ func (s *Server) pluginActivationRows(r *http.Request, tx *sql.Tx, orgID string)
 			if _, _, hasUI := endpoint.UIEndpoint(st.Name); hasUI {
 				// Même raison que côté profil : l'iframe est sandbouclée,
 				// aucun cookie ne l'accompagne, le jeton porte l'identité.
-				row.UISrc = pluginUIPrefix + s.PluginUIToken(pluginViewAdmin, orgID, "", st.Name, s.Now()) + "/"
+				row.UISrc = core.PluginUIPrefix + s.PluginUIToken(core.PluginViewAdmin, orgID, "", st.Name, s.Now()) + "/"
 			}
 		}
 		rows = append(rows, row)

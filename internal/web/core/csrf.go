@@ -52,3 +52,19 @@ func CheckCSRF(r *http.Request) bool {
 
 	return subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(submitted)) == 1
 }
+
+// csrfToken retourne le jeton CSRF courant, en le posant au besoin.
+func (s *Deps) CSRFToken(w http.ResponseWriter, r *http.Request) string {
+	token, err := EnsureCSRFCookie(w, r)
+	if err != nil {
+		s.Logger.ErrorContext(r.Context(), "web: échec de la création du jeton CSRF", "error", err)
+	}
+	return token
+}
+
+// PluginUIEndpoint est la part du gestionnaire de plugins dont le proxy a
+// besoin. Le port et le jeton sont relus à CHAQUE requête : ils changent à
+// chaque redémarrage du plugin.
+type PluginUIEndpoint interface {
+	UIEndpoint(name string) (port uint32, token string, ok bool)
+}
