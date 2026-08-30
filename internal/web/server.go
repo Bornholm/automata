@@ -19,6 +19,7 @@ import (
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/core"
+	"github.com/bornholm/automata/internal/web/public"
 	"github.com/bornholm/automata/internal/web/view"
 )
 
@@ -42,6 +43,10 @@ type Server struct {
 // (aucun provider d'envoi configuré).
 func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, logger *slog.Logger) *Server {
 	s := &Server{Deps: core.NewDeps(cfg, db, mail, logger)}
+
+	// Une surface, un paquet : chacun reçoit les mêmes dépendances et
+	// monte ses routes ici, seul endroit qui les connaisse toutes.
+	pub := public.New(s.Deps)
 
 	mux := http.NewServeMux()
 
@@ -132,7 +137,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 
 	// Lien temporaire de téléchargement d'un fichier de plugin : la
 	// seconde voie de sortie, pour ce qui ne tient pas en pièce jointe.
-	mux.HandleFunc("GET /f/{token}", s.handleFileLink)
+	mux.HandleFunc("GET /f/{token}", pub.HandleFileLink)
 
 	mux.HandleFunc("GET /p/{link}/plugins/{name}", s.handleProfilePluginPage)
 	mux.HandleFunc("GET /p/{link}", s.handleProfile)
@@ -149,11 +154,11 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 
 	// Pages publiques publiées par les plugins (magasin d'objets). Servies
 	// sans session, sous CSP sandbox : voir handlers_public_site.go.
-	mux.HandleFunc("GET /s/{slug}", s.handlePublicSiteRoot)
-	mux.HandleFunc("GET /s/{slug}/{path...}", s.handlePublicSite)
+	mux.HandleFunc("GET /s/{slug}", pub.HandlePublicSiteRoot)
+	mux.HandleFunc("GET /s/{slug}/{path...}", pub.HandlePublicSite)
 	// Prévisualisation d'un brouillon derrière un jeton signé éphémère.
-	mux.HandleFunc("GET /d/{token}", s.handleDraftPreviewRoot)
-	mux.HandleFunc("GET /d/{token}/{path...}", s.handleDraftPreview)
+	mux.HandleFunc("GET /d/{token}", pub.HandleDraftPreviewRoot)
+	mux.HandleFunc("GET /d/{token}/{path...}", pub.HandleDraftPreview)
 
 	s.httpServer = &http.Server{Addr: cfg.Web.Addr, Handler: mux}
 

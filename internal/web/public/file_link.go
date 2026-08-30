@@ -1,4 +1,4 @@
-package web
+package public
 
 import (
 	"context"
@@ -31,18 +31,18 @@ import (
 // couper un transfert presque abouti serait pire que de le laisser finir.
 const fileLinkDownloadTimeout = 30 * time.Minute
 
-// handleFileLink sert le fichier désigné par un jeton signé.
+// HandleFileLink sert le fichier désigné par un jeton signé.
 //
 // Un jeton invalide, expiré ou visant un plugin désactivé rend 404, sans
 // distinction : rien n'indique à qui l'essaie s'il a manqué de peu.
-func (s *Server) handleFileLink(w http.ResponseWriter, r *http.Request) {
-	pluginName, orgID, memberID, filePath, ok := s.ParseFileLinkToken(r.PathValue("token"), s.Now())
+func (h *Handlers) HandleFileLink(w http.ResponseWriter, r *http.Request) {
+	pluginName, orgID, memberID, filePath, ok := h.ParseFileLinkToken(r.PathValue("token"), h.Now())
 	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 
-	if s.PluginMgr == nil {
+	if h.PluginMgr == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -50,9 +50,9 @@ func (s *Server) handleFileLink(w http.ResponseWriter, r *http.Request) {
 	// Désactiver le plugin pour l'organisation coupe ses liens : c'est le
 	// coupe-circuit de l'opérateur, relu à chaque accès.
 	var enabled bool
-	if !s.WithTx(w, r, func(tx *sql.Tx) error {
+	if !h.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		enabled, err = s.PluginActivations.IsEnabled(r.Context(), tx, pluginName, orgID)
+		enabled, err = h.PluginActivations.IsEnabled(r.Context(), tx, pluginName, orgID)
 		return err
 	}) {
 		return
@@ -65,7 +65,7 @@ func (s *Server) handleFileLink(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), fileLinkDownloadTimeout)
 	defer cancel()
 
-	meta, body, err := s.PluginMgr.OpenFile(ctx, pluginName, plugin.CallContext{
+	meta, body, err := h.PluginMgr.OpenFile(ctx, pluginName, plugin.CallContext{
 		OrgID:    orgID,
 		MemberID: memberID,
 	}, filePath)
@@ -73,7 +73,7 @@ func (s *Server) handleFileLink(w http.ResponseWriter, r *http.Request) {
 		// Le fichier a pu disparaître avant le lien : un espace de travail
 		// inactif est effacé au bout de 24 h. 404 est alors la réponse
 		// juste, et l'échec reste visible côté exploitation.
-		s.Logger.WarnContext(r.Context(), "web: fichier de lien introuvable",
+		h.Logger.WarnContext(r.Context(), "web: fichier de lien introuvable",
 			"plugin", pluginName, "org", orgID, "error", err)
 		http.NotFound(w, r)
 		return
@@ -108,12 +108,12 @@ func (s *Server) handleFileLink(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Les en-têtes sont déjà partis : impossible de répondre une
 		// erreur. On journalise, le client verra un transfert tronqué.
-		s.Logger.WarnContext(r.Context(), "web: téléchargement interrompu",
+		h.Logger.WarnContext(r.Context(), "web: téléchargement interrompu",
 			"plugin", pluginName, "org", orgID, "bytes", copied, "error", err)
 		return
 	}
 
-	s.Logger.InfoContext(r.Context(), "web: fichier téléchargé par lien",
+	h.Logger.InfoContext(r.Context(), "web: fichier téléchargé par lien",
 		"plugin", pluginName, "org", orgID, "bytes", copied)
 }
 

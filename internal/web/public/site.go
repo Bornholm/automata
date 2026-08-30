@@ -1,4 +1,4 @@
-package web
+package public
 
 import (
 	"bytes"
@@ -52,24 +52,24 @@ var publicSiteContentTypes = map[string]string{
 	".pdf":   "application/pdf",
 }
 
-// handlePublicSiteRoot redirige /s/<slug> vers /s/<slug>/ : sans le slash
+// HandlePublicSiteRoot redirige /s/<slug> vers /s/<slug>/ : sans le slash
 // final, les liens relatifs de l'index (href="style.css") se résoudraient
 // hors du préfixe de la page.
-func (s *Server) handlePublicSiteRoot(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandlePublicSiteRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/s/"+r.PathValue("slug")+"/", http.StatusMovedPermanently)
 }
 
-// handlePublicSite sert un fichier d'une collection publiée.
-func (s *Server) handlePublicSite(w http.ResponseWriter, r *http.Request) {
+// HandlePublicSite sert un fichier d'une collection publiée.
+func (h *Handlers) HandlePublicSite(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 
 	var (
 		site      persistence.PluginPublicSite
 		siteFound bool
 	)
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
 		var err error
-		site, siteFound, err = s.PluginSites.FindBySlug(r.Context(), tx, slug)
+		site, siteFound, err = h.PluginSites.FindBySlug(r.Context(), tx, slug)
 		return err
 	})
 	if !ok {
@@ -80,22 +80,22 @@ func (s *Server) handlePublicSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.servePluginObject(w, r, site.PluginName, site.OrgID, site.MemberID, site.Collection,
+	h.servePluginObject(w, r, site.PluginName, site.OrgID, site.MemberID, site.Collection,
 		"public, max-age=300")
 }
 
-// handleDraftPreviewRoot redirige /d/<token> vers /d/<token>/, pour les
+// HandleDraftPreviewRoot redirige /d/<token> vers /d/<token>/, pour les
 // mêmes liens relatifs que la route publique.
-func (s *Server) handleDraftPreviewRoot(w http.ResponseWriter, r *http.Request) {
+func (h *Handlers) HandleDraftPreviewRoot(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/d/"+r.PathValue("token")+"/", http.StatusMovedPermanently)
 }
 
-// handleDraftPreview sert un brouillon derrière un jeton signé éphémère :
+// HandleDraftPreview sert un brouillon derrière un jeton signé éphémère :
 // la capacité du membre à regarder sa propre page avant de la publier —
 // remise dans son canal privé, jamais listée. Un jeton expiré ou forgé
 // donne un 404 indistinct.
-func (s *Server) handleDraftPreview(w http.ResponseWriter, r *http.Request) {
-	pluginName, orgID, memberID, collection, ok := s.ParseDraftPreviewToken(r.PathValue("token"), s.Now())
+func (h *Handlers) HandleDraftPreview(w http.ResponseWriter, r *http.Request) {
+	pluginName, orgID, memberID, collection, ok := h.ParseDraftPreviewToken(r.PathValue("token"), h.Now())
 	if !ok {
 		http.NotFound(w, r)
 		return
@@ -103,14 +103,14 @@ func (s *Server) handleDraftPreview(w http.ResponseWriter, r *http.Request) {
 
 	// no-store : un brouillon change à chaque itération avec l'agent, et
 	// rien d'un contenu non publié ne doit rester dans un cache partagé.
-	s.servePluginObject(w, r, pluginName, orgID, memberID, collection, "no-store")
+	h.servePluginObject(w, r, pluginName, orgID, memberID, collection, "no-store")
 }
 
 // servePluginObject sert un fichier du magasin d'objets avec les en-têtes
 // d'isolement communs aux pages publiées et aux prévisualisations. Le
 // contenu vient d'un modèle piloté par un membre : il est traité en
 // contenu hostile quelle que soit la route.
-func (s *Server) servePluginObject(w http.ResponseWriter, r *http.Request, pluginName, orgID, memberID, collection, cacheControl string) {
+func (h *Handlers) servePluginObject(w http.ResponseWriter, r *http.Request, pluginName, orgID, memberID, collection, cacheControl string) {
 	filePath := r.PathValue("path")
 	if filePath == "" {
 		filePath = "index.html"
@@ -128,11 +128,11 @@ func (s *Server) servePluginObject(w http.ResponseWriter, r *http.Request, plugi
 		object persistence.PluginObject
 		found  bool
 	)
-	ok := s.WithTx(w, r, func(tx *sql.Tx) error {
+	ok := h.WithTx(w, r, func(tx *sql.Tx) error {
 		// Désactiver le plugin pour l'organisation coupe ses pages : la
 		// désactivation est le coupe-circuit de l'opérateur. Le contenu
 		// reste en base, la réactivation ressuscite les liens.
-		enabled, err := s.PluginActivations.IsEnabled(r.Context(), tx, pluginName, orgID)
+		enabled, err := h.PluginActivations.IsEnabled(r.Context(), tx, pluginName, orgID)
 		if err != nil {
 			return err
 		}
@@ -140,7 +140,7 @@ func (s *Server) servePluginObject(w http.ResponseWriter, r *http.Request, plugi
 			return nil
 		}
 
-		object, found, err = s.PluginObjects.Get(r.Context(), tx, pluginName, orgID, memberID, collection, filePath)
+		object, found, err = h.PluginObjects.Get(r.Context(), tx, pluginName, orgID, memberID, collection, filePath)
 		return err
 	})
 	if !ok {
