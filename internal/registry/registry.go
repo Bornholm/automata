@@ -183,6 +183,16 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			return fmt.Errorf("registry: dérivation de la clé des plugins: %w", err)
 		}
 
+		// Clé du casier personnel, distincte de celle des secrets de
+		// plugins. Son absence n'empêche pas de démarrer : le magasin
+		// d'objets ordinaire continue de servir, seul le casier est
+		// indisponible — et il le dit alors clairement à l'usage.
+		objectBox, err := secretbox.NewPluginObjects(cfg.Web.SessionSecret)
+		if err != nil {
+			logger.WarnContext(ctx, "registry: casier personnel indisponible", "error", err)
+			objectBox = nil
+		}
+
 		agentNames := make([]string, 0, len(cfg.Agents))
 		for name := range cfg.Agents {
 			agentNames = append(agentNames, name)
@@ -193,6 +203,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 				MaxObjectBytes: int64(cfg.Plugins.ObjectStoreMaxObjectBytes),
 				MaxMemberBytes: int64(cfg.Plugins.ObjectStoreMaxMemberBytes),
 			}).
+			WithObjectSealing(objectBox).
 			// Les deux fabriques viennent du paquet web : le secret de
 			// signature ne traverse jamais internal/plugin.
 			WithPreviewMinter(web.DraftPreviewMinter(cfg.Web.SessionSecret, cfg.Web.BaseURL)).

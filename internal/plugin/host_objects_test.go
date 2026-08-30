@@ -2,6 +2,7 @@ package plugin
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"os"
 	"path/filepath"
@@ -382,5 +383,133 @@ func TestObjectStoreCopyAndDelete(t *testing.T) {
 	publications, err := scoped.ListPublications(ctx, &proto.ListPublicationsRequest{OrgId: "atelier", MemberId: "cam"})
 	if err != nil || len(publications.Publications) != 0 {
 		t.Errorf("la publication doit tomber avec la collection: (%+v, %v)", publications, err)
+	}
+}
+
+// newSealingObjectHost monte un hôte dont le casier est fonctionnel.
+func newSealingObjectHost(t *testing.T) (*scopedHostService, *persistence.DB) {
+	t.Helper()
+
+	scoped, db := newObjectHost(t, ObjectStoreLimits{})
+	box, err := secretbox.NewPluginObjects(testSessionSecret)
+	if err != nil {
+		t.Fatalf("dérivation de la clé du casier: %v", err)
+	}
+	scoped.HostService.WithObjectSealing(box)
+
+	return scoped, db
+}
+
+// putSealedObject range un objet scellé.
+func putSealedObject(t *testing.T, scoped *scopedHostService, memberID, collection, key, content string) error {
+	t.Helper()
+
+	stream := &fakePutStream{ctx: context.Background(), chunks: []*proto.PutObjectChunk{
+		{Payload: &proto.PutObjectChunk_Metadata{Metadata: &proto.PutObjectMetadata{
+			OrgId: "atelier", MemberId: memberID, Collection: collection, Key: key,
+			ContentType: "text/plain", Sealed: true,
+		}}},
+		{Payload: &proto.PutObjectChunk_Data{Data: []byte(content)}},
+	}}
+	return scoped.PutObject(stream)
+}
+
+// Un objet scellé se relit identique, et ses octets ne se lisent JAMAIS en
+// clair dans la base — c'est toute la raison d'être du casier. Le test
+// interroge la colonne data directement : passer par le RPC ne prouverait
+// rien, puisqu'il déchiffre.
+func TestPutObject_SealedRoundTripAndCiphertextAtRest(t *testing.T) {
+	scoped, db := newSealingObjectHost(t)
+
+	const secret = "compte-rendu de l'entretien du 12 mars"
+	if err := putSealedObject(t, scoped, "cam", "locker", "notes.txt", secret); err != nil {
+		t.Fatalf("PutObject scellé: %v", err)
+	}
+
+	content, meta := getTestObject(t, scoped, "cam", "locker", "notes.txt")
+	if content != secret {
+		t.Errorf("contenu relu = %q, attendu %q", content, secret)
+	}
+	// La taille annoncée est celle du clair, pas celle du chiffré.
+	if meta.Size != int64(len(secret)) {
+		t.Errorf("taille annoncée = %d, attendu %d (taille en clair)", meta.Size, len(secret))
+	}
+
+	var (
+		raw    []byte
+		sealed bool
+		size   int64
+	)
+	if err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(context.Background(),
+			`SELECT data, sealed, size FROM plugin_objects WHERE collection = 'locker' AND key = 'notes.txt'`).
+			Scan(&raw, &sealed, &size)
+	}); err != nil {
+		t.Fatalf("lecture directe: %v", err)
+	}
+	if !sealed {
+		t.Error("la colonne sealed devrait valoir 1")
+	}
+	if size != int64(len(secret)) {
+		t.Errorf("size en base = %d, attendu %d (taille en clair)", size, len(secret))
+	}
+	if strings.Contains(string(raw), "entretien") {
+		t.Error("le contenu se lit en clair dans la base : le scellement n'a pas eu lieu")
+	}
+}
+
+// Sans clé exploitable, l'écriture scellée est REFUSÉE. Elle ne doit jamais
+// se dégrader en écriture en clair : la personne croirait son document
+// protégé alors qu'il ne le serait pas.
+func TestPutObject_SealedRefusedWithoutKey(t *testing.T) {
+	scoped, db := newObjectHost(t, ObjectStoreLimits{})
+
+	err := putSealedObject(t, scoped, "cam", "locker", "notes.txt", "privé")
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("code = %v, attendu FailedPrecondition ; err = %v", status.Code(err), err)
+	}
+
+	var count int
+	if err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
+		return tx.QueryRowContext(context.Background(),
+			`SELECT COUNT(*) FROM plugin_objects WHERE collection = 'locker'`).Scan(&count)
+	}); err != nil {
+		t.Fatalf("comptage: %v", err)
+	}
+	if count != 0 {
+		t.Error("rien ne doit être enregistré quand le scellement est impossible")
+	}
+}
+
+// Publier un casier reviendrait à servir en clair, sur une URL publique, ce
+// que le scellement promet de protéger.
+func TestPublishCollection_RefusesSealedObjects(t *testing.T) {
+	scoped, _ := newSealingObjectHost(t)
+
+	if err := putSealedObject(t, scoped, "cam", "locker", "notes.txt", "privé"); err != nil {
+		t.Fatalf("PutObject scellé: %v", err)
+	}
+
+	_, err := scoped.PublishCollection(context.Background(), &proto.PublishCollectionRequest{
+		OrgId: "atelier", MemberId: "cam", Collection: "locker",
+	})
+	if status.Code(err) != codes.FailedPrecondition {
+		t.Fatalf("code = %v, attendu FailedPrecondition ; err = %v", status.Code(err), err)
+	}
+}
+
+// Une collection ordinaire reste publiable : le refus ne doit pas déborder
+// sur le cas pour lequel le magasin a été conçu.
+func TestPublishCollection_StillAllowsClearObjects(t *testing.T) {
+	scoped, _ := newSealingObjectHost(t)
+
+	if err := putTestObject(t, scoped, "cam", "site", "index.html", "<h1>bonjour</h1>"); err != nil {
+		t.Fatalf("PutObject: %v", err)
+	}
+
+	if _, err := scoped.PublishCollection(context.Background(), &proto.PublishCollectionRequest{
+		OrgId: "atelier", MemberId: "cam", Collection: "site",
+	}); err != nil {
+		t.Fatalf("PublishCollection: %v", err)
 	}
 }

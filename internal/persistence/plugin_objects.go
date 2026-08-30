@@ -8,9 +8,14 @@ import (
 	"time"
 )
 
-// Repositories du magasin d'objets des plugins (migration 0021). Les
-// objets ne sont pas scellés au repos : le magasin porte du contenu
-// destiné à être servi publiquement, jamais de secret.
+// Repositories du magasin d'objets des plugins (migration 0021). Un objet
+// ordinaire n'est PAS scellé au repos : le magasin porte du contenu destiné
+// à être servi tel quel, jamais de secret.
+//
+// Le casier personnel fait exception (migration 0024) : ses objets portent
+// Sealed, et data contient alors le chiffré. Le scellement lui-même vit
+// dans internal/plugin — ce dépôt transporte les octets qu'on lui donne
+// sans jamais les interpréter.
 
 // PluginObject est une ligne de plugin_objects.
 type PluginObject struct {
@@ -20,10 +25,14 @@ type PluginObject struct {
 	Collection  string
 	Key         string
 	ContentType string
-	Size        int64
-	Data        []byte
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// Size est TOUJOURS la taille en clair, même scellé : c'est elle que
+	// voit la personne et sur laquelle portent les quotas.
+	Size int64
+	Data []byte
+	// Sealed indique que Data porte le chiffré (casier personnel).
+	Sealed    bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // PluginObjectMeta décrit un objet sans son contenu.
@@ -31,6 +40,7 @@ type PluginObjectMeta struct {
 	Key         string
 	ContentType string
 	Size        int64
+	Sealed      bool
 	UpdatedAt   time.Time
 }
 
@@ -45,13 +55,13 @@ func NewPluginObjectRepository() *PluginObjectRepository {
 // Upsert enregistre un objet, en préservant created_at si l'objet existe.
 func (r *PluginObjectRepository) Upsert(ctx context.Context, q Querier, o PluginObject) error {
 	_, err := q.ExecContext(ctx, `INSERT INTO plugin_objects
-		(plugin_name, org_id, member_id, collection, key, content_type, size, data, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(plugin_name, org_id, member_id, collection, key, content_type, size, data, sealed, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(plugin_name, org_id, member_id, collection, key) DO UPDATE SET
 			content_type = excluded.content_type, size = excluded.size,
-			data = excluded.data, updated_at = excluded.updated_at`,
+			data = excluded.data, sealed = excluded.sealed, updated_at = excluded.updated_at`,
 		o.PluginName, o.OrgID, o.MemberID, o.Collection, o.Key,
-		o.ContentType, o.Size, o.Data, formatTenantTime(o.CreatedAt), formatTenantTime(o.UpdatedAt))
+		o.ContentType, o.Size, o.Data, o.Sealed, formatTenantTime(o.CreatedAt), formatTenantTime(o.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("écriture de l'objet %q/%q du plugin %q: %w", o.Collection, o.Key, o.PluginName, err)
 	}
@@ -62,7 +72,7 @@ func (r *PluginObjectRepository) Upsert(ctx context.Context, q Querier, o Plugin
 // Get retourne un objet avec son contenu, ou found=false.
 func (r *PluginObjectRepository) Get(ctx context.Context, q Querier, pluginName, orgID, memberID, collection, key string) (PluginObject, bool, error) {
 	row := q.QueryRowContext(ctx, `SELECT plugin_name, org_id, member_id, collection, key,
-			content_type, size, data, created_at, updated_at
+			content_type, size, data, sealed, created_at, updated_at
 		FROM plugin_objects
 		WHERE plugin_name = ? AND org_id = ? AND member_id = ? AND collection = ? AND key = ?`,
 		pluginName, orgID, memberID, collection, key)
@@ -72,7 +82,7 @@ func (r *PluginObjectRepository) Get(ctx context.Context, q Querier, pluginName,
 		createdAt, updatedAt string
 	)
 	if err := row.Scan(&o.PluginName, &o.OrgID, &o.MemberID, &o.Collection, &o.Key,
-		&o.ContentType, &o.Size, &o.Data, &createdAt, &updatedAt); err != nil {
+		&o.ContentType, &o.Size, &o.Data, &o.Sealed, &createdAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return PluginObject{}, false, nil
 		}
@@ -127,7 +137,7 @@ func (r *PluginObjectRepository) DeleteCollection(ctx context.Context, q Querier
 // List retourne les métadonnées des objets d'une collection, sans leur
 // contenu, triées par clé.
 func (r *PluginObjectRepository) List(ctx context.Context, q Querier, pluginName, orgID, memberID, collection string) ([]PluginObjectMeta, error) {
-	rows, err := q.QueryContext(ctx, `SELECT key, content_type, size, updated_at
+	rows, err := q.QueryContext(ctx, `SELECT key, content_type, size, sealed, updated_at
 		FROM plugin_objects
 		WHERE plugin_name = ? AND org_id = ? AND member_id = ? AND collection = ?
 		ORDER BY key`, pluginName, orgID, memberID, collection)
@@ -142,7 +152,7 @@ func (r *PluginObjectRepository) List(ctx context.Context, q Querier, pluginName
 			m         PluginObjectMeta
 			updatedAt string
 		)
-		if err := rows.Scan(&m.Key, &m.ContentType, &m.Size, &updatedAt); err != nil {
+		if err := rows.Scan(&m.Key, &m.ContentType, &m.Size, &m.Sealed, &updatedAt); err != nil {
 			return nil, fmt.Errorf("lecture d'un objet: %w", err)
 		}
 		if m.UpdatedAt, err = parseTenantTime(updatedAt); err != nil {
@@ -196,8 +206,8 @@ func (r *PluginObjectRepository) ReplaceCollection(ctx context.Context, q Querie
 
 	now := formatTenantTime(time.Now().UTC())
 	result, err := q.ExecContext(ctx, `INSERT INTO plugin_objects
-		(plugin_name, org_id, member_id, collection, key, content_type, size, data, created_at, updated_at)
-		SELECT plugin_name, org_id, member_id, ?, key, content_type, size, data, ?, ?
+		(plugin_name, org_id, member_id, collection, key, content_type, size, data, sealed, created_at, updated_at)
+		SELECT plugin_name, org_id, member_id, ?, key, content_type, size, data, sealed, ?, ?
 		FROM plugin_objects
 		WHERE plugin_name = ? AND org_id = ? AND member_id = ? AND collection = ?`,
 		to, now, now, pluginName, orgID, memberID, from)
@@ -226,6 +236,26 @@ func (r *PluginObjectRepository) Usage(ctx context.Context, q Querier, pluginNam
 	}
 
 	return bytes, count, nil
+}
+
+// HasSealed indique si la collection contient au moins un objet scellé.
+//
+// C'est le contrôle qui interdit de publier un casier : le site public sert
+// les octets stockés tels quels, or ceux d'un objet scellé sont chiffrés —
+// les publier livrerait au mieux du charabia, au pire une fuite le jour où
+// quelqu'un déchiffrerait à la volée pour « réparer » l'affichage.
+func (r *PluginObjectRepository) HasSealed(ctx context.Context, q Querier, pluginName, orgID, memberID, collection string) (bool, error) {
+	row := q.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM plugin_objects
+		WHERE plugin_name = ? AND org_id = ? AND member_id = ? AND collection = ? AND sealed = 1)`,
+		pluginName, orgID, memberID, collection)
+
+	var sealed bool
+	if err := row.Scan(&sealed); err != nil {
+		return false, fmt.Errorf("objets scellés de la collection %q du plugin %q: %w", collection, pluginName, err)
+	}
+
+	return sealed, nil
 }
 
 // escapeLike protège les métacaractères LIKE d'un préfixe littéral.

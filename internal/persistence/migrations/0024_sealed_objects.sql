@@ -1,0 +1,16 @@
+-- Objets scellés au repos : le casier personnel des membres.
+--
+-- Le magasin d'objets a été conçu pour des contenus destinés à être servis
+-- tels quels (pages web publiques), d'où le BLOB en clair de la migration
+-- 0021. Le casier y range au contraire des documents personnels, qui ne
+-- doivent pas se lire dans une sauvegarde de la base.
+--
+-- data porte alors le chiffré, mais size reste la taille EN CLAIR : c'est
+-- elle que voit la personne et sur laquelle portent les quotas. Faire varier
+-- l'assiette d'un quota selon le surcoût du chiffrement n'aurait aucun sens
+-- de son point de vue.
+--
+-- Un objet scellé ne peut jamais être publié : PublishCollection refuse une
+-- collection qui en contient un (internal/plugin/host_objects.go). Sans ce
+-- refus, publier servirait en clair ce que le scellement promet de protéger.
+ALTER TABLE plugin_objects ADD COLUMN sealed INTEGER NOT NULL DEFAULT 0;

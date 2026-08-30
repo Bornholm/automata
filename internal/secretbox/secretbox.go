@@ -54,6 +54,15 @@ func NewLLMClients(secret string) (*Box, error) {
 	return newBox(secret, "automata/llm_clients/v1")
 }
 
+// NewPluginObjects dérive la Box du casier personnel (objets scellés du
+// magasin, migration 0024) : contexte HKDF distinct des secrets de plugins,
+// des comptes de messagerie et des clés de fournisseurs. Un document rangé
+// par une personne n'est pas du même ordre qu'un secret d'exploitation, et
+// rien ne doit permettre de passer de l'un à l'autre.
+func NewPluginObjects(secret string) (*Box, error) {
+	return newBox(secret, "automata/plugin_objects/v1")
+}
+
 // newBox dérive une Box du secret fourni, pour l'usage nommé par info :
 // deux usages ne partagent jamais la même clé, même issus du même secret.
 func newBox(secret, info string) (*Box, error) {
@@ -77,6 +86,36 @@ func newBox(secret, info string) (*Box, error) {
 	}
 
 	return &Box{aead: aead}, nil
+}
+
+// SealRaw chiffre des octets et retourne nonce + scellé, SANS le base64 ni
+// le marqueur de SealBytes : le résultat va dans un BLOB dont une colonne
+// dit déjà s'il est scellé, et le base64 y coûterait un tiers de volume pour
+// rien. Un document de plusieurs mégaoctets rend cette différence tangible,
+// là où elle est négligeable pour une pièce jointe de conversation.
+func (b *Box) SealRaw(plaintext []byte) ([]byte, error) {
+	nonce := make([]byte, b.aead.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil, fmt.Errorf("secretbox: lecture d'aléa: %w", err)
+	}
+
+	return b.aead.Seal(nonce, nonce, plaintext, nil), nil
+}
+
+// OpenRaw déchiffre une valeur produite par SealRaw.
+func (b *Box) OpenRaw(sealed []byte) ([]byte, error) {
+	nonceSize := b.aead.NonceSize()
+	if len(sealed) < nonceSize {
+		return nil, fmt.Errorf("secretbox: valeur tronquée")
+	}
+
+	plaintext, err := b.aead.Open(nil, sealed[:nonceSize], sealed[nonceSize:], nil)
+	if err != nil {
+		// Cause la plus fréquente : le secret de session a changé.
+		return nil, fmt.Errorf("secretbox: déchiffrement impossible (le secret de session a-t-il changé ?): %w", err)
+	}
+
+	return plaintext, nil
 }
 
 // Seal chiffre plaintext et retourne une chaîne base64 (nonce + scellé),

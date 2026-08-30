@@ -44,10 +44,12 @@ service AutomataHostService {
   rpc DeleteSecret(DeleteSecretRequest) returns (DeleteSecretResponse);
   rpc Notify(NotifyRequest) returns (NotifyResponse);
   // Object store: binary objects grouped in named collections, scoped to
-  // (plugin, org, member) like configs and secrets. Unlike secrets the
-  // bytes are NOT sealed at rest — the store exists to hold content meant
-  // to be served publicly, and must never receive a secret. Streaming
-  // mirrors PutFile/GetFile: 1 MiB slices under the gRPC message limit.
+  // (plugin, org, member) like configs and secrets. Bytes are NOT sealed at
+  // rest by default — the store exists to hold content meant to be served
+  // publicly, and must never receive a secret. Set PutObjectMetadata.sealed
+  // for a member's own documents: the host then encrypts them at rest and
+  // refuses to publish that collection. Streaming mirrors PutFile/GetFile:
+  // 1 MiB slices under the gRPC message limit.
   rpc PutObject(stream PutObjectChunk) returns (PutObjectResult);
   rpc GetObject(GetObjectRequest) returns (stream GetObjectChunk);
   rpc DeleteObject(DeleteObjectRequest) returns (DeleteObjectResponse);
@@ -391,6 +393,9 @@ message PutObjectMetadata {
   // content_type is declarative; the host re-derives what it serves
   // publicly from the key's extension.
   string content_type = 5;
+  // sealed asks the host to encrypt the object at rest. Use it for a
+  // member's own documents; a sealed collection can never be published.
+  bool sealed = 6;
 }
 message PutObjectResult {
   int64 size = 1;
@@ -439,9 +444,11 @@ message DeleteCollectionResponse {
 message ObjectEntry {
   string key = 1;
   string content_type = 2;
+  // size is always the plaintext size, sealed or not.
   int64 size = 3;
   // updated_at is RFC3339 UTC.
   string updated_at = 4;
+  bool sealed = 5;
 }
 message ListObjectsRequest {
   string org_id = 1;

@@ -16,15 +16,22 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/internal/secretbox"
 	"github.com/bornholm/automata/internal/weblink"
 	"github.com/bornholm/automata/pkg/pluginsdk"
 	proto "github.com/bornholm/automata/pkg/pluginsdk/proto"
 )
 
 // Magasin d'objets du service hôte : des octets groupés en collections,
-// scopés (plugin, org, membre) comme les configs et les secrets. Les
-// objets ne sont PAS scellés au repos — le magasin porte du contenu
-// destiné à être servi publiquement (route /s/), jamais de secret.
+// scopés (plugin, org, membre) comme les configs et les secrets. Par
+// défaut les objets ne sont PAS scellés au repos — le magasin porte du
+// contenu destiné à être servi publiquement (route /s/), jamais de secret.
+//
+// Un plugin peut demander le scellement objet par objet (PutObjectMetadata
+// .sealed) : c'est le casier personnel, où une personne range ses propres
+// documents. Deux règles l'encadrent, toutes deux ci-dessous : une
+// collection contenant un objet scellé ne peut jamais être publiée, et une
+// écriture scellée est refusée si la clé manque — jamais dégradée en clair.
 
 // ObjectStoreLimits borne le magasin d'objets. Les zéros prennent les
 // défauts ci-dessous.
@@ -74,6 +81,50 @@ func (h *HostService) WithObjectStore(baseURL string, limits ObjectStoreLimits) 
 	h.baseURL = strings.TrimRight(baseURL, "/")
 	h.objectLimits = limits.withDefaults()
 	return h
+}
+
+// WithObjectSealing branche la clé du casier personnel. Sans elle, les
+// objets ordinaires continuent de fonctionner et seules les écritures
+// scellées sont refusées : une instance sans secret exploitable perd le
+// casier, pas le magasin.
+func (h *HostService) WithObjectSealing(box *secretbox.Box) *HostService {
+	h.objectBox = box
+	return h
+}
+
+// sealObject chiffre les octets d'un objet de casier. L'absence de clé est
+// une erreur franche : enregistrer en clair un document qu'on a promis de
+// sceller serait une trahison silencieuse du contrat.
+func (s *scopedHostService) sealObject(data []byte) ([]byte, error) {
+	if s.objectBox == nil {
+		return nil, status.Error(codes.FailedPrecondition,
+			"sealed objects are unavailable on this instance (no usable encryption key)")
+	}
+
+	sealed, err := s.objectBox.SealRaw(data)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "object sealing failed")
+	}
+
+	return sealed, nil
+}
+
+// openObject rend les octets en clair d'un objet, scellé ou non.
+func (s *scopedHostService) openObject(o persistence.PluginObject) ([]byte, error) {
+	if !o.Sealed {
+		return o.Data, nil
+	}
+	if s.objectBox == nil {
+		return nil, status.Error(codes.FailedPrecondition,
+			"this object is sealed and no usable encryption key is configured")
+	}
+
+	data, err := s.objectBox.OpenRaw(o.Data)
+	if err != nil {
+		return nil, status.Error(codes.Internal, "object unsealing failed")
+	}
+
+	return data, nil
 }
 
 // WithPreviewMinter branche la fabrique de liens de prévisualisation ;
@@ -194,6 +245,16 @@ func (s *scopedHostService) PutObject(stream proto.AutomataHostService_PutObject
 				s.objectLimits.MaxMemberObjects)
 		}
 
+		// Le scellement n'intervient qu'ici, une fois les quotas vérifiés :
+		// ils portent sur la taille EN CLAIR, celle que voit la personne.
+		data := buf.Bytes()
+		if meta.Sealed {
+			var err error
+			if data, err = s.sealObject(data); err != nil {
+				return err
+			}
+		}
+
 		now := time.Now().UTC()
 		createdAt := now
 		if replacing {
@@ -207,7 +268,8 @@ func (s *scopedHostService) PutObject(stream proto.AutomataHostService_PutObject
 			Key:         meta.Key,
 			ContentType: meta.ContentType,
 			Size:        int64(buf.Len()),
-			Data:        buf.Bytes(),
+			Data:        data,
+			Sealed:      meta.Sealed,
 			CreatedAt:   createdAt,
 			UpdatedAt:   now,
 		})
@@ -256,13 +318,20 @@ func (s *scopedHostService) GetObject(req *proto.GetObjectRequest, stream proto.
 		}})
 	}
 
+	// L'ouverture précède l'envoi des métadonnées : un objet illisible doit
+	// ressortir en erreur franche, pas en flux tronqué derrière un en-tête
+	// annonçant une taille qui ne viendra jamais.
+	data, err := s.openObject(object)
+	if err != nil {
+		return err
+	}
+
 	if err := stream.Send(&proto.GetObjectChunk{Payload: &proto.GetObjectChunk_Metadata{
 		Metadata: &proto.GetObjectMetadata{ContentType: object.ContentType, Size: object.Size, Found: true},
 	}}); err != nil {
 		return status.Error(codes.Internal, "object download interrupted")
 	}
 
-	data := object.Data
 	for offset := 0; offset < len(data); offset += pluginsdk.ChunkBytes {
 		end := min(offset+pluginsdk.ChunkBytes, len(data))
 		if err := stream.Send(&proto.GetObjectChunk{Payload: &proto.GetObjectChunk_Data{Data: data[offset:end]}}); err != nil {
@@ -362,6 +431,7 @@ func (s *scopedHostService) ListObjects(ctx context.Context, req *proto.ListObje
 				ContentType: m.ContentType,
 				Size:        m.Size,
 				UpdatedAt:   m.UpdatedAt.Format(time.RFC3339),
+				Sealed:      m.Sealed,
 			})
 		}
 		return nil
@@ -490,6 +560,20 @@ func (s *scopedHostService) PublishCollection(ctx context.Context, req *proto.Pu
 		}
 		if len(metas) == 0 {
 			return status.Error(codes.FailedPrecondition, "cannot publish an empty collection")
+		}
+
+		// Un casier ne se publie pas. Le site public sert les octets
+		// stockés tels quels : ceux d'un objet scellé sont chiffrés, et
+		// « réparer » l'affichage en les ouvrant à la volée reviendrait à
+		// exposer en clair, sur une URL publique, ce que le scellement
+		// promet de protéger. Le refus est ici, à la source, plutôt que
+		// dans la route de service — un contrôle par voie d'accès finit
+		// toujours par en oublier une.
+		for _, meta := range metas {
+			if meta.Sealed {
+				return status.Error(codes.FailedPrecondition,
+					"cannot publish a collection holding sealed objects")
+			}
 		}
 
 		now := time.Now().UTC()

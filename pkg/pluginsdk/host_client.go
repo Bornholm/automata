@@ -37,13 +37,19 @@ type HostClient interface {
 	Notify(ctx context.Context, orgID, memberID, text string) error
 
 	// Object store: binary objects grouped in named collections, scoped
-	// like configs and secrets. NOT sealed at rest — it exists to hold
-	// content meant to be served publicly, never secrets. Collection and
-	// key names are restricted to lowercase [a-z0-9._/-] path segments.
+	// like configs and secrets. NOT sealed at rest by default — it exists
+	// to hold content meant to be served publicly, never secrets. Use
+	// PutObjectSealed for a member's own documents. Collection and key
+	// names are restricted to lowercase [a-z0-9._/-] path segments.
 
 	// PutObject stores one object; writing an existing (collection, key)
 	// replaces it. Quotas are enforced host-side.
 	PutObject(ctx context.Context, orgID, memberID, collection, key, contentType string, data []byte) error
+	// PutObjectSealed stores one object encrypted at rest, for a member's
+	// own documents. A collection holding sealed objects can never be
+	// published. Fails outright when the host has no usable key — it never
+	// falls back to storing in the clear.
+	PutObjectSealed(ctx context.Context, orgID, memberID, collection, key, contentType string, data []byte) error
 	// GetObject returns one object; found is false when it is absent.
 	GetObject(ctx context.Context, orgID, memberID, collection, key string) (data []byte, contentType string, found bool, err error)
 	// DeleteObject removes one object.

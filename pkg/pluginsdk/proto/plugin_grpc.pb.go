@@ -535,10 +535,12 @@ type AutomataHostServiceClient interface {
 	DeleteSecret(ctx context.Context, in *DeleteSecretRequest, opts ...grpc.CallOption) (*DeleteSecretResponse, error)
 	Notify(ctx context.Context, in *NotifyRequest, opts ...grpc.CallOption) (*NotifyResponse, error)
 	// Object store: binary objects grouped in named collections, scoped to
-	// (plugin, org, member) like configs and secrets. Unlike secrets the
-	// bytes are NOT sealed at rest — the store exists to hold content meant
-	// to be served publicly, and must never receive a secret. Streaming
-	// mirrors PutFile/GetFile: 1 MiB slices under the gRPC message limit.
+	// (plugin, org, member) like configs and secrets. Bytes are NOT sealed at
+	// rest by default — the store exists to hold content meant to be served
+	// publicly, and must never receive a secret. Set PutObjectMetadata.sealed
+	// for a member's own documents: the host then encrypts them at rest and
+	// refuses to publish that collection. Streaming mirrors PutFile/GetFile:
+	// 1 MiB slices under the gRPC message limit.
 	PutObject(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[PutObjectChunk, PutObjectResult], error)
 	GetObject(ctx context.Context, in *GetObjectRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GetObjectChunk], error)
 	DeleteObject(ctx context.Context, in *DeleteObjectRequest, opts ...grpc.CallOption) (*DeleteObjectResponse, error)
@@ -795,10 +797,12 @@ type AutomataHostServiceServer interface {
 	DeleteSecret(context.Context, *DeleteSecretRequest) (*DeleteSecretResponse, error)
 	Notify(context.Context, *NotifyRequest) (*NotifyResponse, error)
 	// Object store: binary objects grouped in named collections, scoped to
-	// (plugin, org, member) like configs and secrets. Unlike secrets the
-	// bytes are NOT sealed at rest — the store exists to hold content meant
-	// to be served publicly, and must never receive a secret. Streaming
-	// mirrors PutFile/GetFile: 1 MiB slices under the gRPC message limit.
+	// (plugin, org, member) like configs and secrets. Bytes are NOT sealed at
+	// rest by default — the store exists to hold content meant to be served
+	// publicly, and must never receive a secret. Set PutObjectMetadata.sealed
+	// for a member's own documents: the host then encrypts them at rest and
+	// refuses to publish that collection. Streaming mirrors PutFile/GetFile:
+	// 1 MiB slices under the gRPC message limit.
 	PutObject(grpc.ClientStreamingServer[PutObjectChunk, PutObjectResult]) error
 	GetObject(*GetObjectRequest, grpc.ServerStreamingServer[GetObjectChunk]) error
 	DeleteObject(context.Context, *DeleteObjectRequest) (*DeleteObjectResponse, error)

@@ -2560,7 +2560,10 @@ type PutObjectMetadata struct {
 	Key        string                 `protobuf:"bytes,4,opt,name=key,proto3" json:"key,omitempty"`
 	// content_type is declarative; the host re-derives what it serves
 	// publicly from the key's extension.
-	ContentType   string `protobuf:"bytes,5,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	ContentType string `protobuf:"bytes,5,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	// sealed asks the host to encrypt the object at rest. Use it for a
+	// member's own documents; a sealed collection can never be published.
+	Sealed        bool `protobuf:"varint,6,opt,name=sealed,proto3" json:"sealed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2628,6 +2631,13 @@ func (x *PutObjectMetadata) GetContentType() string {
 		return x.ContentType
 	}
 	return ""
+}
+
+func (x *PutObjectMetadata) GetSealed() bool {
+	if x != nil {
+		return x.Sealed
+	}
+	return false
 }
 
 type PutObjectResult struct {
@@ -3107,9 +3117,11 @@ type ObjectEntry struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	Key         string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
 	ContentType string                 `protobuf:"bytes,2,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
-	Size        int64                  `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	// size is always the plaintext size, sealed or not.
+	Size int64 `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
 	// updated_at is RFC3339 UTC.
 	UpdatedAt     string `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Sealed        bool   `protobuf:"varint,5,opt,name=sealed,proto3" json:"sealed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3170,6 +3182,13 @@ func (x *ObjectEntry) GetUpdatedAt() string {
 		return x.UpdatedAt
 	}
 	return ""
+}
+
+func (x *ObjectEntry) GetSealed() bool {
+	if x != nil {
+		return x.Sealed
+	}
+	return false
 }
 
 type ListObjectsRequest struct {
@@ -4275,7 +4294,7 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"\x0ePutObjectChunk\x12C\n" +
 	"\bmetadata\x18\x01 \x01(\v2%.automata.plugin.v1.PutObjectMetadataH\x00R\bmetadata\x12\x14\n" +
 	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
-	"\apayload\"\x9c\x01\n" +
+	"\apayload\"\xb4\x01\n" +
 	"\x11PutObjectMetadata\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
 	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x1e\n" +
@@ -4283,7 +4302,8 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"collection\x18\x03 \x01(\tR\n" +
 	"collection\x12\x10\n" +
 	"\x03key\x18\x04 \x01(\tR\x03key\x12!\n" +
-	"\fcontent_type\x18\x05 \x01(\tR\vcontentType\"%\n" +
+	"\fcontent_type\x18\x05 \x01(\tR\vcontentType\x12\x16\n" +
+	"\x06sealed\x18\x06 \x01(\bR\x06sealed\"%\n" +
 	"\x0fPutObjectResult\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x03R\x04size\"x\n" +
 	"\x10GetObjectRequest\x12\x15\n" +
@@ -4317,13 +4337,14 @@ const file_pkg_pluginsdk_proto_plugin_proto_rawDesc = "" +
 	"collection\x18\x03 \x01(\tR\n" +
 	"collection\"4\n" +
 	"\x18DeleteCollectionResponse\x12\x18\n" +
-	"\adeleted\x18\x01 \x01(\x03R\adeleted\"u\n" +
+	"\adeleted\x18\x01 \x01(\x03R\adeleted\"\x8d\x01\n" +
 	"\vObjectEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12!\n" +
 	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x12\n" +
 	"\x04size\x18\x03 \x01(\x03R\x04size\x12\x1d\n" +
 	"\n" +
-	"updated_at\x18\x04 \x01(\tR\tupdatedAt\"h\n" +
+	"updated_at\x18\x04 \x01(\tR\tupdatedAt\x12\x16\n" +
+	"\x06sealed\x18\x05 \x01(\bR\x06sealed\"h\n" +
 	"\x12ListObjectsRequest\x12\x15\n" +
 	"\x06org_id\x18\x01 \x01(\tR\x05orgId\x12\x1b\n" +
 	"\tmember_id\x18\x02 \x01(\tR\bmemberId\x12\x1e\n" +

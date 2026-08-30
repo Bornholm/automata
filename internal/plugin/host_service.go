@@ -42,6 +42,9 @@ type HostService struct {
 	baseURL      string
 	objectLimits ObjectStoreLimits
 	previewMint  PreviewMinter
+	// objectBox scelle les objets du casier personnel (migration 0024) ;
+	// nil = une écriture scellée est REFUSÉE, jamais enregistrée en clair.
+	objectBox *secretbox.Box
 	// fileLinkMint fabrique les liens de téléchargement (route /f/) ;
 	// nil = ShareFile refusé. Voir host_files.go.
 	fileLinkMint FileLinkMinter

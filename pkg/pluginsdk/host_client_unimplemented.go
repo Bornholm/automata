@@ -41,6 +41,10 @@ func (UnimplementedHostClient) Notify(context.Context, string, string, string) e
 	return ErrNotImplemented
 }
 
+func (UnimplementedHostClient) PutObjectSealed(context.Context, string, string, string, string, string, []byte) error {
+	return ErrNotImplemented
+}
+
 func (UnimplementedHostClient) PutObject(context.Context, string, string, string, string, string, []byte) error {
 	return ErrNotImplemented
 }

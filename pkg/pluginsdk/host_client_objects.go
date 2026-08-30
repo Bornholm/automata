@@ -17,8 +17,10 @@ import (
 type ObjectEntry struct {
 	Key         string
 	ContentType string
-	Size        int64
-	UpdatedAt   string
+	// Size is the plaintext size, sealed or not.
+	Size      int64
+	UpdatedAt string
+	Sealed    bool
 }
 
 // Publication is one published collection, as returned by ListPublications.
@@ -34,6 +36,14 @@ type Publication struct {
 const objectChunkBytes = 1 << 20
 
 func (c *grpcHostClient) PutObject(ctx context.Context, orgID, memberID, collection, key, contentType string, data []byte) error {
+	return c.putObject(ctx, orgID, memberID, collection, key, contentType, data, false)
+}
+
+func (c *grpcHostClient) PutObjectSealed(ctx context.Context, orgID, memberID, collection, key, contentType string, data []byte) error {
+	return c.putObject(ctx, orgID, memberID, collection, key, contentType, data, true)
+}
+
+func (c *grpcHostClient) putObject(ctx context.Context, orgID, memberID, collection, key, contentType string, data []byte, sealed bool) error {
 	stream, err := c.client.PutObject(ctx)
 	if err != nil {
 		return fmt.Errorf("PutObject: %w", err)
@@ -43,6 +53,7 @@ func (c *grpcHostClient) PutObject(ctx context.Context, orgID, memberID, collect
 		Metadata: &proto.PutObjectMetadata{
 			OrgId: orgID, MemberId: memberID,
 			Collection: collection, Key: key, ContentType: contentType,
+			Sealed: sealed,
 		},
 	}}); err != nil {
 		return fmt.Errorf("PutObject: %w", err)
@@ -128,7 +139,8 @@ func (c *grpcHostClient) ListObjects(ctx context.Context, orgID, memberID, colle
 	entries := make([]ObjectEntry, 0, len(resp.Entries))
 	for _, e := range resp.Entries {
 		entries = append(entries, ObjectEntry{
-			Key: e.Key, ContentType: e.ContentType, Size: e.Size, UpdatedAt: e.UpdatedAt,
+			Key: e.Key, ContentType: e.ContentType, Size: e.Size,
+			UpdatedAt: e.UpdatedAt, Sealed: e.Sealed,
 		})
 	}
 	return entries, nil
