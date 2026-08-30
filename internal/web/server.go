@@ -128,6 +128,8 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 	mux.HandleFunc("GET /admin/plugins", admin(adm.HandlePlugins))
 	mux.HandleFunc("POST /admin/plugins/{name}/restart", admin(adm.HandlePluginRestart))
 	mux.HandleFunc("POST /admin/orgs/{id}/plugins", admin(adm.HandleOrgPlugins))
+	mux.HandleFunc("GET /admin/alerts", admin(adm.HandleAlerts))
+	mux.HandleFunc("POST /admin/alerts/operator", admin(adm.HandleAlertsOperator))
 	mux.HandleFunc("GET /admin/instance", admin(adm.HandleInstance))
 	mux.HandleFunc("GET /admin/usage", admin(adm.HandleUsage))
 	mux.HandleFunc("GET /admin/usage.csv", admin(adm.HandleUsageCSV))

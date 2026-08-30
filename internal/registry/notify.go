@@ -154,6 +154,57 @@ func (n *orgNotifier) NotifyPurchase(ctx context.Context, memberID string, credi
 	return nil
 }
 
+// NotifyOperator implémente alerting.Sender : il remet une alerte
+// d'exploitation à l'exploitant, dans sa conversation privée.
+//
+// Comme les alertes de solde, le texte vient de l'application. Un exploitant
+// doit pouvoir lire son alerte au pied de la lettre — c'est souvent la seule
+// information dont il dispose avant d'ouvrir les journaux.
+func (n *orgNotifier) NotifyOperator(ctx context.Context, memberID, message string) error {
+	var member persistence.Member
+
+	err := n.db.WithTx(ctx, func(tx *sql.Tx) error {
+		var (
+			found bool
+			err   error
+		)
+		member, found, err = n.members.FindByID(ctx, tx, memberID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return fmt.Errorf("membre %q introuvable", memberID)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("recherche de l'exploitant: %w", err)
+	}
+
+	if !member.Linked() {
+		return fmt.Errorf("l'exploitant %q n'a pas de conversation privée", memberID)
+	}
+
+	providerName := n.resolveProviderName(member.Provider)
+	provider, ok := n.senders.Get(providerName)
+	if !ok {
+		return fmt.Errorf("compte de messagerie %q indisponible", providerName)
+	}
+
+	outgoing := courier.NewMessage(
+		courier.RandomMessageID(),
+		courier.NewChannelRef(courier.ChannelID(member.ExternalUserID)),
+		courier.NewUser("automata", "Automata"),
+		courier.WithMessageMainPart(message),
+	)
+
+	if err := provider.Send(ctx, outgoing); err != nil {
+		return fmt.Errorf("envoi de l'alerte: %w", err)
+	}
+
+	return nil
+}
+
 // resolveProviderName traduit un type de plateforme en nom de compte de
 // messagerie : les canaux nomment le compte, les membres retiennent
 // parfois le type. L'état vivant du gestionnaire fait foi.

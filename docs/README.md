@@ -43,6 +43,17 @@ section de `configuration.md` correspondant à ce que vous voulez activer.
   externe.
 - Des tâches planifiées qui s'exécutent sous une identité de service, en
   lecture seule ou en proposant des actions à confirmer.
+- Un accueil pour les nouveaux arrivants : quatre questions dans le fil de la
+  conversation, dont les réponses deviennent des souvenirs personnels
+  ordinaires, et une page « Découvrir » dans le profil. La visite se quitte
+  d'un mot (« passe ») et ne se repropose jamais — et une vraie question
+  posée à la place d'une réponse y met fin d'elle-même, l'assistant reprenant
+  la main sur le message.
+- Un casier personnel : ce que l'assistant garde pour vous survit des mois,
+  scellé au repos, là où les fichiers de travail expirent en un jour
+  (voir [plugins-workspace.md](plugins-workspace.md)).
+- Des alertes d'exploitation portées à l'exploitant dans sa propre
+  conversation (voir [operations.md](operations.md), §4.1).
 
 ## Ce qu'il ne fait pas
 

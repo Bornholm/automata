@@ -1,0 +1,103 @@
+package view
+
+// --- Alertes d'exploitation ---
+//
+// L'écran répond à deux questions, et pas davantage : qui est prévenu quand
+// quelque chose casse, et qu'est-ce qui a cassé récemment.
+//
+// Une alerte marquée non remise est le cas qui compte : elle signale que le
+// problème a bien été détecté, mais que personne n'a été prévenu — le plus
+// souvent parce que la panne touchait précisément le canal qui devait
+// porter l'alerte.
+
+// AlertOperator est un membre éligible pour recevoir les alertes.
+type AlertOperator struct {
+	ID   string
+	Name string
+	// Detail nomme l'organisation et le canal, pour distinguer deux
+	// homonymes.
+	Detail string
+}
+
+// AlertRow est une alerte du journal.
+type AlertRow struct {
+	Kind      string
+	Subject   string
+	Message   string
+	CreatedAt string
+	Delivered bool
+}
+
+type AlertsPage struct {
+	Platforms []SidebarPlatform
+	CSRFToken string
+
+	// OperatorID est le membre actuellement désigné ; vide = personne.
+	OperatorID string
+	Operators  []AlertOperator
+	Alerts     []AlertRow
+	Error      string
+	Saved      bool
+}
+
+templ AdminAlerts(page AlertsPage) {
+	@AdminLayout("Alertes — Automata Admin", "alerts", page.Platforms, page.CSRFToken) {
+		<header class="border-b border-line-2 bg-white px-4 py-4 md:px-7 md:py-5.5">
+			<h1 class="text-[21px] font-semibold leading-tight tracking-[-.01em] text-ink">Alertes</h1>
+			<div class="mt-0.5 text-sm text-text-3">Qui est prévenu quand le service rencontre un problème</div>
+		</header>
+		<div class="flex flex-col gap-5 p-4 md:p-7">
+			if page.Error != "" {
+				<div class="rounded-[11px] bg-crit-wash px-5 py-4 text-sm text-crit-deep">{ page.Error }</div>
+			}
+			if page.Saved {
+				<div class="rounded-[11px] bg-ok-wash-2 px-5 py-4 text-sm text-ok-deep">Destinataire enregistré.</div>
+			}
+			<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
+				<div class="border-b border-line-2 px-5 py-3.5">
+					<div class="text-[15px] font-semibold text-ink">Destinataire des alertes</div>
+					<div class="mt-0.5 text-sm text-text-3">Les alertes arrivent dans sa conversation privée avec Automata.</div>
+				</div>
+				<form method="post" action="/admin/alerts/operator" class="flex flex-col gap-3 p-5">
+					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+					if len(page.Operators) == 0 {
+						<div class="rounded-[10px] border border-dashed border-line px-3.5 py-3 text-sm text-text-4">Aucun membre rattaché à une conversation pour l'instant. Rattachez un membre pour pouvoir le désigner.</div>
+					} else {
+						<select name="member_id" class="h-11 w-full max-w-md rounded-[10px] border border-line-2 bg-white px-3 text-[15px] text-ink outline-none focus:border-brand">
+							<option value="" selected?={ page.OperatorID == "" }>Personne — les alertes restent dans les journaux</option>
+							for _, operator := range page.Operators {
+								<option value={ operator.ID } selected?={ operator.ID == page.OperatorID }>{ operator.Name } — { operator.Detail }</option>
+							}
+						</select>
+						<button type="submit" class="h-11 w-fit rounded-[10px] bg-brand px-5 text-[15px] font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
+					}
+				</form>
+			</div>
+			<div class="overflow-hidden rounded-[11px] border border-line-2 bg-white">
+				<div class="border-b border-line-2 px-5 py-3.5">
+					<div class="text-[15px] font-semibold text-ink">Dernières alertes</div>
+					<div class="mt-0.5 text-sm text-text-3">Conservées un mois</div>
+				</div>
+				if len(page.Alerts) == 0 {
+					<div class="px-5 py-6 text-sm text-text-4">Aucune alerte. C'est la bonne nouvelle.</div>
+				} else {
+					<div class="flex flex-col">
+						for _, alert := range page.Alerts {
+							<div class="flex flex-wrap items-start gap-3 border-b border-line-3 px-5 py-3.5 last:border-b-0">
+								<div class="min-w-0 flex-1">
+									<div class="text-[15px] leading-snug text-ink">{ alert.Message }</div>
+									<div class="mt-0.5 text-xs text-text-4">{ alert.CreatedAt } · { alert.Kind } · { alert.Subject }</div>
+								</div>
+								if alert.Delivered {
+									@StatusChip(Chip{Label: "remise", Tone: "ok", Dot: true})
+								} else {
+									@StatusChip(Chip{Label: "non remise", Tone: "crit", Dot: true})
+								}
+							</div>
+						}
+					</div>
+				}
+			</div>
+		</div>
+	}
+}

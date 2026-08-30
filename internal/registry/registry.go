@@ -21,6 +21,7 @@ import (
 
 	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
+	"github.com/bornholm/automata/internal/alerting"
 	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/authorization"
 	"github.com/bornholm/automata/internal/backup"
@@ -405,6 +406,28 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			if err := debiter.Run(ctx); err != nil && ctx.Err() == nil {
 				logger.ErrorContext(ctx, "registry: facturation arrêtée en erreur", "error", err)
 			}
+		}()
+	}
+
+	// Veille d'exploitation : elle remarque un compte de messagerie tombé
+	// ou un plugin arrêté, et prévient l'exploitant dans sa conversation
+	// (internal/alerting). Elle suppose le serveur web, seul à donner un
+	// écran pour désigner cet exploitant.
+	if cfg.Web.Enabled {
+		guard := &watchdog{
+			notifier:  alerting.New(db, newOrgNotifier(db, cfg, platforms, tenants, logger), logger),
+			platforms: platforms,
+			logger:    logger,
+			now:       time.Now,
+		}
+		if pluginManager != nil {
+			guard.plugins = pluginManager
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			guard.run(ctx)
 		}()
 	}
 

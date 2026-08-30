@@ -188,6 +188,48 @@ une vidéo en streaming dans le navigateur — seulement de la télécharger.
 Le jeton voyage dans le chemin de l'URL, donc dans les journaux du reverse
 proxy : c'est la contrepartie assumée d'une durée de 24 h.
 
+## Le casier : ce qui doit durer
+
+Le workspace est un plan de travail : LeaSH le purge après son TTL, de
+l'ordre de la journée. Tout ce qui y traîne finit par disparaître, ce qui est
+exactement ce qu'on veut d'un bac à sable — et exactement ce qu'on ne veut
+pas quand quelqu'un demande « garde-moi ce document ».
+
+Le **casier** est ce rangement durable. Il s'adosse au magasin d'objets de
+l'hôte, dans une collection `locker` propre à chaque membre, et rien n'y
+expire. Cinq outils l'exposent :
+
+| Outil | Rôle | Confirmation |
+| --- | --- | --- |
+| `locker_list` | lister ce qui est rangé | non |
+| `locker_save` | ranger un fichier du workspace | non |
+| `locker_get` | ressortir un fichier vers le workspace | non |
+| `locker_replace` | écraser un fichier déjà rangé | **oui** |
+| `locker_delete` | retirer un fichier | **oui** |
+
+Ranger un nouveau fichier ne détruit rien : l'outil est `read_only`, au même
+titre que les commandes du bac à sable. Ce qui détruit — écraser une version
+précédente, supprimer — passe par une confirmation littérale, comme tout
+outil d'écriture du projet. `locker_save` **refuse** d'écraser et renvoie
+vers `locker_replace` : le modèle ne peut pas perdre un document par
+inadvertance.
+
+**Les fichiers du casier sont scellés au repos** (AES-256-GCM, clé dérivée du
+secret de session par un contexte HKDF qui lui est propre). Ils ne se lisent
+pas dans une sauvegarde de la base. Deux conséquences :
+
+- une collection contenant un objet scellé **ne peut jamais être publiée** —
+  le site public sert les octets tels quels, les publier livrerait du
+  chiffré, et les déchiffrer à la volée trahirait la promesse du scellement ;
+- sans clé exploitable, une écriture scellée est **refusée**, jamais dégradée
+  en écriture en clair. Perdre le casier vaut mieux que le croire protégé
+  alors qu'il ne l'est pas.
+
+Un fichier rangé est plafonné à 15 Mo, sous la limite par objet du magasin ;
+le quota global d'un membre reste celui du magasin d'objets, et il se compte
+sur la taille **en clair** — le surcoût du chiffrement n'entame pas ce à quoi
+la personne a droit.
+
 ## Documents
 
 Ces recettes ne sont plus dans le prompt du sous-agent : elles vivent

@@ -165,6 +165,38 @@ aurait ajouté du travail de mise en forme (types de métriques, labels,
 devient nécessaire plus tard, un exporteur séparé peut consommer `/metrics`
 sans modifier `internal/observability`.
 
+## 4.1 Alertes d'exploitation
+
+`/metrics` et `/healthz` disent l'état du service, mais il faut aller les
+regarder. Une session WhatsApp perdue un vendredi soir ne se remarque
+autrement qu'au premier message resté sans réponse, le lundi.
+
+L'instance peut donc prévenir un membre — l'exploitant — dans sa conversation
+privée avec Automata. Le destinataire se désigne dans l'administration,
+écran **Alertes** ; seul un membre déjà rattaché à une conversation peut être
+choisi, puisque c'est par là que l'alerte arrive. Aucun destinataire désigné
+n'empêche rien : les alertes restent enregistrées et consultables sur cet
+écran, et repartiront le jour où quelqu'un est désigné.
+
+Une veille inspecte l'instance toutes les cinq minutes et alerte sur :
+
+- un **compte de messagerie** en échec depuis plus de dix minutes ;
+- un **plugin arrêté** depuis plus de dix minutes, ou qui n'a jamais démarré.
+
+Le délai de grâce écarte le transitoire : un compte qui redémarre, un plugin
+relancé, un appairage en cours n'ont pas à réveiller qui que ce soit. Une
+alerte identique ne repart pas avant une heure — une conversation inondée ne
+se lit plus, ce qui revient à n'alerter personne.
+
+**Limite à connaître.** L'alerte passe par la messagerie : quand la panne EST
+la messagerie, elle ne peut pas partir. Elle est alors journalisée en ERROR,
+conservée « non remise », et **rejouée dès que le canal revient**. L'écran des
+alertes distingue les deux cas ; une alerte non remise signale que le problème
+a bien été vu, mais que personne n'a été prévenu. Un repli par courriel
+couvrirait ce cas — il n'est pas en place.
+
+Le journal des alertes est conservé un mois, puis purgé.
+
 ## 5. Mise à jour et redémarrage
 
 1. Arrêter proprement le processus (`SIGTERM`, attendre la sortie — voir
