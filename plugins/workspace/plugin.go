@@ -99,6 +99,9 @@ const workspaceSystemPrompt = "You are a shell expert working inside an isolated
 	"When download_video is available, you can also fetch a public video by URL into the workspace before editing it; " +
 	"only the sites listed in that tool's description are reachable, and nothing else on the network is.\n\n" +
 	"Your workspace persists between messages for about a day: files you imported or produced earlier are still there. " +
+	"For anything meant to last longer there is the locker, permanent storage the user keeps across months. " +
+	"When the user asks you to keep, store or hold on to a document, call locker_save — the workspace alone would lose it. " +
+	"When they refer to something they kept earlier, call locker_list, then locker_get to bring it back into the workspace. " +
 	"Always call list_files first to see what you already have, and only call import_attachment for a file that is not there yet. " +
 	"import_attachment can bring in any file the user sent in this conversation, not only the one attached to the message you are answering: " +
 	"the files available to you are listed in your instructions. " +
@@ -169,6 +172,9 @@ func (p *Plugin) ListTools(context.Context, *proto.ListToolsInput) (*proto.ListT
 	// perdre un appel et une explication.
 	if p.hostClient() != nil {
 		out.Tools = append(out.Tools, shareTool())
+		// Le casier a besoin du magasin d'objets de l'hôte, comme
+		// share_file a besoin de sa fabrique de liens.
+		out.Tools = append(out.Tools, lockerTools()...)
 	}
 
 	return out, nil
@@ -227,6 +233,16 @@ func (p *Plugin) CallTool(ctx context.Context, in *proto.CallToolInput) (*proto.
 		return p.downloadVideo(ctx, in)
 	case "share_file":
 		return p.shareFile(ctx, in)
+	case "locker_list":
+		return p.lockerList(ctx, in)
+	case "locker_save":
+		return p.lockerSave(ctx, in, false)
+	case "locker_replace":
+		return p.lockerSave(ctx, in, true)
+	case "locker_get":
+		return p.lockerGet(ctx, in)
+	case "locker_delete":
+		return p.lockerDelete(ctx, in)
 	default:
 		return errorOutput(fmt.Sprintf("unknown tool %q", in.Name)), nil
 	}
