@@ -181,7 +181,19 @@ n'empêche rien : les alertes restent enregistrées et consultables sur cet
 Une veille inspecte l'instance toutes les cinq minutes et alerte sur :
 
 - un **compte de messagerie** en échec depuis plus de dix minutes ;
+- un **compte muet** : il se déclare en marche, mais ne répond plus quand on
+  l'interroge (voir ci-dessous) ;
 - un **plugin arrêté** depuis plus de dix minutes, ou qui n'a jamais démarré.
+
+**Pourquoi une sonde en plus de l'état.** L'état d'un compte ne devient « en
+échec » que si son pipeline se termine. Un fournisseur bloqué — sur un
+verrou, sur une socket morte — reste indéfiniment « en marche » alors qu'il
+ne reçoit plus rien : le pire des cas, puisque rien ne le signale. C'est ce
+qui est arrivé le 2026-08-30, où le compte Rocket.Chat est resté muet toute
+une nuit. La veille interroge donc chaque compte réputé en marche
+(`Self`, avec cinq secondes de patience) ; une absence de réponse déclenche
+une alerte distincte, `platform_mute`, dont le remède est un redémarrage du
+service.
 
 Le délai de grâce écarte le transitoire : un compte qui redémarre, un plugin
 relancé, un appairage en cours n'ont pas à réveiller qui que ce soit. Une

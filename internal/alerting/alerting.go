@@ -29,6 +29,10 @@ import (
 const (
 	// KindPlatformDown : un compte de messagerie a cessé de répondre.
 	KindPlatformDown = "platform_down"
+	// KindPlatformMute : un compte de messagerie se déclare en marche mais
+	// ne répond plus — le cas le plus traître, puisque rien d'autre ne le
+	// signale.
+	KindPlatformMute = "platform_mute"
 	// KindPluginFailed : un plugin ne démarre plus.
 	KindPluginFailed = "plugin_failed"
 	// KindModelRoleMissing : un rôle du catalogue n'a aucun modèle, et la

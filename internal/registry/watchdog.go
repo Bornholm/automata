@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/bornholm/go-courier"
+
 	"github.com/bornholm/automata/internal/alerting"
 	"github.com/bornholm/automata/internal/platform"
 	"github.com/bornholm/automata/internal/plugin"
@@ -32,10 +34,17 @@ const watchdogInterval = 5 * time.Minute
 // tous se règlent en bien moins que cela.
 const failureGrace = 10 * time.Minute
 
+// probeTimeout borne la sonde de vivacité d'un compte. Self ne fait pas
+// d'aller-retour réseau : ce délai n'attend pas un serveur distant, il
+// détecte un fournisseur qui ne répond plus du tout — bloqué sur un verrou,
+// typiquement. Quelques secondes suffisent et signent le blocage.
+const defaultProbeTimeout = 5 * time.Second
+
 // platformStatusSource et pluginStatusSource découpent ce que la veille
 // observe, pour qu'elle se teste sans manager réel.
 type platformStatusSource interface {
 	Statuses() map[string]platform.Status
+	Providers() map[string]courier.Provider
 }
 
 type pluginStatusSource interface {
@@ -49,6 +58,16 @@ type watchdog struct {
 	plugins   pluginStatusSource
 	logger    *slog.Logger
 	now       func() time.Time
+	// probeTimeout borne la sonde ; zéro prend defaultProbeTimeout.
+	probeTimeout time.Duration
+}
+
+// probeDelay retourne le délai de sonde à appliquer.
+func (w *watchdog) probeDelay() time.Duration {
+	if w.probeTimeout <= 0 {
+		return defaultProbeTimeout
+	}
+	return w.probeTimeout
 }
 
 // run inspecte jusqu'à l'annulation du contexte.
@@ -78,6 +97,7 @@ func (w *watchdog) run(ctx context.Context) {
 // inspect fait un tour complet.
 func (w *watchdog) inspect(ctx context.Context) {
 	w.checkPlatforms(ctx)
+	w.probePlatforms(ctx)
 	w.checkPlugins(ctx)
 
 	// Les alertes restées en attente repartent ici : c'est le moment où le
@@ -111,6 +131,66 @@ func (w *watchdog) checkPlatforms(ctx context.Context) {
 
 		if err := w.notifier.Notify(ctx, alerting.KindPlatformDown, name, message); err != nil {
 			w.logger.WarnContext(ctx, "registry: alerte de compte non enregistrée", "platform", name, "error", err)
+		}
+	}
+}
+
+// probePlatforms interroge chaque compte réputé en marche pour vérifier
+// qu'il répond encore.
+//
+// L'état du gestionnaire ne suffit PAS. Il ne devient « en échec » que si le
+// pipeline se termine ; un fournisseur bloqué — sur un verrou, sur une
+// socket morte — reste indéfiniment « en marche » alors qu'il ne reçoit
+// plus rien. C'est exactement ce qui s'est produit le 2026-08-30 avec
+// Rocket.Chat : le compte a passé la nuit muet, et rien dans l'instance ne
+// pouvait s'en apercevoir.
+//
+// Self est le seul appel commun à tous les fournisseurs qui traverse leur
+// état interne. Il ne prouve pas que le lien distant est vivant, mais il
+// prouve que le fournisseur répond — ce qui est précisément ce qui manquait.
+func (w *watchdog) probePlatforms(ctx context.Context) {
+	if w.platforms == nil {
+		return
+	}
+
+	statuses := w.platforms.Statuses()
+
+	for name, provider := range w.platforms.Providers() {
+		// Un compte à l'arrêt, en appairage ou déjà en échec est traité par
+		// checkPlatforms : le sonder n'apprendrait rien et alerterait deux
+		// fois pour le même problème.
+		if status, ok := statuses[name]; !ok || status.State != platform.StateRunning {
+			continue
+		}
+
+		selfProvider, ok := provider.(courier.SelfProvider)
+		if !ok {
+			continue
+		}
+
+		probeCtx, cancel := context.WithTimeout(ctx, w.probeDelay())
+		_, err := selfProvider.Self(probeCtx)
+		timedOut := probeCtx.Err() != nil
+		cancel()
+
+		if err == nil && !timedOut {
+			continue
+		}
+
+		reason := "il ne répond plus"
+		if timedOut {
+			reason = "il ne répond plus (aucune réponse en " + w.probeDelay().String() + ")"
+		}
+
+		message := fmt.Sprintf(
+			"Alerte Automata : le compte de messagerie « %s » se déclare en marche, mais %s. "+
+				"Les messages qui y arrivent ne sont probablement pas traités. "+
+				"Un redémarrage du service rétablit généralement la connexion.",
+			name, reason)
+
+		if alertErr := w.notifier.Notify(ctx, alerting.KindPlatformMute, name, message); alertErr != nil {
+			w.logger.WarnContext(ctx, "registry: alerte de compte muet non enregistrée",
+				"platform", name, "error", alertErr)
 		}
 	}
 }
