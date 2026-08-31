@@ -1613,6 +1613,14 @@ type TriggerEvent struct {
 	// agent_input is the instruction for the sub-agent: English only, and
 	// free of private content (bodies travel through read tools during the
 	// turn, not through the event).
+	//
+	// A triggered turn may legitimately end with nothing to say. The host
+	// sends nothing when the sub-agent answers with the silence marker
+	// (see pluginsdk.TriggerSilent): an event worth watching for is not
+	// always an event worth interrupting someone for — a spam email is the
+	// obvious case. Say so in agent_input, with the criteria that apply to
+	// this kind of event; without it the sub-agent assumes it must always
+	// report, and dutifully summarises the junk.
 	AgentInput     string `protobuf:"bytes,5,opt,name=agent_input,json=agentInput,proto3" json:"agent_input,omitempty"`
 	OccurredAtUnix int64  `protobuf:"varint,6,opt,name=occurred_at_unix,json=occurredAtUnix,proto3" json:"occurred_at_unix,omitempty"`
 	// attributes must not carry private content: they may be logged.

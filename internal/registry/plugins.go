@@ -15,6 +15,7 @@ import (
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/plugin"
+	"github.com/bornholm/automata/pkg/pluginsdk"
 )
 
 // pluginSpecialistProvider adapte le gestionnaire de plugins au contrat
@@ -188,6 +189,13 @@ type pluginTriggerRunner struct {
 }
 
 // RunTrigger implémente plugin.TriggerRunner.
+// triggerSilenceRule part vers le modèle : anglais.
+var triggerSilenceRule = "If, after looking, there is nothing the user needs to know about this event — " +
+	"it is spam, an automated notice, a receipt, or simply not worth interrupting them for — " +
+	"answer exactly " + pluginsdk.TriggerSilent + " and nothing else. " +
+	"Nothing will be sent. Reserve it for what genuinely does not deserve their attention: " +
+	"staying silent about something that mattered is worse than one message too many."
+
 func (r *pluginTriggerRunner) RunTrigger(ctx context.Context, pluginName string, identity model.ExecutionIdentity, conversation model.Conversation, input string) (string, error) {
 	specialists, _ := r.provider.SpecialistsFor(ctx, identity)
 	specialist, ok := specialists[pluginName]
@@ -196,8 +204,13 @@ func (r *pluginTriggerRunner) RunTrigger(ctx context.Context, pluginName string,
 	}
 
 	result, err := specialist.Execute(ctx, delegation.Request{
-		AgentID:  pluginName,
-		Goal:     input,
+		AgentID: pluginName,
+		// La permission de se taire est rappelée à CHAQUE tour déclenché,
+		// quel que soit le plugin : c'est l'hôte qui décide d'envoyer ou
+		// non, et un plugin ne devrait pas avoir à y penser pour que son
+		// sous-agent en dispose. Sans cette phrase, le modèle croit devoir
+		// toujours rendre compte et résume consciencieusement le pourriel.
+		Goal:     input + "\n\n" + triggerSilenceRule,
 		Identity: identity,
 	})
 	if err != nil {
@@ -206,6 +219,10 @@ func (r *pluginTriggerRunner) RunTrigger(ctx context.Context, pluginName string,
 
 	reply := strings.TrimSpace(result.Summary)
 
+	// Une action proposée l'emporte sur le silence : elle attend une
+	// confirmation, et une confirmation qu'on ne voit jamais est un plan
+	// qui dort. Le cas est théorique — un sous-agent qui n'a rien à dire
+	// ne propose rien — mais il coûterait cher s'il survenait.
 	if r.actions != nil && len(result.ProposedActions) > 0 {
 		_, planText, err := r.actions.CreatePlan(ctx, identity, result.ProposedActions)
 		if err != nil {

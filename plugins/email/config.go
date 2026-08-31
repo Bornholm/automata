@@ -43,6 +43,24 @@ type memberConfig struct {
 	// PollSeconds is the mailbox polling interval; 0 keeps the default.
 	PollSeconds int `json:"poll_seconds"`
 
+	// Instructions is the member's own standing orders for incoming mail,
+	// in their own words: which senders to ignore, which ones matter, what
+	// to do about them. It is appended to the sub-agent's brief on every
+	// triggered turn.
+	//
+	// Free text rather than a rule engine, deliberately: a mailbox's
+	// exceptions are endless ("ignore the newsletters, except the union
+	// one"), and no form would ever hold them. What the member writes here
+	// is read by the model, so it is guidance — not a filter, and never a
+	// security boundary.
+	Instructions string `json:"instructions,omitempty"`
+
+	// ProcessedLabel is the IMAP keyword set on a message once Automata has
+	// dealt with it. Empty keeps the default; the label is what lets the
+	// member see, in their own mail client, what was handled — without
+	// Automata ever marking anything as read.
+	ProcessedLabel string `json:"processed_label,omitempty"`
+
 	// LastUID is the watcher cursor: highest UID already announced.
 	LastUID uint32 `json:"last_uid"`
 	// CursorReady records that the watcher already anchored itself at the
@@ -52,6 +70,23 @@ type memberConfig struct {
 }
 
 const defaultPollSeconds = 120
+
+// defaultProcessedLabel est le mot-clé IMAP posé sur un message traité.
+//
+// Marquer « lu » serait plus simple, et c'est ce que faisait le plugin : un
+// message que personne n'a ouvert se retrouvait lu, la boîte perdait son
+// compteur de non-lus, et rien ne distinguait ce qu'Automata avait vu de ce
+// que la personne avait vraiment lu. Un mot-clé propre dit exactement cela,
+// et se voit dans la plupart des clients de messagerie.
+const defaultProcessedLabel = "Automata"
+
+// processedLabel retourne le mot-clé effectif.
+func (c memberConfig) processedLabel() string {
+	if c.ProcessedLabel == "" {
+		return defaultProcessedLabel
+	}
+	return c.ProcessedLabel
+}
 
 // secretKeyPassword is the single secret of an account: virtually every
 // mailbox uses the same password for IMAP and SMTP submission.

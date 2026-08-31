@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -179,11 +180,7 @@ func (p *Plugin) pollOnce(ctx context.Context, orgID, memberID string, events ch
 			Kind:     "email.received",
 			// English, and no private content: the body travels through
 			// email_read during the turn, never through the event.
-			AgentInput: fmt.Sprintf(
-				"A new email arrived in the user's mailbox. From: %s. Subject: %s. "+
-					"Use email_read with id %d to read it, then give the user a short summary in the user's language. "+
-					"If the email clearly expects an answer, draft a reply with email_reply — it will require the user's confirmation.",
-				s.From, s.Subject, s.UID),
+			AgentInput:     triggerInput(s, cfg.Instructions),
 			OccurredAtUnix: s.Date.Unix(),
 		}
 
@@ -201,4 +198,37 @@ func (p *Plugin) pollOnce(ctx context.Context, orgID, memberID string, events ch
 	_ = host.SaveConfig(ctx, orgID, memberID, cfg.marshal())
 
 	return interval
+}
+
+// triggerInput compose la consigne du sous-agent pour un courriel reçu.
+//
+// Trois choses y tiennent ensemble, et l'ordre compte : ce qu'il faut faire,
+// la permission de ne rien faire, puis les consignes de la personne — qui
+// viennent en dernier parce qu'elles priment sur le reste.
+//
+// La permission de se taire est décisive. Sans elle, le sous-agent croit
+// devoir rendre compte de tout et résume consciencieusement les pourriels ;
+// une personne dérangée pour rien finit par ignorer aussi ce qui comptait.
+//
+// Anglais, et aucun contenu privé : ce texte est journalisable, le corps du
+// message ne voyage que par email_read pendant le tour.
+func triggerInput(s emailSummary, instructions string) string {
+	input := fmt.Sprintf(
+		"A new email arrived in the user's mailbox. From: %s. Subject: %s. "+
+			"Use email_read with id %d to read it, then give the user a short summary in the user's language. "+
+			"If the email clearly expects an answer, draft a reply with email_reply — it will require the user's confirmation.\n\n"+
+			"Many emails do not deserve to interrupt anyone: advertising, newsletters, automated notices, "+
+			"delivery receipts, alerts from services the user did not ask to hear from. "+
+			"For those, report nothing at all.",
+		s.From, s.Subject, s.UID)
+
+	if trimmed := strings.TrimSpace(instructions); trimmed != "" {
+		// Les consignes de la personne arrivent en dernier et l'emportent :
+		// elle connaît sa boîte, et une règle générale ne peut pas deviner
+		// que telle infolettre compte pour elle.
+		input += "\n\nThe user has given you standing orders about their mail. " +
+			"They take precedence over the guidance above, and over your own judgement:\n" + trimmed
+	}
+
+	return input
 }

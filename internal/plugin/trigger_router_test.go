@@ -13,6 +13,7 @@ import (
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/pkg/pluginsdk"
 	proto "github.com/bornholm/automata/pkg/pluginsdk/proto"
 )
 
@@ -257,4 +258,46 @@ func messageText(t *testing.T, msg courier.Message) string {
 		t.Fatalf("lecture de la partie: %v", err)
 	}
 	return string(raw)
+}
+
+// Un sous-agent qui répond le marqueur de silence n'envoie RIEN : tous les
+// événements d'un flux ne méritent pas d'interrompre quelqu'un, et une
+// personne dérangée pour un pourriel finit par ignorer aussi ce qui
+// comptait. Les garde-fous en amont restent appliqués : le tour a bien eu
+// lieu, c'est seulement l'envoi qui n'a pas lieu.
+func TestTriggerRouter_SilentReplySendsNothing(t *testing.T) {
+	router, runner, sender, _ := newTestRouter(t, config.Plugins{})
+
+	runner.mu.Lock()
+	runner.reply = pluginsdk.TriggerSilent
+	runner.mu.Unlock()
+
+	router.handle(context.Background(), "echo", testEvent("evt-silence"))
+
+	waitFor(t, func() bool { return runner.count() == 1 })
+
+	// Laisser passer le temps d'un envoi éventuel : constater l'absence
+	// demande d'attendre, là où constater une présence peut se faire dès
+	// qu'elle survient.
+	time.Sleep(200 * time.Millisecond)
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if len(sender.sent) != 0 {
+		t.Errorf("%d message(s) envoyé(s), aucun attendu : %q", len(sender.sent), sender.sent)
+	}
+}
+
+// Le marqueur noyé dans une phrase reste une réponse : l'escamoter priverait
+// la personne d'un message qui la concerne.
+func TestTriggerRouter_MarkerInsideASentenceIsStillSent(t *testing.T) {
+	router, runner, sender, _ := newTestRouter(t, config.Plugins{})
+
+	runner.mu.Lock()
+	runner.reply = "Ce courriel n'est pas un " + pluginsdk.TriggerSilent + " : Lina attend une réponse."
+	runner.mu.Unlock()
+
+	router.handle(context.Background(), "echo", testEvent("evt-loud"))
+
+	waitFor(t, func() bool { sender.mu.Lock(); defer sender.mu.Unlock(); return len(sender.sent) == 1 })
 }

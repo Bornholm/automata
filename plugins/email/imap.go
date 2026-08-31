@@ -144,7 +144,12 @@ func readEmail(client *imapclient.Client, uid uint32) (emailContent, error) {
 	var set imap.UIDSet
 	set.AddNum(imap.UID(uid))
 
-	bodySection := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierText}
+	// Peek : BODY.PEEK[TEXT] au lieu de BODY[TEXT]. Sans lui, le serveur
+	// pose \Seen sur le message du seul fait qu'on l'a lu — Automata vidait
+	// ainsi le compteur de non-lus d'une boîte, et rien ne distinguait plus
+	// ce qu'elle avait consulté de ce que la personne avait vraiment lu.
+	// Le passage d'un message est marqué par un mot-clé à part (markProcessed).
+	bodySection := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierText, Peek: true}
 	messages, err := client.Fetch(set, &imap.FetchOptions{
 		UID:         true,
 		Envelope:    true,
@@ -194,4 +199,36 @@ func searchText(client *imapclient.Client, query string) ([]emailSummary, error)
 		uids = uids[:10]
 	}
 	return fetchSummaries(client, uids)
+}
+
+// markProcessed pose le mot-clé « traité » sur un message.
+//
+// C'est le pendant du Peek de readEmail : Automata ne touche jamais à
+// \Seen, qui appartient à la personne, et note son propre passage dans un
+// mot-clé qui lui est propre. Une erreur n'est pas remontée à l'appelant :
+// un serveur qui refuse les mots-clés personnalisés (certains IMAP anciens)
+// ne doit pas faire échouer la lecture d'un courriel.
+func markProcessed(client *imapclient.Client, uid uint32, label string) error {
+	if label == "" {
+		return nil
+	}
+
+	var set imap.UIDSet
+	set.AddNum(imap.UID(uid))
+
+	return client.Store(set, &imap.StoreFlags{
+		Op:     imap.StoreFlagsAdd,
+		Silent: true,
+		Flags:  []imap.Flag{imap.Flag(label)},
+	}, nil).Close()
+}
+
+// isProcessed indique si un message porte déjà le mot-clé.
+func isProcessed(flags []imap.Flag, label string) bool {
+	for _, flag := range flags {
+		if strings.EqualFold(string(flag), label) {
+			return true
+		}
+	}
+	return false
 }

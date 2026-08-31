@@ -13,6 +13,7 @@ import (
 
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
+	"github.com/bornholm/automata/pkg/pluginsdk"
 	proto "github.com/bornholm/automata/pkg/pluginsdk/proto"
 )
 
@@ -242,6 +243,15 @@ func (r *TriggerRouter) execute(ctx context.Context, pluginName string, member p
 		append(logCtx, "duration", time.Since(started).String(), "reply", reply != "")...)
 
 	if reply == "" {
+		return
+	}
+
+	// Le sous-agent a jugé qu'il n'y avait rien à signaler. Tous les
+	// événements d'un flux ne méritent pas d'interrompre quelqu'un — un
+	// courriel publicitaire, un accusé de réception —, et une personne
+	// dérangée pour rien finit par ignorer aussi ce qui comptait.
+	if pluginsdk.IsTriggerSilent(reply) {
+		r.logger.InfoContext(ctx, "plugin: déclencheur sans suite (rien à signaler)", logCtx...)
 		return
 	}
 

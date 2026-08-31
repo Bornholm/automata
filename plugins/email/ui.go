@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/bornholm/automata/pkg/pluginsdk"
 )
@@ -47,6 +48,10 @@ button.ghost{background:#fff;color:#161c27;border:1px solid #d8dce4}
 	<div class="check"><input type="checkbox" id="ar" name="allow_read" {{if .Cfg.AllowRead}}checked{{end}}><label for="ar" style="margin:0">L'agent peut lire mes courriels</label></div>
 	<div class="check"><input type="checkbox" id="aw" name="allow_write" {{if .Cfg.AllowWrite}}checked{{end}}><label for="aw" style="margin:0">L'agent peut préparer des envois</label></div>
 	<div class="notice">Aucun courriel ne part jamais sans votre accord : chaque envoi préparé par l'agent attend votre « confirmer » dans la conversation. Ce réglage décide seulement de ce que l'agent voit.</div>
+	<label>Vos consignes<textarea name="instructions" rows="5" placeholder="Ignore les infolettres, sauf celle du syndicat.&#10;Préviens-moi tout de suite si Lina écrit.&#10;Ne me parle jamais des accusés de réception.">{{.Cfg.Instructions}}</textarea></label>
+	<div class="hint">Écrivez-les comme vous les diriez. Elles s'appliquent à chaque courriel reçu et l'emportent sur le jugement de l'agent.</div>
+	<label>Marquer les courriels traités<input type="text" name="processed_label" value="{{.Cfg.ProcessedLabel}}" placeholder="Automata"></label>
+	<div class="hint">Le mot-clé posé sur un courriel dont l'agent s'est occupé. Vos courriels ne sont jamais marqués comme lus : cet état vous appartient.</div>
 	<button type="submit">Enregistrer</button>
 </form>
 {{else}}
@@ -73,6 +78,10 @@ button.ghost{background:#fff;color:#161c27;border:1px solid #d8dce4}
 	<div class="check"><input type="checkbox" id="ar" name="allow_read" {{if .Cfg.AllowRead}}checked{{end}}><label for="ar" style="margin:0">L'agent peut lire mes courriels</label></div>
 	<div class="check"><input type="checkbox" id="aw" name="allow_write" {{if .Cfg.AllowWrite}}checked{{end}}><label for="aw" style="margin:0">L'agent peut préparer des envois</label></div>
 	<div class="notice">Aucun courriel ne part jamais sans votre accord : chaque envoi préparé par l'agent attend votre « confirmer » dans la conversation. Ce réglage décide seulement de ce que l'agent voit.</div>
+	<label>Vos consignes<textarea name="instructions" rows="5" placeholder="Ignore les infolettres, sauf celle du syndicat.&#10;Préviens-moi tout de suite si Lina écrit.&#10;Ne me parle jamais des accusés de réception.">{{.Cfg.Instructions}}</textarea></label>
+	<div class="hint">Écrivez-les comme vous les diriez. Elles s'appliquent à chaque courriel reçu et l'emportent sur le jugement de l'agent.</div>
+	<label>Marquer les courriels traités<input type="text" name="processed_label" value="{{.Cfg.ProcessedLabel}}" placeholder="Automata"></label>
+	<div class="hint">Le mot-clé posé sur un courriel dont l'agent s'est occupé. Vos courriels ne sont jamais marqués comme lus : cet état vous appartient.</div>
 	<button type="submit">Enregistrer</button>
 	<button type="submit" formaction="{{.Base}}test" style="background:#fff;color:#161c27;border:1px solid #d8dce4;margin-left:8px">Tester la connexion</button>
 </form>
@@ -194,6 +203,8 @@ func formConfig(r *http.Request) (memberConfig, string, string, string) {
 	cfg.From = r.FormValue("from_address")
 	cfg.AllowRead = r.FormValue("allow_read") != ""
 	cfg.AllowWrite = r.FormValue("allow_write") != ""
+	cfg.Instructions = strings.TrimSpace(r.FormValue("instructions"))
+	cfg.ProcessedLabel = strings.TrimSpace(r.FormValue("processed_label"))
 
 	return cfg, orgID, memberID, r.FormValue("password")
 }

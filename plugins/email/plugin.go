@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
@@ -240,6 +241,13 @@ func (p *Plugin) read(cfg memberConfig, password string, args map[string]any) (*
 	content, err := readEmail(client, uid)
 	if err != nil {
 		return toolError(err.Error()), nil
+	}
+
+	// Le message est noté comme traité, jamais comme lu : l'état « lu »
+	// appartient à la personne. Un serveur refusant les mots-clés
+	// personnalisés ne doit pas faire échouer la lecture.
+	if err := markProcessed(client, uid, cfg.processedLabel()); err != nil {
+		slog.Warn("email: mot-clé de traitement non posé", "uid", uid, "error", err)
 	}
 
 	text := fmt.Sprintf("id=%d\nFrom: %s\nTo: %s\nSubject: %s\nDate: %s\n\n%s",
