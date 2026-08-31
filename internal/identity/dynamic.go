@@ -147,21 +147,41 @@ func (r *Resolver) resolveDynamic(ctx context.Context, provider, externalUserID,
 // sont figés en code, délibérément — un rôle web est un contrat produit
 // (ce que le client a acheté), pas un réglage d'exploitation.
 func DynamicRolePermissions(role string) map[string]struct{} {
+	// task.* suit reminder.* : les tâches planifiées sont l'autre moitié de
+	// la même promesse — « rappelle-moi » et « occupe-t'en chaque lundi ».
+	// Les avoir oubliées ici rendait la programmation d'une tâche
+	// impossible à TOUT membre rattaché en ligne, en groupe comme en
+	// privé, alors que les outils existaient et se proposaient : l'agent
+	// annonçait un refus de permission que personne ne pouvait lever, la
+	// configuration des rôles ayant migré en base.
+	//
+	// La différence avec un rappel est réelle et assumée : une tâche
+	// déclenche un tour de modèle à chaque échéance, donc de la dépense,
+	// là où un rappel est livré mot pour mot. Ce qui la borne est ce qui
+	// borne le reste — le portefeuille de l'organisation et sa mise en
+	// pause à solde épuisé —, pas un droit refusé à tous.
 	base := []string{
 		"memory.personal.read", "memory.personal.write", "memory.personal.delete",
 		"memory.group.read", "memory.group.write",
 		"reminder.personal.read", "reminder.personal.write", "reminder.personal.delete",
 		"reminder.group.read", "reminder.group.write",
+		"task.personal.read", "task.personal.write", "task.personal.delete",
+		"task.group.read", "task.group.write",
 	}
 
 	var perms []string
 	switch role {
 	case "readonly":
-		perms = []string{"memory.personal.read", "memory.group.read", "reminder.personal.read", "reminder.group.read"}
+		perms = []string{
+			"memory.personal.read", "memory.group.read",
+			"reminder.personal.read", "reminder.group.read",
+			"task.personal.read", "task.group.read",
+		}
 	case "owner":
 		perms = append(append([]string{}, base...),
 			"memory.group.delete", "memory.org.read", "memory.org.write",
-			"reminder.group.delete", "reminder.org.read")
+			"reminder.group.delete", "reminder.org.read",
+			"task.group.delete", "task.org.read")
 	default:
 		perms = base
 	}

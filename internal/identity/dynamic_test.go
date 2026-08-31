@@ -98,3 +98,51 @@ func (s *multiOrgSource) FindChannel(context.Context, string, string) (identity.
 func (s *multiOrgSource) OrgDisplayName(context.Context, string) (string, bool, error) {
 	return "", false, nil
 }
+
+// Les membres rattachés en ligne doivent pouvoir programmer une tâche.
+//
+// Ils ne le pouvaient pas : task.* manquait à ce jeu, et comme la
+// configuration des rôles a migré en base, plus personne ne pouvait
+// l'accorder. L'agent proposait l'outil, annonçait « task.group.write
+// refusée », et personne — pas même l'exploitant — n'avait de moyen de
+// lever le refus. Une capacité annoncée que rien ne peut débloquer est pire
+// qu'une capacité absente.
+func TestDynamicRolePermissions_MembersCanScheduleTasks(t *testing.T) {
+	member := identity.DynamicRolePermissions("member")
+
+	for _, permission := range []string{
+		"task.personal.read", "task.personal.write", "task.personal.delete",
+		"task.group.read", "task.group.write",
+	} {
+		if _, ok := member[permission]; !ok {
+			t.Errorf("permission %q absente du rôle « member »", permission)
+		}
+	}
+}
+
+// Un readonly lit les tâches sans en créer : la règle vaut ici comme
+// partout ailleurs.
+func TestDynamicRolePermissions_ReadonlyCannotScheduleTasks(t *testing.T) {
+	readonly := identity.DynamicRolePermissions("readonly")
+
+	if _, ok := readonly["task.group.read"]; !ok {
+		t.Error("un readonly devrait pouvoir lister les tâches du groupe")
+	}
+	for _, permission := range []string{"task.group.write", "task.personal.write", "task.group.delete"} {
+		if _, ok := readonly[permission]; ok {
+			t.Errorf("un readonly ne doit pas obtenir %q", permission)
+		}
+	}
+}
+
+// Le propriétaire supprime les tâches du groupe, comme il supprime ses
+// rappels et ses souvenirs.
+func TestDynamicRolePermissions_OwnerCanDeleteGroupTasks(t *testing.T) {
+	owner := identity.DynamicRolePermissions("owner")
+
+	for _, permission := range []string{"task.group.delete", "task.org.read"} {
+		if _, ok := owner[permission]; !ok {
+			t.Errorf("permission %q absente du rôle « owner »", permission)
+		}
+	}
+}

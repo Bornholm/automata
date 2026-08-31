@@ -1051,6 +1051,14 @@ ce qu'elle ne connaît pas. Les membres en ligne n'ont pas de rôle
 configurable ; leurs permissions découlent de leur rôle produit
 (`member`, `owner`, `readonly` — voir `identity.DynamicRolePermissions`).
 
+Ce jeu couvre les trois domaines applicatifs — `memory`, `reminder` et
+`task` — sur les portées personnelle et de groupe. Un `readonly` lit sans
+écrire ; un `owner` gagne en plus la suppression de groupe et la lecture
+d'organisation. **Un domaine oublié dans ce jeu est irréparable en ligne** :
+la configuration des rôles a migré en base, plus rien ne permet de
+l'accorder à la main. L'agent proposerait alors un outil dont le refus ne
+peut être levé par personne, exploitant compris.
+
 Les agents déclarant `reminders: true` exposent aussi
 `list_recent_activity` : le journal de ce qui a réellement été délivré ou
 exécuté dans la conversation — rappels envoyés ou en échec, tâches
