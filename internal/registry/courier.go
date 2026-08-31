@@ -27,7 +27,10 @@ func buildCourierProvider(cp config.CourierProvider) (courier.Provider, error) {
 			return nil, fmt.Errorf("champ session_path requis et non vide")
 		}
 
-		return whatsapp.NewProvider(whatsapp.WithDBPath(c.SessionPath)), nil
+		return whatsapp.NewProvider(
+			whatsapp.WithDBPath(c.SessionPath),
+			whatsapp.WithLogLevel(whatsmeowLogLevel()),
+		), nil
 
 	case "signal":
 		var c config.SignalProviderConfig

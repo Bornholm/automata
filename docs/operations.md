@@ -209,6 +209,24 @@ couvrirait ce cas — il n'est pas en place.
 
 Le journal des alertes est conservé un mois, puis purgé.
 
+## 4.2 Lire les journaux
+
+Les journaux d'Automata sont structurés en JSON sur la sortie d'erreur, au
+niveau INFO. Deux composants écrivent à côté, dans leur propre format :
+
+- **whatsmeow** (la bibliothèque WhatsApp) écrit sur la sortie standard, à un
+  niveau aligné sur celui de l'instance. En DEBUG il imprime chaque trame du
+  protocole, dont une paire de maintien toutes les vingt-cinq secondes : de
+  quoi ensevelir tout le reste. Ne l'activez que pour examiner le protocole
+  lui-même.
+- Les **plugins** journalisent par leur propre canal, également aligné.
+
+Pour isoler ce qui vient d'Automata dans une sortie mêlée :
+
+```sh
+dokku logs automata --num 20000 | grep -av "Client/" | grep -aE 'level=(WARN|ERROR)|"level":"(WARN|ERROR)"'
+```
+
 ## 5. Mise à jour et redémarrage
 
 1. Arrêter proprement le processus (`SIGTERM`, attendre la sortie — voir

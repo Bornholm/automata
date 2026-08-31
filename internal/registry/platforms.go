@@ -3,6 +3,7 @@ package registry
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/bornholm/go-courier"
 	"github.com/bornholm/go-courier/provider/whatsapp"
@@ -49,7 +50,10 @@ func buildManagedProvider(id, providerType string, raw map[string]any, qrHandler
 			return nil, fmt.Errorf("champ session_path requis et non vide")
 		}
 
-		opts := []whatsapp.OptionFunc{whatsapp.WithDBPath(c.SessionPath)}
+		opts := []whatsapp.OptionFunc{
+			whatsapp.WithDBPath(c.SessionPath),
+			whatsapp.WithLogLevel(whatsmeowLogLevel()),
+		}
 		if qrHandler != nil {
 			// Le code d'appairage remonte à l'administration au lieu d'être
 			// imprimé sur la sortie standard : c'est ce qui permet de lier
@@ -69,5 +73,29 @@ func buildManagedProvider(id, providerType string, raw map[string]any, qrHandler
 
 	default:
 		return nil, fmt.Errorf("type de compte %q non supporté", providerType)
+	}
+}
+
+// whatsmeowLogLevel aligne la verbosité de whatsmeow sur celle du logger de
+// l'instance.
+//
+// whatsmeow écrit sur la sortie standard avec son propre format, hors du
+// journal structuré : sans cet alignement il déverse, en DEBUG, une paire
+// de trames de maintien toutes les vingt-cinq secondes. Le 2026-08-31, ce
+// bruit a enseveli les deux seules lignes qui expliquaient une panne de
+// Rocket.Chat — il a fallu remonter vingt mille lignes pour les retrouver.
+func whatsmeowLogLevel() string {
+	logger := slog.Default()
+	ctx := context.Background()
+
+	switch {
+	case logger.Enabled(ctx, slog.LevelDebug):
+		return "DEBUG"
+	case logger.Enabled(ctx, slog.LevelInfo):
+		return "INFO"
+	case logger.Enabled(ctx, slog.LevelWarn):
+		return "WARN"
+	default:
+		return "ERROR"
 	}
 }
