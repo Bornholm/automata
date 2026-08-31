@@ -120,6 +120,30 @@ func TestDynamicRolePermissions_MembersCanScheduleTasks(t *testing.T) {
 	}
 }
 
+// Qui peut poser une échéance peut la retirer.
+//
+// La suppression de groupe était réservée au propriétaire : quelqu'un
+// programmait une tâche hebdomadaire, se trompait d'heure, la reprogrammait
+// — et ne pouvait pas annuler la première. Deux envois chaque lundi, sans
+// recours. Pouvoir créer sans pouvoir défaire enferme la personne dans son
+// erreur ; le vrai garde-fou est la portée, une échéance n'étant annulable
+// que depuis la conversation où elle a été posée.
+func TestDynamicRolePermissions_MembersCanCancelWhatTheyScheduled(t *testing.T) {
+	member := identity.DynamicRolePermissions("member")
+
+	for _, permission := range []string{"task.group.delete", "reminder.group.delete"} {
+		if _, ok := member[permission]; !ok {
+			t.Errorf("permission %q absente du rôle « member » : il pourrait créer sans pouvoir annuler", permission)
+		}
+	}
+
+	// La mémoire de groupe reste protégée : un souvenir accumulé n'est pas
+	// une échéance qu'on vient de poser.
+	if _, ok := member["memory.group.delete"]; ok {
+		t.Error("memory.group.delete ne doit pas être accordé au rôle « member »")
+	}
+}
+
 // Un readonly lit les tâches sans en créer : la règle vaut ici comme
 // partout ailleurs.
 func TestDynamicRolePermissions_ReadonlyCannotScheduleTasks(t *testing.T) {
@@ -135,12 +159,15 @@ func TestDynamicRolePermissions_ReadonlyCannotScheduleTasks(t *testing.T) {
 	}
 }
 
-// Le propriétaire supprime les tâches du groupe, comme il supprime ses
-// rappels et ses souvenirs.
-func TestDynamicRolePermissions_OwnerCanDeleteGroupTasks(t *testing.T) {
+// Le propriétaire garde ce qui lui est propre : la vue d'organisation et la
+// suppression des souvenirs du groupe.
+func TestDynamicRolePermissions_OwnerKeepsOrgWideRights(t *testing.T) {
 	owner := identity.DynamicRolePermissions("owner")
 
-	for _, permission := range []string{"task.group.delete", "task.org.read"} {
+	for _, permission := range []string{
+		"task.org.read", "reminder.org.read",
+		"memory.group.delete", "memory.org.read", "memory.org.write",
+	} {
 		if _, ok := owner[permission]; !ok {
 			t.Errorf("permission %q absente du rôle « owner »", permission)
 		}

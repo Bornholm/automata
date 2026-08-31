@@ -1053,8 +1053,18 @@ configurable ; leurs permissions découlent de leur rôle produit
 
 Ce jeu couvre les trois domaines applicatifs — `memory`, `reminder` et
 `task` — sur les portées personnelle et de groupe. Un `readonly` lit sans
-écrire ; un `owner` gagne en plus la suppression de groupe et la lecture
-d'organisation. **Un domaine oublié dans ce jeu est irréparable en ligne** :
+écrire ; un `owner` gagne la vue d'organisation et la suppression des
+souvenirs du groupe.
+
+**Qui peut poser une échéance peut la retirer** : `reminder.group.delete` et
+`task.group.delete` accompagnent les droits d'écriture correspondants. Les
+réserver au propriétaire enfermait la personne dans son erreur — une tâche
+hebdomadaire programmée à la mauvaise heure, reprogrammée, et la première
+impossible à annuler. Le garde-fou n'est pas le rôle mais la portée : une
+échéance n'est visible et annulable que depuis la conversation où elle a été
+posée. `memory.group.delete` reste réservé au propriétaire, la différence
+tenant à ce qu'un souvenir de groupe est du contenu accumulé, là où une
+échéance est un mécanisme qu'on vient de poser. **Un domaine oublié dans ce jeu est irréparable en ligne** :
 la configuration des rôles a migré en base, plus rien ne permet de
 l'accorder à la main. L'agent proposerait alors un outil dont le refus ne
 peut être levé par personne, exploitant compris.

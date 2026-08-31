@@ -147,6 +147,20 @@ func (r *Resolver) resolveDynamic(ctx context.Context, provider, externalUserID,
 // sont figés en code, délibérément — un rôle web est un contrat produit
 // (ce que le client a acheté), pas un réglage d'exploitation.
 func DynamicRolePermissions(role string) map[string]struct{} {
+	// Qui peut poser peut retirer : reminder.group.delete et
+	// task.group.delete accompagnent les droits d'écriture correspondants.
+	// Les réserver au propriétaire produisait une impasse — quelqu'un
+	// programmait une tâche hebdomadaire, se trompait d'heure, et ne
+	// pouvait plus l'annuler : deux envois chaque lundi, sans recours.
+	// Pouvoir créer sans pouvoir défaire est pire que ne pas pouvoir créer.
+	//
+	// Le garde-fou n'est pas le rôle, c'est la portée : rappels et tâches
+	// ne sont visibles et annulables que depuis la conversation où ils ont
+	// été posés (voir internal/agent/reminder_tools.go et task_tools.go).
+	// memory.group.delete reste réservé au propriétaire, et la différence
+	// tient : un souvenir de groupe est du contenu accumulé, une échéance
+	// est un mécanisme qu'on vient de poser.
+	//
 	// task.* suit reminder.* : les tâches planifiées sont l'autre moitié de
 	// la même promesse — « rappelle-moi » et « occupe-t'en chaque lundi ».
 	// Les avoir oubliées ici rendait la programmation d'une tâche
@@ -164,9 +178,9 @@ func DynamicRolePermissions(role string) map[string]struct{} {
 		"memory.personal.read", "memory.personal.write", "memory.personal.delete",
 		"memory.group.read", "memory.group.write",
 		"reminder.personal.read", "reminder.personal.write", "reminder.personal.delete",
-		"reminder.group.read", "reminder.group.write",
+		"reminder.group.read", "reminder.group.write", "reminder.group.delete",
 		"task.personal.read", "task.personal.write", "task.personal.delete",
-		"task.group.read", "task.group.write",
+		"task.group.read", "task.group.write", "task.group.delete",
 	}
 
 	var perms []string
@@ -180,8 +194,7 @@ func DynamicRolePermissions(role string) map[string]struct{} {
 	case "owner":
 		perms = append(append([]string{}, base...),
 			"memory.group.delete", "memory.org.read", "memory.org.write",
-			"reminder.group.delete", "reminder.org.read",
-			"task.group.delete", "task.org.read")
+			"reminder.org.read", "task.org.read")
 	default:
 		perms = base
 	}
