@@ -317,6 +317,9 @@ func (s *Service) Delete(ctx context.Context, memberID string) (DeletionReport, 
 		// IMAP, un agenda CalDAV — des accès personnels qui n'ont aucune
 		// raison de survivre au compte. La purge par organisation les
 		// couvrait déjà ; celle par membre les oubliait.
+		if _, err := tx.ExecContext(ctx, `DELETE FROM suggestions WHERE member_id = ?`, memberID); err != nil {
+			return err
+		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM plugin_configs WHERE member_id = ?`, memberID); err != nil {
 			return fmt.Errorf("suppression des configurations de plugins: %w", err)
 		}

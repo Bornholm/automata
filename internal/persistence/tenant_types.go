@@ -58,8 +58,12 @@ type Member struct {
 	// membre, pas sur la conversation : changer de canal ne refait pas la
 	// visite, et l'écarter vaut partout.
 	OnboardingState string
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// SuggestionsMuted éteint l'introspection pour ce membre (migration
+	// 0027) : ni collecte, ni suggestion, ni message. Définitif tant que la
+	// personne ne le rallume pas elle-même.
+	SuggestionsMuted bool
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // Linked indique si le membre est rattaché à une identité de messagerie.

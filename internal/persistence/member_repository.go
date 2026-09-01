@@ -17,7 +17,7 @@ func NewMemberRepository() *MemberRepository {
 }
 
 const memberColumns = `id, org_id, display_name, role, email, email_verified_at,
-	provider, external_user_id, linked_at, onboarding_state, created_at, updated_at`
+	provider, external_user_id, linked_at, onboarding_state, suggestions_muted, created_at, updated_at`
 
 // Insert enregistre m. ignoreExisting (bootstrap) transforme un conflit
 // d'identifiant en non-opération.
@@ -28,9 +28,9 @@ func (r *MemberRepository) Insert(ctx context.Context, q Querier, m Member, igno
 	}
 
 	_, err := q.ExecContext(ctx, verb+` INTO members
-		(`+memberColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(`+memberColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID, m.OrgID, m.DisplayName, m.Role, m.Email, formatTenantTime(m.EmailVerifiedAt),
-		m.Provider, m.ExternalUserID, formatTenantTime(m.LinkedAt), m.OnboardingState,
+		m.Provider, m.ExternalUserID, formatTenantTime(m.LinkedAt), m.OnboardingState, m.SuggestionsMuted,
 		formatTenantTime(m.CreatedAt), formatTenantTime(m.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("insertion du membre %q: %w", m.ID, err)
@@ -45,7 +45,7 @@ func scanMember(scan func(...any) error) (Member, error) {
 		emailVerifiedAt, linkedAt, createdAt, upAt string
 	)
 	if err := scan(&m.ID, &m.OrgID, &m.DisplayName, &m.Role, &m.Email, &emailVerifiedAt,
-		&m.Provider, &m.ExternalUserID, &linkedAt, &m.OnboardingState, &createdAt, &upAt); err != nil {
+		&m.Provider, &m.ExternalUserID, &linkedAt, &m.OnboardingState, &m.SuggestionsMuted, &createdAt, &upAt); err != nil {
 		return Member{}, err
 	}
 
@@ -159,6 +159,18 @@ func (r *MemberRepository) SetOnboardingState(ctx context.Context, q Querier, me
 	if _, err := q.ExecContext(ctx,
 		`UPDATE members SET onboarding_state = ? WHERE id = ?`, state, memberID); err != nil {
 		return fmt.Errorf("visite d'accueil du membre %q: %w", memberID, err)
+	}
+
+	return nil
+}
+
+// SetSuggestionsMuted allume ou éteint l'introspection pour un membre.
+// Comme SetOnboardingState, Update ne touche pas cette colonne : l'écran
+// d'administration n'a pas à connaître ce choix pour éditer un membre.
+func (r *MemberRepository) SetSuggestionsMuted(ctx context.Context, q Querier, memberID string, muted bool) error {
+	if _, err := q.ExecContext(ctx,
+		`UPDATE members SET suggestions_muted = ? WHERE id = ?`, muted, memberID); err != nil {
+		return fmt.Errorf("réglage des suggestions du membre %q: %w", memberID, err)
 	}
 
 	return nil
