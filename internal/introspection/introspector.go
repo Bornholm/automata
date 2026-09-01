@@ -89,9 +89,13 @@ type Introspector struct {
 	orgs        *persistence.OrganizationRepository
 	runs        *persistence.MaintenanceRunRepository
 	schedule    cron.Schedule
-	logger      *slog.Logger
-	now         func() time.Time
-	baseURL     string
+	// digestSender et digestSchedule portent la synthèse mensuelle de
+	// l'exploitant ; nil = pas de synthèse (voir WithDigest, digest.go).
+	digestSender   DigestSender
+	digestSchedule cron.Schedule
+	logger         *slog.Logger
+	now            func() time.Time
+	baseURL        string
 }
 
 // New construit l'introspecteur. memory et notifier peuvent être nil : la
@@ -176,6 +180,11 @@ func (i *Introspector) Tick(ctx context.Context) error {
 	}
 
 	var firstErr error
+	if err := i.tickDigest(ctx, now); err != nil {
+		i.logger.WarnContext(ctx, "introspection: synthèse en échec", "error", err)
+		firstErr = err
+	}
+
 	for _, member := range members {
 		if ctx.Err() != nil {
 			return ctx.Err()

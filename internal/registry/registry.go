@@ -413,6 +413,15 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			if memRes.store != nil {
 				introspector = introspector.WithMemory(memRes.store)
 			}
+			// Synthèse mensuelle de l'exploitant : par le canal d'alerting,
+			// qui apporte déduplication, rejeu et visibilité dans l'écran
+			// Alertes.
+			if cfg.Web.Enabled {
+				digestNotifier := alerting.New(db, newOrgNotifier(db, cfg, platforms, tenants, logger), logger)
+				if introspector, err = introspector.WithDigest(digestNotifier, cfg.Introspection.DigestCron); err != nil {
+					return fmt.Errorf("registry: %w", err)
+				}
+			}
 
 			wg.Add(1)
 			go func() {

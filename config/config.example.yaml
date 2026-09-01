@@ -381,6 +381,21 @@ memory:
       # réflexion réussie est purgé. 0 : conservation illimitée.
       retention_days: 0
 
+# Introspection : chaque semaine, Automata relit les frictions de chaque
+# membre (actions jamais confirmées, rappels et tâches en échec) et les
+# habitudes déjà observées, pour proposer AU PLUS UNE amélioration —
+# visible sur la page de profil, poussée en conversation seulement si le
+# gain est net. Chaque membre peut couper cela définitivement depuis son
+# profil. Le modèle se règle en ligne (rôle « introspection »).
+introspection:
+  enabled: false
+  # Cadence de la passe par membre. Défaut : chaque lundi à 5h20.
+  cron: "20 5 * * 1"
+  # Cadence de la synthèse anonyme envoyée à l'exploitant (agrégats par
+  # type de friction, jamais de nom ni de contenu). Défaut : le 1er du
+  # mois à 5h50.
+  digest_cron: "50 5 1 * *"
+
 identities:
   roles:
     adult:

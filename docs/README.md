@@ -57,6 +57,13 @@ section de `configuration.md` correspondant à ce que vous voulez activer.
   (voir [plugins-workspace.md](plugins-workspace.md)).
 - Des alertes d'exploitation portées à l'exploitant dans sa propre
   conversation (voir [operations.md](operations.md), §4.1).
+- Une introspection hebdomadaire : Automata relit les frictions (actions
+  jamais confirmées, rappels en échec) et les habitudes observées, et
+  propose à chaque membre au plus une amélioration par semaine — sur sa
+  page de profil, poussée en conversation seulement quand le gain est net.
+  « Ne plus rien me proposer » coupe tout, définitivement. L'exploitant
+  reçoit chaque mois une synthèse anonyme des frictions par type, sans nom
+  ni contenu.
 
 ## Ce qu'il ne fait pas
 
