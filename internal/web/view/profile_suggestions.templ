@@ -1,0 +1,91 @@
+package view
+
+// --- Suggestions ---
+//
+// Ce qu'Automata propose d'améliorer, après ses introspections
+// hebdomadaires. La page est le réceptacle calme : tout s'y accumule, seul
+// l'essentiel est poussé en conversation. Chaque suggestion se solde d'un
+// geste — suivie ou écartée — et l'écartement est définitif : c'est ce qui
+// permet à l'introspection de ne jamais se répéter.
+
+// SuggestionRow est une suggestion affichée.
+type SuggestionRow struct {
+	ID    string
+	Title string
+	Body  string
+	At    string
+	// Kind, en clair pour la personne (« automatisation », « réglage »…).
+	KindLabel string
+	// Open : encore en attente d'un geste (proposed/delivered).
+	Open bool
+	// Outcome : « suivie » ou « écartée » pour les suggestions soldées.
+	Outcome string
+}
+
+type SuggestionsPage struct {
+	LinkID    string
+	Header    ProfileHeader
+	CSRFToken string
+	PluginUIs []ProfilePluginUI
+
+	Suggestions []SuggestionRow
+	Muted       bool
+	Notice      string
+}
+
+templ ProfileSuggestions(page SuggestionsPage) {
+	@ProfileLayout("Suggestions — Automata", page.Header) {
+		@profileNav(page.LinkID, "suggestions", page.PluginUIs)
+		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Mes suggestions</h1>
+		<p class="mt-2 text-[15px] leading-normal text-text-3">Chaque semaine, je réfléchis à ce que je pourrais mieux faire pour vous. Voici ce que j'ai trouvé.</p>
+		if page.Notice != "" {
+			<div class="mt-4 rounded-lg bg-ok-wash-2 px-3.5 py-2.5 text-sm text-ok-deep">{ page.Notice }</div>
+		}
+		if page.Muted {
+			<div class="mt-5 rounded-xl border border-line-2 bg-panel p-4">
+				<div class="text-base font-semibold leading-snug text-ink">Les suggestions sont désactivées</div>
+				<div class="mt-1 text-sm leading-normal text-text-2">Je ne réfléchis plus à des améliorations pour vous, et je ne vous proposerai plus rien.</div>
+				<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/suggestions/mute") }>
+					<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+					<input type="hidden" name="muted" value="0"/>
+					<button type="submit" class="mt-3 h-11 rounded-[10px] border border-line-2 px-5 text-[15px] font-medium text-text-2">Réactiver</button>
+				</form>
+			</div>
+		} else {
+			if len(page.Suggestions) == 0 {
+				<div class="mt-5 rounded-[11px] border border-dashed border-line px-3.5 py-6 text-center text-sm text-text-4">Rien pour l'instant. Je ne propose que ce qui s'appuie sur de vraies observations — mieux vaut le silence qu'une mauvaise idée.</div>
+			}
+			<div class="mt-5 flex flex-col gap-3">
+				for _, suggestion := range page.Suggestions {
+					<div class="rounded-xl border border-line-2 p-4">
+						<div class="flex items-baseline justify-between gap-2">
+							<div class="text-base font-semibold leading-snug text-ink">{ suggestion.Title }</div>
+							<div class="shrink-0 text-xs text-text-4">{ suggestion.KindLabel }</div>
+						</div>
+						<div class="mt-1.5 text-[15px] leading-normal text-text-2">{ suggestion.Body }</div>
+						<div class="mt-1.5 text-xs text-text-4">{ suggestion.At }</div>
+						if suggestion.Open {
+							<div class="mt-3 flex gap-2">
+								<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/suggestions/" + suggestion.ID + "/accept") }>
+									<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+									<button type="submit" class="h-10 rounded-[10px] bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-strong">C'est fait</button>
+								</form>
+								<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/suggestions/" + suggestion.ID + "/dismiss") }>
+									<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+									<button type="submit" class="h-10 rounded-[10px] border border-line-2 px-4 text-sm font-medium text-text-2">Pas intéressé</button>
+								</form>
+							</div>
+						} else {
+							<div class="mt-2 text-xs font-medium text-text-4">{ suggestion.Outcome }</div>
+						}
+					</div>
+				}
+			</div>
+			<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/suggestions/mute") } class="mt-6" onsubmit="return confirm('Automata ne vous proposera plus jamais rien. Continuer ?')">
+				<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+				<input type="hidden" name="muted" value="1"/>
+				<button type="submit" class="text-sm font-medium text-text-4 underline">Ne plus rien me proposer</button>
+			</form>
+		}
+	}
+}
