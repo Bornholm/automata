@@ -61,6 +61,9 @@ const (
 	RoleConsolidation = "consolidation"
 	// RoleRetrieval sert la reformulation HyDE de la recherche mémoire.
 	RoleRetrieval = "retrieval"
+	// RoleIntrospection sert la passe hebdomadaire de suggestions
+	// (internal/introspection).
+	RoleIntrospection = "introspection"
 	// RoleImagePrefix préfixe le rôle de génération d'images d'un agent :
 	// « image:imagine ». Un agent a deux modèles distincts — celui qui
 	// converse et celui qui dessine.
@@ -109,6 +112,9 @@ func Roles(cfg *config.Config) []string {
 	}
 	if cfg.Memory.Consolidation.Enabled {
 		roles = append(roles, RoleConsolidation)
+	}
+	if cfg.Introspection.Enabled {
+		roles = append(roles, RoleIntrospection)
 	}
 	if cfg.Memory.Retrieval.Profile == "balanced" {
 		roles = append(roles, RoleRetrieval)

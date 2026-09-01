@@ -91,6 +91,25 @@ type Config struct {
 	Web           Web                  `yaml:"web"`
 	Backup        Backup               `yaml:"backup"`
 	Plugins       Plugins              `yaml:"plugins"`
+	Introspection Introspection        `yaml:"introspection"`
+}
+
+// Introspection décrit la passe hebdomadaire qui relit les frictions
+// d'usage (plans d'actions jamais confirmés, rappels en échec, tâches en
+// échec) et les motifs comportementaux déjà en mémoire, pour proposer à
+// chaque membre au plus une amélioration : automatiser un geste répété,
+// activer une capacité inutilisée, corriger ce qui échoue. Désactivée par
+// défaut ; le modèle se règle en ligne (rôle « introspection »).
+type Introspection struct {
+	Enabled bool `yaml:"enabled"`
+	// Cron est l'échéance de la passe par membre. Vide applique le défaut
+	// ("20 5 * * 1", chaque lundi matin) : l'introspection a besoin d'une
+	// semaine de matière, pas d'une nuit.
+	Cron string `yaml:"cron"`
+	// DigestCron est l'échéance de la synthèse anonyme envoyée à
+	// l'exploitant. Vide applique le défaut ("50 5 1 * *", le premier du
+	// mois).
+	DigestCron string `yaml:"digest_cron"`
 }
 
 // Backup décrit les sauvegardes périodiques des bases SQLite. Désactivées

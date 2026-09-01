@@ -31,6 +31,7 @@ import (
 	"github.com/bornholm/automata/internal/conversation"
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/ingress"
+	"github.com/bornholm/automata/internal/introspection"
 	"github.com/bornholm/automata/internal/llmclients"
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/media"
@@ -384,6 +385,41 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 				if err := consolidator.Run(ctx); err != nil && ctx.Err() == nil {
 					logger.ErrorContext(ctx, "registry: consolidateur mémoire arrêté en erreur", "error", err)
+				}
+			}()
+		}
+	}
+
+	// Introspection hebdomadaire (internal/introspection) : Automata relit
+	// les frictions et les motifs pour proposer à chaque membre au plus une
+	// amélioration par semaine. Mêmes garde-fous que la consolidation : un
+	// rôle sans modèle désactive proprement, jamais un crash.
+	if cfg.Introspection.Enabled {
+		introspectionCfg, clientName, roleOK := roleClientConfig(ctx, modelStore, llmclients.RoleIntrospection)
+		if !roleOK {
+			logger.Warn("registry: introspection désactivée, aucun modèle configuré",
+				"remède", "réglez le rôle introspection dans l'administration (Modèles)")
+		} else {
+			introspectionClient, err := agent.BuildLLMClient(ctx, introspectionCfg)
+			if err != nil {
+				return fmt.Errorf("registry: construction du client d'introspection %q: %w", clientName, err)
+			}
+
+			introspector, err := introspection.New(db, introspectionClient, cfg.Introspection, cfg.Web.BaseURL, logger)
+			if err != nil {
+				return fmt.Errorf("registry: construction de l'introspecteur: %w", err)
+			}
+			introspector = introspector.WithNotifier(newOrgNotifier(db, cfg, platforms, tenants, logger))
+			if memRes.store != nil {
+				introspector = introspector.WithMemory(memRes.store)
+			}
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				if err := introspector.Run(ctx); err != nil && ctx.Err() == nil {
+					logger.ErrorContext(ctx, "registry: introspecteur arrêté en erreur", "error", err)
 				}
 			}()
 		}

@@ -46,6 +46,8 @@ const (
 	ComponentConsolidation = "consolidation"
 	ComponentReflection    = "reflection"
 	ComponentTranscription = "transcription"
+	// ComponentIntrospection : la passe hebdomadaire de suggestions.
+	ComponentIntrospection = "introspection"
 )
 
 // Record est la trace comptable d'un appel d'inférence. Les champs

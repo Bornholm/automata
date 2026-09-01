@@ -161,6 +161,13 @@ func (n *orgNotifier) NotifyPurchase(ctx context.Context, memberID string, credi
 // doit pouvoir lire son alerte au pied de la lettre — c'est souvent la seule
 // information dont il dispose avant d'ouvrir les journaux.
 func (n *orgNotifier) NotifyOperator(ctx context.Context, memberID, message string) error {
+	return n.NotifyMember(ctx, memberID, message)
+}
+
+// NotifyMember implémente introspection.MemberNotifier : un message
+// applicatif dans la conversation privée d'un membre, sans tour de modèle.
+// C'est le geste commun à toutes les remises proactives du registre.
+func (n *orgNotifier) NotifyMember(ctx context.Context, memberID, message string) error {
 	var member persistence.Member
 
 	err := n.db.WithTx(ctx, func(tx *sql.Tx) error {
@@ -178,11 +185,11 @@ func (n *orgNotifier) NotifyOperator(ctx context.Context, memberID, message stri
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("recherche de l'exploitant: %w", err)
+		return fmt.Errorf("recherche du membre: %w", err)
 	}
 
 	if !member.Linked() {
-		return fmt.Errorf("l'exploitant %q n'a pas de conversation privée", memberID)
+		return fmt.Errorf("le membre %q n'a pas de conversation privée", memberID)
 	}
 
 	providerName := n.resolveProviderName(member.Provider)
@@ -199,7 +206,7 @@ func (n *orgNotifier) NotifyOperator(ctx context.Context, memberID, message stri
 	)
 
 	if err := provider.Send(ctx, outgoing); err != nil {
-		return fmt.Errorf("envoi de l'alerte: %w", err)
+		return fmt.Errorf("envoi du message: %w", err)
 	}
 
 	return nil
