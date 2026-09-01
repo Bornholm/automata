@@ -204,6 +204,21 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		}
 	}
 
+	// Mention vocale à confirmer : le pipeline a laissé passer un vocal de
+	// groupe non adressé pour que la mention soit cherchée dans son
+	// contenu. Si le nom de l'assistant n'y figure pas, le tour s'arrête
+	// ICI — avant toute persistance et sans consulter le modèle : rien de
+	// ce vocal n'est conservé, comme si le message n'avait jamais existé.
+	// L'échec de la vérification (pas d'audio, transcription vide) vaut
+	// silence, jamais traitement : dans le doute, un vocal de groupe n'est
+	// pas adressé à l'assistant.
+	if name, required := model.VoiceMentionRequired(ctx); required {
+		if !containsSpokenName(text, name) {
+			h.metrics.IncMessagesIgnoredNoMention()
+			return "", nil, nil
+		}
+	}
+
 	// Pièces jointes non vocales du message courant. Celles qui sont écartées
 	// (type refusé, trop volumineuses) ne disparaissent pas en silence : elles
 	// sont annoncées à l'agent, qui peut alors l'expliquer plutôt que de
@@ -540,4 +555,14 @@ func explainAudioFailure(err error) error {
 	default:
 		return err
 	}
+}
+
+// containsSpokenName cherche le nom de l'assistant dans une transcription,
+// sans tenir compte de la casse : une transcription écrit « automata »
+// aussi souvent qu'« Automata ».
+func containsSpokenName(text, name string) bool {
+	if strings.TrimSpace(text) == "" || strings.TrimSpace(name) == "" {
+		return false
+	}
+	return strings.Contains(strings.ToLower(text), strings.ToLower(name))
 }

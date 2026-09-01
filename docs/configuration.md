@@ -931,14 +931,29 @@ accès. Un canal privé exige `principal_id`, un canal de groupe exige
 mention, aucun appel au modèle.
 
 La mention porte sur la rafale, pas sur le seul message : une mention écrite
-par quelqu'un adresse aussi ses messages voisins immédiats. C'est ce qui rend
-un vocal utilisable en groupe, car un message audio ne peut porter aucune
-mention — sur WhatsApp, il n'a pas de légende. Le geste est donc d'envoyer le
-vocal puis d'écrire « @assistant … » : les deux ne font qu'un seul tour, le
-texte servant de légende au vocal. L'assistant patiente une quinzaine de
-secondes après un média de groupe non adressé pour laisser le temps de taper
-cette mention ; ce sursis ne s'ouvre que dans ce cas précis, jamais en
-conversation privée ni pour un simple texte.
+par quelqu'un adresse aussi ses messages voisins immédiats. L'assistant
+patiente une quinzaine de secondes après un média de groupe non adressé pour
+laisser le temps de taper cette mention ; ce sursis ne s'ouvre que dans ce
+cas précis, jamais en conversation privée ni pour un simple texte.
+
+**Les vocaux ont leur propre règle.** Un message audio ne peut porter aucune
+mention — sur WhatsApp, il n'a pas de légende. Deux gestes le rendent
+adressé :
+
+- **prononcer le nom de l'assistant dans le vocal** (« Automata, quel temps
+  fera-t-il samedi ? ») : chaque vocal du groupe est transcrit et le nom y
+  est cherché, sans tenir compte de la casse. Absent, le tour s'arrête là —
+  aucune réponse, rien en base, aucun indicateur de saisie : le vocal a été
+  écouté puis oublié ;
+- **écrire « @assistant » juste après le vocal** : la mention voisine vaut,
+  et les deux messages forment un seul tour.
+
+Le premier geste a un coût et une implication à connaître : **tout vocal du
+groupe est transcrit**, y compris ceux qui ne s'adressent pas à l'assistant
+(la transcription des non-adressés est immédiatement jetée, jamais
+persistée, jamais soumise au modèle de conversation). C'est le prix d'une
+mention orale ; la transcription est facturée à l'organisation comme les
+autres. Le nom cherché est le nom affiché du compte de l'assistant.
 
 `resources` associe la portée aux identifiants externes réels. Ces
 identifiants ne sont jamais montrés au modèle ni acceptés de sa part :

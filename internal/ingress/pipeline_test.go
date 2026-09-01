@@ -933,6 +933,9 @@ type recordingHandler struct {
 	mu       sync.Mutex
 	contents []string
 	parts    [][]string
+	// voiceChecks relève, pour chaque tour, le nom exigé par le marqueur
+	// de mention vocale ("" pour un tour ordinaire).
+	voiceChecks []string
 }
 
 func (h *recordingHandler) Handle(ctx context.Context, identity model.ExecutionIdentity, conversation model.Conversation, message courier.Message) (string, []media.Media, error) {
@@ -948,12 +951,23 @@ func (h *recordingHandler) Handle(ctx context.Context, identity model.ExecutionI
 		}
 	}
 
+	requiredName, _ := model.VoiceMentionRequired(ctx)
+
 	h.mu.Lock()
 	h.contents = append(h.contents, content)
 	h.parts = append(h.parts, names)
+	h.voiceChecks = append(h.voiceChecks, requiredName)
 	h.mu.Unlock()
 
 	return "", nil, nil
+}
+
+// VoiceChecks relève le marqueur de mention vocale de chaque tour.
+func (h *recordingHandler) VoiceChecks() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	return append([]string(nil), h.voiceChecks...)
 }
 
 // Parts relève, pour chaque tour, le nom des parts autres que la principale
@@ -1092,7 +1106,7 @@ func deliverGroupVoice(t *testing.T, provider *readyProvider, funcs ...courier.B
 	t.Helper()
 
 	options := append([]courier.BaseMessageOptionFunc{
-		courier.WithMessagePart(courier.NewMessagePart("vocal.ogg", "audio/ogg", courier.OpenerFromString("octets"))),
+		courier.WithMessagePart(courier.NewAttachment("vocal.ogg", "audio/ogg", courier.OpenerFromString("octets"))),
 	}, funcs...)
 
 	msg := courier.NewMessage(
@@ -1182,9 +1196,11 @@ func TestPipeline_GroupVoiceMentionArrivesAfterCoalesceWindow(t *testing.T) {
 	}
 }
 
-// Le sursis ne rend pas l'assistant bavard : un vocal que personne ne lui
-// adresse reste ignoré, comme n'importe quel message de groupe sans mention.
-func TestPipeline_GroupVoiceWithoutMentionStillIgnored(t *testing.T) {
+// Un vocal de groupe sans mention n'est plus jeté par le pipeline : il
+// continue jusqu'au handler AVEC le marqueur de mention vocale — c'est la
+// transcription qui décidera. Le texte voisin non adressé, lui, reste
+// ignoré comme avant.
+func TestPipeline_GroupVoiceWithoutMentionIsHandedOverForTranscriptionCheck(t *testing.T) {
 	handler := &recordingHandler{}
 	pipeline, provider := newCoalescingTestPipeline(t, handler, 100*time.Millisecond)
 	pipeline.WithMentionGraceWindow(300 * time.Millisecond)
@@ -1196,9 +1212,59 @@ func TestPipeline_GroupVoiceWithoutMentionStillIgnored(t *testing.T) {
 	deliverGroupVoice(t, provider)
 	deliverGroupText(t, provider, "c'était rigolo hier")
 
-	time.Sleep(1 * time.Second)
+	// Le vocal atteint le handler, marqué ; le texte non adressé, jamais.
+	if !waitUntil(t, 3*time.Second, func() bool { return len(handler.Contents()) == 1 }) {
+		t.Fatalf("tours = %d, un attendu (le vocal, marqué)", len(handler.Contents()))
+	}
+	checks := handler.VoiceChecks()
+	if len(checks) != 1 || checks[0] == "" {
+		t.Errorf("marqueur de mention vocale absent : %v", checks)
+	}
+	if parts := handler.Parts(); len(parts) != 1 || !slices.Contains(parts[0], "vocal.ogg") {
+		t.Errorf("le tour marqué devrait porter le vocal, parts = %v", parts)
+	}
 
+	time.Sleep(300 * time.Millisecond)
+	if got := len(handler.Contents()); got != 1 {
+		t.Errorf("tours = %d, le texte non adressé ne doit pas être traité", got)
+	}
+}
+
+// Un TEXTE de groupe sans mention reste ignoré : l'exception ne vaut que
+// pour les vocaux, qui ne peuvent pas porter de mention.
+func TestPipeline_GroupTextWithoutMentionStillIgnored(t *testing.T) {
+	handler := &recordingHandler{}
+	pipeline, provider := newCoalescingTestPipeline(t, handler, 100*time.Millisecond)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	deliverGroupText(t, provider, "on se retrouve à 18h ?")
+
+	time.Sleep(600 * time.Millisecond)
 	if got := len(handler.Contents()); got != 0 {
-		t.Errorf("tours traités = %d, attendu 0 (vocal de groupe non adressé)", got)
+		t.Errorf("tours = %d, attendu 0 (texte de groupe sans mention)", got)
+	}
+}
+
+// Un vocal adressé par une mention voisine n'est PAS marqué : la mention
+// écrite suffit, la transcription n'a rien à vérifier.
+func TestPipeline_AdjacentMentionSkipsTheVoiceCheck(t *testing.T) {
+	handler := &recordingHandler{}
+	pipeline, provider := newCoalescingTestPipeline(t, handler, 150*time.Millisecond)
+	stop := runPipeline(t, pipeline)
+	defer stop()
+
+	provider.waitReady(t)
+
+	deliverGroupVoice(t, provider)
+	deliverGroupText(t, provider, "@assistant écoute ça", selfMention())
+
+	if !waitUntil(t, 3*time.Second, func() bool { return len(handler.Contents()) == 1 }) {
+		t.Fatalf("tours = %d, un attendu", len(handler.Contents()))
+	}
+	if checks := handler.VoiceChecks(); checks[0] != "" {
+		t.Errorf("marqueur inattendu %q : la mention écrite dispensait de vérifier", checks[0])
 	}
 }

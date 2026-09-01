@@ -19,6 +19,7 @@ import (
 	"github.com/bornholm/go-courier"
 
 	"github.com/bornholm/automata/internal/apperr"
+	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
@@ -590,10 +591,8 @@ func (p *Pipeline) processBatch(ctx context.Context, self courier.User, msgs []c
 	if conversation.Kind == model.ChannelGroup {
 		// Une seule mention du même expéditeur suffit, où qu'elle se trouve
 		// dans la rafale : les messages voisins sont le contexte de
-		// celle-ci. Cette portée est ce qui rend un vocal adressable — il ne
-		// peut porter aucune mention lui-même, seul un message voisin le
-		// peut. Sans aucune mention, tout le groupe est ignoré, comme chaque
-		// message l'aurait été isolément.
+		// celle-ci. Sans aucune mention, tout le groupe est ignoré, comme
+		// chaque message l'aurait été isolément.
 		mentioned := false
 		for _, msg := range msgs {
 			if courier.IsMentioned(msg, self.ID()) || addressed[originOf(msg)] {
@@ -603,11 +602,22 @@ func (p *Pipeline) processBatch(ctx context.Context, self courier.User, msgs []c
 		}
 
 		if !mentioned {
-			for range msgs {
-				p.metrics.IncMessagesIgnoredNoMention()
+			// Exception : un VOCAL ne peut porter aucune mention — sur
+			// WhatsApp, un audio n'a pas de légende. La mention se cherche
+			// alors dans son contenu : le message continue jusqu'au handler
+			// avec le marqueur de mention vocale, et le tour s'arrête après
+			// la transcription si le nom de l'assistant n'y figure pas.
+			// Coût assumé : chaque vocal du groupe est transcrit. Rien
+			// n'en est conservé quand la mention manque.
+			if batchHasAudio(msgs) {
+				ctx = model.ContextWithVoiceMentionRequired(ctx, voiceMentionName(self))
+			} else {
+				for range msgs {
+					p.metrics.IncMessagesIgnoredNoMention()
+				}
+				p.logger.InfoContext(ctx, "ingress: message de groupe ignoré (assistant non mentionné)", logCtx...)
+				return
 			}
-			p.logger.InfoContext(ctx, "ingress: message de groupe ignoré (assistant non mentionné)", logCtx...)
-			return
 		}
 	}
 
@@ -666,7 +676,14 @@ func (p *Pipeline) processBatch(ctx context.Context, self courier.User, msgs []c
 // enregistre le statut final de chaque identifiant de messageIDs (plusieurs
 // pour un message fusionné depuis une rafale).
 func (p *Pipeline) handleResolved(ctx context.Context, self courier.User, execIdentity model.ExecutionIdentity, conversation model.Conversation, msg courier.Message, messageIDs []string, logCtx []any) {
-	stopTyping := p.startTyping(ctx, msg.Channel().ChannelID(), logCtx)
+	// Pas d'indicateur de saisie tant qu'une mention vocale n'est pas
+	// confirmée : « Automata est en train d'écrire » à chaque vocal du
+	// groupe révélerait qu'il les écoute tous — y compris ceux qui ne lui
+	// sont pas adressés et dont rien n'est conservé.
+	stopTyping := func() {}
+	if _, verifying := model.VoiceMentionRequired(ctx); !verifying {
+		stopTyping = p.startTyping(ctx, msg.Channel().ChannelID(), logCtx)
+	}
 
 	handleCtx, cancelHandle := context.WithTimeout(ctx, handleTimeout)
 	reply, attachments, err := p.handler.Handle(handleCtx, execIdentity, conversation, msg)
@@ -867,4 +884,23 @@ func (p *Pipeline) markFinal(ctx context.Context, messageID, status string, logC
 	if err != nil {
 		p.logger.ErrorContext(ctx, "ingress: échec de l'enregistrement du statut final du message", append(logCtx, "status", status, "error", err)...)
 	}
+}
+
+// batchHasAudio indique si la rafale contient au moins un message vocal.
+func batchHasAudio(msgs []courier.Message) bool {
+	for _, msg := range msgs {
+		if _, found := audio.FindAudio(msg); found {
+			return true
+		}
+	}
+	return false
+}
+
+// voiceMentionName est le nom à chercher dans une transcription : le nom
+// affiché de l'assistant, celui par lequel on l'appelle à voix haute.
+func voiceMentionName(self courier.User) string {
+	if self != nil && strings.TrimSpace(self.DisplayName()) != "" {
+		return strings.TrimSpace(self.DisplayName())
+	}
+	return "Automata"
 }
