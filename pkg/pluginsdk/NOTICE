@@ -1,0 +1,12 @@
+Automata plugin SDK
+Copyright 2026 William Petit
+
+This module (github.com/bornholm/automata/pkg/pluginsdk) is licensed under
+the Apache License, Version 2.0, unlike the rest of the Automata repository,
+which is licensed under the GNU Affero General Public License v3.0.
+
+The distinction is deliberate: a plugin only ever links against this SDK
+(the gRPC contract and its helpers), never against Automata itself. Choosing
+a permissive license here lets anyone write and distribute plugins under the
+terms of their choice, closed source included, while Automata itself stays
+copyleft.

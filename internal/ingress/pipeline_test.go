@@ -628,7 +628,7 @@ func (h *deadlineCapturingHandler) result() (bool, time.Time) {
 
 // TestPipeline_HandleContextIsBounded vérifie que le ctx transmis à
 // Handler.Handle porte une échéance bornée, jamais le ctx non borné de
-// Pipeline.Run (PLAN.md Phase 19, point 8 "timeouts réseau") : sans cela,
+// Pipeline.Run (plan de conception, Phase 19, point 8 "timeouts réseau") : sans cela,
 // un appel LLM/MCP qui ne répond jamais bloquerait indéfiniment le
 // traitement de tous les messages suivants du même fournisseur, la boucle
 // de Pipeline.Run étant strictement séquentielle.

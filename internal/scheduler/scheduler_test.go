@@ -164,7 +164,7 @@ func newRegistry(agents map[string]agent.Agent) *agent.Registry {
 }
 
 // proposingAgent est un agent factice qui répond reply et propose proposed
-// (PLAN.md §17).
+// (plan de conception, §17).
 func proposingAgent(reply string, proposed []delegation.ProposedAction) *fakeAgent {
 	return newFakeAgent(func(ctx context.Context, req agent.Request) (agent.Result, error) {
 		return agent.Result{Reply: reply, ProposedActions: proposed}, nil
@@ -195,7 +195,7 @@ func confirmationConfig() *config.Config {
 // requireConfirmationSchedule construit un schedule config.Schedule dont la
 // politique d'actions est require_confirmation, livré sur un canal de
 // groupe (provider/channelID donnés), pour que le confirmateur humain n'ait
-// pas besoin d'être l'auteur du plan (PLAN.md §10.5 authorizeConfirmer :
+// pas besoin d'être l'auteur du plan (plan de conception, §10.5 authorizeConfirmer :
 // seule la portée personal restreint au créateur).
 func requireConfirmationSchedule(id, cronExpr, timezone, agentName, providerName, channelID string) config.Schedule {
 	sched := baseSchedule(id, cronExpr, timezone, agentName, providerName)
@@ -448,7 +448,7 @@ func TestScheduler_Tick_DaylightSavingTransition(t *testing.T) {
 }
 
 // TestScheduler_Tick_DaylightSavingNonexistentHourSkipped couvre le cas
-// "heures inexistantes" exigé par PLAN.md §11.7 : le 31/03/2024 en
+// "heures inexistantes" exigé par plan de conception, §11.7 : le 31/03/2024 en
 // Europe/Paris, l'heure murale 02:30 n'existe pas (saut direct de 02:00 à
 // 03:00). L'occurrence de ce jour-là doit être purement et simplement
 // sautée, sans être rattrapée ni décalée sur une autre heure.
@@ -509,7 +509,7 @@ func TestScheduler_Tick_DaylightSavingNonexistentHourSkipped(t *testing.T) {
 }
 
 // TestScheduler_Tick_DaylightSavingRepeatedHourRunsOnce couvre le cas
-// "heures répétées" exigé par PLAN.md §11.7, et avec lui la règle
+// "heures répétées" exigé par plan de conception, §11.7, et avec lui la règle
 // fondamentale §2.3 (10) : le 27/10/2024 en Europe/Paris, l'heure murale
 // 02:30 est vécue deux fois (02:30+02:00 puis 02:30+01:00, soit 00:30Z et
 // 01:30Z). cron.Next produit ces deux instants et, scheduled_for étant
@@ -745,7 +745,7 @@ func TestScheduler_Tick_Timeout(t *testing.T) {
 // survenu PENDANT une exécution planifiée : l'ancienne exécution est restée
 // bloquée en "running" (le crash a empêché le defer/cancel de
 // context.WithTimeout d'invoquer failRun) depuis plus longtemps que
-// Concurrency.Timeout. PLAN.md §18, "redémarrage pendant cron" : le
+// Concurrency.Timeout. plan de conception, §18, "redémarrage pendant cron" : le
 // prochain Tick doit détecter ce verrou périmé, le récupérer, et déclencher
 // normalement la nouvelle occurrence due (au lieu de rester bloqué
 // indéfiniment par la politique de concurrence "forbid").
@@ -782,7 +782,7 @@ func TestScheduler_Tick_RestartDuringCron(t *testing.T) {
 	}
 }
 
-// TestScheduler_Tick_StaleLockErrorCode vérifie explicitement (PLAN.md §18,
+// TestScheduler_Tick_StaleLockErrorCode vérifie explicitement (plan de conception, §18,
 // "verrou périmé") que l'exécution "running" périmée est marquée "failed"
 // avec l'error_code dédié "stale_lock_recovered".
 func TestScheduler_Tick_StaleLockErrorCode(t *testing.T) {
@@ -890,7 +890,7 @@ func TestScheduler_Tick_MinimalPermissionsIdentity(t *testing.T) {
 	// via internal/authorization n'est nécessaire ici, puisque le
 	// principal, la portée et son identifiant sont fixés par l'opérateur
 	// dans schedules[].execution, jamais dérivés d'un contenu utilisateur
-	// ou LLM (voir PLAN.md §11.2, §3.2).
+	// ou LLM (plan de conception, §11.2, §3.2).
 	if fake.lastIdentity.Trigger != model.TriggerCron {
 		t.Errorf("identity.Trigger: got %q, expected %q", fake.lastIdentity.Trigger, model.TriggerCron)
 	}
@@ -1078,7 +1078,7 @@ func insertRunningScheduledRun(t *testing.T, db *persistence.DB, scheduleID, sch
 
 // insertRunningScheduledRunAt insère, comme insertRunningScheduledRun, une
 // exécution "running", mais avec un started_at explicite (au lieu de
-// time.Now()) : nécessaire pour simuler un verrou périmé (PLAN.md §18),
+// time.Now()) : nécessaire pour simuler un verrou périmé (plan de conception, §18),
 // c'est-à-dire une exécution "running" depuis plus longtemps que
 // Concurrency.Timeout par rapport à l'horloge (fake) du Scheduler sous
 // test.

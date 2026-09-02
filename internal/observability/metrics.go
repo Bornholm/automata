@@ -1,16 +1,16 @@
 // Package observability fournit un registre de métriques applicatives en
-// mémoire (PLAN.md §14.3) et un serveur HTTP local optionnel exposant la
+// mémoire (plan de conception, §14.3) et un serveur HTTP local optionnel exposant la
 // santé du processus (liveness/readiness) et un export JSON de ces
-// métriques (PLAN.md Phase 20).
+// métriques (plan de conception, Phase 20).
 //
 // Choix délibéré : aucune dépendance externe (pas de client Prometheus).
 // Un registre de compteurs atomiques et d'agrégats de latence simples
 // (somme, compte, min, max — pas un histogramme complet) suffit à
 // diagnostiquer une panne sans lire le contenu des conversations privées
 // (AGENTS.md, "ne pas journaliser les contenus privés"), et reste
-// entièrement dans la stdlib (sync/atomic), conformément à PLAN.md §4.2.
+// entièrement dans la stdlib (sync/atomic), conformément à plan de conception, §4.2.
 // L'export au format texte Prometheus n'est pas fourni : ce serait un
-// travail supplémentaire non demandé explicitement par PLAN.md §14.3 (qui
+// travail supplémentaire non demandé explicitement par plan de conception, §14.3 (qui
 // ne prescrit aucun format particulier) ; un export JSON simple, servi par
 // /metrics, est suffisant pour l'exploitation et beaucoup plus simple à
 // produire et à faire évoluer.
@@ -160,7 +160,7 @@ func (m *Metrics) IncMessagesReceived() {
 }
 
 // IncMessagesIgnoredNoMention incrémente le compteur de messages de groupe
-// ignorés faute de mention explicite de l'assistant (PLAN.md §3.3).
+// ignorés faute de mention explicite de l'assistant (plan de conception, §3.3).
 func (m *Metrics) IncMessagesIgnoredNoMention() {
 	if m == nil {
 		return
@@ -198,7 +198,7 @@ func (m *Metrics) IncDuplicateMessage() {
 }
 
 // ObserveTranscriptionLatency enregistre la durée d'une transcription audio
-// (PLAN.md §3.4).
+// (plan de conception, §3.4).
 func (m *Metrics) ObserveTranscriptionLatency(d time.Duration) {
 	if m == nil {
 		return

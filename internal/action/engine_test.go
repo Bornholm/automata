@@ -198,7 +198,7 @@ var _ memory.Store = &fakeMemoryStore{}
 
 // fakeExecutor est un action.Executor factice, permettant de tester
 // l'exécution d'actions "MCP-like" sans transport réel (autorisé par
-// PLAN.md Phase 15, "un exécuteur fake injectable si c'est plus simple").
+// plan de conception, Phase 15, "un exécuteur fake injectable si c'est plus simple").
 type fakeExecutor struct {
 	mu    sync.Mutex
 	calls int
@@ -594,7 +594,7 @@ func TestEngine_DoubleConfirmation(t *testing.T) {
 		t.Fatalf("suppression unique attendue, obtenu: %v", store.forgotten)
 	}
 
-	// PLAN.md §10.4 : aucun plan actif restant, donc "aucun plan" plutôt
+	// plan de conception, §10.4 : aucun plan actif restant, donc "aucun plan" plutôt
 	// qu'une double exécution.
 	report, err = engine.HandleCommand(context.Background(), identity, conv, cmd)
 	if err != nil {
@@ -610,7 +610,7 @@ func TestEngine_DoubleConfirmation(t *testing.T) {
 
 // TestEngine_ConcurrentConfirmationExecutesOnce vérifie que deux
 // confirmations simultanées du même plan ne déclenchent qu'une seule
-// exécution (PLAN.md §10.5 point 2, "empêcher les doubles exécutions").
+// exécution (plan de conception, §10.5 point 2, "empêcher les doubles exécutions").
 //
 // Le pipeline d'ingress traite aujourd'hui les messages d'une conversation
 // séquentiellement, ce qui rend ce scénario inatteignable en production :
@@ -719,7 +719,7 @@ func TestEngine_PermissionsRetirees(t *testing.T) {
 
 	// Au moment de la confirmation, un nouvel Engine est construit sur la
 	// MÊME base avec un autorizer où memory.personal.delete a été retiré du
-	// rôle d'alice (memory.personal.write reste accordé) : PLAN.md §10.5,
+	// rôle d'alice (memory.personal.write reste accordé) : plan de conception, §10.5,
 	// "ne jamais faire confiance uniquement à l'autorisation obtenue lors
 	// de la proposition".
 	authorizerAtConfirm := authorization.NewAuthorizer(appConfig(false))

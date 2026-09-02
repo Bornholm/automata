@@ -46,17 +46,17 @@ func TestPrincipalInOrganization(t *testing.T) {
 	cfg := &Config{
 		Organization: Organization{ID: "home", DisplayName: "Maison"},
 		Identities: Identities{
-			Principals: []Principal{{ID: "wpetit", Kind: PrincipalKindHuman}},
+			Principals: []Principal{{ID: "alice", Kind: PrincipalKindHuman}},
 		},
 	}
 
-	if !cfg.PrincipalInOrganization("wpetit", "home") {
+	if !cfg.PrincipalInOrganization("alice", "home") {
 		t.Error("mono-organisation: le principal doit appartenir à l'organisation unique")
 	}
 
 	cfg.Organizations = []Organization{{ID: "home"}, {ID: "work"}}
 	cfg.Identities.Principals = []Principal{
-		{ID: "wpetit", Kind: PrincipalKindHuman, Orgs: []string{"home", "work"}},
+		{ID: "alice", Kind: PrincipalKindHuman, Orgs: []string{"home", "work"}},
 		{ID: "yann", Kind: PrincipalKindHuman, Orgs: []string{"work"}},
 	}
 
@@ -88,14 +88,14 @@ func TestValidateChannels_ChecksOrganizationMembership(t *testing.T) {
 		Organizations: []Organization{{ID: "home"}, {ID: "work"}},
 		Identities: Identities{
 			Principals: []Principal{
-				{ID: "wpetit", Kind: PrincipalKindHuman, Orgs: []string{"home", "work"}},
+				{ID: "alice", Kind: PrincipalKindHuman, Orgs: []string{"home", "work"}},
 				{ID: "yann", Kind: PrincipalKindHuman, Orgs: []string{"work"}},
 			},
 		},
 		Channels: []Channel{
-			{Provider: "whatsapp", ChannelID: "a", Kind: ChannelKindPrivate, OrgID: "maison", Scope: ScopePersonal, PrincipalID: "wpetit"},
-			{Provider: "whatsapp", ChannelID: "b", Kind: ChannelKindGroup, OrgID: "home", Scope: ScopeGroup, Activation: "mention", Members: []string{"wpetit", "yann"}},
-			{Provider: "whatsapp", ChannelID: "c", Kind: ChannelKindPrivate, Scope: ScopePersonal, PrincipalID: "wpetit"},
+			{Provider: "whatsapp", ChannelID: "a", Kind: ChannelKindPrivate, OrgID: "maison", Scope: ScopePersonal, PrincipalID: "alice"},
+			{Provider: "whatsapp", ChannelID: "b", Kind: ChannelKindGroup, OrgID: "home", Scope: ScopeGroup, Activation: "mention", Members: []string{"alice", "yann"}},
+			{Provider: "whatsapp", ChannelID: "c", Kind: ChannelKindPrivate, Scope: ScopePersonal, PrincipalID: "alice"},
 		},
 	}
 
@@ -110,7 +110,7 @@ func TestValidateIdentities_RequiresExplicitOrgsWhenSeveralDeclared(t *testing.T
 		Organizations: []Organization{{ID: "home"}, {ID: "work"}},
 		Identities: Identities{
 			Principals: []Principal{
-				{ID: "wpetit", Kind: PrincipalKindHuman},
+				{ID: "alice", Kind: PrincipalKindHuman},
 				{ID: "yann", Kind: PrincipalKindHuman, Orgs: []string{"bureau"}},
 			},
 		},

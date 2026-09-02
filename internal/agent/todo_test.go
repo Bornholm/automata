@@ -21,7 +21,7 @@ import (
 // list_tasks (lecture) et create_task (écriture, avec échec simulé si
 // title == "FAIL"). Même approche que internal/agent/agenda_test.go (Phase
 // 13) : aucun vrai serveur MCP de gestion de tâches n'est disponible dans ce
-// dépôt (PLAN.md Phase 14).
+// dépôt (plan de conception, Phase 14).
 
 type listTasksParams struct {
 	ListID string `json:"list_id"`
@@ -315,7 +315,7 @@ func TestTodoToolAgent_MultipleCreatesProposedNotExecuted(t *testing.T) {
 
 	// Les trois actions remontent ensemble à l'orchestrateur : elles
 	// formeront UN seul plan, confirmé d'un coup et exécuté séquentiellement
-	// dans cet ordre par internal/action.Engine (PLAN.md §6.4, Phase 15).
+	// dans cet ordre par internal/action.Engine (plan de conception, §6.4, Phase 15).
 	if len(result.ProposedActions) != 3 {
 		t.Fatalf("actions proposées: got %d, expected 3", len(result.ProposedActions))
 	}
@@ -333,7 +333,7 @@ func TestTodoToolAgent_MultipleCreatesProposedNotExecuted(t *testing.T) {
 		if got.RequiredPermission != "todo.personal.write" {
 			t.Errorf("action %d: permission = %q, attendu todo.personal.write", i+1, got.RequiredPermission)
 		}
-		// Résolu à la confirmation, jamais figé (PLAN.md §10.5 point 6).
+		// Résolu à la confirmation, jamais figé (plan de conception, §10.5 point 6).
 		if _, present := got.Arguments["list_id"]; present {
 			t.Errorf("action %d: list_id ne doit jamais être figé dans une action proposée", i+1)
 		}

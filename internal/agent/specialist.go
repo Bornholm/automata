@@ -47,7 +47,7 @@ func (s *AgentSpecialist) RequiresAttachments() bool {
 // req.RelevantInput et req.Constraints (explicitement fournis par
 // l'orchestrateur) composent l'entrée envoyée à l'agent sous-jacent. Aucun
 // historique de la conversation principale n'est transmis (Request.History
-// reste vide) : c'est la garantie d'isolation exigée par PLAN.md §6.3, "le
+// reste vide) : c'est la garantie d'isolation exigée par plan de conception, §6.3, "le
 // sous-agent ne doit pas recevoir automatiquement l'intégralité de
 // l'historique".
 // Les pièces jointes du tour courant font exception à cette limitation et

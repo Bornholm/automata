@@ -252,7 +252,7 @@ func validateAgents(cfg *Config) []error {
 // strictement positive. Une limite à zéro ou négative n'a pas de sens
 // applicatif (elle interdirait tout appel ou tolérerait une taille
 // négative) : elle doit être rejetée explicitement plutôt que silencieusement
-// désactivée (PLAN.md Phase 7, §6.2 "ses limites").
+// désactivée (plan de conception, Phase 7, §6.2 "ses limites").
 func validateAgentLimits(prefix string, limits AgentLimits) []error {
 	var errs []error
 

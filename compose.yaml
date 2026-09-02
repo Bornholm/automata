@@ -1,4 +1,4 @@
-# compose.yaml — deploiement local Automata (PLAN.md Phase 22).
+# compose.yaml — deploiement local Automata (plan de conception, Phase 22).
 #
 # Prerequis : construire l'image avec `docker build -t automata:local .`
 # (aucun contexte supplementaire n'est necessaire), ou remplacer `image:`

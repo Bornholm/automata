@@ -12,7 +12,7 @@ import (
 
 // memoryForgetExecutor exécute l'action interne MemoryForgetTool
 // ("memory.forget") en appelant memory.Store.Forget, après avoir revérifié
-// que la mémoire existe toujours dans la portée du plan (PLAN.md §10.5
+// que la mémoire existe toujours dans la portée du plan (plan de conception, §10.5
 // point 6, "résoudre à nouveau les ressources" — pour la mémoire, la
 // "ressource" à résoudre à nouveau est son existence même dans la portée
 // visée, puisqu'aucun identifiant de ressource externe n'entre en jeu).
@@ -86,7 +86,7 @@ var _ Executor = &mcpExecutor{}
 
 // idempotencyKeyPropertyNames énumère, par ordre de préférence, les noms de
 // propriété conventionnels sous lesquels un serveur MCP peut déclarer
-// accepter une clé d'idempotence (PLAN.md §18, "ajouter des clés
+// accepter une clé d'idempotence (plan de conception, §18, "ajouter des clés
 // d'idempotence aux actions MCP lorsque possible"). Le premier nom présent
 // dans le schéma du outil l'emporte.
 var idempotencyKeyPropertyNames = []string{"idempotency_key", "client_request_id", "request_id"}
@@ -116,7 +116,7 @@ func idempotencyKeyProperty(schema map[string]any) (string, bool) {
 // actionID sous la propriété conventionnelle déclarée par schema, si une
 // telle propriété existe (voir idempotencyKeyProperty). N'alloue et ne
 // modifie rien si schema n'en déclare aucune : args est alors retourné tel
-// quel (PLAN.md §18, injection "lorsque possible" seulement).
+// quel (plan de conception, §18, injection "lorsque possible" seulement).
 func withIdempotencyKey(args map[string]any, schema map[string]any, actionID string) map[string]any {
 	name, ok := idempotencyKeyProperty(schema)
 	if !ok {

@@ -31,7 +31,7 @@ var _ agent.Agent = fixedReplyAgent{}
 
 // spyTranscriber est un audio.Transcriber de test qui enregistre le nombre
 // d'appels, pour prouver que la lecture du média n'a jamais lieu avant la
-// vérification de mention en groupe (PLAN.md §3.3, §3.4).
+// vérification de mention en groupe (plan de conception, §3.3, §3.4).
 type spyTranscriber struct {
 	calls      int
 	transcript string

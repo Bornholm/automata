@@ -20,7 +20,7 @@ import (
 	"github.com/bornholm/automata/internal/model"
 )
 
-// TestPrivate_Text vérifie le scénario le plus simple (PLAN.md Phase 21,
+// TestPrivate_Text vérifie le scénario le plus simple (plan de conception, Phase 21,
 // "texte") : un message texte depuis une origine privée connue traverse
 // l'ingress, l'identité, le gestionnaire de conversation et l'agent, et une
 // réponse est bien envoyée.
@@ -43,7 +43,7 @@ func TestPrivate_Text(t *testing.T) {
 	}
 }
 
-// TestPrivate_Audio vérifie le scénario "audio" (PLAN.md §3.4, Phase 9) : une
+// TestPrivate_Audio vérifie le scénario "audio" (plan de conception, §3.4, Phase 9) : une
 // note vocale est transcrite puis traitée comme du texte, mais seul un
 // placeholder neutre est persisté en base, jamais la transcription brute.
 func TestPrivate_Audio(t *testing.T) {
@@ -400,7 +400,7 @@ func (a *mediaProducingAgent) Execute(ctx context.Context, req agent.Request) (a
 // seulement alors que l'appel MCP réel a lieu.
 //
 // Le point vérifié en propre est la résolution tardive de la ressource
-// (PLAN.md §10.5 point 6) : l'identifiant de calendrier n'est jamais figé
+// (plan de conception, §10.5 point 6) : l'identifiant de calendrier n'est jamais figé
 // dans l'action persistée, il est réinjecté depuis la portée du plan au
 // moment d'exécuter. C'est ce qui garantit qu'une action confirmée écrit
 // dans le calendrier courant de sa portée, et pas dans celui qu'un modèle

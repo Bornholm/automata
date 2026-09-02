@@ -1,6 +1,6 @@
 # Inventaire d'intégration — Phase 0
 
-Ce document remplace les hypothèses du plan (`PLAN.md`, section 4.3 « Interfaces
+Ce document remplace les hypothèses du plan (`le plan de conception`, section 4.3 « Interfaces
 applicatives principales » et section 8.1 « Extension requise ») par les API
 réellement exposées par `go-courier`, `genai` et `amoxtli`, telles qu'elles
 existent dans les dépôts locaux au 2026-08-15.

@@ -30,7 +30,7 @@ const taskExecutionTimeout = 5 * time.Minute
 //   - les actions sensibles proposées pendant le tour sont IGNORÉES. Une
 //     tâche s'exécute sans personne devant l'écran : rien ne doit pouvoir
 //     écrire dehors sans confirmation humaine. C'est la même politique que
-//     read_only côté schedules (PLAN.md §11.3).
+//     read_only côté schedules (plan de conception, §11.3).
 type TaskRunner struct {
 	cfg    *config.Config
 	agents *Registry

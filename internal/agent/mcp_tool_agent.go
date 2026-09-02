@@ -30,7 +30,7 @@ import (
 var ErrMaxToolCallsReached = errors.New("agent: plafond d'appels d'outils mcp atteint sans réponse finale du modèle")
 
 // urlPattern extrait des URLs depuis un résultat d'outil MCP quelconque. Une
-// regex simple suffit (PLAN.md Phase 12, "normaliser les références
+// regex simple suffit (plan de conception, Phase 12, "normaliser les références
 // retournées") : aucun format de réponse MCP spécifique n'est supposé
 // puisque le serveur réel appelé par un agent configuré est inconnu du
 // code. La ponctuation de fin de phrase usuelle (., ; ) ] etc.) est retirée
@@ -38,13 +38,13 @@ var ErrMaxToolCallsReached = errors.New("agent: plafond d'appels d'outils mcp at
 var urlPattern = regexp.MustCompile(`https?://\S+`)
 
 // MCPToolAgent est un agent spécialiste dont les outils sont exclusivement
-// ceux des serveurs MCP qu'il déclare (PLAN.md §9, §9.3, Phase 12), par
+// ceux des serveurs MCP qu'il déclare (plan de conception, §9, §9.3, Phase 12), par
 // opposition à OrchestratorAgent dont les outils sont des délégations vers
 // d'autres agents. Les deux réutilisent la même mécanique de boucle de
 // tool-calling (runToolLoop, toolloop.go).
 //
 // La récupération des outils MCP se fait à CHAQUE Execute, jamais à la
-// construction (PLAN.md §9.3, "une session MCP distincte par conversation
+// construction (plan de conception, §9.3, "une session MCP distincte par conversation
 // active") : agent.Registry construit les agents une seule fois au
 // démarrage, avant de connaître aucune conversation, donc mcpManager.
 // GetTools doit être appelé par requête, avec une SessionKey dérivée de
@@ -82,7 +82,7 @@ type MCPToolAgent struct {
 // NOMS de serveurs MCP déclarés par l'agent (agentCfg.MCPServers) : Execute
 // n'appellera jamais mcpManager.GetTools pour un autre serveur, ce qui
 // garantit qu'un spécialiste n'a jamais accès aux MCP d'un autre spécialiste
-// (PLAN.md Phase 11, critère de sortie "un spécialiste peut utiliser
+// (plan de conception, Phase 11, critère de sortie "un spécialiste peut utiliser
 // uniquement ses MCP déclarés").
 //
 // cfg fournit la politique de chaque serveur : ressource à injecter,
@@ -296,7 +296,7 @@ func (a *MCPToolAgent) WithOrgSystemPrompts(prompts map[string]string) *MCPToolA
 }
 
 // WithMaxToolContextBytes borne le cumul des résultats d'outils réinjectés
-// dans la conversation durant un tour (PLAN.md §9.4). Une valeur <= 0
+// dans la conversation durant un tour (plan de conception, §9.4). Une valeur <= 0
 // (défaut) laisse ce budget illimité. Retourne a pour permettre le chaînage.
 // WithExtraTools ajoute des outils applicatifs natifs aux outils MCP de cet
 // agent. Retourne a pour permettre le chaînage.

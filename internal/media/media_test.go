@@ -176,7 +176,7 @@ func TestExtract_MaxCountRespected(t *testing.T) {
 
 // TestExtract_VoiceNoteIgnored vérifie que les notes vocales ne passent pas
 // par ce chemin : internal/audio les transcrit sans jamais les conserver
-// (PLAN.md §3.4).
+// (plan de conception, §3.4).
 func TestExtract_VoiceNoteIgnored(t *testing.T) {
 	cfg := defaultTestConfig()
 	cfg.AcceptedTypes = append(cfg.AcceptedTypes, "audio/ogg")

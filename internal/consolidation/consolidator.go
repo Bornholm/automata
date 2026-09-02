@@ -84,7 +84,7 @@ Réponds UNIQUEMENT par un objet JSON de la forme :
 Réponds {"merges": [], "forget": [], "insights": []} s'il n'y a rien à réorganiser.`
 
 // scopeKey regroupe les souvenirs d'une même portée : la consolidation ne
-// franchit JAMAIS une frontière de portée (PLAN.md §8.3) — fusionner un
+// franchit JAMAIS une frontière de portée (plan de conception, §8.3) — fusionner un
 // souvenir personnel avec un souvenir de groupe reviendrait à faire fuir de
 // l'information d'un cloisonnement vers un autre.
 type scopeKey struct {

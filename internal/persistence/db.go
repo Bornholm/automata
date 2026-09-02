@@ -1,6 +1,6 @@
 // Package persistence fournit la persistance transactionnelle applicative
 // d'Automata : ouverture de la base SQLite, migrations et repositories par
-// table. Voir PLAN.md §13.1 pour le schéma conceptuel et la Phase 4 pour les
+// table. Voir plan de conception, §13.1 pour le schéma conceptuel et la Phase 4 pour les
 // travaux attendus.
 package persistence
 
@@ -28,7 +28,7 @@ import (
 // init enregistre un alias "sqlite" pour le driver database/sql fourni par
 // github.com/ncruces/go-sqlite3/driver, qui ne s'enregistre lui-même que
 // sous le nom "sqlite3" (son comportement par défaut, voir la documentation
-// du paquet driver). Or PLAN.md §12 et tous les exemples de configuration
+// du paquet driver). Or plan de conception, §12 et tous les exemples de configuration
 // de ce dépôt (internal/config/testdata/valid/config.yaml,
 // docs/deployment.md) utilisent systématiquement "storage.application.driver:
 // sqlite" — sans le "3". Sans cet alias, une configuration suivant cette
@@ -111,7 +111,7 @@ func Open(ctx context.Context, cfg config.StorageApplication) (*DB, error) {
 		dir := filepath.Dir(cfg.Path)
 		if dir != "" && dir != "." {
 			// 0o700 : la base contient potentiellement des données
-			// personnelles (PLAN.md Phase 19, point 5) ; seul le
+			// personnelles (plan de conception, Phase 19, point 5) ; seul le
 			// propriétaire du processus doit pouvoir y accéder.
 			if err := os.MkdirAll(dir, 0o700); err != nil {
 				return nil, fmt.Errorf("création du répertoire %q: %w", dir, err)
@@ -121,9 +121,9 @@ func Open(ctx context.Context, cfg config.StorageApplication) (*DB, error) {
 		// Pré-créer le fichier avec des permissions restrictives (0o600)
 		// avant de laisser le driver SQLite l'ouvrir : sql.Open seul
 		// créerait le fichier selon l'umask du processus, potentiellement
-		// lisible par d'autres utilisateurs du système (PLAN.md Phase 19,
+		// lisible par d'autres utilisateurs du système (plan de conception, Phase 19,
 		// point 5 "restreindre les permissions des fichiers SQLite" — la
-		// base contient des données personnelles, voir PLAN.md §13).
+		// base contient des données personnelles, voir plan de conception, §13).
 		f, err := os.OpenFile(cfg.Path, os.O_RDWR|os.O_CREATE, 0o600)
 		if err != nil {
 			return nil, fmt.Errorf("création du fichier de base %q: %w", cfg.Path, err)

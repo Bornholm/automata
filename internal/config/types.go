@@ -148,7 +148,7 @@ func (b Backup) EffectiveKeep() int {
 }
 
 // Observability décrit le serveur HTTP local optionnel de santé et de
-// métriques (PLAN.md Phase 20). Désactivé par défaut : une section absente
+// métriques (plan de conception, Phase 20). Désactivé par défaut : une section absente
 // (ou Enabled: false) ne démarre aucun serveur HTTP. Aucune valeur par
 // défaut n'est inventée pour Addr au-delà de cette désactivation par
 // défaut ; lorsque Enabled est vrai, Addr est requis.
@@ -782,7 +782,7 @@ type MCPServer struct {
 // lequel le serveur attend l'identifiant. Une valeur fournie par le modèle
 // sous ce nom est toujours écartée : l'application résout la ressource depuis
 // la portée de la conversation, jamais depuis les arguments du modèle
-// (PLAN.md §9.2).
+// (plan de conception, §9.2).
 type MCPResource struct {
 	Key       string `yaml:"key"`
 	Parameter string `yaml:"parameter"`

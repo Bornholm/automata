@@ -35,7 +35,7 @@ const reminderMaxHorizon = 366 * 24 * time.Hour
 // Contrairement à forget_memory, ces outils s'exécutent directement, sans
 // plan de confirmation : un rappel est une écriture interne, réversible
 // (cancel_reminder recrée l'état antérieur), limitée à la conversation
-// courante — rien de la liste de PLAN.md §10.1 (écritures externes,
+// courante — rien de la liste de plan de conception, §10.1 (écritures externes,
 // suppressions de données, écritures org). La destination de livraison
 // n'est jamais un paramètre du modèle : elle est figée à la conversation
 // courante au moment de la création.

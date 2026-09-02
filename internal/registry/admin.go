@@ -11,7 +11,7 @@ import (
 )
 
 // adminInspectLimit borne le nombre de lignes récentes affichées par
-// "automata admin inspect" (PLAN.md Phase 18, "ajouter une commande
+// "automata admin inspect" (plan de conception, Phase 18, "ajouter une commande
 // d'inspection administrative") : une commande d'inspection au démarrage
 // n'a pas vocation à défiler un historique complet, seulement à donner une
 // vue rapide de l'état récent.
@@ -28,7 +28,7 @@ const (
 // (cfg.Storage.Application) et écrit sur out une vue en LECTURE SEULE
 // (aucune mutation) de l'état récent des plans d'actions (kind ==
 // AdminInspectKindPlans) ou des exécutions planifiées (kind ==
-// AdminInspectKindRuns), pour l'administrateur d'une instance (PLAN.md
+// AdminInspectKindRuns), pour l'administrateur d'une instance (le plan de conception
 // Phase 18, "ajouter une commande d'inspection administrative").
 func AdminInspect(ctx context.Context, cfg *config.Config, kind string, out io.Writer) error {
 	db, err := persistence.OpenWithEncryption(ctx, cfg.Storage.Application, cfg.Storage.EncryptionKey)

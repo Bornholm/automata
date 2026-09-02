@@ -129,7 +129,7 @@ func TestHandler_VoiceNote_NotPersistedByDefault(t *testing.T) {
 	}
 
 	// Le message persisté en base doit contenir l'indication neutre, pas le
-	// texte transcrit réel (PLAN.md §3.4, PersistTranscription=false).
+	// texte transcrit réel (plan de conception, §3.4, PersistTranscription=false).
 	persisted := lastPersistedUserContent(t, db, conv.ID)
 	if persisted != voiceNotePlaceholder {
 		t.Fatalf("contenu persisté = %q, attendu %q", persisted, voiceNotePlaceholder)

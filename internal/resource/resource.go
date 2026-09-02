@@ -1,5 +1,5 @@
 // Package resource résout les identifiants de ressources externes déclarés
-// dans la configuration pour une portée donnée (PLAN.md §9.2).
+// dans la configuration pour une portée donnée (plan de conception, §9.2).
 //
 // Le package ne connaît aucun service par son nom. Un serveur MCP déclare
 // quelle clé de ressource il consomme et sous quel paramètre il l'attend
@@ -73,7 +73,7 @@ func Resolve(cfg *config.Config, key string, scope model.Scope, scopeID model.Sc
 // Appelée avant chaque appel d'outil, et à nouveau juste avant l'exécution
 // d'une action confirmée : entre la proposition et la confirmation, la
 // configuration a pu changer, et c'est l'identifiant courant de la portée qui
-// fait foi, jamais celui qu'aurait pu contenir l'action persistée (PLAN.md
+// fait foi, jamais celui qu'aurait pu contenir l'action persistée (le plan de conception
 // §10.5 point 6).
 func InjectResolved(cfg *config.Config, serverName string, scope model.Scope, scopeID model.ScopeID, args map[string]any) (map[string]any, error) {
 	if cfg == nil {

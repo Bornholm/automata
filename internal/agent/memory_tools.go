@@ -17,7 +17,7 @@ import (
 
 // MemoryTools regroupe les dépendances nécessaires pour exposer les outils
 // de mémoire (search_memory, remember, forget_memory) à un
-// OrchestratorAgent (PLAN.md §6.1, §8, Phase 10). Une valeur zéro (Store
+// OrchestratorAgent (plan de conception, §6.1, §8, Phase 10). Une valeur zéro (Store
 // nil) n'expose aucun outil mémoire, quels que soient Search/Remember/Forget
 // : voir WithMemoryTools.
 type MemoryTools struct {
@@ -46,7 +46,7 @@ type MemoryTools struct {
 	// <= 0 retombe sur 5.
 	MaxResults int
 	// Metrics observe le nombre de recherches mémoire (search_memory,
-	// PLAN.md §14.3, Phase 20). nil désactive l'observation.
+	// plan de conception, §14.3, Phase 20). nil désactive l'observation.
 	Metrics *observability.Metrics
 }
 
@@ -69,7 +69,7 @@ func (t MemoryTools) enabled() bool {
 // (t.Search/t.Remember/t.Forget). Reconstruit à chaque exécution, comme
 // buildDelegationTools : l'identité n'est jamais décidée par le modèle.
 // collector accumule les delegation.ProposedAction produites par
-// forget_memory (PLAN.md §10, Phase 15) : voir proposalCollector
+// forget_memory (plan de conception, §10, Phase 15) : voir proposalCollector
 // (toolloop.go).
 func (t MemoryTools) buildMemoryTools(identity model.ExecutionIdentity, collector *proposalCollector) []llm.Tool {
 	if !t.enabled() {
@@ -96,7 +96,7 @@ func (t MemoryTools) buildMemoryTools(identity model.ExecutionIdentity, collecto
 
 // readScopes énumère les portées qu'une identité d'exécution peut, sous
 // réserve d'autorisation effective (vérifiée séparément via Authorizer),
-// consulter en lecture (PLAN.md §8.3) :
+// consulter en lecture (plan de conception, §8.3) :
 //
 //   - conversation privée : portée personnelle du principal + portée org ;
 //   - conversation de groupe : portée du groupe courant + portée org ;
@@ -128,7 +128,7 @@ func readScopes(identity model.ExecutionIdentity) []model.Scope {
 }
 
 // writeScope détermine la portée d'écriture de la conversation courante
-// pour remember (PLAN.md, Phase 10, "la portée est TOUJOURS celle de la
+// pour remember (plan de conception, Phase 10, "la portée est TOUJOURS celle de la
 // conversation courante ... JAMAIS org"). ok vaut false si aucune écriture
 // n'est possible dans ce contexte d'exécution (ex : déclenchement planifié).
 func writeScope(identity model.ExecutionIdentity) (model.Scope, bool) {
@@ -157,7 +157,7 @@ func scopeID(scope model.Scope, identity model.ExecutionIdentity) model.ScopeID 
 
 // searchAuthorizedScopes recherche text dans chaque portée de scopes pour
 // laquelle identity est autorisée (permission "memory.<scope>.<action>"),
-// en ignorant silencieusement les portées non autorisées (PLAN.md, Phase
+// en ignorant silencieusement les portées non autorisées (le plan de conception, Phase
 // 10 : "ignore silencieusement les portées non autorisées plutôt que
 // d'échouer tout l'appel").
 func (t MemoryTools) searchAuthorizedScopes(ctx context.Context, identity model.ExecutionIdentity, scopes []model.Scope, action, text string) ([]memory.Memory, error) {
@@ -225,7 +225,7 @@ func (t MemoryTools) findByIDForDelete(ctx context.Context, identity model.Execu
 	return nil, "", nil
 }
 
-// formatMemoryList formate memories en liste numérotée (PLAN.md §8.5,
+// formatMemoryList formate memories en liste numérotée (plan de conception, §8.5,
 // "afficher une liste numérotée") : c'est cette liste qui sert de base à
 // une suppression ultérieure par identifiant précis.
 func formatMemoryList(memories []memory.Memory) string {
@@ -256,7 +256,7 @@ func formatMemoryList(memories []memory.Memory) string {
 
 // newSearchMemoryTool construit l'outil "search_memory". La portée de
 // recherche n'est jamais un paramètre du modèle : elle est entièrement
-// déterminée par identity (PLAN.md, Phase 10).
+// déterminée par identity (plan de conception, Phase 10).
 func (t MemoryTools) newSearchMemoryTool(identity model.ExecutionIdentity) llm.Tool {
 	schema := llm.NewJSONSchema().
 		RequiredProperty("query", "Search text.", "string")
@@ -482,7 +482,7 @@ func (t MemoryTools) newRememberTool(identity model.ExecutionIdentity) llm.Tool 
 	)
 }
 
-// newForgetMemoryTool construit l'outil "forget_memory" (PLAN.md §8.5,
+// newForgetMemoryTool construit l'outil "forget_memory" (plan de conception, §8.5,
 // §10). Depuis la Phase 15, cet outil n'exécute plus jamais de suppression
 // lui-même : une requête textuelle seule liste des candidats (inchangé), et
 // un 'id' résolu sans ambiguïté produit une delegation.ProposedAction,
@@ -491,7 +491,7 @@ func (t MemoryTools) newRememberTool(identity model.ExecutionIdentity) llm.Tool 
 // persistence.ActionPlan (via internal/conversation.Handler, qui lit
 // Result.ProposedActions après l'exécution de l'agent) et qui l'exécute
 // réellement, seulement après confirmation explicite ("confirmer" dans la
-// conversation, PLAN.md §10.4) et revérification complète (§10.5) — jamais
+// conversation, plan de conception, §10.4) et revérification complète (§10.5) — jamais
 // au sein de ce tour d'outil.
 func (t MemoryTools) newForgetMemoryTool(identity model.ExecutionIdentity, collector *proposalCollector) llm.Tool {
 	schema := llm.NewJSONSchema().
@@ -511,7 +511,7 @@ func (t MemoryTools) newForgetMemoryTool(identity model.ExecutionIdentity, colle
 					return llm.NewToolResult("erreur: fournir soit 'query' (pour lister des candidats), soit 'id' (pour proposer la suppression d'une mémoire précise)."), nil
 				}
 
-				// PLAN.md §8.5 : "une suppression par requête textuelle non
+				// plan de conception, §8.5 : "une suppression par requête textuelle non
 				// résolue est interdite". Cette branche ne propose jamais rien,
 				// elle se contente de lister des candidats.
 				results, err := t.searchAuthorizedScopes(ctx, identity, readScopes(identity), "read", query)

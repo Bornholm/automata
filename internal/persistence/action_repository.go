@@ -53,7 +53,7 @@ func (r *ActionRepository) FindByID(ctx context.Context, q Querier, id ActionID)
 }
 
 // ListByPlanID retourne les actions du plan planID, triées par position
-// croissante (PLAN.md §10.5 point 8, "exécuter séquentiellement").
+// croissante (plan de conception, §10.5 point 8, "exécuter séquentiellement").
 func (r *ActionRepository) ListByPlanID(ctx context.Context, q Querier, planID ActionPlanID) ([]Action, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT id, plan_id, position, agent_id, mcp_server, tool_name, arguments_json, summary,
@@ -84,7 +84,7 @@ func (r *ActionRepository) ListByPlanID(ctx context.Context, q Querier, planID A
 }
 
 // UpdateStatus met à jour le statut d'une action et, lorsqu'ils sont non
-// nil, ses horodatages de début/fin et son code d'erreur (PLAN.md §10.5
+// nil, ses horodatages de début/fin et son code d'erreur (plan de conception, §10.5
 // points 7-9). Un pointeur nil laisse la colonne correspondante inchangée
 // (COALESCE), pour permettre des mises à jour partielles successives
 // (executing -> succeeded/failed) sans écraser started_at avec NULL lors de

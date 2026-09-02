@@ -23,7 +23,7 @@ import (
 // fakeMemoryStore implémente memory.Store en mémoire, pour tester
 // l'orchestration des outils search_memory/remember/forget_memory
 // (cloisonnement, confirmation) indépendamment d'un Amoxtli réel : c'est ce
-// dernier qui est testé avec un Amoxtli réel dans internal/memory (PLAN.md
+// dernier qui est testé avec un Amoxtli réel dans internal/memory (le plan de conception
 // §16). Ce que ce fichier teste, c'est une couche différente : comment
 // internal/agent applique internal/authorization.Authorizer et résout la
 // portée avant d'appeler Store, jamais la persistance elle-même.
@@ -228,7 +228,7 @@ func executeMemoryTool(t *testing.T, tools agent.MemoryTools, identity model.Exe
 
 // executeMemoryToolWithProposals se comporte comme executeMemoryTool mais
 // retourne également les delegation.ProposedAction accumulées durant
-// l'exécution (PLAN.md §10, Phase 15) : forget_memory ne supprime plus rien
+// l'exécution (plan de conception, §10, Phase 15) : forget_memory ne supprime plus rien
 // lui-même, il produit une proposition que seul internal/action.Engine
 // exécute, après confirmation.
 func executeMemoryToolWithProposals(t *testing.T, tools agent.MemoryTools, identity model.ExecutionIdentity, name string, args map[string]any) (string, []delegation.ProposedAction) {
@@ -321,7 +321,7 @@ func TestSearchMemory_UnauthorizedScopeIgnoredSilently(t *testing.T) {
 
 	// leo n'a que memory.org.read (voir memoryTestConfig) : la recherche ne
 	// doit pas échouer, elle doit simplement ignorer la portée personnelle
-	// non autorisée (PLAN.md, Phase 10).
+	// non autorisée (plan de conception, Phase 10).
 	text := executeMemoryTool(t, tools, privateIdentity("leo"), "search_memory", map[string]any{"query": "note"})
 
 	if strings.Contains(text, "m-personal") {
@@ -408,7 +408,7 @@ func TestRemember_WritesToConversationScopeOnly(t *testing.T) {
 // TestRemember_NeverWritesOrgFromPrivateConversation vérifie qu'une
 // conversation privée ne peut jamais écrire en portée org via remember,
 // même si le principal a par ailleurs memory.org.write (règle invariante de
-// internal/authorization, PLAN.md §3.2, §8.4 : "JAMAIS org"). La portée
+// internal/authorization, plan de conception, §3.2, §8.4 : "JAMAIS org"). La portée
 // n'étant pas un paramètre exposé au modèle, ce test constate simplement
 // qu'un remember en conversation privée produit toujours un appel Store en
 // portée personal, jamais org, quel que soit le contenu demandé.
@@ -470,7 +470,7 @@ func TestForgetMemory_ConfirmationFlow(t *testing.T) {
 	identity := privateIdentity("alice")
 
 	// id fourni: doit décrire la mémoire, produire une proposition d'action
-	// (PLAN.md §10, Phase 15) et ne rien supprimer elle-même — c'est
+	// (plan de conception, §10, Phase 15) et ne rien supprimer elle-même — c'est
 	// désormais internal/action.Engine qui exécute la suppression, après
 	// confirmation explicite dans la conversation.
 	text, proposals := executeMemoryToolWithProposals(t, tools, identity, "forget_memory", map[string]any{"id": "m1"})

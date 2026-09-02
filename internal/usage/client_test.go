@@ -46,7 +46,7 @@ func (c *fakeLLMClient) Transcription(_ context.Context, _ []byte, _ ...llm.Tran
 func testContext(recorder Recorder) context.Context {
 	ctx := ContextWithRecorder(context.Background(), recorder)
 	return ContextWithAttribution(ctx, Attribution{
-		OrgID:          "famille-petit",
+		OrgID:          "famille-dupont",
 		PrincipalID:    "will",
 		ConversationID: "conv-1",
 		Component:      ComponentAgent,
@@ -69,7 +69,7 @@ func TestWrapClient_RecordsChatCompletionWithCostAndAttribution(t *testing.T) {
 	}
 
 	rec := recorder.records[0]
-	if rec.OrgID != "famille-petit" || rec.PrincipalID != "will" || rec.ConversationID != "conv-1" {
+	if rec.OrgID != "famille-dupont" || rec.PrincipalID != "will" || rec.ConversationID != "conv-1" {
 		t.Errorf("attribution inattendue: %+v", rec)
 	}
 	if rec.Component != ComponentAgent || rec.Agent != "main" || rec.Kind != KindChat {

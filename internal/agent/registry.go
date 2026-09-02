@@ -23,7 +23,7 @@ import (
 )
 
 // Registry construit et détient un Agent isolé pour chaque agent déclaré
-// dans la configuration (PLAN.md §6.2, §7.2, Phase 7). Chaque Agent obtenu
+// dans la configuration (plan de conception, §6.2, §7.2, Phase 7). Chaque Agent obtenu
 // via Get a son propre client LLM et son propre system prompt composé :
 // deux agents construits depuis des configurations différentes ne
 // partagent jamais d'état mutable (voir TestNewRegistry_Isolation).
@@ -43,7 +43,7 @@ type Registry struct {
 // (internal/config/validate.go), pour ne pas laisser passer une
 // configuration inutilisable jusqu'à la phase qui les consommera.
 //
-// Depuis la Phase 8 (PLAN.md §6.3, §6.4), tout agent déclarant des
+// Depuis la Phase 8 (plan de conception, §6.3, §6.4), tout agent déclarant des
 // Delegates non vides est construit en deux passes : d'abord un GenAIAgent
 // "brut" comme tous les autres (y compris les spécialistes eux-mêmes,
 // puisqu'un délégué peut en théorie déléguer à son tour), puis, dans une
@@ -57,7 +57,7 @@ func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error)
 }
 
 // NewRegistryWithMemory se comporte comme NewRegistry, mais attache
-// memoryTools (search_memory/remember/forget_memory, PLAN.md §8, Phase 10) à
+// memoryTools (search_memory/remember/forget_memory, plan de conception, §8, Phase 10) à
 // chaque agent orchestrateur construit, selon les booléens
 // agentCfg.Memory.{Search,Remember,Forget} propres à chaque agent déclaré
 // dans cfg.Agents. memoryTools.Store et memoryTools.Authorizer sont partagés
@@ -69,12 +69,12 @@ func NewRegistry(cfg *config.Config, mcpManager *mcp.Manager) (*Registry, error)
 // NewRegistry s'appuie sur ce comportement pour rester utilisable sans
 // mémoire câblée (tests, phases antérieures).
 //
-// Depuis la Phase 12 (PLAN.md §9, §9.3), mcpManager est utilisé pour
+// Depuis la Phase 12 (plan de conception, §9, §9.3), mcpManager est utilisé pour
 // construire un MCPToolAgent (mcp_tool_agent.go) pour chaque agent déclarant
 // des MCPServers non vides et aucun Delegates : les Delegates ont priorité
 // sur MCPServers si un agent déclarait les deux (choix documenté ci-dessous,
 // dans la seconde passe) — un OrchestratorAgent expose des outils de
-// délégation, pas des outils MCP, conformément à PLAN.md Phase 12 "le
+// délégation, pas des outils MCP, conformément à plan de conception, Phase 12 "le
 // généraliste peut déléguer une recherche sans charger les outils
 // Internet". mcpManager peut être nil si aucun agent de cfg ne déclare de
 // MCPServers (utilisable tel quel par les tests n'exerçant pas cette
@@ -395,7 +395,7 @@ func BuildEmbeddingsClient(ctx context.Context, cfg config.LLMClient) (llm.Clien
 }
 
 // BuildTranscriptionClient construit un llm.TranscriptionClient GenAI à
-// partir d'un config.LLMClient applicatif, pour le traitement audio (PLAN.md
+// partir d'un config.LLMClient applicatif, pour le traitement audio (le plan de conception
 // §3.4, Phase 9). Mêmes providers supportés que BuildLLMClient (openai,
 // mistral, openrouter) ; voir docs/integration-inventory.md §2.
 func BuildTranscriptionClient(ctx context.Context, cfg config.LLMClient) (llm.TranscriptionClient, error) {

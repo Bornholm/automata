@@ -1,5 +1,5 @@
 // Package scheduler déclenche les agents configurés selon les expressions
-// cron déclarées dans cfg.Schedules (PLAN.md §11, Phase 16 et §17).
+// cron déclarées dans cfg.Schedules (plan de conception, §11, Phase 16 et §17).
 //
 // Politique "read_only" (Phase 16) : toute action proposée par l'agent
 // durant une exécution planifiée est journalisée puis ignorée, jamais
@@ -12,9 +12,9 @@
 // revérification de permission par action au moment de la confirmation).
 //
 // Chaque occurrence est enregistrée avant son exécution (déduplication
-// native via UNIQUE(schedule_id, scheduled_for) en base, PLAN.md §11.5), et
+// native via UNIQUE(schedule_id, scheduled_for) en base, plan de conception, §11.5), et
 // la livraison du résultat via Courier est une étape strictement séparée de
-// l'exécution : une erreur de livraison ne réexécute jamais l'agent (PLAN.md
+// l'exécution : une erreur de livraison ne réexécute jamais l'agent (le plan de conception
 // §11.6).
 package scheduler
 
@@ -66,7 +66,7 @@ const (
 	errCodeStaleLockRecovered = "stale_lock_recovered"
 )
 
-// Types d'événements d'audit émis par le scheduler (PLAN.md §17, "auditer
+// Types d'événements d'audit émis par le scheduler (plan de conception, §17, "auditer
 // l'auteur technique et le confirmateur humain"). Le second événement
 // ("action_plan.confirmed") est émis par internal/action.Engine lui-même au
 // moment de la confirmation, pas ici.
@@ -87,7 +87,7 @@ var _ Clock = RealClock{}
 
 // ValidateSchedules vérifie, au démarrage, que chaque déclenchement
 // planifié activé déclare une politique d'actions supportée : "read_only"
-// (Phase 16) ou "require_confirmation" (Phase 17, PLAN.md §11.3). Toute
+// (Phase 16) ou "require_confirmation" (Phase 17, plan de conception, §11.3). Toute
 // autre valeur reste une erreur de configuration claire.
 func ValidateSchedules(cfg *config.Config) error {
 	for _, sched := range cfg.Schedules {
@@ -148,7 +148,7 @@ func (m SenderMap) Get(name string) (courier.Provider, bool) {
 // (la même map que celle utilisée pour l'ingress, voir internal/registry).
 // actionEngine est utilisé pour transformer les actions proposées par un
 // agent exécuté sous la politique "require_confirmation" en plan de
-// confirmation (PLAN.md §17) ; il peut être nil si aucun schedule activé ne
+// confirmation (plan de conception, §17) ; il peut être nil si aucun schedule activé ne
 // déclare cette politique (ValidateSchedules ne l'impose pas explicitement,
 // mais une exécution require_confirmation avec actionEngine nil échoue
 // proprement, voir executeAndDeliver).
@@ -174,7 +174,7 @@ func NewScheduler(cfg *config.Config, clock Clock, db *persistence.DB, agents *a
 
 // WithMetrics attache metrics à s : chaque occurrence planifiée déclenchée
 // et chaque erreur de livraison sont comptabilisées dès le prochain Tick
-// (PLAN.md §14.3, Phase 20). metrics nil désactive l'observation
+// (plan de conception, §14.3, Phase 20). metrics nil désactive l'observation
 // (comportement par défaut de NewScheduler). Retourne s pour permettre le
 // chaînage à la construction.
 func (s *Scheduler) WithMetrics(metrics *observability.Metrics) *Scheduler {
@@ -251,7 +251,7 @@ func (s *Scheduler) tickSchedule(ctx context.Context, sched config.Schedule, at 
 		// scheduled_for étant stocké en UTC, la contrainte
 		// UNIQUE(schedule_id, scheduled_for) ne les confond pas : sans cette
 		// garde, un "0 7 * * *" serait exécuté deux fois cette nuit-là, ce
-		// qu'interdisent PLAN.md §2.3 (règle 10) et §11.7.
+		// qu'interdisent plan de conception, §2.3 (règle 10) et §11.7.
 		//
 		// La comparaison ne vaut que contre une ancre issue d'une occurrence
 		// réellement enregistrée : l'ancre artificielle du premier Tick
@@ -393,7 +393,7 @@ func (s *Scheduler) triggerOccurrence(ctx context.Context, sched config.Schedule
 	}
 
 	if sched.Concurrency.Policy != config.ConcurrencyPolicyAllow {
-		// Défaut (y compris valeur vide) : forbid, voir PLAN.md §11.4.
+		// Défaut (y compris valeur vide) : forbid, voir plan de conception, §11.4.
 		var (
 			running      persistence.ScheduledRun
 			runningFound bool
@@ -414,7 +414,7 @@ func (s *Scheduler) triggerOccurrence(ctx context.Context, sched config.Schedule
 				return false
 			}
 
-			// Verrou périmé (PLAN.md §18, "verrou périmé") : l'exécution
+			// Verrou périmé (plan de conception, §18, "verrou périmé") : l'exécution
 			// "running" bloquée depuis plus longtemps que
 			// sched.Concurrency.Timeout ne peut être due qu'à un crash du
 			// PROCESSUS entier (voir isStaleLock) — elle est récupérée et
@@ -430,7 +430,7 @@ func (s *Scheduler) triggerOccurrence(ctx context.Context, sched config.Schedule
 	}
 
 	if !inserted {
-		// Occurrence déjà enregistrée (déduplication, PLAN.md §11.5) : no-op
+		// Occurrence déjà enregistrée (déduplication, plan de conception, §11.5) : no-op
 		// silencieux, mais l'ancre doit tout de même avancer.
 		return true
 	}
@@ -442,7 +442,7 @@ func (s *Scheduler) triggerOccurrence(ctx context.Context, sched config.Schedule
 	return true
 }
 
-// isStaleLock détecte un verrou de concurrence "forbid" périmé (PLAN.md §18,
+// isStaleLock détecte un verrou de concurrence "forbid" périmé (plan de conception, §18,
 // "verrou périmé") : une exécution planifiée "running" dont la durée
 // écoulée depuis started_at (jusqu'à s.clock.Now(), pas jusqu'à l'occurrence
 // candidate, qui peut être un rattrapage dans le passé) dépasse déjà
@@ -552,7 +552,7 @@ func (s *Scheduler) recordOccurrence(ctx context.Context, sched config.Schedule,
 
 // executeAndDeliver exécute l'agent pour l'exécution planifiée runID, marque
 // son résultat, puis décide et effectue la livraison (étape séparée,
-// PLAN.md §11.6).
+// plan de conception, §11.6).
 func (s *Scheduler) executeAndDeliver(ctx context.Context, sched config.Schedule, runID persistence.ScheduledRunID) {
 	logCtx := []any{
 		"trigger", model.TriggerCron,
@@ -603,7 +603,7 @@ func (s *Scheduler) executeAndDeliver(ctx context.Context, sched config.Schedule
 	if len(result.ProposedActions) > 0 {
 		switch sched.Execution.Actions.Policy {
 		case config.ActionsPolicyRequireConfirmation:
-			// PLAN.md §17 : les actions proposées deviennent un plan de
+			// plan de conception, §17 : les actions proposées deviennent un plan de
 			// confirmation persisté, au nom du principal de service (auteur
 			// technique), livré au canal configuré pour qu'un humain
 			// compétent de ce canal puisse le confirmer.
@@ -615,7 +615,7 @@ func (s *Scheduler) executeAndDeliver(ctx context.Context, sched config.Schedule
 			}
 			reply = planReply
 		default:
-			// Politique read_only (PLAN.md §11.3) : toute action proposée
+			// Politique read_only (plan de conception, §11.3) : toute action proposée
 			// est journalisée puis ignorée, jamais exécutée ni transformée
 			// en plan de confirmation.
 			s.logger.InfoContext(ctx, "scheduler: actions proposées ignorées (politique read_only)", append(logCtx, "count", len(result.ProposedActions))...)
@@ -643,7 +643,7 @@ func schedulerPrincipalDisplayName(cfg *config.Config, principalID string) strin
 }
 
 // buildIdentity construit l'identité d'exécution et la conversation d'une
-// occurrence planifiée (PLAN.md §9.3, §11.2). Aucun accès personnel
+// occurrence planifiée (plan de conception, §9.3, §11.2). Aucun accès personnel
 // implicite : Scope/ScopeID proviennent exclusivement de la configuration de
 // confiance (sched.Execution), jamais d'un contenu fourni par l'utilisateur
 // ou le LLM.
@@ -653,8 +653,8 @@ func schedulerPrincipalDisplayName(cfg *config.Config, principalID string) strin
 // le canal de livraison (provider + ":" + channelID) : c'est ce qui permet à
 // un humain tapant "confirmer" dans ce canal de retrouver, via
 // internal/action.Engine.HandleCommand, le plan créé par une exécution
-// planifiée require_confirmation (PLAN.md §17). Une valeur dérivée de
-// l'exécution (schedule_id + scheduled_for, comme utilisé PLAN.md §9.3 pour
+// planifiée require_confirmation (plan de conception, §17). Une valeur dérivée de
+// l'exécution (schedule_id + scheduled_for, comme utilisé plan de conception, §9.3 pour
 // l'isolation des sessions MCP) serait ici une ERREUR : elle rendrait le
 // plan invisible à toute confirmation humaine, puisque HandleCommand ne
 // retrouve que les plans de identity.ConversationID de l'appelant.
@@ -699,7 +699,7 @@ func (s *Scheduler) buildIdentity(sched config.Schedule, runID persistence.Sched
 }
 
 // proposeActionPlan transforme les actions proposées par l'agent en plan de
-// confirmation persisté (PLAN.md §17). Retourne le texte à livrer et true en
+// confirmation persisté (plan de conception, §17). Retourne le texte à livrer et true en
 // cas de succès ; false si le plan n'a pas pu être créé (auquel cas
 // l'appelant doit traiter l'occurrence comme un échec d'exécution).
 func (s *Scheduler) proposeActionPlan(ctx context.Context, sched config.Schedule, identity model.ExecutionIdentity, conversation model.Conversation, result agent.Result, logCtx []any) (string, bool) {
@@ -767,7 +767,7 @@ func (s *Scheduler) ensureConversation(ctx context.Context, conv model.Conversat
 }
 
 // recordPlanProposedAudit journalise l'événement d'audit "action_plan.proposed"
-// (PLAN.md §17, "auditer l'auteur technique") : le principal auteur est
+// (plan de conception, §17, "auditer l'auteur technique") : le principal auteur est
 // celui de l'identité de service ayant créé le plan (identity.PrincipalID),
 // jamais un humain. Une erreur d'écriture est journalisée mais n'affecte
 // jamais le déroulement normal de l'exécution planifiée : l'audit est un
@@ -828,7 +828,7 @@ func (s *Scheduler) failRun(ctx context.Context, runID persistence.ScheduledRunI
 }
 
 // deliverIfNeeded décide, selon sched.Delivery.Mode, si le résultat doit
-// être livré, puis effectue la livraison le cas échéant (PLAN.md §11.6 :
+// être livré, puis effectue la livraison le cas échéant (plan de conception, §11.6 :
 // étape strictement séparée de l'exécution, déjà marquée terminée à ce
 // stade). reply est le texte de réponse de l'agent (vide si failed==true ou
 // si l'agent n'a rien produit) ; failed indique si l'exécution a échoué.
@@ -840,7 +840,7 @@ func (s *Scheduler) deliverIfNeeded(ctx context.Context, sched config.Schedule, 
 	s.deliver(ctx, sched, runID, reply)
 }
 
-// shouldDeliver applique la politique de livraison (PLAN.md §11.6).
+// shouldDeliver applique la politique de livraison (plan de conception, §11.6).
 func shouldDeliver(mode config.DeliveryMode, reply string, failed bool) bool {
 	switch mode {
 	case config.DeliveryModeAlways:
@@ -922,7 +922,7 @@ func (s *Scheduler) recordDeliveryAttempt(ctx context.Context, runID persistence
 
 // RetryDelivery relit l'exécution planifiée déjà terminée id et retente
 // uniquement l'envoi de sa livraison, sans jamais réexécuter l'agent
-// (PLAN.md §11.6). id doit correspondre à une exécution déjà marquée
+// (plan de conception, §11.6). id doit correspondre à une exécution déjà marquée
 // succeeded ou failed ; sched est le schedule d'origine (pour retrouver le
 // fournisseur et le canal de livraison, non persistés sur scheduled_runs).
 //

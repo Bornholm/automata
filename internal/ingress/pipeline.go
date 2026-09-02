@@ -1,6 +1,6 @@
 // Package ingress consomme les messages entrants d'un fournisseur Go
 // Courier, résout leur identité applicative, applique la règle de mention
-// des groupes (PLAN.md §3.3), déduplique les messages déjà traités et
+// des groupes (plan de conception, §3.3), déduplique les messages déjà traités et
 // délègue le traitement métier à un Handler.
 //
 // Aucune logique LLM ne vit ici : ce package est un transport. La Phase 6
@@ -41,7 +41,7 @@ const (
 // cmd/automata/main.go, context issu de signal.NotifyContext) : un
 // fournisseur LLM ou MCP qui ne répond jamais bloquerait indéfiniment le
 // traitement de TOUS les messages suivants du même fournisseur, la boucle
-// de Pipeline.Run étant strictement séquentielle (PLAN.md Phase 19, point
+// de Pipeline.Run étant strictement séquentielle (plan de conception, Phase 19, point
 // 8 "timeouts réseau"). 5 minutes reste large devant les timeouts plus
 // courts déjà en place pour chaque appel individuel (audio.Config.Timeout,
 // mcp.Limits.ToolTimeout), pour ne jamais couper un tour légitime
@@ -140,7 +140,7 @@ type Pipeline struct {
 
 // NewPipeline construit un Pipeline. handler ne doit jamais être nil ; en
 // Phase 5, passer FixedReplyHandler. metrics peut être nil (registre de
-// métriques désactivé, PLAN.md Phase 20) : toutes ses méthodes sont alors
+// métriques désactivé, plan de conception, Phase 20) : toutes ses méthodes sont alors
 // no-op.
 func NewPipeline(providerName string, provider courier.Provider, resolver *identity.Resolver, db *persistence.DB, handler Handler, logger *slog.Logger, metrics *observability.Metrics) *Pipeline {
 	if logger == nil {
@@ -576,7 +576,7 @@ func (p *Pipeline) processBatch(ctx context.Context, self courier.User, msgs []c
 		return
 	}
 
-	// Champs de corrélation communs à tous les logs de ce message (PLAN.md
+	// Champs de corrélation communs à tous les logs de ce message (le plan de conception
 	// §14.2). Uniquement des identifiants : jamais le contenu du message, ni
 	// une transcription, ni une pièce jointe.
 	logCtx := []any{

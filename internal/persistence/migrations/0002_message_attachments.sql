@@ -2,7 +2,7 @@
 -- rejouées dans l'historique remis au modèle aux tours suivants.
 --
 -- Les notes vocales et leurs transcriptions ne sont JAMAIS stockées ici :
--- PLAN.md §3.4 impose de ne conserver ni l'audio ni sa transcription, et
+-- plan de conception, §3.4 impose de ne conserver ni l'audio ni sa transcription, et
 -- internal/audio les traite sans jamais les persister.
 --
 -- data porte les octets bruts. La taille de chaque pièce est bornée à la

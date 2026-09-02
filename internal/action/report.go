@@ -9,7 +9,7 @@ import (
 )
 
 // formatPlanProposal formate le texte renvoyé à l'utilisateur juste après
-// la création d'un plan (PLAN.md §8.5, "afficher une liste numérotée",
+// la création d'un plan (plan de conception, §8.5, "afficher une liste numérotée",
 // généralisé ici à toute action).
 func formatPlanProposal(actions []persistence.Action, ttl time.Duration) string {
 	var b strings.Builder
@@ -24,7 +24,7 @@ func formatPlanProposal(actions []persistence.Action, ttl time.Duration) string 
 }
 
 // formatAmbiguousPlans formate le texte demandant explicitement lequel des
-// plans actifs confirmer (PLAN.md §10.4).
+// plans actifs confirmer (plan de conception, §10.4).
 func formatAmbiguousPlans(plans []persistence.ActionPlan) string {
 	var b strings.Builder
 
@@ -37,7 +37,7 @@ func formatAmbiguousPlans(plans []persistence.ActionPlan) string {
 }
 
 // finalPlanStatus détermine le statut final d'un plan à partir des
-// résultats de ses actions (PLAN.md §10.5 point 9) : succeeded si toutes
+// résultats de ses actions (plan de conception, §10.5 point 9) : succeeded si toutes
 // ont réussi, failed si toutes ont échoué, partially_succeeded sinon.
 func finalPlanStatus(outcomes []actionOutcome) string {
 	if len(outcomes) == 0 {
@@ -62,7 +62,7 @@ func finalPlanStatus(outcomes []actionOutcome) string {
 }
 
 // formatExecutionReport formate le rapport final envoyé à l'utilisateur
-// après exécution d'un plan confirmé (PLAN.md §10.5 point 9, "enregistrer
+// après exécution d'un plan confirmé (plan de conception, §10.5 point 9, "enregistrer
 // le résultat" — le texte restitué doit rendre explicites les succès et les
 // échecs partiels).
 func formatExecutionReport(finalStatus string, outcomes []actionOutcome) string {

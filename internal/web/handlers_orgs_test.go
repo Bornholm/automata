@@ -27,7 +27,7 @@ func TestOrgCreateRefusesDuplicateName(t *testing.T) {
 			t.Fatalf("GET création: %v", err)
 		}
 		resp, err := client.PostForm(ts.URL+"/admin/orgs", url.Values{
-			"display_name": {"atelier"},
+			"display_name": {"Atelier"},
 			"csrf_token":   {csrfFrom(t, client, ts.URL)},
 		})
 		if err != nil {
@@ -167,13 +167,13 @@ func TestOrgPageShowsBoundChannels(t *testing.T) {
 	now := server.Now()
 	if err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
 		if err := server.Orgs.Insert(context.Background(), tx, persistence.Organization{
-			ID: "atelier", DisplayName: "atelier", CreatedAt: now, UpdatedAt: now,
+			ID: "atelier", DisplayName: "Atelier", CreatedAt: now, UpdatedAt: now,
 		}, false); err != nil {
 			return err
 		}
 		return server.Bindings.Upsert(context.Background(), tx, persistence.ChannelBinding{
 			Provider: "whatsapp", ChannelID: "120000000000000001@g.us", OrgID: "atelier",
-			Kind: "group", Scope: "group", DisplayName: "atelier IA", CreatedAt: now,
+			Kind: "group", Scope: "group", DisplayName: "Atelier IA", CreatedAt: now,
 		})
 	}); err != nil {
 		t.Fatalf("préparation: %v", err)
@@ -189,7 +189,7 @@ func TestOrgPageShowsBoundChannels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("lecture: %v", err)
 	}
-	if !strings.Contains(string(body), "atelier IA") {
+	if !strings.Contains(string(body), "Atelier IA") {
 		t.Error("le canal rattaché devrait figurer dans l'onglet Canaux")
 	}
 	if strings.Contains(string(body), "Aucun canal rattaché") {

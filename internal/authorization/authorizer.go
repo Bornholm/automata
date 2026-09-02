@@ -1,7 +1,7 @@
 // Package authorization applique les règles de cloisonnement des portées
 // (personal, group, org) avant toute connexion externe ou appel LLM. Les
 // règles fondamentales appliquées ici sont invariantes : elles ne sont pas
-// désactivables par la configuration (voir PLAN.md §2.3 et §3.2).
+// désactivables par la configuration (plan de conception, §2.3 et §3.2).
 package authorization
 
 import (

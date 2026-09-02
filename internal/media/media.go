@@ -9,7 +9,7 @@
 // l'expliquer à l'utilisateur plutôt que de répondre à côté.
 //
 // Les notes vocales ne passent PAS par ici : elles restent transcrites par
-// internal/audio, sans jamais être conservées (PLAN.md §3.4).
+// internal/audio, sans jamais être conservées (plan de conception, §3.4).
 package media
 
 import (

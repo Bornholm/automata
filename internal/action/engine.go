@@ -23,7 +23,7 @@ import (
 	"github.com/bornholm/automata/internal/resource"
 )
 
-// Statuts du cycle de vie d'un plan d'actions (PLAN.md §10.2).
+// Statuts du cycle de vie d'un plan d'actions (plan de conception, §10.2).
 const (
 	StatusAwaitingConfirmation = "awaiting_confirmation"
 	StatusConfirmed            = "confirmed"
@@ -40,7 +40,7 @@ const (
 
 // InternalServer est la valeur conventionnelle de Action.MCPServer pour une
 // action exécutée par un exécuteur applicatif interne (voir Executor),
-// plutôt que par un appel à un serveur MCP (PLAN.md §10, retrofit mémoire).
+// plutôt que par un appel à un serveur MCP (plan de conception, §10, retrofit mémoire).
 // Exportée pour que les producteurs de delegation.ProposedAction (ex :
 // internal/agent.MemoryTools) puissent y référer sans dupliquer la chaîne
 // littérale.
@@ -52,7 +52,7 @@ const InternalServer = "internal"
 const MemoryForgetTool = "memory.forget"
 
 // defaultPlanTTL est la durée de validité par défaut d'un plan d'actions
-// avant expiration (PLAN.md §10.3), reprise de la valeur déjà choisie par
+// avant expiration (plan de conception, §10.3), reprise de la valeur déjà choisie par
 // les mécanismes ad-hoc des phases précédentes (agenda.go
 // calendarProposalTTL, todo.go todoProposalTTL) : cinq minutes est
 // raisonnable pour laisser le temps à un humain de répondre "confirmer"
@@ -60,7 +60,7 @@ const MemoryForgetTool = "memory.forget"
 const defaultPlanTTL = 5 * time.Minute
 
 // Executor exécute réellement une action persistée, au moment de la
-// confirmation d'un plan (PLAN.md §10.5 points 6-8). Une implémentation
+// confirmation d'un plan (plan de conception, §10.5 points 6-8). Une implémentation
 // typique adapte soit un appel d'outil MCP (mcpExecutor, par défaut, pour
 // tout Action.MCPServer autre que "internal"), soit une opération
 // applicative interne (memoryForgetExecutor, pour MCPServer == "internal").
@@ -72,7 +72,7 @@ type Executor interface {
 	Execute(ctx context.Context, identity model.ExecutionIdentity, plan persistence.ActionPlan, act persistence.Action, args map[string]any) (string, error)
 }
 
-// Engine est le moteur central des plans d'actions (PLAN.md §10, Phase 15).
+// Engine est le moteur central des plans d'actions (plan de conception, §10, Phase 15).
 // Une valeur zéro n'est pas utilisable : construire via NewEngine.
 type Engine struct {
 	db          *persistence.DB
@@ -136,7 +136,7 @@ func WithExecutor(mcpServer string, ex Executor) Option {
 }
 
 // WithAuditEvents active l'enregistrement de l'événement d'audit
-// "action_plan.confirmed" (PLAN.md §17, "auditer ... le confirmateur
+// "action_plan.confirmed" (plan de conception, §17, "auditer ... le confirmateur
 // humain") à chaque confirmation de plan menée à exécution par confirmPlan.
 // Dépendance optionnelle : si jamais fournie (repo nil, ou option omise),
 // confirmPlan continue de fonctionner exactement comme avant cette phase,
@@ -150,7 +150,7 @@ func WithAuditEvents(repo *persistence.AuditEventRepository) Option {
 }
 
 // WithLogger fournit le logger utilisé par Engine.RecoverInterrupted
-// (PLAN.md Phase 18) pour journaliser le nombre de plans et d'actions
+// (plan de conception, Phase 18) pour journaliser le nombre de plans et d'actions
 // récupérés au démarrage. slog.Default() est utilisé si jamais fournie ou
 // si logger est nil.
 func WithLogger(logger *slog.Logger) Option {
@@ -162,7 +162,7 @@ func WithLogger(logger *slog.Logger) Option {
 }
 
 // WithMetrics active l'observation du nombre de plans d'actions proposés
-// (CreatePlan) et confirmés (confirmPlan) par l'Engine (PLAN.md §14.3,
+// (CreatePlan) et confirmés (confirmPlan) par l'Engine (plan de conception, §14.3,
 // Phase 20). metrics nil (option omise) désactive l'observation.
 func WithMetrics(metrics *observability.Metrics) Option {
 	return func(e *Engine) {
@@ -196,9 +196,9 @@ func NewEngine(db *persistence.DB, authorizer *authorization.Authorizer, mcpMana
 }
 
 // CreatePlan persiste un nouveau plan "awaiting_confirmation" à partir des
-// actions proposées durant un tour de conversation (PLAN.md §10.2, §10.3).
+// actions proposées durant un tour de conversation (plan de conception, §10.2, §10.3).
 // Retourne le plan et un texte prêt à être renvoyé à l'utilisateur, listant
-// numériquement les actions proposées (PLAN.md §8.5, généralisé ici).
+// numériquement les actions proposées (plan de conception, §8.5, généralisé ici).
 func (e *Engine) CreatePlan(ctx context.Context, identity model.ExecutionIdentity, proposed []delegation.ProposedAction) (persistence.ActionPlan, string, error) {
 	if len(proposed) == 0 {
 		return persistence.ActionPlan{}, "", fmt.Errorf("action: aucune action proposée à planifier")
@@ -321,7 +321,7 @@ func (e *Engine) CreatePlan(ctx context.Context, identity model.ExecutionIdentit
 }
 
 // RecoverInterrupted recherche, au démarrage du processus, les plans
-// d'actions restés bloqués en statut "executing" (PLAN.md §18, "reprendre
+// d'actions restés bloqués en statut "executing" (plan de conception, §18, "reprendre
 // les plans interrompus", "identifier les états ambigus"). Un tel plan ne
 // peut résulter que d'un crash du processus AU MILIEU de confirmPlan, entre
 // la transition initiale vers "executing" (ligne 323 environ) et la
@@ -342,7 +342,7 @@ func (e *Engine) CreatePlan(ctx context.Context, identity model.ExecutionIdentit
 //     n'a produit aucun effet externe (le crash a eu lieu avant même le
 //     premier appel d'executeAction pour elle), mais elle N'EST PAS reprise
 //     automatiquement pour autant. Choix délibéré, plus prudent qu'une
-//     reprise automatique : PLAN.md §10.5 exige de recharger le plan,
+//     reprise automatique : plan de conception, §10.5 exige de recharger le plan,
 //     revérifier son état, son expiration, l'identité du confirmateur, les
 //     permissions et les ressources "au moment de l'exécution", juste avant
 //     chaque action — c'est-à-dire re-vérifier un contexte de confiance
@@ -432,7 +432,7 @@ func (e *Engine) RecoverInterrupted(ctx context.Context) error {
 }
 
 // HandleCommand traite une commande "confirmer"/"annuler" reçue dans la
-// conversation conv (PLAN.md §10.4). Elle ne retrouve que les plans actifs
+// conversation conv (plan de conception, §10.4). Elle ne retrouve que les plans actifs
 // (awaiting_confirmation) de CETTE conversation : un plan d'une autre
 // conversation n'est jamais visible, ce qui répond à lui seul au cas
 // "mauvaise conversation".
@@ -490,7 +490,7 @@ func (e *Engine) HandleCommand(ctx context.Context, identity model.ExecutionIden
 	case len(activePlans) == 1:
 		target = activePlans[0]
 	default:
-		// PLAN.md §10.4 : "si plusieurs plans sont actifs, demander
+		// plan de conception, §10.4 : "si plusieurs plans sont actifs, demander
 		// explicitement lequel confirmer".
 		return formatAmbiguousPlans(activePlans), nil
 	}
@@ -506,7 +506,7 @@ func (e *Engine) HandleCommand(ctx context.Context, identity model.ExecutionIden
 }
 
 // confirmPlan applique le cycle de vérification et d'exécution complet
-// décrit par PLAN.md §10.5, dans l'ordre.
+// décrit par plan de conception, §10.5, dans l'ordre.
 func (e *Engine) confirmPlan(ctx context.Context, identity model.ExecutionIdentity, ref persistence.ActionPlan) (string, error) {
 	// 1. Recharger le plan depuis la persistance : jamais un état en
 	// mémoire potentiellement périmé.
@@ -578,7 +578,7 @@ func (e *Engine) confirmPlan(ctx context.Context, identity model.ExecutionIdenti
 }
 
 // recordPlanConfirmedAudit journalise l'événement d'audit
-// "action_plan.confirmed" (PLAN.md §17, "auditer ... le confirmateur
+// "action_plan.confirmed" (plan de conception, §17, "auditer ... le confirmateur
 // humain") : le principal enregistré est identity.PrincipalID, c'est-à-dire
 // le confirmateur ACTUEL, jamais plan.CreatedBy (l'auteur, potentiellement
 // technique, de la proposition). No-op silencieux si aucun
@@ -649,7 +649,7 @@ func (e *Engine) recordPlanConfirmedAudit(ctx context.Context, identity model.Ex
 	}
 }
 
-// cancelPlan marque ref comme annulé (PLAN.md §10.4). Comme confirmPlan,
+// cancelPlan marque ref comme annulé (plan de conception, §10.4). Comme confirmPlan,
 // recharge le plan et vérifie son état pour éviter d'annuler un plan déjà
 // terminé.
 func (e *Engine) cancelPlan(ctx context.Context, ref persistence.ActionPlan) (string, error) {
@@ -672,10 +672,10 @@ func (e *Engine) cancelPlan(ctx context.Context, ref persistence.ActionPlan) (st
 	return "Plan d'actions annulé, aucune action n'a été exécutée.", nil
 }
 
-// authorizeConfirmer vérifie l'identité du confirmateur (PLAN.md §10.5
+// authorizeConfirmer vérifie l'identité du confirmateur (plan de conception, §10.5
 // point 4, §10.3 "liée à l'auteur ou au rôle autorisé").
 //
-// Règle retenue, faute de précision supplémentaire dans PLAN.md : dans une
+// Règle retenue, faute de précision supplémentaire dans le plan de conception : dans une
 // conversation privée (portée personnelle), seul le principal auteur de la
 // proposition peut la confirmer, puisque la ressource concernée lui est
 // propre. Dans une conversation de groupe (portée group), n'importe quel
@@ -698,7 +698,7 @@ func (e *Engine) authorizeConfirmer(identity model.ExecutionIdentity, plan persi
 }
 
 // isExpired vérifie l'expiration du plan par rapport à l'horloge de
-// l'Engine (PLAN.md §10.5 point 3). Un plan sans ExpiresAt n'expire jamais.
+// l'Engine (plan de conception, §10.5 point 3). Un plan sans ExpiresAt n'expire jamais.
 func (e *Engine) isExpired(plan persistence.ActionPlan) bool {
 	if plan.ExpiresAt == nil || *plan.ExpiresAt == "" {
 		return false
@@ -713,14 +713,14 @@ func (e *Engine) isExpired(plan persistence.ActionPlan) bool {
 }
 
 // actionOutcome résume le résultat d'exécution d'une action pour le
-// rapport final (PLAN.md §10.5 point 9).
+// rapport final (plan de conception, §10.5 point 9).
 type actionOutcome struct {
 	action  persistence.Action
 	ok      bool
 	message string
 }
 
-// executeAction applique PLAN.md §10.5 points 5 à 9 pour une action donnée.
+// executeAction applique plan de conception, §10.5 points 5 à 9 pour une action donnée.
 // Une erreur n'est jamais propagée à l'appelant : un échec (permission
 // retirée, ressource introuvable, outil en erreur) est enregistré sur
 // l'action elle-même (status=failed) et ne bloque jamais les actions
@@ -796,7 +796,7 @@ func (e *Engine) executeAction(ctx context.Context, identity model.ExecutionIden
 // l'exploitant, le rapport détaillé ne partant qu'à l'utilisateur de la
 // conversation. Seuls des identifiants et un code d'erreur court sont émis —
 // ni arguments d'outil, ni résumé d'action, qui portent des données privées
-// (PLAN.md §14.2).
+// (plan de conception, §14.2).
 func (e *Engine) failAction(ctx context.Context, act persistence.Action, code string, cause error) actionOutcome {
 	completedAt := e.now().UTC().Format(time.RFC3339)
 	errCode := code
@@ -861,7 +861,7 @@ func (e *Engine) listActions(ctx context.Context, planID persistence.ActionPlanI
 	return actions, nil
 }
 
-// setPlanStatus persiste le nouveau statut du plan (PLAN.md §10.5 point 10,
+// setPlanStatus persiste le nouveau statut du plan (plan de conception, §10.5 point 10,
 // "persister tout au fur et à mesure").
 func (e *Engine) setPlanStatus(ctx context.Context, id persistence.ActionPlanID, status string) error {
 	now := e.now().UTC().Format(time.RFC3339)

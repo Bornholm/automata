@@ -50,7 +50,7 @@ const (
 // Rattrapage des échéances manquées (machine éteinte, réseau coupé) : un
 // échec de livraison ne classe plus l'entrée failed d'office, sa tentative
 // suivante est reprogrammée avec un délai doublé à chaque échec. La fenêtre
-// de rattrapage suit la règle demandée par William : sans limite de temps
+// de rattrapage suit la règle retenue : sans limite de temps
 // pour une entrée à déclenchement unique (mais bornée en tentatives), et
 // jusqu'au déclenchement suivant pour une récurrente — un bulletin du matin
 // rattrapé l'après-midi a de la valeur, le même bulletin délivré après

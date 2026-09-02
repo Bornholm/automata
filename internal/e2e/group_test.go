@@ -15,7 +15,7 @@ import (
 
 // TestGroup_MessageWithoutMentionIgnored vérifie le scénario "message sans
 // mention" : un message de groupe où l'assistant n'est pas mentionné est
-// ignoré par l'ingress AVANT tout appel LLM (PLAN.md §3.3).
+// ignoré par l'ingress AVANT tout appel LLM (plan de conception, §3.3).
 func TestGroup_MessageWithoutMentionIgnored(t *testing.T) {
 	cfg := baseOrgConfig()
 
@@ -254,7 +254,7 @@ func TestGroup_MultipleAuthors(t *testing.T) {
 // TestGroup_ConfirmationByAuthorizedMember vérifie le scénario
 // "confirmation par un autre membre autorisé" : le principal A propose une
 // action de groupe, le principal B (même groupe, permissions suffisantes)
-// la confirme avec succès (PLAN.md §10.5 authorizeConfirmer : seule la
+// la confirme avec succès (plan de conception, §10.5 authorizeConfirmer : seule la
 // portée personal restreint au créateur).
 func TestGroup_ConfirmationByAuthorizedMember(t *testing.T) {
 	cfg := baseOrgConfig()

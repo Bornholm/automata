@@ -21,7 +21,7 @@ import (
 )
 
 // --- serveur MCP HTTP (SSE) factice, dédié à la vérification de
-// l'injection best-effort de clé d'idempotence (PLAN.md §18) : deux outils,
+// l'injection best-effort de clé d'idempotence (plan de conception, §18) : deux outils,
 // l'un déclarant "idempotency_key" dans son schéma d'entrée, l'autre non.
 // Chaque outil consigne les arguments reçus (map[string]any brute, In ==
 // map[string]any) pour permettre d'observer précisément ce qui a été

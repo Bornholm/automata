@@ -51,9 +51,9 @@ func (r *ActionPlanRepository) FindByID(ctx context.Context, q Querier, id Actio
 }
 
 // UpdateStatus met à jour le statut d'un plan d'actions et son
-// updated_at (PLAN.md §10.2, cycle de vie). Utilisée à chaque transition
+// updated_at (plan de conception, §10.2, cycle de vie). Utilisée à chaque transition
 // (confirmed, executing, succeeded, partially_succeeded, failed, expired,
-// cancelled) : PLAN.md §10.5 point 10 exige que chaque étape soit persistée
+// cancelled) : plan de conception, §10.5 point 10 exige que chaque étape soit persistée
 // au fur et à mesure, pas seulement à la fin.
 func (r *ActionPlanRepository) UpdateStatus(ctx context.Context, q Querier, id ActionPlanID, status string, updatedAt string) error {
 	_, err := q.ExecContext(ctx, `
@@ -69,7 +69,7 @@ func (r *ActionPlanRepository) UpdateStatus(ctx context.Context, q Querier, id A
 // toStatus et retourne false si le plan n'était pas (ou plus) dans
 // fromStatus. C'est la transition à utiliser pour toute étape qui ne doit se
 // produire qu'une fois — au premier chef le passage d'un plan à l'exécution
-// (PLAN.md §10.5 point 2, "empêcher les doubles exécutions").
+// (plan de conception, §10.5 point 2, "empêcher les doubles exécutions").
 //
 // Contrairement à UpdateStatus, la garde est portée par la base et non par
 // une lecture préalable : un "lire le statut puis écrire" laisse une fenêtre
@@ -96,7 +96,7 @@ func (r *ActionPlanRepository) CompareAndSwapStatus(ctx context.Context, q Queri
 
 // ListActiveByConversation retourne les plans d'actions de la conversation
 // conversationID dont le statut est "awaiting_confirmation", triés par
-// date de création croissante (PLAN.md §10.4 : c'est cet ordre qui numérote
+// date de création croissante (plan de conception, §10.4 : c'est cet ordre qui numérote
 // les plans lors d'une désambiguïsation).
 func (r *ActionPlanRepository) ListActiveByConversation(ctx context.Context, q Querier, conversationID model.ConversationID) ([]ActionPlan, error) {
 	rows, err := q.QueryContext(ctx, `
@@ -127,7 +127,7 @@ func (r *ActionPlanRepository) ListActiveByConversation(ctx context.Context, q Q
 
 // ListByStatus retourne tous les plans d'actions dans le statut status,
 // triés par date de création croissante. Utilisée par
-// action.Engine.RecoverInterrupted (PLAN.md Phase 18) pour retrouver, au
+// action.Engine.RecoverInterrupted (plan de conception, Phase 18) pour retrouver, au
 // redémarrage, les plans restés bloqués en "executing" par un crash du
 // processus.
 func (r *ActionPlanRepository) ListByStatus(ctx context.Context, q Querier, status string) ([]ActionPlan, error) {
@@ -159,7 +159,7 @@ func (r *ActionPlanRepository) ListByStatus(ctx context.Context, q Querier, stat
 
 // ListRecent retourne au plus limit plans d'actions, triés par date de
 // création décroissante (les plus récents d'abord). Utilisée par la
-// commande d'administration "automata admin inspect" (PLAN.md Phase 18),
+// commande d'administration "automata admin inspect" (plan de conception, Phase 18),
 // lecture seule.
 func (r *ActionPlanRepository) ListRecent(ctx context.Context, q Querier, limit int) ([]ActionPlan, error) {
 	rows, err := q.QueryContext(ctx, `

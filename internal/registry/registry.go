@@ -52,7 +52,7 @@ import (
 )
 
 // mainAgentName est l'identifiant conventionnel de l'agent généraliste dans
-// cfg.Agents (voir PLAN.md §12 et internal/config/testdata/valid/config.yaml).
+// cfg.Agents (plan de conception, §12 et internal/config/testdata/valid/config.yaml).
 const mainAgentName = "main"
 
 // Run démarre les services applicatifs et bloque jusqu'à l'annulation du
@@ -76,7 +76,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	}
 
 	// Registre de métriques et indicateur de disponibilité (readiness),
-	// PLAN.md §14.3 et Phase 20. Construits inconditionnellement (coût
+	// plan de conception, §14.3 et Phase 20. Construits inconditionnellement (coût
 	// négligeable, purement en mémoire) : seul le démarrage du serveur HTTP
 	// d'observabilité, plus bas, dépend de cfg.Observability.Enabled. ready
 	// reste à sa valeur zéro (non prêt) tant que la persistance et les
@@ -248,7 +248,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	actionEngine := action.NewEngine(db, authorizer, mcpManager, cfg, actionOpts...)
 
 	// Récupération des plans/actions interrompus par un crash du processus
-	// précédent (PLAN.md Phase 18), AVANT de traiter le moindre message ou
+	// précédent (plan de conception, Phase 18), AVANT de traiter le moindre message ou
 	// tick de scheduler : sinon une confirmation entrante ou une occurrence
 	// planifiée pourrait cohabiter avec un plan resté bloqué en "executing".
 	// Choix délibéré : une erreur ici n'est pas fatale au démarrage — elle
@@ -509,7 +509,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	// La persistance est ouverte et les pipelines ingress/scheduler viennent
 	// d'être démarrés (goroutines lancées ci-dessus) : le service peut
-	// désormais répondre "prêt" (PLAN.md Phase 20, readiness). Les pipelines
+	// désormais répondre "prêt" (plan de conception, Phase 20, readiness). Les pipelines
 	// eux-mêmes ne signalent pas individuellement leur démarrage effectif
 	// (ex : connexion établie au fournisseur Courier) : ready reflète que le
 	// processus a fini son câblage interne, pas que chaque dépendance
@@ -592,7 +592,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 }
 
 // buildConversationHandler construit le ingress.Handler de l'agent
-// généraliste "main" (PLAN.md Phase 6, Phase 7) : depuis la Phase 7, la
+// généraliste "main" (plan de conception, Phase 6, Phase 7) : depuis la Phase 7, la
 // construction du client LLM et la composition du system prompt (règles
 // invariantes + personnalité configurée + capacités) de CHAQUE agent
 // déclaré dans la configuration sont déléguées à agent.NewRegistry
@@ -600,7 +600,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 // fonction se contente d'en extraire l'agent "main" pour le brancher sur un
 // conversation.Handler qui persiste l'historique dans db.
 //
-// Depuis la Phase 9 (PLAN.md §3.4), elle construit également le
+// Depuis la Phase 9 (plan de conception, §3.4), elle construit également le
 // audio.Transcriber utilisé pour transcrire les notes vocales lorsque
 // cfg.Audio.Enabled est vrai, à partir du client LLM référencé par
 // cfg.Audio.TranscriptionClient. Rien n'est construit si l'audio est
@@ -608,7 +608,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 // préservé.
 // Depuis la Phase 16, elle retourne également le *agent.Registry construit,
 // réutilisé tel quel par internal/scheduler pour exécuter les tâches
-// planifiées (PLAN.md §11) : un seul registre d'agents par instance,
+// planifiées (plan de conception, §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
 func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, eventStores agent.EventStoreResolver, skillsProvider agent.SkillsProvider, clientResolver agent.ClientResolver, modelStore *llmclients.Store, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
 	memoryTools := buildMemoryTools(cfg, authorizer, memStore, metrics)

@@ -43,16 +43,16 @@ func TestUsageRecords_AggregateByOrgWithinPeriod(t *testing.T) {
 
 	base := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 
-	// Deux appels facturés pour famille-petit, un pour atelier, et un hors
+	// Deux appels facturés pour famille-dupont, un pour atelier, et un hors
 	// période qui ne doit jamais apparaître.
 	insertUsage(t, db, usage.Record{
-		CreatedAt: base, OrgID: "famille-petit", PrincipalID: "will",
+		CreatedAt: base, OrgID: "famille-dupont", PrincipalID: "will",
 		Component: "agent", Agent: "main", Kind: "chat", Provider: "openrouter", Model: "deepseek/x",
 		PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150, CachedTokens: 20,
 		CostAmount: 0.002, CostCurrency: "USD", CostReported: true,
 	})
 	insertUsage(t, db, usage.Record{
-		CreatedAt: base.Add(time.Hour), OrgID: "famille-petit", PrincipalID: "ivonne",
+		CreatedAt: base.Add(time.Hour), OrgID: "famille-dupont", PrincipalID: "ivonne",
 		Component: "agent", Agent: "main", Kind: "chat", Provider: "openrouter", Model: "deepseek/x",
 		PromptTokens: 200, CompletionTokens: 100, TotalTokens: 300,
 		CostAmount: 0.004, CostCurrency: "USD", CostReported: true,
@@ -63,7 +63,7 @@ func TestUsageRecords_AggregateByOrgWithinPeriod(t *testing.T) {
 		PromptTokens: 10, CompletionTokens: 5, TotalTokens: 15,
 	})
 	insertUsage(t, db, usage.Record{
-		CreatedAt: base.AddDate(0, 1, 0), OrgID: "famille-petit", PrincipalID: "will",
+		CreatedAt: base.AddDate(0, 1, 0), OrgID: "famille-dupont", PrincipalID: "will",
 		Component: "agent", Agent: "main", Kind: "chat", Provider: "openrouter", Model: "deepseek/x",
 		TotalTokens: 999999, CostAmount: 42, CostCurrency: "USD", CostReported: true,
 	})
@@ -76,16 +76,16 @@ func TestUsageRecords_AggregateByOrgWithinPeriod(t *testing.T) {
 		t.Fatalf("attendu 2 lignes (une par org), obtenu %d: %+v", len(aggregates), aggregates)
 	}
 
-	// Trié par coût décroissant : famille-petit d'abord.
+	// Trié par coût décroissant : famille-dupont d'abord.
 	first := aggregates[0]
-	if first.Keys[0] != "famille-petit" {
-		t.Fatalf("première ligne attendue famille-petit, obtenu %q", first.Keys[0])
+	if first.Keys[0] != "famille-dupont" {
+		t.Fatalf("première ligne attendue famille-dupont, obtenu %q", first.Keys[0])
 	}
 	if first.Calls != 2 || first.TotalTokens != 450 || first.CachedTokens != 20 {
-		t.Errorf("totaux famille-petit inattendus: %+v", first)
+		t.Errorf("totaux famille-dupont inattendus: %+v", first)
 	}
 	if first.CostAmount != 0.006 || first.Currency != "USD" || first.ReportedCalls != 2 {
-		t.Errorf("coûts famille-petit inattendus: %+v", first)
+		t.Errorf("coûts famille-dupont inattendus: %+v", first)
 	}
 
 	second := aggregates[1]

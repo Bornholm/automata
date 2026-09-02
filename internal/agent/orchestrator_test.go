@@ -20,7 +20,7 @@ import (
 // llm.ChatCompletionClient (non-streaming) sans réseau, piloté tour par
 // tour par responseFunc : cela permet de scripter précisément les
 // tool-calls demandés par le modèle simulé, condition nécessaire pour
-// piloter la boucle de tool-calling d'OrchestratorAgent (PLAN.md Phase 8).
+// piloter la boucle de tool-calling d'OrchestratorAgent (plan de conception, Phase 8).
 type fakeCompletionClient struct {
 	mu           sync.Mutex
 	responseFunc func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error)
@@ -333,7 +333,7 @@ func scriptDelegateThenReply(reply string) *fakeCompletionClient {
 }
 
 // TestOrchestratorAgent_MaxActionsPerTurnRespected vérifie qu'un lot
-// d'actions tenant sous le plafond est transmis intact (PLAN.md §9.4).
+// d'actions tenant sous le plafond est transmis intact (plan de conception, §9.4).
 func TestOrchestratorAgent_MaxActionsPerTurnRespected(t *testing.T) {
 	todo := proposingSpecialist(3)
 	client := scriptDelegateThenReply("J'ai préparé 3 tâches.")
@@ -358,7 +358,7 @@ func TestOrchestratorAgent_MaxActionsPerTurnRespected(t *testing.T) {
 // TestOrchestratorAgent_MaxActionsPerTurnRejectsWholeBatch vérifie qu'un
 // dépassement rejette le lot entier plutôt que d'en conserver un préfixe
 // arbitraire : l'utilisateur ne doit jamais confirmer un sous-ensemble
-// silencieux de ce que l'agent a annoncé (PLAN.md §9.4, §10.3).
+// silencieux de ce que l'agent a annoncé (plan de conception, §9.4, §10.3).
 func TestOrchestratorAgent_MaxActionsPerTurnRejectsWholeBatch(t *testing.T) {
 	todo := proposingSpecialist(4)
 	client := scriptDelegateThenReply("J'ai préparé 4 tâches.")
@@ -438,7 +438,7 @@ func verboseSpecialist(size int) *fakeSpecialist {
 }
 
 // TestOrchestratorAgent_MaxToolContextBytesBoundsCumulativeResults vérifie le
-// budget CUMULÉ des résultats d'outils (PLAN.md §9.4) : plusieurs appels
+// budget CUMULÉ des résultats d'outils (plan de conception, §9.4) : plusieurs appels
 // tenant chacun sous le plafond unitaire ne doivent pas, ensemble, dépasser
 // le budget de contexte déclaré. La réduction est signalée au modèle plutôt
 // que silencieuse, sans quoi il lirait un résultat vide comme une absence de

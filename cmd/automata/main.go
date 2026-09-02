@@ -243,7 +243,7 @@ func newConfigValidateCommand() *cobra.Command {
 // autre adresse doit passer -addr explicitement.
 const defaultHealthcheckAddr = "127.0.0.1:9090"
 
-// newHealthcheckCommand construit la commande "healthcheck" (PLAN.md Phase
+// newHealthcheckCommand construit la commande "healthcheck" (le plan de conception Phase
 // 22, point 5).
 //
 // Elle existe pour rendre la sonde de santé exécutable DEPUIS le conteneur :
@@ -303,7 +303,7 @@ func newHealthcheckCommand() *cobra.Command {
 }
 
 // newMemoryCommand construit la commande "memory" et sa sous-commande
-// "reindex" (PLAN.md §8.6, Phase 10).
+// "reindex" (plan de conception, §8.6, Phase 10).
 func newMemoryCommand(logger *slog.Logger) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "memory",
@@ -648,7 +648,7 @@ func newUsageReportCommand() *cobra.Command {
 }
 
 // newAdminCommand construit la commande "admin" et sa sous-commande
-// "inspect" (PLAN.md §18, "ajouter une commande d'inspection
+// "inspect" (plan de conception, §18, "ajouter une commande d'inspection
 // administrative").
 func newAdminCommand() *cobra.Command {
 	cmd := &cobra.Command{

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Règles d'implémentation pour ce dépôt. Voir `PLAN.md` pour le plan complet.
+Règles d'implémentation pour ce dépôt. Voir `le plan de conception` pour le plan complet.
 
 ## Travail séquentiel
 

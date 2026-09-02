@@ -31,7 +31,7 @@ import (
 const memoryCollectionLabel = "automata-memory"
 
 // memoryResources regroupe le store et l'agent.MemoryTools construits pour
-// brancher la mémoire (PLAN.md §8, Phase 10), ainsi que les ressources à
+// brancher la mémoire (plan de conception, §8, Phase 10), ainsi que les ressources à
 // fermer proprement à l'arrêt (store SQLite et index bleve, possédés par
 // l'appelant selon la convention amoxtli — voir README amoxtli "L'appelant
 // possède les ressources qu'il crée et doit les fermer").
@@ -80,7 +80,7 @@ func buildMemory(ctx context.Context, cfg *config.Config, models *llmclients.Sto
 
 	if dir := filepath.Dir(cfg.Memory.Store.Path); dir != "" && dir != "." {
 		// 0o700 : la mémoire persistante contient des données personnelles
-		// (PLAN.md Phase 19, point 5, même raisonnement que
+		// (plan de conception, Phase 19, point 5, même raisonnement que
 		// internal/persistence/db.go pour la base applicative).
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return res, fmt.Errorf("registry: mémoire: création du répertoire %q: %w", dir, err)
@@ -116,7 +116,7 @@ func buildMemory(ctx context.Context, cfg *config.Config, models *llmclients.Sto
 		case "bleve":
 			if dir := filepath.Dir(idxCfg.Path); dir != "" && dir != "." {
 				// 0o700 : la mémoire persistante contient des données
-				// personnelles (PLAN.md Phase 19, point 5, même raisonnement
+				// personnelles (plan de conception, Phase 19, point 5, même raisonnement
 				// que internal/persistence/db.go pour la base applicative).
 				if err := os.MkdirAll(dir, 0o700); err != nil {
 					return res, fmt.Errorf("registry: mémoire: création du répertoire %q: %w", dir, err)
@@ -274,7 +274,7 @@ func buildMemory(ctx context.Context, cfg *config.Config, models *llmclients.Sto
 
 // MemoryReindex construit la mémoire décrite par cfg.Memory et déclenche une
 // réindexation complète (Store.Reindex), en attendant sa fin. Utilisée par
-// la commande CLI "automata memory reindex" (PLAN.md §8.6, Phase 10). Les
+// la commande CLI "automata memory reindex" (plan de conception, §8.6, Phase 10). Les
 // ressources construites sont fermées avant le retour, quel que soit le
 // résultat.
 //

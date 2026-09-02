@@ -1,7 +1,7 @@
 # Exploitation — Automata
 
 Ce document est le livrable de la Phase 20 (« Observabilité et exploitation
-», PLAN.md) : procédures opérationnelles nécessaires pour diagnostiquer une
+», le plan de conception) : procédures opérationnelles nécessaires pour diagnostiquer une
 panne, sauvegarder et restaurer les données, et redéployer une instance,
 sans jamais avoir besoin de lire le contenu des conversations privées
 (AGENTS.md, « ne pas journaliser les contenus privés » — le même principe
@@ -77,7 +77,7 @@ même si SQLite propose par ailleurs une API de sauvegarde à chaud
 (`VACUUM INTO`, ou l'API C `sqlite3_backup`) qui pourrait éviter l'arrêt du
 service — non retenue par défaut pour ne pas ajouter une dépendance
 opérationnelle supplémentaire (outillage `sqlite3` CLI, ou code applicatif
-dédié) non demandée explicitement par PLAN.md §20.
+dédié) non demandée explicitement par plan de conception, §20.
 
 Séquence :
 
@@ -139,7 +139,7 @@ pare-feu/reverse proxy si elle doit être exposée à un superviseur externe :
   applicatif (readiness). Un load-balancer ou une sonde d'orchestrateur
   l'utilise pour décider d'aiguiller du trafic vers cette instance.
 - **`GET /metrics`** — export JSON agrégé des compteurs et latences
-  décrits par PLAN.md §14.3 : messages reçus, messages ignorés sans
+  décrits par plan de conception, §14.3 : messages reçus, messages ignorés sans
   mention, origines refusées, messages dupliqués, latence de transcription
   et de réponse (compte/somme/min/max en millisecondes), délégations par
   agent, appels MCP réussis/en erreur par (serveur, outil), actions
@@ -158,7 +158,7 @@ curl -s http://127.0.0.1:9090/metrics | jq .
 ```
 
 Format de l'export retenu : JSON simple (pas le format texte Prometheus).
-PLAN.md §14.3 ne prescrit aucun format particulier ; un export Prometheus
+plan de conception, §14.3 ne prescrit aucun format particulier ; un export Prometheus
 aurait ajouté du travail de mise en forme (types de métriques, labels,
 échappement) sans bénéfice fonctionnel supplémentaire pour cette phase — un
 `curl | jq` suffit à diagnostiquer une panne. Si une intégration Prometheus
@@ -347,7 +347,7 @@ Ordre recommandé, du plus rapide au plus détaillé :
    toujours sans contenu de conversation (statuts, horodatages,
    identifiants).
 4. Logs structurés du processus (`slog`, JSON sur stderr) : toujours
-   filtrés des contenus privés par construction (PLAN.md §14.2 — jamais de
+   filtrés des contenus privés par construction (plan de conception, §14.2 — jamais de
    contenu intégral de message, de transcription, d'arguments MCP
    sensibles, de tokens ni de pièces jointes), mais avec les identifiants
    de corrélation utiles (`org_id`, `principal_id`, `conversation_id`,

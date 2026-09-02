@@ -3,7 +3,7 @@ package persistence
 import "github.com/bornholm/automata/internal/model"
 
 // Ce fichier définit les DTO de persistance minimalistes pour les entités
-// qui n'existent pas encore dans internal/model (voir PLAN.md §13.1). Ce ne
+// qui n'existent pas encore dans internal/model (plan de conception, §13.1). Ce ne
 // sont pas les modèles métier riches des phases ultérieures : ils seront
 // affinés quand ces phases arriveront.
 
@@ -62,7 +62,7 @@ type Message struct {
 // l'historique remis au modèle.
 //
 // Ne porte jamais d'audio : les notes vocales sont transcrites sans être
-// conservées (PLAN.md §3.4).
+// conservées (plan de conception, §3.4).
 type MessageAttachment struct {
 	ID        string
 	MessageID string

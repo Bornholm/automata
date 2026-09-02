@@ -1,6 +1,6 @@
 -- Rappels ponctuels créés conversationnellement ("rappelle-moi demain à
 -- 9h..."), par opposition aux schedules récurrents déclarés dans la
--- configuration (PLAN.md §11) : un rappel est créé par un outil de l'agent,
+-- configuration (plan de conception, §11) : un rappel est créé par un outil de l'agent,
 -- vit en base, se déclenche une seule fois puis devient inerte.
 --
 -- message est du contenu privé : il est délivré tel quel sur le canal

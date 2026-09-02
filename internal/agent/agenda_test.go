@@ -22,7 +22,7 @@ import (
 // lecture (list_events) et un outil d'écriture (create_event), même
 // approche que internal/agent/mcp_tool_agent_test.go (Phase 12) et
 // internal/mcp/manager_test.go (Phase 11). Aucun vrai serveur MCP Google
-// Calendar n'est disponible dans ce dépôt (PLAN.md Phase 13).
+// Calendar n'est disponible dans ce dépôt (plan de conception, Phase 13).
 
 type listEventsParams struct {
 	CalendarID string `json:"calendar_id"`
@@ -366,7 +366,7 @@ func TestAgendaToolAgent_CreateEventProposedNotExecuted(t *testing.T) {
 
 	// L'action remonte à l'orchestrateur, qui la transformera en plan
 	// persisté : c'est internal/action.Engine qui l'exécutera après
-	// confirmation, jamais l'agent lui-même (PLAN.md Phase 15).
+	// confirmation, jamais l'agent lui-même (plan de conception, Phase 15).
 	if len(result.ProposedActions) != 1 {
 		t.Fatalf("actions proposées: got %d, expected 1", len(result.ProposedActions))
 	}
@@ -390,7 +390,7 @@ func TestAgendaToolAgent_CreateEventProposedNotExecuted(t *testing.T) {
 	}
 
 	// L'identifiant de calendrier n'est PAS figé dans l'action : il est
-	// résolu à nouveau au moment de la confirmation (PLAN.md §10.5 point 6).
+	// résolu à nouveau au moment de la confirmation (plan de conception, §10.5 point 6).
 	if _, present := proposed.Arguments["calendar_id"]; present {
 		t.Errorf("calendar_id ne doit jamais être figé dans une action proposée, obtenu %v", proposed.Arguments["calendar_id"])
 	}

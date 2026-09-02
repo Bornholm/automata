@@ -1,6 +1,6 @@
 # Modèle de sécurité — Automata
 
-Ce document est le livrable de la Phase 19 (« Sécurité », PLAN.md) : une revue
+Ce document est le livrable de la Phase 19 (« Sécurité », le plan de conception) : une revue
 dédiée avant déploiement réel. Il décrit le modèle de menace retenu, les
 frontières de confiance appliquées par le code, et l'état constaté pour
 chacun des dix points de vérification de la Phase 19, à la date de cette
@@ -51,7 +51,7 @@ sécurité.**
   (le contenu d'une mémoire à retenir, le titre d'un événement, le texte
   d'une recherche).
 - Le choix de proposer une action (qui reste soumise à confirmation humaine
-  explicite et à revérification complète avant exécution, PLAN.md §10.5).
+  explicite et à revérification complète avant exécution, plan de conception, §10.5).
 
 ### Ce que le LLM ne peut JAMAIS influencer
 
@@ -79,7 +79,7 @@ sécurité.**
   (`internal/action.Engine.executeAction`, étape 5 : « ne jamais se fier à
   l'autorisation obtenue lors de la proposition »).
 
-## 3. État constaté par point de vérification (PLAN.md Phase 19)
+## 3. État constaté par point de vérification (plan de conception, Phase 19)
 
 ### A.1 — Frontières d'autorisation
 
@@ -170,7 +170,7 @@ oubli de code.
 - `InvariantRules` est une constante Go, jamais interprétée comme un
   template (pas de `{{ }}`, pas de moteur de substitution) : c'est un texte
   statique concaténé tel quel.
-- `BuildContextBlock` n'injecte que les 4 variables autorisées par PLAN.md
+- `BuildContextBlock` n'injecte que les 4 variables autorisées par le plan de conception
   §7.3 (agent, organisation, portée, type de canal), toutes dérivées de
   `model.ExecutionIdentity` déjà résolue par l'application — jamais de
   contenu utilisateur, jamais de résultat d'outil.
@@ -261,7 +261,7 @@ essentiellement contre le portefeuille de tokens de l'opérateur, pas contre
 la confidentialité ou l'intégrité des données d'autres principaux ; les
 fournisseurs de messagerie et les clients LLM appliquent déjà leurs propres
 plafonds) : à corriger dans une phase ultérieure d'exploitation plutôt que
-par un ajout non spécifié par PLAN.md dans cette revue.
+par un ajout non spécifié par le plan de conception dans cette revue.
 
 ### A.8 — Timeouts réseau
 
@@ -297,7 +297,7 @@ secondes). Test ajouté :
 
 **Conforme.** Voir A.6 : aucun log observé ne contient le contenu intégral
 d'un message utilisateur, d'une transcription, ou d'arguments MCP sensibles.
-Conforme à PLAN.md §14.2.
+Conforme à plan de conception, §14.2.
 
 ### A.10 — Origines et groupes inconnus
 
@@ -310,7 +310,7 @@ verts (`go test ./...`, `go test -race ./...`).
 
 ## 4. Limitations connues assumées
 
-- **Pas de verrouillage distribué** (PLAN.md §Phase 17/18) : plusieurs
+- **Pas de verrouillage distribué** (le plan de conception §Phase 17/18) : plusieurs
   instances d'Automata partageant la même base SQLite ne sont pas
   supportées ; `sqlDB.SetMaxOpenConns(1)` sérialise les écritures au sein
   d'un seul processus, pas entre processus.
@@ -352,7 +352,7 @@ verts (`go test ./...`, `go test -race ./...`).
     pièces jointes anciennes.
 
   Les audios font exception et ne sont jamais stockés : notes vocales comme
-  fichiers audio sont transcrits sans conservation (PLAN.md §3.4). Pour ne
+  fichiers audio sont transcrits sans conservation (plan de conception, §3.4). Pour ne
   rien conserver du tout, mettre `attachments.max_history` à `0` — les images
   restent alors visibles du modèle pour le tour courant, sans être relues
   ensuite — ou `attachments.enabled` à `false`.

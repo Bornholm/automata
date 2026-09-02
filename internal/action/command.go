@@ -1,5 +1,5 @@
 // Package action implémente le système centralisé et persisté de plans
-// d'actions (PLAN.md §10, Phase 15) : proposition, confirmation et
+// d'actions (plan de conception, §10, Phase 15) : proposition, confirmation et
 // exécution d'actions sensibles (écritures non idempotentes, suppressions),
 // en remplacement des mécanismes ad-hoc en mémoire des phases précédentes
 // (forget_memory §8.5, agenda §10/Phase 13, todo Phase 14).
@@ -12,7 +12,7 @@ import (
 )
 
 // CommandKind énumère les commandes conversationnelles littérales
-// supportées (PLAN.md §10.4).
+// supportées (plan de conception, §10.4).
 type CommandKind int
 
 const (
@@ -37,7 +37,7 @@ type Command struct {
 var commandPattern = regexp.MustCompile(`^(confirmer|annuler)(?:\s+(\d+))?$`)
 
 // ParseCommand reconnaît un texte de message comme une commande
-// conversationnelle littérale "confirmer"/"annuler" (PLAN.md §10.4).
+// conversationnelle littérale "confirmer"/"annuler" (plan de conception, §10.4).
 // Insensible à la casse, tolère les espaces superflus. ok vaut false si
 // text n'est pas une de ces commandes : dans ce cas, l'appelant doit
 // continuer le traitement normal (jamais invoquer le LLM pour décider si

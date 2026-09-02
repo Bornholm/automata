@@ -60,7 +60,7 @@ func (r *ScheduledRunRepository) FindByScheduleAndScheduledFor(ctx context.Conte
 // FindLatestByScheduleID retourne l'exécution planifiée la plus récente
 // (par scheduled_for) pour scheduleID, ou (ScheduledRun{}, false, nil) si
 // aucune n'existe encore. Utilisé par internal/scheduler pour reprendre le
-// calcul des occurrences après la dernière connue (PLAN.md §11.5).
+// calcul des occurrences après la dernière connue (plan de conception, §11.5).
 func (r *ScheduledRunRepository) FindLatestByScheduleID(ctx context.Context, q Querier, scheduleID string) (ScheduledRun, bool, error) {
 	row := q.QueryRowContext(ctx, `
 		SELECT id, schedule_id, scheduled_for, started_at, completed_at, status, principal_id, org_id,
@@ -77,7 +77,7 @@ func (r *ScheduledRunRepository) FindLatestByScheduleID(ctx context.Context, q Q
 // FindRunningByScheduleID retourne une exécution planifiée non terminale
 // (status = "running") pour scheduleID, ou (ScheduledRun{}, false, nil) si
 // aucune n'est en cours. Utilisé pour appliquer la politique de concurrence
-// "forbid" (PLAN.md §11.4).
+// "forbid" (plan de conception, §11.4).
 func (r *ScheduledRunRepository) FindRunningByScheduleID(ctx context.Context, q Querier, scheduleID string) (ScheduledRun, bool, error) {
 	row := q.QueryRowContext(ctx, `
 		SELECT id, schedule_id, scheduled_for, started_at, completed_at, status, principal_id, org_id,
@@ -107,7 +107,7 @@ func (r *ScheduledRunRepository) UpdateStatus(ctx context.Context, q Querier, id
 
 // UpdateDeliveryStatus met à jour le statut de livraison d'une exécution
 // planifiée déjà terminée, sans toucher à son statut d'exécution
-// (PLAN.md §11.6 : exécution et livraison sont deux étapes séparées).
+// (plan de conception, §11.6 : exécution et livraison sont deux étapes séparées).
 func (r *ScheduledRunRepository) UpdateDeliveryStatus(ctx context.Context, q Querier, id ScheduledRunID, deliveryStatus string) error {
 	_, err := q.ExecContext(ctx, `
 		UPDATE scheduled_runs
@@ -123,7 +123,7 @@ func (r *ScheduledRunRepository) UpdateDeliveryStatus(ctx context.Context, q Que
 // ListRecent retourne au plus limit exécutions planifiées, toutes
 // schedule_id confondus, triées par scheduled_for décroissant (les plus
 // récentes d'abord). Utilisée par la commande d'administration "automata
-// admin inspect" (PLAN.md Phase 18), lecture seule.
+// admin inspect" (plan de conception, Phase 18), lecture seule.
 func (r *ScheduledRunRepository) ListRecent(ctx context.Context, q Querier, limit int) ([]ScheduledRun, error) {
 	rows, err := q.QueryContext(ctx, `
 		SELECT id, schedule_id, scheduled_for, started_at, completed_at, status, principal_id, org_id,

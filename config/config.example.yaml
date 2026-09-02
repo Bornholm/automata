@@ -68,7 +68,7 @@ audio:
   max_size: 20MiB
   timeout: 2m
   # Ne jamais activer ces deux options sans décision explicite : le plan
-  # impose de ne conserver ni l'audio ni sa transcription (PLAN.md §3.4).
+  # impose de ne conserver ni l'audio ni sa transcription (plan de conception, §3.4).
   persist_audio: false
   persist_transcription: false
 
@@ -137,7 +137,7 @@ attachments:
 agents:
   # L'orchestrateur ne reçoit jamais les outils des serveurs MCP : il ne
   # dispose que d'outils conceptuels (déléguer, chercher/écrire/oublier en
-  # mémoire). Voir PLAN.md §6.1.
+  # mémoire). Voir plan de conception, §6.1.
   main:
     type: orchestrator
     system_prompt:
@@ -447,7 +447,7 @@ identities:
         - todo.group.read
 
     # Principal technique des tâches planifiées : lecture seule, jamais les
-    # permissions d'un administrateur (PLAN.md §11.2).
+    # permissions d'un administrateur (plan de conception, §11.2).
     scheduled-reader:
       permissions:
         - memory.org.read
@@ -481,7 +481,7 @@ identities:
       roles: [scheduled-reader]
 
 # Un message dont l'origine n'est pas déclarée ici est ignoré sans aucun
-# appel LLM (PLAN.md §17, critère 1).
+# appel LLM (plan de conception, §17, critère 1).
 origins:
   - provider: whatsapp
     external_user_id: ${ALICE_WHATSAPP_ID}
@@ -506,7 +506,7 @@ channels:
       - alice
       - leo
     # Identifiants des ressources externes : résolus par l'application, et
-    # jamais exposés au modèle ni acceptés de sa part (PLAN.md §9.2).
+    # jamais exposés au modèle ni acceptés de sa part (plan de conception, §9.2).
     resources:
       calendar: ${ORG_GROUP_CALENDAR_ID}
       todo: ${ORG_GROUP_TODO_ID}
@@ -545,7 +545,7 @@ schedules:
       # read_only : les actions proposées sont ignorées. Avec
       # require_confirmation, elles deviennent un plan qu'un humain habilité
       # du canal de livraison peut confirmer. Aucune écriture autonome n'est
-      # possible dans les deux cas (PLAN.md §11.3).
+      # possible dans les deux cas (plan de conception, §11.3).
       actions:
         policy: read_only
 

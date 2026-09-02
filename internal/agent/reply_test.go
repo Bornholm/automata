@@ -14,8 +14,8 @@ func TestCleanReply(t *testing.T) {
 	}{
 		{
 			name: "sauts de ligne laissés par un raisonnement séparé",
-			in:   "\n\nCoucou William ! Comment ça va ?",
-			want: "Coucou William ! Comment ça va ?",
+			in:   "\n\nCoucou Alice ! Comment ça va ?",
+			want: "Coucou Alice ! Comment ça va ?",
 		},
 		{
 			name: "bloc de raisonnement non séparé",

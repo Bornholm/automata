@@ -1,0 +1,6 @@
+Automata reference plugin: caldav
+Copyright 2026 William Petit
+
+Licensed under the Apache License, Version 2.0. Reference plugins share the
+license of the plugin SDK they are built on, so they can be copied and
+adapted freely as a starting point for any plugin — see pkg/pluginsdk/NOTICE.

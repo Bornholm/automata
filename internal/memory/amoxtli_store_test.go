@@ -16,7 +16,7 @@ import (
 
 // newTestStore construit un memory.AmoxtliStore adossé à un Amoxtli réel
 // (store sqlite + index bleve, sur des répertoires temporaires), conforme à
-// PLAN.md §16 ("Tests d'intégration : ... Amoxtli réel", pas de mock du
+// plan de conception, §16 ("Tests d'intégration : ... Amoxtli réel", pas de mock du
 // Codex).
 func newTestStore(t *testing.T) *memory.AmoxtliStore {
 	t.Helper()
@@ -235,7 +235,7 @@ func TestGetByID(t *testing.T) {
 	}
 
 	// La même mémoire n'existe pas dans une autre portée : ce n'est pas une
-	// erreur, seulement ok=false (PLAN.md §8.3).
+	// erreur, seulement ok=false (plan de conception, §8.3).
 	_, ok, err = s.GetByID(ctx, "home", model.ScopeGroup, "main-group", mem.ID)
 	if err != nil {
 		t.Fatalf("GetByID (mauvaise portée): %v", err)

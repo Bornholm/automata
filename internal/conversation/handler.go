@@ -1,7 +1,7 @@
 // Package conversation relie l'ingress à l'agent généraliste : garantir
 // l'existence de la conversation en base, charger l'historique récent,
 // exécuter l'agent, puis persister le tour de conversation (message
-// utilisateur et réponse). Voir PLAN.md Phase 6.
+// utilisateur et réponse). Voir plan de conception, Phase 6.
 package conversation
 
 import (
@@ -30,7 +30,7 @@ import (
 // defaultHistoryLimit borne le nombre de messages passés rechargés comme
 // historique pour chaque exécution de l'agent : juste assez pour une
 // conversation cohérente, sans faire grossir indéfiniment le contexte
-// envoyé au LLM (PLAN.md Phase 6 : "persister uniquement l'historique
+// envoyé au LLM (plan de conception, Phase 6 : "persister uniquement l'historique
 // nécessaire").
 const defaultHistoryLimit = 20
 
@@ -45,7 +45,7 @@ const contentKindText = "text"
 // persistedVoiceNotePlaceholder est le contenu neutre persisté en base pour
 // un message vocal lorsque cfg.Audio.PersistTranscription est faux (valeur
 // par défaut) : la transcription réelle n'est alors jamais écrite en base
-// (PLAN.md §3.4).
+// (plan de conception, §3.4).
 const persistedVoiceNotePlaceholder = "[Message vocal transcrit pour traitement]"
 
 // Handler implémente ingress.Handler : il orchestre chargement de
@@ -67,9 +67,9 @@ type Handler struct {
 	attachmentsCfg media.Config
 	// persistTranscription reflète cfg.Audio.PersistTranscription : décision
 	// distincte du traitement audio lui-même (audio.Config), portant
-	// uniquement sur ce qui est écrit dans la table messages (PLAN.md §3.4).
+	// uniquement sur ce qui est écrit dans la table messages (plan de conception, §3.4).
 	persistTranscription bool
-	// metrics peut être nil (PLAN.md Phase 20, registre de métriques
+	// metrics peut être nil (plan de conception, Phase 20, registre de métriques
 	// désactivé) : toutes ses méthodes sont alors no-op.
 	metrics *observability.Metrics
 	// onboarding conduit la visite d'accueil ; nil = aucune visite (voir
@@ -99,13 +99,13 @@ type Handler struct {
 // NewHandler construit un Handler. historyLimit borne le nombre de messages
 // rechargés comme historique ; une valeur <= 0 retombe sur
 // defaultHistoryLimit. audioCfg et transcriber gouvernent le traitement des
-// notes vocales (PLAN.md §3.4, Phase 9) : lorsque audioCfg.Enabled est faux
+// notes vocales (plan de conception, §3.4, Phase 9) : lorsque audioCfg.Enabled est faux
 // ou transcriber est nil, aucune tentative de transcription n'est faite et
 // un message sans contenu textuel garde son comportement antérieur (chaîne
 // vide transmise telle quelle). persistTranscription contrôle si le texte
 // transcrit réel (true) ou une indication neutre (false, par défaut) est
 // écrit dans la table messages. metrics observe la latence de
-// transcription et la latence d'exécution de l'agent (PLAN.md §14.3).
+// transcription et la latence d'exécution de l'agent (plan de conception, §14.3).
 func NewHandler(db *persistence.DB, a agent.Agent, actions *action.Engine, historyLimit int, audioCfg audio.Config, transcriber audio.Transcriber, persistTranscription bool, metrics *observability.Metrics) *Handler {
 	if historyLimit <= 0 {
 		historyLimit = defaultHistoryLimit
@@ -312,7 +312,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		return "", nil, fmt.Errorf("conversation: enregistrement du message entrant: %w", err)
 	}
 
-	// PLAN.md §10.4 : "confirmer"/"annuler" sont des commandes
+	// plan de conception, §10.4 : "confirmer"/"annuler" sont des commandes
 	// conversationnelles littérales, jamais des décisions du modèle — la
 	// même règle invariante qui interdit au LLM de décider de l'identité,
 	// de la portée ou des permissions s'applique à la confirmation d'une

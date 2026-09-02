@@ -2,7 +2,7 @@
 // autorisation, persistance, mémoire réelle, moteur d'actions, pipeline
 // ingress, scheduler) exactement comme internal/registry.Run le ferait,
 // mais avec les composants externes (client LLM, serveurs MCP, fournisseur
-// Courier) remplacés par des fakes contrôlables : voir PLAN.md Phase 21.
+// Courier) remplacés par des fakes contrôlables : voir plan de conception, Phase 21.
 //
 // L'objectif n'est pas de retester chaque règle déjà couverte par les
 // suites unitaires de chaque package (internal/agent, internal/action,
@@ -91,7 +91,7 @@ func testLogger() *slog.Logger {
 
 // newMemoryStore construit un memory.AmoxtliStore adossé à un Amoxtli réel
 // (store SQLite + index bleve, répertoires temporaires), comme
-// internal/memory/amoxtli_store_test.go (PLAN.md §16 : jamais de mock du
+// internal/memory/amoxtli_store_test.go (plan de conception, §16 : jamais de mock du
 // Codex).
 func newMemoryStore(t *testing.T) *memory.AmoxtliStore {
 	t.Helper()

@@ -55,7 +55,7 @@ func (r *MessageAttachmentRepository) Insert(ctx context.Context, q Querier, a M
 // requête par message y serait payé en permanence.
 //
 // limit borne le nombre total de pièces jointes retournées, en conservant les
-// plus récentes (PLAN.md §9.4 dans son esprit : sans borne, une conversation
+// plus récentes (plan de conception, §9.4 dans son esprit : sans borne, une conversation
 // riche en images ferait croître indéfiniment la taille et le coût de chaque
 // requête au modèle). limit <= 0 ne retourne rien.
 func (r *MessageAttachmentRepository) ListByMessageIDs(ctx context.Context, q Querier, messageIDs []string, limit int) (map[string][]MessageAttachment, error) {

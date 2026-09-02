@@ -1,4 +1,4 @@
-// Package agent définit l'interface applicative Agent (PLAN.md §4.3, §6.1)
+// Package agent définit l'interface applicative Agent (plan de conception, §4.3, §6.1)
 // et une implémentation minimale adossée à GenAI : un agent généraliste
 // conversationnel, sans délégation, sans outils, sans mémoire (ces capacités
 // arrivent aux phases suivantes du plan).
@@ -61,7 +61,7 @@ type Result struct {
 	// OrchestratorAgent, qui ne produisent aucune référence.
 	References []string
 	// ProposedActions liste les actions sensibles proposées durant ce tour
-	// (PLAN.md §10, Phase 15), collectées par OrchestratorAgent depuis les
+	// (plan de conception, §10, Phase 15), collectées par OrchestratorAgent depuis les
 	// outils qui en produisent (voir MemoryTools.newForgetMemoryTool).
 	// internal/conversation.Handler les transforme en persistence.ActionPlan
 	// via internal/action.Engine.CreatePlan. Vide pour GenAIAgent.
@@ -88,12 +88,12 @@ var ErrEmptyReply = errors.New("agent: réponse du modèle vide")
 // GenAIAgent est un agent généraliste minimal : une seule complétion en
 // streaming auprès d'un client GenAI, avec un system prompt fixe et
 // l'historique fourni par l'appelant. Aucun outil, aucune délégation,
-// aucune mémoire : voir PLAN.md Phase 6.
+// aucune mémoire : voir plan de conception, Phase 6.
 //
 // Le choix du streaming plutôt que d'une complétion simple ou d'une boucle
 // agent/loop complète est délibéré : la Phase 6 demande explicitement
 // "implémenter le streaming" et "garantir la consommation complète des
-// canaux" (PLAN.md, AGENTS.md). agent/loop.Handler apporte du tool-calling,
+// canaux" (le plan de conception, AGENTS.md). agent/loop.Handler apporte du tool-calling,
 // une gestion de budget et un modèle événementiel bien plus riches que ce
 // dont un agent sans outil a besoin ici ; ce ne serait qu'une abstraction
 // spéculative pour cette phase. Il sera introduit aux phases où le
@@ -119,7 +119,7 @@ type GenAIAgent struct {
 // ni le contexte d'exécution ni la demande. agentName est la seule valeur
 // statique du bloc de contexte injecté à chaque exécution : le nom de
 // l'organisation, lui, dépend de la requête et voyage dans l'identité
-// résolue (voir BuildContextBlock, PLAN.md §7.3).
+// résolue (voir BuildContextBlock, plan de conception, §7.3).
 func NewGenAIAgent(client llm.ChatCompletionStreamingClient, systemPrompt string, agentName string) *GenAIAgent {
 	return &GenAIAgent{
 		client:       client,
@@ -129,11 +129,11 @@ func NewGenAIAgent(client llm.ChatCompletionStreamingClient, systemPrompt string
 }
 
 // Execute implémente Agent. Le contexte ctx gouverne la durée de l'appel :
-// aucun timeout n'est ajouté ici (PLAN.md Phase 6 ne définit pas de champ de
+// aucun timeout n'est ajouté ici (plan de conception, Phase 6 ne définit pas de champ de
 // configuration dédié ; AgentLimits.ToolTimeout concerne les appels d'outils,
 // absents de cette phase). L'appelant est responsable d'attacher un
 // context.WithTimeout si nécessaire (voir internal/ingress.handleTimeout,
-// qui borne ctx pour tout appel passant par le pipeline d'ingress — PLAN.md
+// qui borne ctx pour tout appel passant par le pipeline d'ingress — le plan de conception
 // Phase 19, point 8).
 func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 	ctx = withUsageAttribution(ctx, req.Identity, a.agentName)
@@ -200,7 +200,7 @@ func (a *GenAIAgent) Execute(ctx context.Context, req Request) (Result, error) {
 // premier, puis l'historique dans l'ordre chronologique, puis le message
 // utilisateur courant. Le message système envoyé au modèle est le prompt
 // statique de l'agent suivi du bloc de contexte d'exécution propre à cette
-// requête (PLAN.md §7.2, §7.3) : le contexte n'est jamais mélangé au prompt
+// requête (plan de conception, §7.2, §7.3) : le contexte n'est jamais mélangé au prompt
 // statique construit une fois pour toutes à l'enregistrement de l'agent.
 // textOnly dépend du client effectivement retenu pour ce tour, qui peut
 // différer de celui de la configuration si l'organisation a choisi un autre
@@ -242,7 +242,7 @@ func (a *GenAIAgent) WithOrgSystemPrompts(prompts map[string]string) *GenAIAgent
 // implémentations d'Agent adossées à GenAI (GenAIAgent, OrchestratorAgent) :
 // system prompt statique suivi du bloc de contexte d'exécution en premier
 // message, puis l'historique dans l'ordre chronologique, puis le message
-// utilisateur courant (PLAN.md §7.2, §7.3).
+// utilisateur courant (plan de conception, §7.2, §7.3).
 // Les pièces jointes sont portées par les seuls messages "user" : les
 // fournisseurs refusent la requête entière si un message system ou assistant
 // en contient (voir la validation par provider dans genai).

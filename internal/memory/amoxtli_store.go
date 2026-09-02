@@ -39,7 +39,7 @@ const sourceHost = "memory"
 const memoryIDMetadataKey = "memory_id"
 
 // defaultIndexTimeout borne l'attente de la tâche d'indexation asynchrone
-// déclenchée par Codex.IndexFile (PLAN.md §8.4 : "l'application doit suivre
+// déclenchée par Codex.IndexFile (plan de conception, §8.4 : "l'application doit suivre
 // l'état via le task.Runner ... avant de considérer la mémoire comme
 // persistée").
 const defaultIndexTimeout = 30 * time.Second
@@ -57,7 +57,7 @@ const taskPollInterval = 100 * time.Millisecond
 
 // AmoxtliStore implémente Store en s'appuyant sur un *amoxtli.Codex réel.
 //
-// Gestion des collections (PLAN.md, "Configurer les collections ou
+// Gestion des collections (le plan de conception, "Configurer les collections ou
 // namespaces") : la V1 d'Automata ne supporte qu'une seule organisation par
 // instance (voir internal/identity.EffectivePermissions), donc une seule
 // collection amoxtli suffit pour tout le déploiement. Le cloisonnement
@@ -482,7 +482,7 @@ func stripIDPrefix(content, id string) string {
 }
 
 // scopeConditions construit les filtres de cloisonnement obligatoires
-// (PLAN.md §8.3) pour orgID/scope/scopeID. Ce package ne décide jamais de la
+// (plan de conception, §8.3) pour orgID/scope/scopeID. Ce package ne décide jamais de la
 // portée : il applique celle qui lui est donnée par l'appelant (voir le
 // commentaire de package).
 func scopeConditions(orgID model.OrgID, scope model.Scope, scopeID model.ScopeID) []amoxtliindex.Condition {

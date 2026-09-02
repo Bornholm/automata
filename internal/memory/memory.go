@@ -1,5 +1,5 @@
 // Package memory adapte Amoxtli (github.com/bornholm/amoxtli) à la mémoire
-// applicative d'Automata (PLAN.md §8, Phase 10) : ajout, recherche et
+// applicative d'Automata (plan de conception, §8, Phase 10) : ajout, recherche et
 // suppression d'informations textuelles, cloisonnées par portée
 // (personal/group/org).
 //
@@ -38,7 +38,7 @@ type Query struct {
 
 // NewMemory décrit l'ajout d'une information textuelle. Le LLM ne propose
 // que Content ; tous les autres champs sont déterminés par l'application
-// (PLAN.md §8.4).
+// (plan de conception, §8.4).
 type NewMemory struct {
 	Content              string
 	Scope                model.Scope
@@ -67,7 +67,7 @@ type NewMemory struct {
 // *amoxtli.Codex ; internal/agent s'appuie sur cette interface plutôt que
 // sur le type concret, pour permettre des doubles de test légers au niveau
 // de l'orchestration des outils (la mémoire elle-même, en revanche, est
-// toujours testée avec un Amoxtli réel, voir PLAN.md §16).
+// toujours testée avec un Amoxtli réel, voir plan de conception, §16).
 type Store interface {
 	// Remember ajoute une information textuelle et attend la fin de son
 	// indexation (asynchrone côté amoxtli) avant de retourner.
@@ -99,6 +99,6 @@ type Store interface {
 	// ou indirectement, à un agent LLM ou à un utilisateur.
 	List(ctx context.Context) ([]Memory, error)
 	// Reindex reconstruit l'index de recherche à partir du store (commande
-	// CLI "automata memory reindex", PLAN.md §8.6).
+	// CLI "automata memory reindex", plan de conception, §8.6).
 	Reindex(ctx context.Context) error
 }

@@ -16,7 +16,7 @@ import (
 )
 
 // proposalCollector accumule les delegation.ProposedAction produites par
-// les outils exécutés durant un tour de runToolLoop (PLAN.md §10, Phase
+// les outils exécutés durant un tour de runToolLoop (plan de conception, §10, Phase
 // 15). C'est le canal choisi pour faire remonter une proposition depuis
 // l'exécution d'un outil LLM jusqu'à Agent.Result, sans changer la
 // signature de llm.Tool.Execute (context.Context, map[string]any) ni celle
@@ -344,7 +344,7 @@ func concludeToolLoop(ctx context.Context, client llm.ChatCompletionClient, mess
 }
 
 // maxContextBytes borne le cumul des résultats d'outils réinjectés dans la
-// conversation au fil du tour (PLAN.md §9.4, "budget total des résultats",
+// conversation au fil du tour (plan de conception, §9.4, "budget total des résultats",
 // agents.<nom>.limits.max_tool_context_bytes) ; <= 0 le laisse illimité. Ce
 // budget est distinct du plafond par résultat appliqué côté MCP
 // (mcp.Limits.MaxToolResultBytes) : sans lui, maxIterations appels tenant
@@ -554,7 +554,7 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 			// conversation : l'outil a déjà été exécuté, ses effets (actions
 			// proposées, appels MCP en lecture) sont donc préservés. Seul ce
 			// que le modèle relit est borné, et toute réduction lui est
-			// signalée explicitement (PLAN.md §9.4).
+			// signalée explicitement (plan de conception, §9.4).
 			content, used := applyContextBudget(toolMessage.Content(), maxContextBytes, usedBytes)
 			if content != toolMessage.Content() {
 				toolMessage = llm.NewToolMessage(tc.ID(), llm.NewToolResult(content))

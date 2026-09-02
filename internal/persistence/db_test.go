@@ -288,7 +288,7 @@ func TestCloseThenUseReturnsError(t *testing.T) {
 
 // TestOpenRestrictsFilePermissions vérifie que le fichier SQLite et son
 // répertoire parent sont créés avec des permissions restreintes au seul
-// propriétaire (PLAN.md Phase 19, point 5) : la base contient
+// propriétaire (plan de conception, Phase 19, point 5) : la base contient
 // potentiellement des données personnelles (messages, plans d'actions).
 func TestOpenRestrictsFilePermissions(t *testing.T) {
 	cfg := testConfig(t)

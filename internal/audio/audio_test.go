@@ -221,7 +221,7 @@ func TestFindAudio(t *testing.T) {
 	}
 }
 
-// TestFindAudio_PlainAudioFile couvre l'exigence de PLAN.md Phase 9
+// TestFindAudio_PlainAudioFile couvre l'exigence de plan de conception, Phase 9
 // (« détecter VoiceNote OU les types MIME audio ») : un enregistrement joint
 // comme fichier ordinaire, sans marqueur de note vocale, doit lui aussi être
 // transcrit. Du point de vue de l'utilisateur, joindre un fichier plutôt que

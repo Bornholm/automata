@@ -22,7 +22,7 @@ import (
 // (agentCfg.Limits.MaxSequentialToolCalls) est atteint sans que le modèle
 // n'ait produit de réponse finale sans tool-call.
 //
-// Décision de conception (PLAN.md Phase 8, "détecter les boucles et
+// Décision de conception (plan de conception, Phase 8, "détecter les boucles et
 // plafonner les délégations") : on n'invente jamais une réponse à partir
 // d'un tour de boucle interrompu — le même principe que ErrEmptyReply
 // (agent.go) s'applique ici. Une erreur explicite laisse l'appelant
@@ -32,7 +32,7 @@ import (
 var ErrMaxDelegationsReached = errors.New("agent: plafond de délégations atteint sans réponse finale du modèle")
 
 // OrchestratorAgent est un agent généraliste capable de déléguer à des
-// sous-agents spécialistes, exposés comme des outils LLM (PLAN.md §6.1,
+// sous-agents spécialistes, exposés comme des outils LLM (plan de conception, §6.1,
 // §6.4, Phase 8). Contrairement à GenAIAgent (streaming, sans outil), il
 // utilise une complétion non-streaming : l'API GenAI expose les tool-calls
 // demandés par le modèle directement sur ChatCompletionResponse.ToolCalls()
@@ -93,7 +93,7 @@ func NewOrchestratorAgent(client llm.ChatCompletionClient, systemPrompt, agentNa
 }
 
 // Execute implémente Agent. La boucle d'appel d'outils est strictement
-// séquentielle (PLAN.md §6.4, "l'exécution initiale sera séquentielle") :
+// séquentielle (plan de conception, §6.4, "l'exécution initiale sera séquentielle") :
 // lorsqu'un tour du modèle demande plusieurs tool-calls, ils sont exécutés
 // un par un, dans l'ordre reçu, avant le tour suivant. La mécanique de
 // boucle elle-même est factorisée dans runToolLoop (toolloop.go), partagée
@@ -198,7 +198,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 
 	proposals := collector.take()
 
-	// Plafond d'actions par tour (PLAN.md §9.4, agents.<nom>.limits.
+	// Plafond d'actions par tour (plan de conception, §9.4, agents.<nom>.limits.
 	// max_actions_per_turn). Le dépassement rejette le lot ENTIER plutôt que
 	// d'en conserver les N premières : ces actions sont sensibles et
 	// destinées à une confirmation groupée, or n'en garder qu'un préfixe
@@ -256,7 +256,7 @@ func (a *OrchestratorAgent) WithOrgSystemPrompts(prompts map[string]string) *Orc
 }
 
 // WithMaxActionsPerTurn plafonne le nombre d'actions que ce tour peut
-// proposer à la confirmation (PLAN.md §9.4). Une valeur <= 0 (défaut) laisse
+// proposer à la confirmation (plan de conception, §9.4). Une valeur <= 0 (défaut) laisse
 // le nombre d'actions non borné. Retourne a pour permettre le chaînage.
 func (a *OrchestratorAgent) WithMaxActionsPerTurn(max int) *OrchestratorAgent {
 	a.maxActionsPerTurn = max
@@ -264,7 +264,7 @@ func (a *OrchestratorAgent) WithMaxActionsPerTurn(max int) *OrchestratorAgent {
 }
 
 // WithMaxToolContextBytes borne le cumul des résultats d'outils réinjectés
-// dans la conversation durant un tour (PLAN.md §9.4). Une valeur <= 0
+// dans la conversation durant un tour (plan de conception, §9.4). Une valeur <= 0
 // (défaut) laisse ce budget illimité. Retourne a pour permettre le chaînage.
 func (a *OrchestratorAgent) WithMaxToolContextBytes(max int64) *OrchestratorAgent {
 	a.maxToolContextBytes = max
@@ -355,7 +355,7 @@ const maxSameAgentDelegations = 2
 // exécute specialist.Execute. Un échec du spécialiste n'est jamais remonté
 // comme erreur Go (ce qui ferait échouer tout le tour) : il est transmis au
 // modèle comme contenu de résultat d'outil, en clair, pour qu'il puisse
-// s'adapter (PLAN.md Phase 8, test "spécialiste en erreur").
+// s'adapter (plan de conception, Phase 8, test "spécialiste en erreur").
 func newDelegationTool(agentID, description string, specialist delegation.Specialist, identity model.ExecutionIdentity, attachments, recentFiles []media.Media, collector *proposalCollector, mediaCollector *mediaCollector, metrics *observability.Metrics, logger *slog.Logger) llm.Tool {
 	// Les fichiers déjà reçus ne sont proposés qu'aux spécialistes qui
 	// déclarent savoir les manipuler : l'orchestrateur interroge une
@@ -478,7 +478,7 @@ func newDelegationTool(agentID, description string, specialist delegation.Specia
 // WithMemoryTools attache tools à a : les outils search_memory/remember/
 // forget_memory correspondants (selon tools.Search/Remember/Forget) sont
 // exposés au modèle en plus des délégations, dès le prochain Execute
-// (PLAN.md §6.1, §8, Phase 10). Retourne a pour permettre le chaînage à la
+// (plan de conception, §6.1, §8, Phase 10). Retourne a pour permettre le chaînage à la
 // construction (voir internal/agent.NewRegistryWithMemory). Un appel avec la
 // valeur zéro de MemoryTools désactive tous les outils mémoire, ce qui est
 // le comportement par défaut d'un OrchestratorAgent tout juste construit.
@@ -568,7 +568,7 @@ func (a *OrchestratorAgent) WithLogger(logger *slog.Logger) *OrchestratorAgent {
 
 // WithMetrics attache metrics à a : les délégations vers chaque spécialiste
 // (outil "delegate_to_<agentID>") sont comptabilisées dès le prochain
-// Execute (PLAN.md §14.3, Phase 20). metrics nil désactive l'observation
+// Execute (plan de conception, §14.3, Phase 20). metrics nil désactive l'observation
 // (comportement par défaut d'un OrchestratorAgent tout juste construit).
 // Retourne a pour permettre le chaînage à la construction, comme
 // WithMemoryTools.

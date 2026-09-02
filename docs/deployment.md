@@ -1,7 +1,7 @@
 # Déploiement — Automata
 
 Ce document est le livrable de la Phase 22 (« Packaging et déploiement »,
-PLAN.md) : comment construire l'image Docker d'Automata et la déployer sur
+le plan de conception) : comment construire l'image Docker d'Automata et la déployer sur
 une machine locale unique avec `docker compose`. Pour la sauvegarde, la
 restauration et les procédures d'exploitation courantes (mise à jour,
 diagnostic de panne, endpoints de santé), voir `docs/operations.md` — ce
@@ -37,7 +37,7 @@ dans un `go.work` local (non versionné) plutôt que dans `go.mod`.
 
 ## 2. Volumes et configuration
 
-Trois volumes, comme prescrit par PLAN.md Phase 22 :
+Trois volumes, comme prescrit par plan de conception, Phase 22 :
 
 | Volume      | Accès          | Contenu                                                        |
 |-------------|----------------|------------------------------------------------------------------|
@@ -191,7 +191,7 @@ ce packaging :
    pour laisser le paquet `flag` standard gérer seul les arguments, comme
    c'était déjà l'intention documentée.
 2. **`internal/persistence/db.go` : `storage.application.driver: sqlite`
-   (la valeur utilisée par PLAN.md §12 et tous les exemples de ce dépôt,
+   (la valeur utilisée par plan de conception, §12 et tous les exemples de ce dépôt,
    `internal/config/testdata/valid/config.yaml` inclus) ne correspondait à
    aucun driver `database/sql` enregistré.** `github.com/ncruces/go-sqlite3/driver`
    ne s'enregistre lui-même que sous le nom `"sqlite3"` ; une configuration

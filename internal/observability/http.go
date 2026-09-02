@@ -42,7 +42,7 @@ func (r *Ready) Load() bool {
 }
 
 // Server expose localement, sur un unique http.Server, la santé du
-// processus (liveness/readiness) et un export JSON des métriques (PLAN.md
+// processus (liveness/readiness) et un export JSON des métriques (le plan de conception
 // Phase 20) :
 //
 //   - GET /healthz/live  : 200 dès que le processus tourne, ne dépend

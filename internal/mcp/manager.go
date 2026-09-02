@@ -1,5 +1,5 @@
 // Package mcp fournit le gestionnaire de connexions aux serveurs MCP
-// déclarés dans la configuration (PLAN.md §9, Phase 11).
+// déclarés dans la configuration (plan de conception, §9, Phase 11).
 //
 // genai (github.com/bornholm/genai/mcp) expose un client de connexion à un
 // serveur MCP donné (Start/Stop/GetTools), mais aucune notion de « session
@@ -38,7 +38,7 @@ import (
 )
 
 // Limits décrit les limites appliquées à l'exécution des outils MCP d'une
-// session pour un serveur donné (PLAN.md §9.4). Une valeur nulle pour un
+// session pour un serveur donné (plan de conception, §9.4). Une valeur nulle pour un
 // champ désactive la limite correspondante.
 type Limits struct {
 	// ToolTimeout borne la durée d'exécution d'un appel d'outil. <= 0 :
@@ -90,7 +90,7 @@ type Manager struct {
 	// plus concurrente possible, mais elle garantit qu'aucune session
 	// n'obtient jamais deux clients distincts pour le même serveur, et que
 	// deux sessions n'obtiennent jamais le même client — ce qui est la seule
-	// garantie exigée par PLAN.md §9.3. Les connexions MCP ne sont pas sur
+	// garantie exigée par plan de conception, §9.3. Les connexions MCP ne sont pas sur
 	// un chemin assez chaud pour que la sérialisation de leur établissement
 	// coûte quoi que ce soit d'observable.
 	sessions map[SessionKey]map[string]genaimcp.Client
@@ -115,7 +115,7 @@ func NewManager(cfg *config.Config, logger *slog.Logger) *Manager {
 
 // WithMetrics attache metrics à m : chaque appel d'outil MCP (succès ou
 // erreur) et chaque troncature de résultat sont comptabilisés dès le
-// prochain appel (PLAN.md §14.3, Phase 20). metrics nil désactive
+// prochain appel (plan de conception, §14.3, Phase 20). metrics nil désactive
 // l'observation (comportement par défaut de NewManager). Retourne m pour
 // permettre le chaînage à la construction.
 func (m *Manager) WithMetrics(metrics *observability.Metrics) *Manager {
@@ -136,7 +136,7 @@ func (m *Manager) GetTools(ctx context.Context, sessionKey SessionKey, serverNam
 
 // GetToolsFor retourne les outils du serveur serverName pour la session
 // sessionKey, en appliquant la connexion propre à principalID lorsque la
-// configuration en déclare une (identities.principals[].mcp, PLAN.md Phase 11
+// configuration en déclare une (identities.principals[].mcp, plan de conception, Phase 11
 // point 5 : « injecter une identité filtrée »).
 //
 // Isolation : dès qu'un principal dispose de sa propre connexion, la clé de
@@ -389,7 +389,7 @@ func errMissingPlaceholders(missing []string) error {
 // headerRoundTripper injecte des en-têtes HTTP fixes (déjà résolus par
 // config.Load, secrets compris) sur chaque requête. Ces en-têtes ne doivent
 // jamais être journalisés (AGENTS.md : « ne pas journaliser les contenus
-// privés » ; PLAN.md §9.4 : journaliser uniquement les métadonnées sûres).
+// privés » ; plan de conception, §9.4 : journaliser uniquement les métadonnées sûres).
 type headerRoundTripper struct {
 	headers   map[string]string
 	transport http.RoundTripper
@@ -411,7 +411,7 @@ func (t *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error
 // l'outil, durée, statut, taille du résultat) — jamais les arguments, le
 // contenu du résultat, ni les en-têtes de configuration.
 //
-// Identité filtrée (PLAN.md §9.3) : l'API réelle de genai/mcp/http.Client
+// Identité filtrée (plan de conception, §9.3) : l'API réelle de genai/mcp/http.Client
 // (mcp/http/options.go) n'expose aucun moyen d'injecter des en-têtes ou
 // métadonnées dynamiques par appel d'outil — seuls un *http.Client global et
 // un jeton porteur global sont configurables à la construction du client, et

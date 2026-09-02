@@ -32,10 +32,10 @@ func newTestResolver(t *testing.T) *identity.Resolver {
 func TestResolveDynamicPicksMemberOfChannelOrg(t *testing.T) {
 	source := &multiOrgSource{
 		members: map[string]identity.DynamicMember{
-			"famille": {ID: "m-famille", OrgID: "famille", DisplayName: "William", Role: "member"},
-			"atelier": {ID: "m-atelier", OrgID: "atelier", DisplayName: "William", Role: "member"},
+			"famille": {ID: "m-famille", OrgID: "famille", DisplayName: "Alice", Role: "member"},
+			"atelier": {ID: "m-atelier", OrgID: "atelier", DisplayName: "Alice", Role: "member"},
 		},
-		channel: identity.DynamicChannel{OrgID: "atelier", Kind: model.ChannelGroup, Scope: model.ScopeGroup, DisplayName: "atelier IA"},
+		channel: identity.DynamicChannel{OrgID: "atelier", Kind: model.ChannelGroup, Scope: model.ScopeGroup, DisplayName: "Atelier IA"},
 	}
 
 	resolver := newTestResolver(t).WithDynamicSource(source)
@@ -57,7 +57,7 @@ func TestResolveDynamicPicksMemberOfChannelOrg(t *testing.T) {
 func TestResolveDynamicRejectsMemberOfAnotherOrg(t *testing.T) {
 	source := &multiOrgSource{
 		members: map[string]identity.DynamicMember{
-			"famille": {ID: "m-famille", OrgID: "famille", DisplayName: "William", Role: "member"},
+			"famille": {ID: "m-famille", OrgID: "famille", DisplayName: "Alice", Role: "member"},
 		},
 		channel: identity.DynamicChannel{OrgID: "atelier", Kind: model.ChannelGroup, Scope: model.ScopeGroup},
 	}

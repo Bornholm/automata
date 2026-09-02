@@ -28,7 +28,7 @@ func testStorageConfig(t *testing.T) config.StorageApplication {
 }
 
 // TestAdminInspect_EmptyDatabase vérifie que "automata admin inspect"
-// (PLAN.md §18, "ajouter une commande d'inspection administrative") ouvre
+// (plan de conception, §18, "ajouter une commande d'inspection administrative") ouvre
 // la base sans erreur et affiche un message explicite lorsqu'aucun plan
 // d'actions ni aucune exécution planifiée n'existe encore — cas normal pour
 // une instance qui vient d'être installée.

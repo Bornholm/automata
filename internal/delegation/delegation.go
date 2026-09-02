@@ -1,5 +1,5 @@
 // Package delegation définit le contrat de délégation vers un sous-agent
-// spécialiste (PLAN.md §6.3, Phase 8) : ce que l'orchestrateur ("main")
+// spécialiste (plan de conception, §6.3, Phase 8) : ce que l'orchestrateur ("main")
 // transmet à un spécialiste (agenda, research, todo...), et ce qu'il reçoit
 // en retour.
 //
@@ -20,7 +20,7 @@ import (
 )
 
 // Request décrit une délégation demandée par un orchestrateur à un
-// spécialiste. Elle est volontairement pauvre : PLAN.md §6.3 exige que le
+// spécialiste. Elle est volontairement pauvre : plan de conception, §6.3 exige que le
 // sous-agent "ne reçoive pas automatiquement l'intégralité de l'historique"
 // de la conversation principale — seuls Goal, RelevantInput et Constraints,
 // explicitement construits par l'orchestrateur (typiquement à partir
@@ -49,7 +49,7 @@ type Request struct {
 	// spécialiste ne pourrait jamais la voir. Sans cela, « regarde cette
 	// affiche et ajoute l'événement à l'agenda » serait irréalisable.
 	//
-	// Cela ne contredit pas PLAN.md §6.3 (« le sous-agent ne reçoit pas
+	// Cela ne contredit pas plan de conception, §6.3 (« le sous-agent ne reçoit pas
 	// automatiquement l'intégralité de l'historique ») : seules les pièces
 	// jointes du tour courant sont transmises, jamais celles des tours
 	// précédents.
@@ -66,7 +66,7 @@ type Request struct {
 	// outils. C'est ce qui permet à un membre d'envoyer une vidéo ou une
 	// photo, puis d'en demander la transformation au message suivant.
 	//
-	// La nuance avec PLAN.md §6.3 est nette : le spécialiste ne reçoit
+	// La nuance avec plan de conception, §6.3 est nette : le spécialiste ne reçoit
 	// toujours aucun contenu de l'historique — ni texte, ni image lisible
 	// par le modèle — mais il peut désigner par son nom un fichier déjà
 	// reçu, comme l'utilisateur le ferait.
@@ -104,7 +104,7 @@ type AttachmentDependent interface {
 }
 
 // ProposedAction décrit une action que le spécialiste propose mais n'exécute
-// pas lui-même (PLAN.md §6.4). Depuis la Phase 15, elle porte tout ce qui
+// pas lui-même (plan de conception, §6.4). Depuis la Phase 15, elle porte tout ce qui
 // est nécessaire pour qu'internal/action.Engine puisse persister un
 // persistence.Action exécutable et le rejouer plus tard, au moment d'une
 // confirmation :
@@ -116,12 +116,12 @@ type AttachmentDependent interface {
 //     déterminés par l'application (jamais un identifiant de ressource
 //     externe fourni par le modèle, AGENTS.md) ;
 //   - RequiredPermission/Scope/ScopeID décrivent la permission à
-//     revérifier et la portée cible au moment de la confirmation (PLAN.md
+//     revérifier et la portée cible au moment de la confirmation (le plan de conception
 //     §10.5, "recalculer les permissions"), jamais réutilisées telles que
 //     vérifiées au moment de la proposition.
 type ProposedAction struct {
 	// Summary est la description humaine de l'action, affichée dans la
-	// liste numérotée du plan (PLAN.md §8.5, généralisé à toute action).
+	// liste numérotée du plan (plan de conception, §8.5, généralisé à toute action).
 	Summary string
 	// AgentID identifie le spécialiste ou l'agent à l'origine de la
 	// proposition (informatif, persisté sur l'action).
@@ -133,7 +133,7 @@ type ProposedAction struct {
 	ToolName string
 	// Arguments sont les arguments de l'appel d'outil, déjà résolus par
 	// l'application (hors ressources à résoudre à nouveau au moment de la
-	// confirmation, voir PLAN.md §10.5 point 6).
+	// confirmation, voir plan de conception, §10.5 point 6).
 	Arguments map[string]any
 	// RequiredPermission est la permission ("<domaine>.<scope>.<action>",
 	// voir internal/authorization) requise pour exécuter cette action.
@@ -150,7 +150,7 @@ type Result struct {
 	// de l'orchestrateur.
 	Summary string
 	// ProposedActions liste les actions proposées par le spécialiste,
-	// nécessitant une confirmation avant exécution (PLAN.md §6.4, §10).
+	// nécessitant une confirmation avant exécution (plan de conception, §6.4, §10).
 	// Collectées par l'orchestrateur (internal/agent.OrchestratorAgent) et
 	// transformées en persistence.ActionPlan par internal/action.Engine.
 	ProposedActions []ProposedAction

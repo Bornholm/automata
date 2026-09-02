@@ -115,7 +115,7 @@ func wrapDirectTool(tool llm.Tool, cfg *config.Config, serverName string, server
 		maps.Copy(args, params)
 
 		// Écrase systématiquement la valeur fournie par le modèle sous ce
-		// nom (PLAN.md §9.2).
+		// nom (plan de conception, §9.2).
 		args, err := resource.InjectResolved(cfg, serverName, req.Conversation.Scope, req.Conversation.ScopeID, args)
 		if err != nil {
 			return llm.NewToolResult(fmt.Sprintf("erreur: %v.", err)), nil
@@ -133,7 +133,7 @@ func wrapDirectTool(tool llm.Tool, cfg *config.Config, serverName string, server
 //
 // L'identifiant de ressource est retiré des arguments plutôt qu'y être figé :
 // il est résolu à nouveau au moment de la confirmation, depuis la portée du
-// plan (PLAN.md §10.5 point 6).
+// plan (plan de conception, §10.5 point 6).
 func wrapWriteTool(
 	tool llm.Tool,
 	server config.MCPServer,

@@ -1,5 +1,5 @@
 // Package audio transcrit les notes vocales sans jamais conserver le média
-// brut ni, par défaut, la transcription elle-même (PLAN.md §3.4, Phase 9).
+// brut ni, par défaut, la transcription elle-même (plan de conception, §3.4, Phase 9).
 //
 // Flux : contrôle de taille -> lecture en flux borné -> transcription ->
 // suppression des octets -> traitement comme message textuel. Aucune étape
@@ -79,7 +79,7 @@ func ExtractText(ctx context.Context, cfg Config, transcriber Transcriber, attac
 
 // FindAudio recherche la première pièce jointe audio du message : une note
 // vocale enregistrée au micro, ou tout fichier de type MIME "audio/*"
-// (PLAN.md Phase 9, travail 1 : « détecter VoiceNote OU les types MIME
+// (plan de conception, Phase 9, travail 1 : « détecter VoiceNote OU les types MIME
 // audio »).
 //
 // Les deux comptent : du point de vue de l'utilisateur, joindre un
