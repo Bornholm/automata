@@ -1,0 +1,256 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - sh -c "cd pkg/pluginsdk && go mod tidy"
+    - sh -c "cd plugins/caldav && go mod tidy"
+    - sh -c "cd plugins/email && go mod tidy"
+    - sh -c "cd plugins/pages && go mod tidy"
+    - sh -c "cd plugins/workspace && go mod tidy"
+
+# Aucun cgo nulle part : le driver SQLite (ncruces/go-sqlite3) est pur
+# Go/WASM et la suite de tests passe sans cgo. La cross-compilation vers
+# toutes les cibles first-class fonctionne donc sans toolchain natif, et
+# les binaires sont statiques.
+builds:
+  - id: automata
+    env:
+      - CGO_ENABLED=0
+    targets: [go_first_class]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    dir: ./cmd/automata
+    binary: automata
+    flags:
+      - -trimpath
+    ldflags:
+      - -w -s -X 'github.com/bornholm/automata/internal/build.ShortVersion={{ .Version }}' -X 'github.com/bornholm/automata/internal/build.LongVersion={{ .Version }} ({{ .Commit }})'
+
+  # Les plugins de référence : modules Go séparés (plugins/<nom>), chacun
+  # son binaire, nommé comme le répertoire — c'est le nom que le
+  # gestionnaire de plugins attend dans plugins.dir.
+  - id: plugin-caldav
+    env: [CGO_ENABLED=0]
+    targets: [go_first_class]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    dir: ./plugins/caldav
+    binary: caldav
+    flags: [-trimpath]
+    ldflags: [-w -s]
+
+  - id: plugin-email
+    env: [CGO_ENABLED=0]
+    targets: [go_first_class]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    dir: ./plugins/email
+    binary: email
+    flags: [-trimpath]
+    ldflags: [-w -s]
+
+  - id: plugin-pages
+    env: [CGO_ENABLED=0]
+    targets: [go_first_class]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    dir: ./plugins/pages
+    binary: pages
+    flags: [-trimpath]
+    ldflags: [-w -s]
+
+  - id: plugin-workspace
+    env: [CGO_ENABLED=0]
+    targets: [go_first_class]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    dir: ./plugins/workspace
+    binary: workspace
+    flags: [-trimpath]
+    ldflags: [-w -s]
+
+archives:
+  # Le binaire seul, avec de quoi démarrer.
+  - id: automata
+    ids: [automata]
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - config/config.example.yaml
+
+  # Une archive par plugin, au format <nom>_<version>_<os>_<arch> : elle
+  # se dépose telle quelle dans plugins.dir. Chaque plugin porte sa
+  # licence Apache-2.0, distincte de celle du binaire principal.
+  - id: plugin-caldav
+    ids: [plugin-caldav]
+    name_template: "automata-plugin-caldav_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - src: plugins/caldav/LICENSE
+        dst: LICENSE
+      - src: plugins/caldav/NOTICE
+        dst: NOTICE
+
+  - id: plugin-email
+    ids: [plugin-email]
+    name_template: "automata-plugin-email_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - src: plugins/email/LICENSE
+        dst: LICENSE
+      - src: plugins/email/NOTICE
+        dst: NOTICE
+
+  - id: plugin-pages
+    ids: [plugin-pages]
+    name_template: "automata-plugin-pages_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - src: plugins/pages/LICENSE
+        dst: LICENSE
+      - src: plugins/pages/NOTICE
+        dst: NOTICE
+
+  - id: plugin-workspace
+    ids: [plugin-workspace]
+    name_template: "automata-plugin-workspace_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - src: plugins/workspace/LICENSE
+        dst: LICENSE
+      - src: plugins/workspace/NOTICE
+        dst: NOTICE
+
+nfpms:
+  # Le binaire, sans intégration système : Automata se configure par un
+  # fichier YAML et un fichier d'environnement que l'exploitant écrit
+  # (voir docs/installation.md). Un paquet qui les générerait à sa place
+  # inventerait des secrets — ce n'est pas son rôle.
+  - id: automata
+    package_name: automata
+    ids: [automata]
+    formats:
+      - deb
+      - archlinux
+    vendor: bornholm
+    homepage: https://github.com/Bornholm/automata
+    maintainer: William Petit <1067759+Bornholm@users.noreply.github.com>
+    license: AGPL-3.0
+    description: |-
+      Automata - assistant personnel dans votre messagerie.
+      Agents et spécialistes, mémoire cloisonnée, rappels, fichiers en bac
+      à sable, et confirmation humaine avant toute action.
+    bindir: /usr/bin
+    contents:
+      - src: README.md
+        dst: /usr/share/doc/automata/README.md
+      - src: LICENSE
+        dst: /usr/share/doc/automata/LICENSE
+      - src: config/config.example.yaml
+        dst: /usr/share/doc/automata/config.example.yaml
+
+  # Un paquet par plugin de référence, dans le répertoire de plugins
+  # standard. Les plugins n'ont pas la même licence que le binaire :
+  # chaque paquet déclare la sienne.
+  - id: automata-plugin-caldav
+    package_name: automata-plugin-caldav
+    ids: [plugin-caldav]
+    formats: [deb, archlinux]
+    vendor: bornholm
+    homepage: https://github.com/Bornholm/automata
+    maintainer: William Petit <1067759+Bornholm@users.noreply.github.com>
+    license: Apache-2.0
+    description: |-
+      Automata - plugin caldav.
+      Rappels rangés dans un agenda CalDAV, consultation des disponibilités.
+    dependencies: [automata]
+    bindir: /usr/lib/automata/plugins
+
+  - id: automata-plugin-email
+    package_name: automata-plugin-email
+    ids: [plugin-email]
+    formats: [deb, archlinux]
+    vendor: bornholm
+    homepage: https://github.com/Bornholm/automata
+    maintainer: William Petit <1067759+Bornholm@users.noreply.github.com>
+    license: Apache-2.0
+    description: |-
+      Automata - plugin email.
+      Lecture, recherche et réponse (confirmée) sur une boîte IMAP/SMTP ou Gmail.
+    dependencies: [automata]
+    bindir: /usr/lib/automata/plugins
+
+  - id: automata-plugin-pages
+    package_name: automata-plugin-pages
+    ids: [plugin-pages]
+    formats: [deb, archlinux]
+    vendor: bornholm
+    homepage: https://github.com/Bornholm/automata
+    maintainer: William Petit <1067759+Bornholm@users.noreply.github.com>
+    license: Apache-2.0
+    description: |-
+      Automata - plugin pages.
+      Pages web par membre, publiées sur confirmation sous un lien court.
+    dependencies: [automata]
+    bindir: /usr/lib/automata/plugins
+
+  - id: automata-plugin-workspace
+    package_name: automata-plugin-workspace
+    ids: [plugin-workspace]
+    formats: [deb, archlinux]
+    vendor: bornholm
+    homepage: https://github.com/Bornholm/automata
+    maintainer: William Petit <1067759+Bornholm@users.noreply.github.com>
+    license: Apache-2.0
+    description: |-
+      Automata - plugin workspace.
+      Atelier de fichiers en bac à sable (ffmpeg, imagemagick, LibreOffice)
+      et casier personnel ; requiert un serveur LeaSH.
+    dependencies: [automata]
+    bindir: /usr/lib/automata/plugins
+
+# Image du binaire seul, construite avec ko sur une base distroless et
+# publiée sur GHCR. Elle ne remplace pas misc/dokku/Dockerfile, qui
+# embarque aussi les plugins et SearXNG pour un déploiement complet : ici
+# c'est l'image minimale pour qui apporte ses propres services.
+kos:
+  - id: automata
+    build: automata
+    repositories:
+      - ghcr.io/bornholm/automata
+    bare: true
+    tags:
+      - "{{ .Version }}"
+      - latest
+    platforms:
+      - linux/amd64
+      - linux/arm64
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  name_template: "v{{ .Version }}"

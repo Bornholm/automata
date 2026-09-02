@@ -23,7 +23,6 @@ seul sur des expressions cron.
 | [skills.md](skills.md) | Bibliothèque de compétences : modes opératoires chargés à la demande par les agents |
 | [models.md](models.md) | Catalogue de modèles : édition depuis l'administration, modèles par organisation, organisations gratuites sans limite |
 | [security-model.md](security-model.md) | Modèle de menace, frontières de confiance, limitations assumées |
-| [integration-inventory.md](integration-inventory.md) | API réelles de go-courier, genai et Amoxtli, et leurs manques |
 
 Pour une première installation, lisez `installation.md` en entier, puis la
 section de `configuration.md` correspondant à ce que vous voulez activer.

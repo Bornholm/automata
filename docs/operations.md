@@ -1,7 +1,6 @@
 # Exploitation — Automata
 
-Ce document est le livrable de la Phase 20 (« Observabilité et exploitation
-», le plan de conception) : procédures opérationnelles nécessaires pour diagnostiquer une
+Ce document couvre l'exploitation d'une instance : diagnostiquer une
 panne, sauvegarder et restaurer les données, et redéployer une instance,
 sans jamais avoir besoin de lire le contenu des conversations privées
 (AGENTS.md, « ne pas journaliser les contenus privés » — le même principe
@@ -12,14 +11,14 @@ gouverne l'exploitation).
 Une instance Automata persiste son état dans quatre emplacements distincts,
 tous sous le répertoire de données de l'instance (`/data` dans les exemples
 ci-dessous — adapter à `storage.application.path`, `memory.store.path` et au
-`session_path` réellement configurés) :
+`session_path` de chaque compte WhatsApp, saisi dans l'administration) :
 
 | Emplacement                          | Contenu                                                              | Config source                     |
 |---------------------------------------|------------------------------------------------------------------------|------------------------------------|
 | `/data/app.sqlite` (+ `-wal`, `-shm` si présents) | Base applicative : conversations, messages, **pièces jointes**, plans d'actions, exécutions planifiées, tentatives de livraison, audit | `storage.application.path`         |
 | `/data/amoxtli.sqlite`                | Métadonnées de la mémoire persistante (Amoxtli)                       | `memory.store.path`                |
 | `/data/memory.bleve/`                 | Index de recherche plein texte de la mémoire                          | `memory.indexes[].path`            |
-| `/data/courier/`                      | Session WhatsApp (identifiants d'appareil liés, état Go Courier)      | `courier.providers.<nom>.session_path` |
+| `/data/courier/`                      | Session WhatsApp (identifiants d'appareil liés, état Go Courier)      | `session_path` du compte (administration, « Canaux et plateformes ») |
 
 La base applicative fonctionne en mode WAL (`storage.application.pragmas.journal_mode`) :
 les fichiers `-wal` et `-shm` associés à `app.sqlite`, lorsqu'ils existent,
@@ -240,7 +239,7 @@ dokku logs automata --num 20000 | grep -av "Client/" | grep -aE 'level=(WARN|ERR
 3. Redémarrer le processus avec la même commande
    (`automata -config <chemin>`). Les migrations de schéma en attente
    s'appliquent automatiquement à l'ouverture de la base
-   (`internal/persistence.Open`, Phase 4) : il n'existe pas de commande
+   (`internal/persistence.Open`) : il n'existe pas de commande
    `automata migrate` séparée. Ce choix est délibéré, pas un oubli : les
    migrations sont déjà idempotentes (rejouables sans effet si déjà
    appliquées) et s'exécutent avant tout traitement de message ou tick de

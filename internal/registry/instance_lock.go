@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 )
 
 // Une instance d'Automata possède ses données en exclusivité : la base
@@ -41,7 +40,7 @@ func lockDataDir(dbPath string) (*instanceLock, error) {
 		return nil, fmt.Errorf("registry: ouverture du verrou d'instance %q: %w", path, err)
 	}
 
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err := tryLockFile(file); err != nil {
 		file.Close()
 		return nil, fmt.Errorf(
 			"registry: une autre instance d'Automata utilise déjà %q (verrou %s). "+
@@ -58,6 +57,6 @@ func (l *instanceLock) release() {
 	if l == nil || l.file == nil {
 		return
 	}
-	syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
+	unlockFile(l.file)
 	l.file.Close()
 }

@@ -215,7 +215,6 @@ s'exécute dans le conteneur.
 ```yaml
 audio:
   enabled: true
-  transcription_client: transcription
   max_size: 20MiB
   timeout: 2m
   persist_audio: false
@@ -226,7 +225,9 @@ Traite les notes vocales et les fichiers audio joints. Les deux sont
 transcrits : joindre un `.mp3` plutôt qu'appuyer sur le bouton micro ne change
 pas l'intention.
 
-`transcription_client` désigne une entrée de `llm_clients`.
+Le modèle de transcription est le rôle d'instance `transcription`, réglé à
+l'écran « Modèles » (voir [models.md](models.md)) ; il n'y a rien à
+désigner ici.
 
 Le flux est lu de façon bornée, transcrit, puis les octets sont abandonnés.
 Rien n'est écrit sur disque. Avec `persist_transcription: false`, la base
@@ -332,7 +333,6 @@ Détaillé dans [agents.md](agents.md). Résumé des champs :
 |---|---|
 | `type` | `orchestrator` (peut déléguer) ou `specialist` (peut porter des MCP) |
 | `description` | Ce que sait faire ce spécialiste, en une phrase. Voir ci-dessous |
-| `client` | Entrée de `llm_clients` |
 | `system_prompt.file` ou `.inline` | Personnalité et mission. Exactement une des deux |
 | `delegates` | Noms des spécialistes joignables. Orchestrateur seulement |
 | `memory` | Drapeaux `search`, `remember`, `forget`, `history`, `recall` |
@@ -1023,7 +1023,7 @@ penser.
 
 ## web
 
-Serveur web d'administration et de profil du socle SaaS (maquettes P1).
+Serveur web d'administration et de profil.
 Désactivé par défaut ; lorsqu'il est activé, il démarre dans le même
 processus que le worker, sur sa propre adresse d'écoute (à exposer derrière
 un reverse proxy TLS).
@@ -1050,12 +1050,19 @@ web:
 12 h, 5 tentatives par quart d'heure), organisations (liste, détail avec
 portefeuille de crédits, gestes commerciaux, bascule « organisation
 offerte »), comptes membres avec **jeton de liaison affiché une seule
-fois** (seul le SHA-256 est stocké ; la consommation du jeton par
-l'ingress arrive dans un lot ultérieur), canaux et plateformes, et les
-pages de profil ouvertes par **lien temporaire à usage unique** (15
-minutes, `/p/<id>.<secret>`).
+fois** (seul le SHA-256 est stocké), canaux et plateformes, alertes
+d'exploitation, et les pages de profil ouvertes par **lien temporaire à
+usage unique** (15 minutes, `/p/<id>.<secret>`).
 
-Depuis le lot B, le serveur web ne travaille plus seul : un expéditeur
+Le profil d'un membre regroupe ce qui lui appartient : adresse de secours,
+crédits et consommation, **« Ce que je retiens »** — ses souvenirs
+personnels, mot pour mot, à corriger ou effacer un par un (jamais ceux d'un
+groupe, qui appartiennent au groupe) —, **« Suggestions »** (voir la
+section `introspection`), **« Découvrir »** (des phrases à recopier pour
+essayer chaque capacité), confidentialité (export et suppression), et un
+onglet par plugin actif doté d'une interface.
+
+Le serveur web ne travaille pas seul : un expéditeur
 inconnu dont le message porte un jeton `atm_…` valide se rattache
 lui-même — le membre pré-créé prend son identité de messagerie, son canal
 privé (ou le groupe, pour un jeton de groupe) est lié à l'organisation, et
@@ -1379,6 +1386,39 @@ refroidissement ; le bouton « Redémarrer » de l'écran Plugins force la
 relance. Le nom d'un plugin (déclaré par son descripteur) devient l'outil
 `delegate_to_<nom>` : une collision avec un agent configuré est refusée au
 chargement.
+
+## introspection
+
+```yaml
+introspection:
+  enabled: false
+  cron: "20 5 * * 1"
+  digest_cron: "50 5 1 * *"
+```
+
+Chaque semaine, Automata relit pour chaque membre rattaché ses **frictions**
+des trente derniers jours — plans d'actions proposés jamais confirmés ou en
+échec, rappels et tâches en échec — et les **habitudes** que la réflexion
+épisodique a déjà rangées en mémoire, et en tire **au plus une** suggestion
+d'amélioration : automatiser un geste répété, activer une capacité
+inutilisée, corriger ce qui échoue. La suggestion attend sur l'onglet
+« Suggestions » du profil ; seule une friction nette est poussée en
+conversation, au plus une par passe.
+
+Ce que le modèle reçoit est un dossier de métadonnées (outil, permission,
+statut, date) et de textes déjà produits par des modèles — **jamais un
+verbatim de conversation**. Un dossier vide ne déclenche aucun appel. Une
+suggestion écartée par la personne est montrée au modèle avec ce sort, et
+ne revient pas. « Ne plus rien me proposer », sur la même page, coupe tout,
+collecte comprise.
+
+Le modèle se règle en ligne (rôle `introspection`). L'ancrage suit la règle
+de la consolidation : un déploiement ne déclenche jamais de passe, et un
+nouveau membre attend sa première échéance.
+
+`digest_cron` envoie à l'exploitant désigné (écran « Alertes ») une synthèse
+mensuelle des frictions par type et par domaine, et des suggestions émises,
+suivies et écartées — **des comptes seulement**, jamais un nom ni un contenu.
 
 ## backup
 

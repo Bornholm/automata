@@ -1,8 +1,7 @@
 # Déploiement — Automata
 
-Ce document est le livrable de la Phase 22 (« Packaging et déploiement »,
-le plan de conception) : comment construire l'image Docker d'Automata et la déployer sur
-une machine locale unique avec `docker compose`. Pour la sauvegarde, la
+Comment construire l'image Docker d'Automata et la déployer sur une machine
+locale unique avec `docker compose`. Pour la sauvegarde, la
 restauration et les procédures d'exploitation courantes (mise à jour,
 diagnostic de panne, endpoints de santé), voir `docs/operations.md` — ce
 document ne les duplique pas.
@@ -12,28 +11,29 @@ Pour un déploiement sur une instance Dokku, voir
 contourne le problème décrit juste en dessous en vendorisant les dépendances
 dans le commit poussé, plutôt qu'en fournissant des contextes de build.
 
-## 1. Dépendances
+## 1. Dépendances et binaires publiés
 
-`go-courier`, `genai` et `amoxtli` sont publiés sur le module proxy standard
-et résolus comme n'importe quelle dépendance. `go.mod` ne porte plus aucune
-directive `replace`, et le dépôt se construit seul :
+Toutes les dépendances sont des modules Go publiés : le dépôt se construit
+seul, sans dépôt frère ni contexte de build supplémentaire.
 
 ```bash
-go build ./...        # sans aucun dépôt frère sur le disque
-docker build .        # sans contexte de build supplémentaire
+go build ./...
+docker build .
 ```
 
-Ce n'était pas le cas jusqu'en août 2026 : les trois bibliothèques n'avaient
-pas de version publiée correspondant à l'API utilisée ici, `go.mod` les
-redirigeait vers des chemins relatifs (`../go-courier`…), et l'image devait
-recevoir les trois dépôts comme contextes de build Buildx. Tout cela a
-disparu.
+Chaque version taguée publie sur GitHub des binaires prêts à l'emploi
+(Linux, macOS, Windows ; amd64, arm64, arm, 386), des paquets `.deb` et
+Arch, et une image de conteneur minimale `ghcr.io/bornholm/automata`
+construite avec ko sur une base distroless. Les plugins de référence sont
+publiés séparément — archives `automata-plugin-<nom>_…` et paquets
+`automata-plugin-<nom>`, installés dans `/usr/lib/automata/plugins` — parce
+qu'ils n'ont pas la même licence (Apache 2.0) et qu'on n'en veut pas
+toujours tous. `automata version` affiche la version du binaire installé.
 
-Une conséquence pratique pour le développement : une modification de l'une
-des trois bibliothèques doit maintenant être **publiée** pour être prise en
-compte ici (nouveau tag puis `go get`). Pour itérer localement sur une
-bibliothèque et Automata en même temps, rétablir temporairement un `replace`
-dans un `go.work` local (non versionné) plutôt que dans `go.mod`.
+L'image `ghcr.io/bornholm/automata` ne contient que le binaire : elle
+convient si vous apportez vos propres services (plugins, LeaSH, recherche
+web). L'image de `misc/dokku/Dockerfile` embarque en plus les plugins et
+SearXNG, pour un déploiement complet en un conteneur.
 
 ## 2. Volumes et configuration
 
@@ -48,8 +48,7 @@ Trois volumes, comme prescrit par plan de conception, Phase 22 :
 ### Contrainte importante : `/prompts` est un volume séparé de `/config`
 
 `internal/config` résout les chemins relatifs (`storage.application.path`,
-`memory.store.path`, `memory.indexes[].path`, `courier.providers.*.session_path`,
-`agents.*.system_prompt.file`) **par rapport au répertoire du fichier de
+`memory.store.path`, `memory.indexes[].path`, `agents.*.system_prompt.file`) **par rapport au répertoire du fichier de
 configuration** (`internal/config/resolve.go`, fonctions `resolvePath` et
 `loadSystemPrompts`). Dans ce déploiement, `/config` et `/prompts` sont deux
 volumes distincts : un chemin `system_prompt.file: prompts/main.md` se
@@ -57,9 +56,8 @@ résoudrait donc à `/config/prompts/main.md`, qui n'existe pas dans ce
 conteneur. **La configuration doit référencer les prompts par un chemin
 absolu `/prompts/...`**, qui n'est jamais réécrit (`resolvePath` laisse un
 chemin absolu inchangé). De même, `storage.application.path`,
-`memory.store.path`, `memory.indexes[].path` et
-`courier.providers.*.session_path` doivent être des chemins absolus sous
-`/data/...` pour éviter toute résolution accidentelle par rapport à
+`memory.store.path` et `memory.indexes[].path` doivent être des chemins
+absolus sous `/data/...` pour éviter toute résolution accidentelle par rapport à
 `/config`.
 
 Exemple de configuration cohérent avec ces trois volumes :
@@ -80,22 +78,9 @@ storage:
       journal_mode: WAL
       busy_timeout: 5s
 
-courier:
-  providers:
-    whatsapp:
-      type: whatsapp
-      session_path: /data/courier/whatsapp
-
-llm_clients:
-  main:
-    provider: openai
-    model: ${MAIN_MODEL}
-    api_key: ${MAIN_API_KEY}
-
 agents:
   main:
     type: orchestrator
-    client: main
     system_prompt:
       file: /prompts/main.md          # chemin absolu : /prompts est un
                                         # volume distinct de /config
@@ -163,48 +148,7 @@ Rien d'autre : ni Buildx, ni `--build-context`, ni dépôt frère. Le build a
 été réexécuté après la suppression des `replace` — succès, image finale
 d'environ 125 Mo.
 
-## 4. Deux défauts corrigés par cette phase, détectés par le premier
-   déploiement réel
-
-Le packaging Docker est le premier moment où le binaire compilé est
-réellement *exécuté* (par opposition à `go test`, qui construit ses propres
-`config.StorageApplication`/etc. directement en Go sans jamais charger un
-fichier YAML d'exemple ni lancer `registry.Run`). Deux défauts latents,
-présents depuis des phases antérieures et jamais exercés par la suite de
-tests existante, ont ainsi été révélés et corrigés dans le même commit que
-ce packaging :
-
-1. **`cmd/automata/main.go` : la commande racine ne démarrait jamais.**
-   `automata -config /config/config.yaml` (l'invocation utilisée par
-   `ENTRYPOINT`/`CMD`) échouait systématiquement avec `Execute()` retournant
-   une erreur "unknown command" **avant même d'atteindre `RunE`**, avalée
-   silencieusement par `SilenceErrors: true` — aucun log, code de sortie 1.
-   Cause : le drapeau `-config` est en simple tiret et multi-caractères,
-   donc invisible pour la résolution de commande de cobra
-   (`stripFlags`/`Find`) puisqu'aucun drapeau n'est enregistré sur la
-   commande racine (`DisableFlagParsing` délègue tout au paquet `flag`
-   standard, dans `RunE`) ; cobra traite alors la *valeur* du drapeau
-   (`/config/config.yaml`) comme une tentative de sous-commande inconnue et
-   la validation par défaut (`legacyArgs`) rejette l'exécution. Corrigé en
-   ajoutant `Args: cobra.ArbitraryArgs` à la commande racine (voir le
-   commentaire dans `cmd/automata/main.go`), qui désactive cette validation
-   pour laisser le paquet `flag` standard gérer seul les arguments, comme
-   c'était déjà l'intention documentée.
-2. **`internal/persistence/db.go` : `storage.application.driver: sqlite`
-   (la valeur utilisée par plan de conception, §12 et tous les exemples de ce dépôt,
-   `internal/config/testdata/valid/config.yaml` inclus) ne correspondait à
-   aucun driver `database/sql` enregistré.** `github.com/ncruces/go-sqlite3/driver`
-   ne s'enregistre lui-même que sous le nom `"sqlite3"` ; une configuration
-   suivant la convention documentée du dépôt échouait donc au démarrage
-   réel avec `sql: unknown driver "sqlite"`. Corrigé en enregistrant un
-   alias `"sqlite"` pointant vers le même driver, dans `internal/persistence/db.go`
-   (`sql.Register("sqlite", &sqlitedriver.SQLite{})`), plutôt qu'en modifiant
-   tous les exemples de configuration existants pour utiliser `"sqlite3"`.
-
-Avec ces deux corrections, le conteneur démarre réellement, journalise
-`"automata starting"` en JSON structuré, et répond à `SIGTERM` (voir §8).
-
-## 5. Propriétaire du volume `/data`
+## 4. Propriétaire du volume `/data`
 
 L'image finale tourne en utilisateur non privilégié `nonroot` (UID/GID
 65532, image distroless). Un volume Docker nommé, créé implicitement au
@@ -222,19 +166,7 @@ Un montage bind (répertoire hôte) évite ce problème si le répertoire hôte
 est créé avec `chown 65532:65532` au préalable, ou si le montage utilise un
 UID/GID déjà accessible en écriture.
 
-**Note connexe, constatée lors du test §8** : le répertoire parent de
-`courier.providers.<nom>.session_path` (ex. `/data/courier/`) n'est pas créé
-automatiquement par le fournisseur WhatsApp (contrairement à
-`storage.application.path`, dont le répertoire parent est créé par
-`persistence.Open`, `internal/persistence/db.go`). Le pipeline ingress
-correspondant échoue alors au démarrage (`lstat /data/courier: no such file
-or directory`) sans empêcher le reste du service de fonctionner (readiness,
-scheduler, autres fournisseurs) — mais la messagerie WhatsApp restera
-indisponible tant que ce répertoire n'existe pas. Créer `/data/courier/`
-manuellement (ou via le même conteneur `chown`/`mkdir` du volume ci-dessus)
-avant le premier démarrage évite ce problème.
-
-## 6. Démarrer le service
+## 5. Démarrer le service
 
 ```bash
 mkdir -p config prompts        # si absents : voir §2 pour leur contenu
@@ -251,7 +183,7 @@ seule). Les secrets référencés par `${...}` dans la configuration YAML
 section `environment:` de `compose.yaml`, à alimenter par un fichier `.env`
 non versionné ou par l'environnement de l'hôte.
 
-## 7. Healthcheck
+## 6. Healthcheck
 
 L'image finale (`gcr.io/distroless/static-debian12:nonroot`) ne contient ni
 shell ni client HTTP : la forme habituelle d'une sonde (`CMD curl -f ...`) y
@@ -262,7 +194,7 @@ c'est lui qui fournit la sonde, via sa sous-commande dédiée :
 automata healthcheck [-addr 127.0.0.1:9090] [-timeout 3s]
 ```
 
-Elle interroge `GET /healthz/ready` (Phase 20, `internal/observability`,
+Elle interroge `GET /healthz/ready` (`internal/observability`,
 documenté en détail dans `docs/operations.md` §4) et n'expose qu'un code de
 sortie : `0` si le service est prêt, `1` s'il ne l'est pas, s'il est
 injoignable ou si le délai est dépassé. Aucun shell n'est requis, la
@@ -292,7 +224,7 @@ sonde reste bien sûr interrogeable depuis l'hôte si le port est publié :
 curl -s http://127.0.0.1:9090/healthz/ready
 ```
 
-## 8. Arrêt gracieux
+## 7. Arrêt gracieux
 
 `cmd/automata/main.go` installe déjà un contexte annulé sur `SIGINT`/
 `SIGTERM` (`signal.NotifyContext`), propagé par `internal/registry.Run` à
@@ -309,14 +241,14 @@ dans l'ordre, dans les logs JSON du conteneur, `"automata stopping"` puis
 `internal/mcp.Manager.Close`, l'un des `defer` de `internal/registry.Run`),
 et le conteneur est passé à l'état `exited` avec le code de sortie `0` —
 bien avant le délai de grâce de 10 s, donc sans `SIGKILL`. L'arrêt propre
-déjà en place depuis la Phase 1 fonctionne donc identiquement à travers
+déjà en place fonctionne donc identiquement à travers
 Docker.
 
-## 9. Limitation mono-instance
+## 8. Limitation mono-instance
 
 **Ne jamais faire tourner plusieurs instances (`replicas`/scale > 1) de ce
 service sur le même volume `/data`.** La base applicative SQLite est
-mono-écrivain, et le scheduler (Phase 16/18) repose sur des verrous de
+mono-écrivain, et le scheduler repose sur des verrous de
 concurrence en mémoire, par processus — aucun verrouillage distribué n'est
 implémenté (voir le commentaire dédié dans `compose.yaml`). Plusieurs
 instances concurrentes corromperaient la base ou dupliqueraient les
@@ -324,7 +256,7 @@ exécutions planifiées (rappels, livraisons). Tant qu'un mécanisme de
 verrouillage distribué n'est pas ajouté (hors périmètre de ce plan), ce
 déploiement reste strictement mono-instance.
 
-## 10. Sauvegarde, restauration, mise à jour
+## 9. Sauvegarde, restauration, mise à jour
 
 Voir `docs/operations.md` §1 à §5 : procédures de sauvegarde/restauration
 des quatre emplacements sous `/data`, et procédure de mise à jour du

@@ -30,3 +30,4 @@ plugins/email/email
 plugins/pages/pages
 plugins/workspace/workspace
 /automata
+/dist

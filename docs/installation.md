@@ -19,24 +19,12 @@ Le modèle doit accepter les images si vous activez les pièces jointes, et
 savoir appeler des outils. Sans tool calling, la délégation et la mémoire ne
 fonctionnent pas.
 
-### Dépendances locales non publiées
+### Dépendances
 
-Automata dépend de trois bibliothèques qui n'ont pas encore de version
-publiée : `go-courier`, `genai` et `amoxtli`. Le `go.mod` les redirige vers
-des répertoires frères :
-
-```text
-workspace/
-├── automata/
-├── go-courier/
-├── genai/
-└── amoxtli/
-```
-
-Clonez les quatre dépôts côte à côte, sinon la compilation échoue dès
-`go mod download`. C'est aussi la raison pour laquelle la construction de
-l'image Docker exige des contextes de build supplémentaires, décrits dans
-[deployment.md](deployment.md).
+Toutes les dépendances sont des modules Go publiés (`go-courier`, `genai`,
+`amoxtli` compris) : `go mod download` suffit, aucun dépôt frère à cloner.
+Seul le SDK de plugins (`pkg/pluginsdk`) est redirigé vers le sous-répertoire
+du dépôt, ce qui est transparent.
 
 ## 2. Compiler
 
@@ -139,17 +127,18 @@ memory:
       type: bleve
       path: ../data/memory.bleve
       weight: 1
-courier:
-  providers:
-    whatsapp:
-      session_path: ../data/courier/whatsapp
 ```
 
-Créez les répertoires avant le premier démarrage :
+Créez le répertoire de données avant le premier démarrage :
 
 ```bash
-mkdir -p data/courier
+mkdir -p data
 ```
+
+Les comptes de messagerie et les modèles ne figurent pas dans ce fichier :
+ils se créent en ligne, dans l'administration, après le premier démarrage
+(section 6). Le fichier ne décrit que la machine — stockage, secrets, ports,
+agents.
 
 ## 4. Renseigner l'environnement
 
@@ -161,51 +150,36 @@ set -a && . ./config/config.env && set +a
 ```
 
 Sinon, listez ce que votre configuration référence et exportez chaque
-variable. Pour l'exemple livré :
+variable. Pour l'exemple livré, ce sont les secrets du serveur web et les
+serveurs MCP éventuels :
 
 ```bash
-export MAIN_MODEL=gpt-4o
-export MAIN_API_KEY=sk-...
-export MAIN_BASE_URL=https://api.openai.com/v1
-export TRANSCRIPTION_MODEL=whisper-1
-export TRANSCRIPTION_API_KEY=sk-...
-export TRANSCRIPTION_BASE_URL=https://api.openai.com/v1
+export WEB_SESSION_SECRET=$(openssl rand -hex 32)   # scelle aussi les secrets en base
+export WEB_ADMIN_PASSWORD_HASH='$2a$10$...'         # bcrypt, voir section 6
+export STORAGE_ENCRYPTION_KEY=$(openssl rand -hex 32)
 
-export GOOGLE_CALENDAR_MCP_URL=https://...
-export GOOGLE_CALENDAR_MCP_TOKEN=...
 export SEARCH_MCP_URL=http://127.0.0.1:3000/mcp   # voir misc/web-search
 export SEARCH_MCP_TOKEN=...
-export TODO_MCP_URL=https://...
-
-export ALICE_WHATSAPP_ID='33612345678@s.whatsapp.net'
-export LEO_WHATSAPP_ID='33698765432@s.whatsapp.net'
-export ORG_GROUP_CHANNEL_ID='120363...@g.us'
-export ALICE_PRIVATE_CHANNEL_ID='33612345678@s.whatsapp.net'
-export ORG_GROUP_CALENDAR_ID=...
-export ORG_GROUP_TODO_ID=...
-export ALICE_CALENDAR_ID=...
-export ALICE_TODO_ID=...
 ```
+
+Les clés d'API des modèles ne sont **pas** des variables d'environnement :
+elles se saisissent dans l'administration et sont scellées en base. Perdre
+`WEB_SESSION_SECRET` ou `STORAGE_ENCRYPTION_KEY` rend illisible ce qu'ils
+protègent — sauvegardez-les à part.
 
 Une variable référencée mais absente est une erreur de démarrage, jamais une
 chaîne vide. C'est voulu : une clé d'API silencieusement vide produirait des
 erreurs incompréhensibles bien plus tard.
 
-### Trouver les identifiants WhatsApp
+### Rattacher les personnes et les groupes
 
-Vous ne les connaissez pas avant le premier démarrage. Procédez en deux temps.
-
-Mettez d'abord des valeurs provisoires, démarrez, liez l'appareil, envoyez un
-message depuis chaque compte concerné. Les messages seront refusés, et c'est
-exactement ce qui vous donne l'information : chaque refus est journalisé avec
-le `channel_id` réellement reçu.
-
-```json
-{"level":"INFO","msg":"ingress: message ignoré (identité non résolue ou non autorisée)","provider":"whatsapp","channel_id":"33612345678@s.whatsapp.net"}
-```
-
-Reportez ces valeurs dans votre environnement, redémarrez. Pour un groupe,
-l'identifiant se termine par `@g.us`.
+Vous n'avez plus d'identifiants WhatsApp à recopier. Les membres et les
+groupes se rattachent **par jeton** : l'administration génère un jeton
+(`atm_…`) pour un membre pré-créé ou pour un groupe, la personne l'envoie à
+l'assistant depuis sa messagerie, et le rattachement est fait. Les sections
+`identities` et `channels` du fichier restent supportées pour un usage local
+ou un import manuel (`automata web bootstrap`), mais ne sont plus le chemin
+normal.
 
 ## 5. Valider avant de démarrer
 
@@ -230,10 +204,17 @@ les erreurs en une fois plutôt que de s'arrêter à la première.
 Notez le tiret simple. Le drapeau suit la convention Go, pas celle des
 doubles tirets.
 
-Au premier lancement, go-courier affiche un QR code à scanner depuis WhatsApp
-(Appareils liés, Lier un appareil). La session est ensuite conservée dans
-`session_path` et le QR code ne réapparaît plus, sauf si vous supprimez ce
-répertoire ou déliez l'appareil.
+Au premier lancement, rien n'écoute encore aucune messagerie : ouvrez
+l'administration (`web.addr`, identifiants de `web.admin`), écran « Canaux
+et plateformes », et créez votre premier compte. Pour WhatsApp, le QR code à
+scanner (Appareils liés, Lier un appareil) s'affiche directement dans cet
+écran ; la session est ensuite conservée sur le disque et le QR code ne
+réapparaît plus, sauf si vous déliez l'appareil.
+
+Puis, écran « Modèles » : ajoutez au moins un client (fournisseur, modèle,
+clé d'API) et affectez-le aux rôles d'instance — `main` au minimum. Sans
+modèle sur un rôle, la fonction correspondante reste muette et le dit dans
+les journaux.
 
 Les journaux sont en JSON sur la sortie d'erreur :
 
@@ -242,29 +223,14 @@ Les journaux sont en JSON sur la sortie d'erreur :
 {"level":"INFO","msg":"mcp: connexion établie","server":"google-calendar","session":"whatsapp:33612345678@s.whatsapp.net"}
 ```
 
-### Découvrir les identifiants de canaux et de comptes
+### Rattacher un premier membre
 
-Un identifiant de groupe ou de conversation privée est attribué par le
-fournisseur : impossible de le connaître avant qu'un premier message n'en
-provienne. Tout message venu d'une origine non déclarée est ignoré, mais ses
-identifiants sont journalisés — c'est là qu'on lit les valeurs à reporter dans
-`identities` et `channels` :
-
-```json
-{"level":"INFO","msg":"ingress: message ignoré (identité non résolue ou non autorisée)",
- "provider":"whatsapp","channel_id":"120363000000000000@g.us","channel_kind":"group",
- "channel_name":"Famille","user_id":"33612345678@s.whatsapp.net","user_name":"Alice"}
-```
-
-Écrivez donc au bot en privé, puis dans le groupe visé (en le mentionnant ou
-non, peu importe : la règle de mention ne s'applique qu'aux canaux déjà
-déclarés), et relevez les `channel_id` et `user_id` obtenus.
-
-La configuration doit rester valide pour que le worker démarre et journalise :
-si `channels` est encore vide de valeurs réelles, déclarez temporairement un
-seul canal privé avec un identifiant fictif, le temps de cette découverte.
-Deux canaux au même `channel_id` — deux variables d'environnement vides, par
-exemple — sont refusés au chargement.
+Créez une organisation puis un membre dans l'administration, générez-lui un
+jeton personnel, et envoyez ce jeton à l'assistant depuis WhatsApp : la
+conversation privée est rattachée, l'assistant se présente, et propose une
+courte visite d'accueil. Un jeton de groupe, envoyé dans un groupe où
+l'assistant est présent, rattache ce groupe à l'organisation de la même
+façon.
 
 ## 7. Vérifier
 

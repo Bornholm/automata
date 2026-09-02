@@ -156,7 +156,6 @@ que de choisir. Tu n'inventes jamais un relevé que la source ne donne pas.
 agents:
   ruches:
     type: specialist
-    client: main
     system_prompt:
       file: ../prompts/ruches.md
     mcp_servers:
@@ -171,6 +170,11 @@ agents:
 
 Les cinq limites sont obligatoires. Une valeur nulle ou négative fait échouer
 la validation.
+
+Le modèle qui sert cet agent ne se déclare pas ici : chaque agent est un
+**rôle de l'instance** (ici `ruches`), qui apparaît à l'écran « Modèles »
+de l'administration dès que l'agent est déclaré. Sans modèle affecté, l'agent
+refuse ses tours en expliquant quoi régler.
 
 ### 4. Le rendre joignable
 

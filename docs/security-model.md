@@ -3,7 +3,7 @@
 Ce document est le livrable de la Phase 19 (« Sécurité », le plan de conception) : une revue
 dédiée avant déploiement réel. Il décrit le modèle de menace retenu, les
 frontières de confiance appliquées par le code, et l'état constaté pour
-chacun des dix points de vérification de la Phase 19, à la date de cette
+chacun des dix points de vérification du modèle de sécurité, à la date de cette
 revue (dépôt jusqu'au commit `6b21114`).
 
 ## 1. Modèle de menace
@@ -20,7 +20,7 @@ Automata reçoit des entrées de trois origines non fiables :
      ou canal déclaré mais expéditeur absent de `members`) — même exigence de
      rejet.
    - Le provider Go Courier ne filtre rien lui-même (voir
-     `docs/integration-inventory.md`, §1, « les providers ne filtrent rien,
+     la doc de go-courier, « les providers ne filtrent rien,
      y compris les groupes non déclarés ») : la robustesse est entièrement à
      la charge d'`internal/identity` et `internal/authorization`.
 2. **Serveurs MCP externes**, potentiellement :
@@ -79,7 +79,7 @@ sécurité.**
   (`internal/action.Engine.executeAction`, étape 5 : « ne jamais se fier à
   l'autorisation obtenue lors de la proposition »).
 
-## 3. État constaté par point de vérification (plan de conception, Phase 19)
+## 3. État constaté par point de vérification
 
 ### A.1 — Frontières d'autorisation
 

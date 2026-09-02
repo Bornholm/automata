@@ -89,6 +89,7 @@ func newRootCommand(logger *slog.Logger) *cobra.Command {
 	root.AddCommand(newMemoryCommand(logger))
 	root.AddCommand(newAdminCommand())
 	root.AddCommand(newUsageCommand())
+	root.AddCommand(newVersionCommand())
 	root.AddCommand(newStorageCommand())
 	root.AddCommand(newWebCommand())
 
