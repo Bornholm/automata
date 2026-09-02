@@ -155,6 +155,7 @@ func (s *Service) DeleteOrganization(ctx context.Context, orgID string) (OrgDele
 			`DELETE FROM link_tokens WHERE org_id = ?`,
 			`DELETE FROM org_settings WHERE org_id = ?`,
 			`DELETE FROM suggestions WHERE org_id = ?`,
+			`DELETE FROM missions WHERE org_id = ?`,
 			`DELETE FROM plugin_activations WHERE org_id = ?`,
 			`DELETE FROM plugin_configs WHERE org_id = ?`,
 			`DELETE FROM plugin_secrets WHERE org_id = ?`,
