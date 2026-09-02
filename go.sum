@@ -78,8 +78,8 @@ github.com/bornholm/amoxtli v0.17.3 h1:sc+N3DO+MNmCazO98gM1s8kKYgXZ4FGUt/nTpeA3o
 github.com/bornholm/amoxtli v0.17.3/go.mod h1:N4nYlxH0DeGjz3ds7WW0WL2HmITAw0aBTgFs7F4c5ZI=
 github.com/bornholm/genai v0.35.1-0.20260820072909-f37d5e79f45d h1:ZDNl5ATdioPL2lQVkauijgU9Rz+qmDeG8eGG+eiiR7k=
 github.com/bornholm/genai v0.35.1-0.20260820072909-f37d5e79f45d/go.mod h1:ajuzZJvHAhy2SOsjxVNI1WUZaYKvGfabRE9UnLWirr0=
-github.com/bornholm/go-courier v0.2.2-0.20260831100647-6adb26e68ecd h1:8WYGJOYdk4aUq375GGxDIZosJbYtkLVZMacHUZIFxxo=
-github.com/bornholm/go-courier v0.2.2-0.20260831100647-6adb26e68ecd/go.mod h1:ZnsWOOAjZL1hS0STz2UH3KDWWTzCvj/LtT/WAF/7Xaw=
+github.com/bornholm/go-courier v0.2.2-0.20260902174447-6360731bad80 h1:3CldyEXDsCXadEKvWrLfCKmiMSR/J7TmCxRUub2VkvY=
+github.com/bornholm/go-courier v0.2.2-0.20260902174447-6360731bad80/go.mod h1:ZnsWOOAjZL1hS0STz2UH3KDWWTzCvj/LtT/WAF/7Xaw=
 github.com/bornholm/go-x v0.0.0-20260127104343-c6737ea35324 h1:urrNBFQGXI3uvAivANnjEBdZVMDfmWn/okKIwDDqJ/w=
 github.com/bornholm/go-x v0.0.0-20260127104343-c6737ea35324/go.mod h1:LrDsNbXXqkdlQ/tlcbWKUF/FoFA/WjUEtNDRa/Xl19c=
 github.com/bufbuild/protocompile v0.14.1 h1:iA73zAf/fyljNjQKwYzUHD6AD4R8KMasmwa/FBatYVw=

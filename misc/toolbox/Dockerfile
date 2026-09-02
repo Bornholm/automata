@@ -28,7 +28,7 @@ FROM golang:1.26-bookworm AS builder
 # LEASH_VERSION est une version taguée ou un commit du module
 # github.com/bornholm/leash. Monter de version = changer cet ARG, et le
 # diff dit ce qui a bougé.
-ARG LEASH_VERSION=c35c659eb20e3e3242deed9738316089dff2e1f1
+ARG LEASH_VERSION=v0.14.0
 
 RUN CGO_ENABLED=0 GOFLAGS=-ldflags=-s\ -w \
     GOBIN=/out go install github.com/bornholm/leash/cmd/server@${LEASH_VERSION} \
