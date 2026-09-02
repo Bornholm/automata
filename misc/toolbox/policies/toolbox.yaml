@@ -1,0 +1,165 @@
+# Policy « toolbox » : édition de médias légers (vidéo, image) et de
+# documents (docx, odt, pdf) dans le workspace d'un tenant, via ffmpeg,
+# imagemagick, pandoc, LibreOffice, tesseract (OCR) et quelques utilitaires
+# de fichiers.
+#
+# Conçue pour l'image Dockerfile.toolbox et le serveur MCP HTTP multi-tenant
+# (cf. docs/mcp-http.md). Le répertoire réel du workspace est toujours
+# bind-monté sur /work par le serveur, quoi que dise ce fichier.
+#
+# AUCUNE ouverture réseau : c'est ce qui rend l'exécution de commandes sans
+# confirmation acceptable pour un agent. Ne pas ajouter de binaire réseau
+# (curl, wget, ssh…) ni retirer `unshare.network` sans réexaminer ce
+# compromis dans son ensemble.
+
+execution:
+  max_duration: 300s
+  max_output_bytes: 262144
+  max_commands_per_script: 64
+  max_subshells: 8
+
+allowed_binaries:
+  # Médias. `magick` est le point d'entrée d'ImageMagick 7 ; l'image
+  # Dockerfile.toolbox embarque ImageMagick 6, qui expose convert/identify/
+  # mogrify. Les deux sont listés pour que la policy suive une éventuelle
+  # bascule de la base Debian vers IM7.
+  - ffmpeg
+  - ffprobe
+  - magick
+  - convert
+  - identify
+  - mogrify
+  # Documents. `office-convert` est le point d'entrée LibreOffice fourni par
+  # l'image : il impose un profil utilisateur en tmpfs et un répertoire de
+  # sortie prévisible (cf. misc/toolbox/office-convert). `soffice` n'est
+  # volontairement PAS autorisé en direct — invoqué sans ces garde-fous, il
+  # écrit son profil dans le workspace du membre.
+  - office-convert
+  - pandoc
+  # Poppler et qpdf : inspecter, extraire, recomposer un PDF. `pdftoppm`
+  # rend une page en image, ce qui permet à un agent de regarder son propre
+  # rendu avant de le livrer.
+  - pdftotext
+  - pdfinfo
+  - pdftoppm
+  - pdfimages
+  - pdfunite
+  - pdfseparate
+  - qpdf
+  # OCR : rendre un document scanné interrogeable.
+  - tesseract
+  - ocrmypdf
+  # Métadonnées d'image : les lire, et surtout les effacer avant partage
+  # (`exiftool -all= photo.jpg` retire position GPS et modèle d'appareil).
+  - exiftool
+  # JSON : ffprobe et bien d'autres rendent du JSON ; le lire au grep est
+  # fragile.
+  - jq
+  # Codes QR : en produire, et en lire un sur une photo.
+  - qrencode
+  - zbarimg
+  # `python3` est présent dans l'image — ocrmypdf en dépend et s'exécute
+  # par son shebang — mais N'EST PAS autorisé ici, décision de l'exploitant.
+  # Autoriser un interpréteur changerait la nature de cette liste : elle ne
+  # dirait plus tout ce que l'agent peut CALCULER, seulement ce qu'il peut
+  # ATTEINDRE, et on ne pourrait plus lire cette policy pour savoir de quoi
+  # il est capable. Ne pas l'ajouter sans revenir sur ce choix.
+  # Un .docx et un .odt sont des archives zip : les ouvrir permet une
+  # retouche fine quand la conversion ne suffit pas.
+  - zip
+  - unzip
+  # Édition de texte en place, pour les formats de balisage.
+  - sed
+  - grep
+  - awk
+  - gawk
+  - diff
+  - tr
+  - cut
+  - tee
+  - touch
+  - iconv
+  # Coreutils utiles à la manipulation de fichiers dans /work
+  - ls
+  - cat
+  - cp
+  - mv
+  - mkdir
+  - rm
+  - du
+  - stat
+  - head
+  - tail
+  - wc
+  - basename
+  - dirname
+  - file
+  - sort
+  - printf
+  - echo
+  - test
+  - true
+  - false
+
+blocked_patterns:
+  - "rm -rf /"
+
+environment:
+  static:
+    # HOME en tmpfs, jamais dans le workspace : LibreOffice, pandoc et
+    # ImageMagick y déposent des profils et des caches, qui pollueraient
+    # sinon les fichiers du membre et consommeraient son quota. Le
+    # répertoire de travail reste /work (sandbox.workdir).
+    HOME: /tmp
+    PATH: /usr/local/bin:/usr/bin:/bin
+    TMPDIR: /tmp
+    # ImageMagick est bavard sur ces variables ; les fixer évite qu'il aille
+    # chercher une configuration hors du sandbox.
+    MAGICK_TMPDIR: /tmp
+
+builtins:
+  disabled: true
+
+sandbox:
+  enabled: true
+  backend: bwrap
+  readonly_binds:
+    - /usr
+    - /etc/alternatives
+    - /etc/ImageMagick-6
+    - /etc/ImageMagick-7
+    # LibreOffice et pandoc lisent leur configuration et les polices
+    # installées ; sans ces montages, soffice démarre puis échoue au rendu.
+    - /etc/libreoffice
+    - /etc/fonts
+    - /etc/papersize
+    - /var/lib/defoma
+    # Données d'apprentissage de tesseract et modules de python3 : hors de
+    # ces montages, les deux démarrent puis échouent sur un fichier
+    # introuvable.
+    - /usr/share/tesseract-ocr
+    - /usr/share/tessdata
+  # Sur les systèmes merged-usr (Debian 12+), /bin, /lib et /lib64 sont des
+  # symlinks vers /usr — les recréer dans le namespace.
+  symlinks:
+    - source: usr/bin
+      target: /bin
+    - source: usr/lib
+      target: /lib
+    - source: usr/lib/x86_64-linux-gnu
+      target: /lib64
+  tmpfs:
+    - /tmp
+  workdir: /work
+  unshare:
+    network: true
+    pid: true
+    ipc: true
+    uts: true
+    user: true
+  die_with_parent: true
+  # ffmpeg écrit des fichiers temporaires que la commande suivante du script
+  # peut avoir à relire : partager /tmp sur toute la durée du script. Le
+  # profil LibreOffice y vit aussi, ce qui évite de le reconstruire entre
+  # deux conversions d'un même script.
+  persistent_tmp: true

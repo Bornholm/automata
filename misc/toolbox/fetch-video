@@ -1,0 +1,130 @@
+#!/bin/sh
+# fetch-video — téléchargement d'une vidéo publique par yt-dlp, dans le
+# seul bac à sable de la policy « fetch » (le seul à disposer du réseau).
+#
+# Usage : fetch-video <url> [nom-de-sortie-sans-extension]
+#   fetch-video https://www.youtube.com/watch?v=XXXX
+#   fetch-video https://vimeo.com/123456 conference
+#
+# Ce script est le SEUL binaire autorisé par policies/fetch.yaml, et cette
+# policy est la seule à lever `unshare.network`. Il existe pour que le
+# réseau reste attaché à UNE opération précise, et jamais à un shell : la
+# policy « toolbox » (ffmpeg, imagemagick, LibreOffice…) demeure étanche,
+# ce qui est la condition pour y exécuter des commandes sans confirmation
+# humaine.
+#
+# Ce que le script impose, et qu'un appel direct à yt-dlp ne garantirait
+# pas :
+#
+#  1. `--exec` et les post-processeurs arbitraires sont hors de portée :
+#     ils feraient de yt-dlp un lanceur de commandes quelconques, avec le
+#     réseau ouvert et le workspace du membre monté en écriture.
+#  2. `--no-playlist` : une URL de playlist remplirait le quota du membre
+#     avec des centaines de fichiers.
+#  3. Un plafond de taille et de durée : le workspace est un atelier, pas
+#     un magasin, et l'hôte plafonne déjà ses propres transferts. La
+#     qualité DÉCROÎT jusqu'à tenir sous le plafond (1080 → 720 → 480)
+#     plutôt que d'abandonner : une vidéo de trente minutes dépasse 200 Mo
+#     en 1080p, et un film muet ou un échec net valent moins qu'une
+#     définition plus basse.
+#  4. Seuls http(s) sont acceptés, et jamais un hôte littéral en IP : le
+#     conteneur partage un réseau avec d'autres services de l'exploitant,
+#     et une URL est souvent choisie par un modèle qui a lu un contenu
+#     tiers. La liste blanche de domaines, elle, est appliquée côté
+#     appelant (Automata), qui la tient de sa configuration.
+#  5. Le nom du fichier de sortie est imposé et sans espace : ce qui suit
+#     dans le workspace est manipulé par des scripts.
+#
+# Dépendance non évidente : yt-dlp a besoin d'un runtime JavaScript pour
+# résoudre le défi de signature de YouTube. L'image en fournit un (deno,
+# celui que yt-dlp active par défaut). Sans lui, toute vidéo YouTube échoue
+# sur « This video is not available », y compris une vidéo publique — un
+# message trompeur qui envoie chercher un problème de droits d'accès.
+
+set -e
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+	echo "usage: fetch-video <url> [output-name]" >&2
+	exit 2
+fi
+
+url="$1"
+name="${2:-video}"
+
+# Schéma : http(s) exclusivement. file://, ftp://, et les schémas exotiques
+# supportés par yt-dlp n'ont rien à faire ici.
+case "$url" in
+	http://*|https://*) ;;
+	*)
+		echo "fetch-video: only http(s) URLs are accepted" >&2
+		exit 2
+		;;
+esac
+
+# Hôte littéral en IP : refusé. C'est la forme qu'aurait une tentative
+# d'atteindre un service interne (169.254.x.y, 10.x.y.z, 127.0.0.1…).
+host="${url#*://}"
+host="${host%%/*}"
+host="${host%%\?*}"
+host="${host##*@}"
+host="${host%%:*}"
+case "$host" in
+	*[!0-9.]*) ;;
+	*)
+		echo "fetch-video: numeric host addresses are not accepted" >&2
+		exit 2
+		;;
+esac
+case "$host" in
+	'['*|localhost)
+		echo "fetch-video: this host is not accepted" >&2
+		exit 2
+		;;
+esac
+
+# Nom de sortie : lettres, chiffres, tiret, souligné. Le reste est écarté
+# plutôt que corrigé — deviner l'intention produirait des surprises.
+case "$name" in
+	*[!A-Za-z0-9_-]*)
+		echo "fetch-video: output name may only contain letters, digits, dashes and underscores" >&2
+		exit 2
+		;;
+esac
+
+yt-dlp \
+	--no-playlist \
+	--no-continue \
+	--no-part \
+	--retries 2 \
+	--socket-timeout 20 \
+	--max-filesize 200M \
+	--match-filter "duration < 3600" \
+	--format "bv*[height<=1080][filesize<150M]+ba/bv*[height<=720][filesize<150M]+ba/bv*[height<=480][filesize<150M]+ba/b[filesize<150M]/bv*[height<=480]+ba/b" \
+	--merge-output-format mp4 \
+	--no-exec \
+	--output "${name}.%(ext)s" \
+	--paths "." \
+	--no-cache-dir \
+	--restrict-filenames \
+	-- "$url"
+
+# yt-dlp peut sortir en SUCCÈS sans avoir produit la moindre vidéo : quand
+# la plateforme n'expose plus que des images (miniatures, storyboard), il
+# les télécharge et s'arrête là. Vu en production : deux appels réussis, un
+# workspace sans vidéo, et un agent qui croit avoir de quoi travailler.
+# Mieux vaut échouer franchement.
+for ext in mp4 mkv webm mov m4v; do
+	if [ -f "${name}.${ext}" ]; then
+		exit 0
+	fi
+done
+
+# Ménage : yt-dlp écrit chaque piste séparément avant de les fusionner, et
+# un abandon en cours de route (plafond de taille atteint) les laisse sur
+# place. Vu au banc : 234 Mo de morceaux inutilisables dans un workspace
+# qui n'en accepte que 256. On ne supprime que ce que cet appel a écrit,
+# sous un nom déjà validé plus haut.
+rm -f "${name}."*
+
+echo "fetch-video: no video file was produced — the platform exposed no downloadable video track within the size limit" >&2
+exit 1

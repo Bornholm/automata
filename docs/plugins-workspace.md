@@ -264,11 +264,23 @@ silencieusement le document. Mais c'est une limite réelle, pas un défaut
 
 ## Le service LeaSH ("toolbox")
 
-L'image est produite par `Dockerfile.toolbox` du dépôt LeaSH : le serveur
-MCP multi-tenant, `bubblewrap`, `ffmpeg` et `imagemagick`. Elle est déployée
-comme une application Dokku distincte, sans aucune exposition publique
-(`proxy:disable`, aucun domaine), jointe à Automata par un réseau Dokku
-interne.
+L'image se construit dans ce dépôt, depuis `misc/toolbox/`, et la CI la
+publie sur `ghcr.io/bornholm/leash-toolbox` (`latest` depuis `main`, et
+une étiquette par version taguée). Elle contient le serveur MCP de LeaSH,
+installé depuis le module Go publié et épinglé par l'argument
+`LEASH_VERSION` du Dockerfile, plus `bubblewrap`, `ffmpeg`, `imagemagick`,
+LibreOffice, tesseract, yt-dlp et son runtime Deno, et les deux policies
+`toolbox.yaml` et `fetch.yaml`.
+
+Pourquoi ici et pas chez LeaSH. LeaSH est un serveur d'exécution
+générique. Ce qu'on met dans le bac à sable et ce qu'on y autorise est un
+choix d'Automata, dicté par ce que le plugin workspace demande. Les
+policies et les scripts vivent donc avec lui, et monter de version de
+LeaSH est un changement d'`ARG` qu'on relit dans le diff.
+
+Sur l'instance de référence, elle tourne comme une application Dokku
+distincte, sans exposition publique (`proxy:disable`, aucun domaine),
+jointe à Automata par un réseau Dokku interne.
 
 Bubblewrap a besoin de trois assouplissements du conteneur pour créer ses
 namespaces :

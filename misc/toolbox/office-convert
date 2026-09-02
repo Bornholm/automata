@@ -1,0 +1,57 @@
+#!/bin/sh
+# office-convert — conversion de documents par LibreOffice, utilisable dans
+# le bac à sable d'un tenant.
+#
+# Usage : office-convert <format> <fichier> [fichier...]
+#   office-convert pdf rapport.docx
+#   office-convert docx notes.odt
+#
+# Deux raisons d'exister plutôt que d'autoriser « soffice » directement :
+#
+#  1. LibreOffice a besoin d'un profil utilisateur inscriptible. Sans
+#     -env:UserInstallation, il le crée sous $HOME, donc dans le workspace
+#     du membre : des fichiers parasites dans ses données et son quota.
+#     Ici, le profil va dans /tmp, monté en tmpfs et jeté avec le script.
+#  2. Sans --outdir, soffice écrit à côté du fichier source avec un nom que
+#     l'agent doit deviner. On force le répertoire courant.
+#
+# L'image n'embarque pas de JRE : LibreOffice s'en passe pour convertir,
+# mais prévient sur stderr à chaque exécution. Cet avertissement est filtré,
+# faute de quoi un agent le lit comme un échec et recommence en boucle. Rien
+# d'autre n'est masqué : les vraies erreurs passent intactes, et le code de
+# sortie de soffice est celui du script.
+#
+# Le script ne fait aucun accès réseau et n'écrit que dans /tmp et dans le
+# répertoire courant.
+
+set -e
+
+if [ "$#" -lt 2 ]; then
+	echo "usage: office-convert <format> <file> [file...]" >&2
+	echo "example: office-convert pdf report.docx" >&2
+	exit 2
+fi
+
+format="$1"
+shift
+
+profile="${TMPDIR:-/tmp}/libreoffice-profile"
+errors="${TMPDIR:-/tmp}/office-convert.$$.err"
+
+# Le filtrage passe par un fichier plutôt que par un tube : dans un
+# pipeline, c'est le code de sortie de grep qui l'emporte, et grep sort en
+# erreur quand il ne reste plus rien à afficher — une conversion réussie
+# serait alors rapportée comme un échec.
+status=0
+soffice \
+	-env:UserInstallation="file://${profile}" \
+	--headless \
+	--norestore \
+	--convert-to "$format" \
+	--outdir . \
+	"$@" 2>"$errors" || status=$?
+
+grep -v 'failed to launch javaldx' "$errors" >&2 || true
+rm -f "$errors"
+
+exit "$status"
