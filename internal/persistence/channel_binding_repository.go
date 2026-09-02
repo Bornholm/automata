@@ -52,6 +52,29 @@ func (r *ChannelBindingRepository) Upsert(ctx context.Context, q Querier, b Chan
 	return nil
 }
 
+// Delete détache un canal D'UNE ORGANISATION PRÉCISE. Le filtre par
+// org_id est le cloisonnement : un identifiant de canal recopié depuis la
+// fiche d'une autre organisation ne détache rien. Retourne false si aucune
+// liaison ne correspondait.
+//
+// La conversation et son historique restent en place. Détacher veut dire
+// qu'Automata cesse d'y répondre, pas qu'on efface ce qui s'y est dit ;
+// l'effacement a ses propres boutons, sur le membre ou l'organisation.
+func (r *ChannelBindingRepository) Delete(ctx context.Context, q Querier, orgID, provider, channelID string) (bool, error) {
+	result, err := q.ExecContext(ctx, `DELETE FROM channel_bindings
+		WHERE org_id = ? AND provider = ? AND channel_id = ?`, orgID, provider, channelID)
+	if err != nil {
+		return false, fmt.Errorf("détachement du canal %s/%s: %w", provider, channelID, err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("détachement du canal %s/%s: %w", provider, channelID, err)
+	}
+
+	return affected > 0, nil
+}
+
 // Find retourne la liaison d'un canal, ou (ChannelBinding{}, false, nil).
 func (r *ChannelBindingRepository) Find(ctx context.Context, q Querier, provider, channelID string) (ChannelBinding, bool, error) {
 	row := q.QueryRowContext(ctx, `SELECT `+channelBindingColumns+` FROM channel_bindings

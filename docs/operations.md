@@ -297,7 +297,18 @@ avant tout humain. Un lien à usage unique consommé par un GET arrivait
 donc déjà mort chez son destinataire, qui n'y lisait que "Ce lien a déjà
 servi". Aucun robot d'aperçu n'émet de POST.
 
-## 6.3 Supprimer une organisation
+## 6.3 Détacher un canal
+
+Fiche de l'organisation → onglet Canaux → bouton "Détacher" sur la ligne.
+Automata cesse d'y répondre dès le message suivant, sans redémarrage. La
+conversation et son historique restent en base. Détacher n'est pas effacer.
+Pour effacer, c'est le membre (RGPD) ou l'organisation entière.
+
+Seuls les canaux rattachés en ligne, par jeton, ont ce bouton. Un canal
+déclaré dans le fichier de configuration est marqué "fichier" et se retire
+en éditant le fichier.
+
+## 6.4 Supprimer une organisation
 
 Fiche de l'organisation → onglet Personnalisation → bloc rouge en bas.
 Le nom de l'organisation se retape pour confirmer : deux organisations

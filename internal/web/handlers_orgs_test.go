@@ -196,3 +196,77 @@ func TestOrgPageShowsBoundChannels(t *testing.T) {
 		t.Error("l'onglet se dit vide alors qu'un canal est lié")
 	}
 }
+
+// Détacher un canal le retire de l'organisation sans toucher à la
+// conversation, et ne peut pas atteindre le canal d'une autre organisation
+// depuis cette fiche. Jusqu'ici la seule issue pour un groupe rattaché au
+// mauvais foyer était SQL sur le volume.
+func TestOrgChannelUnbind(t *testing.T) {
+	server, ts, client := testServer(t)
+	login(t, ts, client)
+
+	now := server.Now()
+	if err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
+		for _, org := range []string{"atelier", "voisins"} {
+			if err := server.Orgs.Insert(context.Background(), tx, persistence.Organization{
+				ID: org, DisplayName: org, CreatedAt: now, UpdatedAt: now,
+			}, false); err != nil {
+				return err
+			}
+		}
+		for _, b := range []persistence.ChannelBinding{
+			{Provider: "whatsapp", ChannelID: "120000000000000001@g.us", OrgID: "atelier", Kind: "group", Scope: "group", ScopeID: "120000000000000001@g.us", DisplayName: "Atelier IA", CreatedAt: now},
+			{Provider: "whatsapp", ChannelID: "120000000000000002@g.us", OrgID: "voisins", Kind: "group", Scope: "group", ScopeID: "120000000000000002@g.us", DisplayName: "Voisins", CreatedAt: now},
+		} {
+			if err := server.Bindings.Upsert(context.Background(), tx, b); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("préparation: %v", err)
+	}
+
+	// Depuis la fiche d'atelier, tenter de détacher le canal des voisins.
+	resp, err := client.PostForm(ts.URL+"/admin/orgs/atelier/channels/unbind", url.Values{
+		"csrf_token": {csrfFrom(t, client, ts.URL)},
+		"provider":   {"whatsapp"},
+		"channel_id": {"120000000000000002@g.us"},
+	})
+	if err != nil {
+		t.Fatalf("POST unbind étranger: %v", err)
+	}
+	resp.Body.Close()
+
+	// Puis le sien.
+	resp, err = client.PostForm(ts.URL+"/admin/orgs/atelier/channels/unbind", url.Values{
+		"csrf_token": {csrfFrom(t, client, ts.URL)},
+		"provider":   {"whatsapp"},
+		"channel_id": {"120000000000000001@g.us"},
+	})
+	if err != nil {
+		t.Fatalf("POST unbind: %v", err)
+	}
+	resp.Body.Close()
+
+	var all []persistence.ChannelBinding
+	if err := server.DB.WithTx(context.Background(), func(tx *sql.Tx) error {
+		var err error
+		all, err = server.Bindings.ListAll(context.Background(), tx)
+		return err
+	}); err != nil {
+		t.Fatalf("relecture: %v", err)
+	}
+	if len(all) != 1 || all[0].OrgID != "voisins" {
+		t.Fatalf("liaisons restantes = %+v : seul le canal des voisins devait survivre", all)
+	}
+
+	// La fiche ne liste plus le canal détaché.
+	resp, err = client.Get(ts.URL + "/admin/orgs/atelier?tab=channels")
+	if err != nil {
+		t.Fatalf("GET fiche: %v", err)
+	}
+	if html := body(t, resp); strings.Contains(html, "Atelier IA") {
+		t.Error("le canal détaché figure encore dans l'onglet Canaux")
+	}
+}

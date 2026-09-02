@@ -38,6 +38,11 @@ type OrgChannelRow struct {
 	Name         string
 	Kind         string
 	Chip         Chip
+	// Provider et ChannelID identifient une liaison faite en ligne, la
+	// seule qu'on puisse détacher d'ici. Vides pour un canal déclaré dans
+	// le fichier de configuration, qui se retire en éditant le fichier.
+	Provider  string
+	ChannelID string
 }
 
 type OrgPage struct {
@@ -432,8 +437,18 @@ templ orgChannelsTab(page OrgPage) {
 					@PlatformBadge(ch.PlatformType, "size-5 rounded-md", "text-[9px]")
 					<span class="text-sm font-medium text-text">{ ch.Name }</span>
 					<span class="text-sm text-text-3">{ ch.Kind }</span>
-					<div class="ml-auto">
+					<div class="ml-auto flex items-center gap-3">
 						@StatusChip(ch.Chip)
+						if ch.ChannelID != "" {
+							<form method="post" action={ templ.SafeURL("/admin/orgs/" + page.ID + "/channels/unbind") } onsubmit="return confirm('Détacher ce canal ? Automata cessera d\'y répondre. La conversation et son historique sont conservés.')">
+								<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
+								<input type="hidden" name="provider" value={ ch.Provider }/>
+								<input type="hidden" name="channel_id" value={ ch.ChannelID }/>
+								<button type="submit" class="h-7 rounded-lg border border-line px-2.5 text-xs font-medium text-text-3 hover:border-crit-line hover:text-crit-deep">Détacher</button>
+							</form>
+						} else {
+							<span class="text-xs text-text-4" title="Déclaré dans le fichier de configuration">fichier</span>
+						}
 					</div>
 				</div>
 			}

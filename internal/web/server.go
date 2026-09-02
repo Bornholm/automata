@@ -86,6 +86,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 	mux.HandleFunc("POST /admin/orgs/{id}/group-token", admin(adm.HandleOrgGroupToken))
 	mux.HandleFunc("POST /admin/orgs/{id}/customization", admin(adm.HandleOrgCustomization))
 	mux.HandleFunc("POST /admin/orgs/{id}/delete", admin(adm.HandleOrgDelete))
+	mux.HandleFunc("POST /admin/orgs/{id}/channels/unbind", admin(adm.HandleOrgChannelUnbind))
 	mux.HandleFunc("GET /admin/orgs/{id}/members/new", admin(adm.HandleMemberNewForm))
 	mux.HandleFunc("POST /admin/orgs/{id}/members", admin(adm.HandleMemberCreate))
 	mux.HandleFunc("GET /admin/members/{id}", admin(adm.HandleMember))

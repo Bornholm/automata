@@ -180,6 +180,8 @@ func (h *Handlers) HandleOrg(w http.ResponseWriter, r *http.Request) {
 				Name:         binding.DisplayName,
 				Kind:         core.ChannelKindLabelFromScope(binding.Kind),
 				Chip:         view.Chip{Label: "Actif", Tone: "ok"},
+				Provider:     binding.Provider,
+				ChannelID:    binding.ChannelID,
 			})
 		}
 
