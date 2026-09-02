@@ -55,6 +55,14 @@ type ReminderTools struct {
 	// exécutera. Voir migration 0007.
 	AgentName string
 
+	// Missions, non nil, ajoute les outils de missions (start_mission,
+	// list_missions, abandon_mission) : les dossiers au long cours, avec
+	// journal de bord et réveils espacés — voir mission_tools.go et
+	// internal/mission. Elles exigent Tasks pour la même raison que
+	// schedule_task : sans exécuteur câblé, on promettrait un travail que
+	// personne ne ferait.
+	Missions *persistence.MissionRepository
+
 	// Events, non nil, permet à un plugin actif de tenir le magasin des
 	// rappels d'un membre à la place de la table reminders — un agenda
 	// CalDAV, par exemple. La résolution se fait membre par membre, à
@@ -110,6 +118,8 @@ func (t ReminderTools) buildReminderTools(identity model.ExecutionIdentity) []ll
 			t.newCancelScheduledTaskTool(identity),
 		)
 	}
+
+	tools = append(tools, t.buildMissionTools(identity)...)
 
 	return tools
 }

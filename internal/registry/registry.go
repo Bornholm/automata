@@ -648,6 +648,11 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		// la place de la table — un agenda CalDAV, par exemple. Les tâches
 		// planifiées n'y vont jamais : voir ReminderTools.Events.
 		Events: eventStores,
+		// Les missions (dossiers au long cours) partagent le chiffreur de
+		// contenu : objectif et journal sont scellés au repos, contrairement
+		// aux tâches planifiées (limitation documentée du modèle de
+		// sécurité).
+		Missions: persistence.NewMissionRepository(db.Cipher()),
 	}
 
 	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, profileTools, tenants, mcpManager, pluginProvider, skillsProvider, clientResolver, metrics, logger)
