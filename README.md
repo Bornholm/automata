@@ -5,7 +5,8 @@ WhatsApp, Rocket.Chat, Discord, Signal ou le courriel. Pas une application
 de plus à ouvrir.
 
 Vous lui écrivez comme à quelqu'un. Il retient ce que vous lui confiez, vous
-rappelle vos échéances, travaille sur les fichiers que vous lui envoyez, lit
+rappelle vos échéances, suit vos affaires au long cours en tenant un journal
+de bord, travaille sur les fichiers que vous lui envoyez, lit
 vos courriels si vous le lui permettez. Et avant d'écrire quoi que ce soit
 hors de la conversation, il vous demande de taper "confirmer". Toujours.
 C'est la règle qui rend le reste acceptable.

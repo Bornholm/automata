@@ -489,6 +489,35 @@ peuvent viser n'importe quel canal, n'importe quel agent et une politique
 `require_confirmation` ; une tâche naît en conversation, reste dans la
 sienne, et ne sait qu'observer. Les deux coexistent.
 
+### Missions
+
+Il n'y a rien à configurer : les agents qui déclarent `reminders` et
+`scheduled_tasks` gagnent aussi `start_mission`, `list_missions` et
+`abandon_mission`, sous les mêmes permissions `task.*`, et la boucle de
+réveil tourne dès que le serveur web est actif.
+
+Une mission est ce qui n'est ni un rappel ni une tâche cron : "suis ma
+réclamation et relance-les si personne ne répond". Un objectif, des
+semaines d'attente, une cadence qui dépend de ce qui se passe. À la
+création, l'agent fixe le premier point d'étape. À chaque réveil, il relit
+le dossier — l'objectif, immuable, et son journal de bord, qu'il tient
+lui-même —, avance ce qui peut l'être, note ce qu'il laisse et choisit la
+prochaine échéance avec le seul outil de planification du tour,
+`update_mission`. Un réveil sans rien à dire met à jour son journal et se
+tait.
+
+Les garde-fous des tâches planifiées s'appliquent, à une différence près :
+au lieu d'être ignorées, les actions sensibles proposées pendant un réveil
+deviennent un plan d'actions en attente dans la conversation d'origine. La
+relance s'écrit toute seule, mais elle ne part que quand la personne tape
+"confirmer". Une mission propose, l'humain décide.
+
+Dix missions actives au plus par personne — chaque réveil coûte un tour de
+modèle. Le dossier complet, journal compris, se lit et s'abandonne depuis
+l'onglet Dossiers de la page de profil. Contrairement au texte des tâches
+planifiées, objectif et journal sont chiffrés au repos dès que
+`storage.encryption_key` est posée.
+
 Les limites, sans exception :
 
 ```yaml

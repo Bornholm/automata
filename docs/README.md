@@ -51,6 +51,12 @@ Toute écriture externe passe par un plan d'actions confirmé en toutes
 lettres. Les tâches planifiées tournent sous une identité de service, en
 lecture seule ou en proposant des actions à confirmer.
 
+Une affaire qui s'étale sur des semaines — une réclamation à suivre, une
+réponse à attendre — devient une mission : l'agent tient un journal de
+bord, se réveille aux échéances qu'il se fixe, et prépare les relances
+sous forme de plans à confirmer. Le dossier se lit et s'abandonne depuis
+l'onglet Dossiers du profil.
+
 Un nouvel arrivant se voit proposer quatre questions dans le fil de la
 conversation. Les réponses deviennent des souvenirs ordinaires. "Passe" y
 met fin, et une vraie question posée à la place d'une réponse aussi. Une

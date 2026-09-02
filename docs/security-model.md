@@ -322,10 +322,12 @@ verts (`go test ./...`, `go test -race ./...`).
 - Chiffrement au repos partiel : `storage.encryption_key` scelle les
   contenus personnels, messages, résumés de conversation, rappels, pièces
   jointes et leurs légendes côté base applicative ; contenu des documents
-  et des images côté mémoire Amoxtli, avec la même clé. Restent en clair,
+  et des images côté mémoire Amoxtli, avec la même clé ; objectif et
+  journal de bord des missions. Restent en clair,
   dans la base applicative, les propositions d'action et les **tâches
   planifiées** : leurs charges utiles ne passent pas par le chiffrement
-  des contenus. Restent en clair, à dessein, l'enveloppe requêtable
+  des contenus (les missions, arrivées après, chiffrent les leurs — seul
+  leur titre, affiché dans des listes, reste lisible). Restent en clair, à dessein, l'enveloppe requêtable
   (identifiants, horodatages, portées) et le dictionnaire de termes de
   l'index `memory.bleve`. Chiffrer des termes indexés casserait la
   recherche. La restriction de permissions apportée en A.5 (accès local,

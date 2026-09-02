@@ -156,6 +156,8 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 	mux.HandleFunc("POST /p/{link}/suggestions/{id}/accept", prof.HandleProfileSuggestionAccept)
 	mux.HandleFunc("POST /p/{link}/suggestions/{id}/dismiss", prof.HandleProfileSuggestionDismiss)
 	mux.HandleFunc("POST /p/{link}/suggestions/mute", prof.HandleProfileSuggestionsMute)
+	mux.HandleFunc("GET /p/{link}/missions", prof.HandleProfileMissions)
+	mux.HandleFunc("POST /p/{link}/missions/{id}/abandon", prof.HandleProfileMissionAbandon)
 	mux.HandleFunc("GET /p/{link}/credits", prof.HandleProfileCredits)
 	mux.HandleFunc("POST /p/{link}/email", prof.HandleProfileEmail)
 	mux.HandleFunc("POST /p/{link}/email/verify", prof.HandleProfileEmailVerify)
