@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"io"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,16 +30,20 @@ func (fixedReplyAgent) Execute(ctx context.Context, req agent.Request) (agent.Re
 
 var _ agent.Agent = fixedReplyAgent{}
 
-// spyTranscriber est un audio.Transcriber de test qui enregistre le nombre
-// d'appels, pour prouver que la lecture du média n'a jamais lieu avant la
-// vérification de mention en groupe (plan de conception, §3.3, §3.4).
+// spyTranscriber est un audio.Transcriber de test qui compte ses appels :
+// c'est ce qui prouve qu'un vocal de groupe est transcrit pour y chercher
+// la mention, et un texte de groupe jamais.
+//
+// Le compteur est atomique : Transcribe s'exécute sur la goroutine du
+// pipeline, la lecture sur celle du test — le détecteur de course l'a
+// signalé dès le premier passage en CI.
 type spyTranscriber struct {
-	calls      int
+	calls      atomic.Int32
 	transcript string
 }
 
 func (t *spyTranscriber) Transcribe(ctx context.Context, data []byte) (string, error) {
-	t.calls++
+	t.calls.Add(1)
 	return t.transcript, nil
 }
 
@@ -67,8 +72,8 @@ func TestPipeline_GroupVoice_TranscribedButSilentWithoutSpokenName(t *testing.T)
 
 	time.Sleep(400 * time.Millisecond)
 
-	if transcriber.calls != 1 {
-		t.Fatalf("transcriber appelé %d fois, attendu 1 (la mention se cherche dans le contenu)", transcriber.calls)
+	if calls := transcriber.calls.Load(); calls != 1 {
+		t.Fatalf("transcriber appelé %d fois, attendu 1 (la mention se cherche dans le contenu)", calls)
 	}
 	if sent := len(provider.Sent()); sent != 0 {
 		t.Errorf("%d réponse(s) envoyée(s), attendu 0 (le nom n'a pas été prononcé)", sent)

@@ -6,14 +6,19 @@ fmt:
 build:
 	go build ./...
 
+# -race par défaut : c'est ce que la CI exécute, et une suite locale sans
+# lui laisse passer des courses que la CI attrape ensuite au tag — vu le
+# 2026-09-02 sur la première release. `make test-fast` pour itérer.
 test:
+	go test -race ./...
+
+test-fast:
 	go test ./...
 
 vet:
 	go vet ./...
 
-race:
-	go test -race ./...
+race: test
 
 # Fichiers locaux, non versionnés, produits par `automata config init`.
 CONFIG_FILE ?= config/config.yaml
