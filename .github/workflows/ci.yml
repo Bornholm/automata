@@ -18,19 +18,11 @@ jobs:
         run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
-      # Cross-compilation des cibles de release : du code spécifique à
-      # une plateforme (flock, /proc…) doit casser ici, pas au moment du
-      # tag.
-      - run: GOOS=windows GOARCH=amd64 go build ./...
-      - run: GOOS=darwin GOARCH=arm64 go build ./...
-      - run: GOOS=linux GOARCH=arm64 go build ./...
       # Les plugins sont des modules Go séparés : même traitement.
       - name: plugins
         run: |
           for p in caldav email pages workspace; do
-            (cd plugins/$p && go vet ./... && go test -race ./... \
-              && GOOS=windows GOARCH=amd64 go build ./... \
-              && GOOS=darwin GOARCH=arm64 go build ./...)
+            (cd plugins/$p && go vet ./... && go test -race ./...)
           done
       - run: cd pkg/pluginsdk && go vet ./... && go test -race ./...
   # La recette de release doit rester valide à chaque changement, pas

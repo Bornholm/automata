@@ -9,15 +9,16 @@ before:
     - sh -c "cd plugins/pages && go mod tidy"
     - sh -c "cd plugins/workspace && go mod tidy"
 
-# Aucun cgo nulle part : le driver SQLite (ncruces/go-sqlite3) est pur
-# Go/WASM et la suite de tests passe sans cgo. La cross-compilation vers
-# toutes les cibles first-class fonctionne donc sans toolchain natif, et
-# les binaires sont statiques.
+# Une seule cible, linux/amd64 : c'est celle des déploiements visés (Dokku,
+# Docker, un serveur). Aucun cgo (le driver SQLite est pur Go/WASM), donc
+# ajouter une cible ne demanderait aucun toolchain — seulement de la
+# maintenance pour des binaires que personne n'exécute.
 builds:
   - id: automata
     env:
       - CGO_ENABLED=0
-    targets: [go_first_class]
+    goos: [linux]
+    goarch: [amd64]
     mod_timestamp: "{{ .CommitTimestamp }}"
     dir: ./cmd/automata
     binary: automata
@@ -31,7 +32,8 @@ builds:
   # gestionnaire de plugins attend dans plugins.dir.
   - id: plugin-caldav
     env: [CGO_ENABLED=0]
-    targets: [go_first_class]
+    goos: [linux]
+    goarch: [amd64]
     mod_timestamp: "{{ .CommitTimestamp }}"
     dir: ./plugins/caldav
     binary: caldav
@@ -40,7 +42,8 @@ builds:
 
   - id: plugin-email
     env: [CGO_ENABLED=0]
-    targets: [go_first_class]
+    goos: [linux]
+    goarch: [amd64]
     mod_timestamp: "{{ .CommitTimestamp }}"
     dir: ./plugins/email
     binary: email
@@ -49,7 +52,8 @@ builds:
 
   - id: plugin-pages
     env: [CGO_ENABLED=0]
-    targets: [go_first_class]
+    goos: [linux]
+    goarch: [amd64]
     mod_timestamp: "{{ .CommitTimestamp }}"
     dir: ./plugins/pages
     binary: pages
@@ -58,7 +62,8 @@ builds:
 
   - id: plugin-workspace
     env: [CGO_ENABLED=0]
-    targets: [go_first_class]
+    goos: [linux]
+    goarch: [amd64]
     mod_timestamp: "{{ .CommitTimestamp }}"
     dir: ./plugins/workspace
     binary: workspace
@@ -70,9 +75,6 @@ archives:
   - id: automata
     ids: [automata]
     formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     files:
       - README.md
       - LICENSE
@@ -83,11 +85,8 @@ archives:
   # licence Apache-2.0, distincte de celle du binaire principal.
   - id: plugin-caldav
     ids: [plugin-caldav]
-    name_template: "automata-plugin-caldav_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    name_template: "automata-plugin-caldav_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     files:
       - src: plugins/caldav/LICENSE
         dst: LICENSE
@@ -96,11 +95,8 @@ archives:
 
   - id: plugin-email
     ids: [plugin-email]
-    name_template: "automata-plugin-email_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    name_template: "automata-plugin-email_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     files:
       - src: plugins/email/LICENSE
         dst: LICENSE
@@ -109,11 +105,8 @@ archives:
 
   - id: plugin-pages
     ids: [plugin-pages]
-    name_template: "automata-plugin-pages_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    name_template: "automata-plugin-pages_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     files:
       - src: plugins/pages/LICENSE
         dst: LICENSE
@@ -122,11 +115,8 @@ archives:
 
   - id: plugin-workspace
     ids: [plugin-workspace]
-    name_template: "automata-plugin-workspace_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    name_template: "automata-plugin-workspace_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     formats: [tar.gz]
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     files:
       - src: plugins/workspace/LICENSE
         dst: LICENSE
@@ -236,7 +226,6 @@ kos:
       - latest
     platforms:
       - linux/amd64
-      - linux/arm64
 
 checksum:
   name_template: "checksums.txt"

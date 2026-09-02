@@ -21,9 +21,9 @@ go build ./...
 docker build .
 ```
 
-Chaque version taguée publie sur GitHub des binaires prêts à l'emploi
-(Linux, macOS, Windows ; amd64, arm64, arm, 386), des paquets `.deb` et
-Arch, et une image de conteneur minimale `ghcr.io/bornholm/automata`
+Chaque version taguée publie sur GitHub un binaire linux/amd64 prêt à
+l'emploi — la seule cible visée —, des paquets `.deb` et Arch, et une image
+de conteneur minimale `ghcr.io/bornholm/automata`
 construite avec ko sur une base distroless. Les plugins de référence sont
 publiés séparément — archives `automata-plugin-<nom>_…` et paquets
 `automata-plugin-<nom>`, installés dans `/usr/lib/automata/plugins` — parce
