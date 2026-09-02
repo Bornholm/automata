@@ -38,26 +38,6 @@ func ProfileTabs(linkID string, active string, plugins []ProfilePluginUI) []Prof
 	return tabs
 }
 
-// profileNav relie les pages du profil pendant la validité de la session
-// courte. C'est la même barre d'onglets que l'administration : les
-// destinations restent lisibles et cliquables d'un seul geste, là où un
-// menu déroulant demandait de l'ouvrir avant de savoir ce qu'il contenait.
-//
-// Le nombre d'onglets suit les plugins activés par l'organisation : la
-// rangée défile DANS son conteneur (le débordement ne décale jamais la
-// page), et les libellés ne se coupent pas.
-templ profileNav(linkID string, active string, plugins []ProfilePluginUI) {
-	<div class="-mx-5.5 mb-5 flex gap-5 overflow-x-auto border-b border-line-3 px-5.5">
-		for _, tab := range ProfileTabs(linkID, active, plugins) {
-			if tab.Active {
-				<span class="shrink-0 whitespace-nowrap px-0.5 pb-2.5 text-sm font-semibold text-ink shadow-[inset_0_-2px_0_var(--color-brand)]">{ tab.Label }</span>
-			} else {
-				<a href={ templ.SafeURL(tab.Href) } class="shrink-0 whitespace-nowrap px-0.5 pb-2.5 text-sm font-medium text-text-3 hover:text-ink hover:no-underline">{ tab.Label }</a>
-			}
-		}
-	</div>
-}
-
 // --- PRO-01 — Mon profil ---
 
 type ProfileChannel struct {
@@ -95,8 +75,17 @@ type ProfilePluginUI struct {
 	Src string
 }
 
+// profileHomeNav : pas de navigation pendant la saisie d'un code, la page
+// est un guichet, on ne doit rien pouvoir faire d'autre.
+func profileHomeNav(page ProfilePage) ProfileNav {
+	if page.EmailState == "pending" {
+		return ProfileNav{}
+	}
+	return ProfileNav{LinkID: page.LinkID, Active: "profile", Plugins: page.PluginUIs}
+}
+
 templ ProfileHome(page ProfilePage) {
-	@ProfileLayout("Votre profil — Automata", page.Header) {
+	@ProfileLayout("Votre profil — Automata", page.Header, profileHomeNav(page)) {
 		if page.EmailState == "pending" {
 			<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Vérifions cette adresse</h1>
 			<p class="mt-2 text-[15px] leading-normal text-text-3">Nous avons envoyé six chiffres à <span class="font-medium text-text">{ page.Email }</span>.</p>
@@ -126,7 +115,6 @@ templ ProfileHome(page ProfilePage) {
 			</form>
 			<div class="mt-6 rounded-[11px] bg-panel p-3.5 text-sm leading-normal text-text-3">Vous pouvez fermer cette page : Automata vous renverra un lien si besoin, il suffit de le lui demander dans votre conversation.</div>
 		} else {
-			@profileNav(page.LinkID, "profile", page.PluginUIs)
 			<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Votre profil</h1>
 			if page.EmailState == "verified" {
 				<p class="mt-2 text-[15px] leading-normal text-text-3">Votre adresse de secours est en place.</p>
@@ -288,8 +276,7 @@ templ payButton(page CreditsPage, label string) {
 }
 
 templ ProfileCredits(page CreditsPage) {
-	@ProfileLayout("Vos crédits — Automata", page.Header) {
-		@profileNav(page.LinkID, "credits", page.PluginUIs)
+	@ProfileLayout("Vos crédits — Automata", page.Header, ProfileNav{LinkID: page.LinkID, Active: "credits", Plugins: page.PluginUIs}) {
 		if page.Notice != "" {
 			if page.NoticeTone == "ok" {
 				<div class="mb-4 rounded-xl border border-ok-line bg-ok-wash-2 px-4 py-3 text-[15px] leading-snug text-ok-deeper">{ page.Notice }</div>
@@ -476,11 +463,10 @@ type ProfilePluginPage struct {
 }
 
 templ ProfilePlugin(page ProfilePluginPage) {
-	@ProfileLayout(page.Current.Title+" — Automata", page.Header) {
-		@profileNav(page.LinkID, "plugin:"+page.Current.Name, page.PluginUIs)
+	@ProfileLayout(page.Current.Title+" — Automata", page.Header, ProfileNav{LinkID: page.LinkID, Active: "plugin:"+page.Current.Name, Plugins: page.PluginUIs}) {
 		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">{ page.Current.Title }</h1>
 		<div class="mt-5 overflow-hidden rounded-[11px] border border-line-2 bg-white">
-			<iframe src={ page.Current.Src } title={ page.Current.Title } sandbox="allow-forms allow-scripts allow-downloads" class="block h-[560px] w-full border-0"></iframe>
+			<iframe src={ page.Current.Src } title={ page.Current.Title } sandbox="allow-forms allow-scripts allow-downloads" class="block h-[560px] w-full border-0 md:h-[720px]"></iframe>
 		</div>
 	}
 }
@@ -593,8 +579,7 @@ type ProfileUsagePage struct {
 }
 
 templ ProfileUsage(page ProfileUsagePage) {
-	@ProfileLayout("Ma consommation — Automata", page.Header) {
-		@profileNav(page.LinkID, "usage", page.PluginUIs)
+	@ProfileLayout("Ma consommation — Automata", page.Header, ProfileNav{LinkID: page.LinkID, Active: "usage", Plugins: page.PluginUIs}) {
 		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Ma consommation</h1>
 		<p class="mt-2 text-[15px] leading-normal text-text-3">{ page.Summary }</p>
 		if len(page.Split) > 0 {

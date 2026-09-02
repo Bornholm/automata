@@ -34,8 +34,7 @@ type DiscoverPage struct {
 }
 
 templ DiscoverHome(page DiscoverPage) {
-	@ProfileLayout("Découvrir — Automata", page.Header) {
-		@profileNav(page.LinkID, "discover", page.PluginUIs)
+	@ProfileLayout("Découvrir — Automata", page.Header, ProfileNav{LinkID: page.LinkID, Active: "discover", Plugins: page.PluginUIs}) {
 		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Ce que vous pouvez me demander</h1>
 		<p class="mt-2 text-[15px] leading-normal text-text-3">Écrivez-moi comme à quelqu'un, dans votre conversation habituelle. Voici de quoi commencer — recopiez un exemple tel quel.</p>
 		if page.VisitState == "running" {

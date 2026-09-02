@@ -74,11 +74,7 @@ func DiscoverHome(page DiscoverPage) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = profileNav(page.LinkID, "discover", page.PluginUIs).Render(ctx, templ_7745c5c3_Buffer)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, " <h1 class=\"text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink\">Ce que vous pouvez me demander</h1><p class=\"mt-2 text-[15px] leading-normal text-text-3\">Écrivez-moi comme à quelqu'un, dans votre conversation habituelle. Voici de quoi commencer — recopiez un exemple tel quel.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<h1 class=\"text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink\">Ce que vous pouvez me demander</h1><p class=\"mt-2 text-[15px] leading-normal text-text-3\">Écrivez-moi comme à quelqu'un, dans votre conversation habituelle. Voici de quoi commencer — recopiez un exemple tel quel.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -100,7 +96,7 @@ func DiscoverHome(page DiscoverPage) templ.Component {
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(capability.Title)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/discover.templ`, Line: 50, Col: 82}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/discover.templ`, Line: 49, Col: 82}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
@@ -113,7 +109,7 @@ func DiscoverHome(page DiscoverPage) templ.Component {
 				var templ_7745c5c3_Var4 string
 				templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(capability.Detail)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/discover.templ`, Line: 51, Col: 77}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/discover.templ`, Line: 50, Col: 77}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 				if templ_7745c5c3_Err != nil {
@@ -126,7 +122,7 @@ func DiscoverHome(page DiscoverPage) templ.Component {
 				var templ_7745c5c3_Var5 string
 				templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(capability.Example)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/discover.templ`, Line: 52, Col: 130}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/discover.templ`, Line: 51, Col: 130}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 				if templ_7745c5c3_Err != nil {
@@ -143,7 +139,7 @@ func DiscoverHome(page DiscoverPage) templ.Component {
 			}
 			return nil
 		})
-		templ_7745c5c3_Err = ProfileLayout("Découvrir — Automata", page.Header).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
+		templ_7745c5c3_Err = ProfileLayout("Découvrir — Automata", page.Header, ProfileNav{LinkID: page.LinkID, Active: "discover", Plugins: page.PluginUIs}).Render(templ.WithChildren(ctx, templ_7745c5c3_Var2), templ_7745c5c3_Buffer)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

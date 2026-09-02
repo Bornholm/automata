@@ -133,22 +133,70 @@ type ProfileHeader struct {
 	MinutesLeft  int
 }
 
-// ProfileLayout est le gabarit mobile d'abord du profil : une colonne
-// blanche unique, une tâche par page.
-templ ProfileLayout(title string, header ProfileHeader) {
+// ProfileNav décrit la navigation d'une page de profil. Active vide = pas
+// de navigation du tout (un état terminal : code de vérification en
+// attente, compte supprimé), la page se suffit.
+type ProfileNav struct {
+	LinkID  string
+	Active  string
+	Plugins []ProfilePluginUI
+}
+
+// ProfileLayout est le gabarit du profil. Pensé pour le téléphone, une
+// colonne blanche, une tâche par page, il ne doit pas devenir une bande
+// étroite au milieu d'un écran large. À partir de md, la colonne s'élargit
+// et la navigation passe de la rangée d'onglets, qui défile sous le
+// doigt, à une colonne fixe à gauche, qui se lit d'un coup d'œil. Le
+// contenu garde une largeur de lecture confortable, il ne s'étale pas.
+//
+// La navigation est rendue ICI, pas dans chaque page : c'est la seule
+// façon de la faire changer de place selon l'écran sans que les pages
+// aient à le savoir.
+templ ProfileLayout(title string, header ProfileHeader, nav ProfileNav) {
 	@Base(title) {
-		<div class="mx-auto min-h-screen w-full max-w-[430px] bg-white px-5.5 pb-8 pt-6 shadow-[0_2px_8px_rgba(22,28,39,.08)]">
-			<div class="mb-5.5 flex items-center gap-2.5">
-				@Logo("size-7 rounded-lg", "text-sm")
-				<div class="min-w-0 flex-1">
-					<div class="truncate text-sm font-semibold text-ink">{ header.Name }</div>
-					<div class="truncate text-xs text-text-4">{ header.Organization }</div>
+		<div class="mx-auto min-h-screen w-full max-w-[430px] bg-white shadow-[0_2px_8px_rgba(22,28,39,.08)] md:my-8 md:min-h-0 md:max-w-[880px] md:rounded-2xl md:border md:border-line-2">
+			<div class="flex flex-col md:flex-row">
+				<div class="px-5.5 pt-6 md:w-[232px] md:shrink-0 md:border-r md:border-line-3 md:px-5 md:py-7">
+					<div class="mb-5.5 flex items-center gap-2.5 md:mb-6">
+						@Logo("size-7 rounded-lg", "text-sm")
+						<div class="min-w-0 flex-1">
+							<div class="truncate text-sm font-semibold text-ink">{ header.Name }</div>
+							<div class="truncate text-xs text-text-4">{ header.Organization }</div>
+						</div>
+						if header.MinutesLeft > 0 {
+							<div class="font-mono text-[11px] text-text-4">{ itoa(header.MinutesLeft) } min</div>
+						}
+					</div>
+					if nav.Active != "" {
+						<!-- Rangée d'onglets sur téléphone : elle défile dans son
+						     conteneur, le débordement ne décale jamais la page. -->
+						<div class="-mx-5.5 mb-5 flex gap-5 overflow-x-auto border-b border-line-3 px-5.5 md:hidden">
+							for _, tab := range ProfileTabs(nav.LinkID, nav.Active, nav.Plugins) {
+								if tab.Active {
+									<span class="shrink-0 whitespace-nowrap px-0.5 pb-2.5 text-sm font-semibold text-ink shadow-[inset_0_-2px_0_var(--color-brand)]">{ tab.Label }</span>
+								} else {
+									<a href={ templ.SafeURL(tab.Href) } class="shrink-0 whitespace-nowrap px-0.5 pb-2.5 text-sm font-medium text-text-3 hover:text-ink hover:no-underline">{ tab.Label }</a>
+								}
+							}
+						</div>
+						<!-- Colonne sur grand écran. -->
+						<nav class="hidden flex-col gap-0.5 md:flex">
+							for _, tab := range ProfileTabs(nav.LinkID, nav.Active, nav.Plugins) {
+								if tab.Active {
+									<span class="rounded-[8px] bg-brand-wash-2 px-3 py-2 text-sm font-semibold text-brand-deep">{ tab.Label }</span>
+								} else {
+									<a href={ templ.SafeURL(tab.Href) } class="rounded-[8px] px-3 py-2 text-sm font-medium text-text-2 hover:bg-panel hover:text-ink hover:no-underline">{ tab.Label }</a>
+								}
+							}
+						</nav>
+					}
 				</div>
-				if header.MinutesLeft > 0 {
-					<div class="font-mono text-[11px] text-text-4">{ itoa(header.MinutesLeft) } min</div>
-				}
+				<div class="min-w-0 flex-1 px-5.5 pb-8 md:px-9 md:py-7">
+					<div class="md:max-w-[600px]">
+						{ children... }
+					</div>
+				</div>
 			</div>
-			{ children... }
 		</div>
 	}
 }

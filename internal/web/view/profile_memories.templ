@@ -36,8 +36,7 @@ type MemoriesPage struct {
 }
 
 templ ProfileMemories(page MemoriesPage) {
-	@ProfileLayout("Ce que je retiens — Automata", page.Header) {
-		@profileNav(page.LinkID, "memories", page.PluginUIs)
+	@ProfileLayout("Ce que je retiens — Automata", page.Header, ProfileNav{LinkID: page.LinkID, Active: "memories", Plugins: page.PluginUIs}) {
 		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Ce que je retiens de vous</h1>
 		<p class="mt-2 text-[15px] leading-normal text-text-3">Voici, mot pour mot, ce dont je me sers pour vous répondre. Corrigez ou effacez ce qui ne va pas — je m'y fie.</p>
 		if page.Error != "" {

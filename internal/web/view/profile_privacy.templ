@@ -25,8 +25,17 @@ type PrivacyPage struct {
 	Error   string
 }
 
+// privacyNav : une fois le compte supprimé, il n'y a plus de profil où
+// naviguer.
+func privacyNav(page PrivacyPage) ProfileNav {
+	if page.Deleted {
+		return ProfileNav{}
+	}
+	return ProfileNav{LinkID: page.LinkID, Active: "privacy", Plugins: page.PluginUIs}
+}
+
 templ ProfilePrivacy(page PrivacyPage) {
-	@ProfileLayout("Vos données — Automata", page.Header) {
+	@ProfileLayout("Vos données — Automata", page.Header, privacyNav(page)) {
 		if page.Deleted {
 			<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">C'est fait</h1>
 			<p class="mt-2 text-[15px] leading-normal text-text-3">{ page.Report }</p>
@@ -35,7 +44,6 @@ templ ProfilePrivacy(page PrivacyPage) {
 			</div>
 			<div class="mt-5 text-sm text-text-4">Vous pouvez fermer cette page.</div>
 		} else {
-			@profileNav(page.LinkID, "privacy", page.PluginUIs)
 			<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Vos données</h1>
 			<p class="mt-2 text-[15px] leading-normal text-text-3">Voici ce qu'Automata conserve à votre sujet, et ce que vous pouvez en faire.</p>
 			if page.Error != "" {
