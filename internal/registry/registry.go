@@ -36,6 +36,7 @@ import (
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/memory"
+	"github.com/bornholm/automata/internal/mission"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
 	"github.com/bornholm/automata/internal/onboarding"
@@ -263,7 +264,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 
 	step("moteur d'actions prêt")
 
-	handler, agents, taskAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, pluginProvider, newPluginEventStoreResolver(pluginManager, db), skillsProvider, clientResolver, modelStore, metrics, logger)
+	handler, agents, taskAgents, missionAgents, err := buildConversationHandler(cfg, db, authorizer, memRes.store, mcpManager, actionEngine, tenants, pluginProvider, newPluginEventStoreResolver(pluginManager, db), skillsProvider, clientResolver, modelStore, metrics, logger)
 	if err != nil {
 		return fmt.Errorf("registry: construction de l'agent généraliste: %w", err)
 	}
@@ -317,6 +318,16 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 	reminderDispatcher := reminder.NewDispatcher(db, platforms, logger, metrics).
 		WithTaskRunner(agent.NewTaskRunner(cfg, taskAgents, logger))
 
+	// Réveil des missions (dossiers au long cours) : une capacité de
+	// l'agent, pas un service à configurer — actif dès que le web l'est
+	// (il faut des membres pour ouvrir des missions). Le registre dédié ne
+	// porte qu'update_mission ; les plans proposés attendent leur
+	// « confirmer » dans la conversation d'origine.
+	var missionRunner *mission.Runner
+	if cfg.Web.Enabled {
+		missionRunner = mission.NewRunner(cfg, db, missionAgents, platforms, actionEngine, logger)
+	}
+
 	// Routeur des déclencheurs de plugins : un flux par plugin qui en
 	// déclare, exécution du sous-agent avec plan confirmable, réponse sur
 	// le canal privé du membre désigné. Le service hôte gagne du même
@@ -344,6 +355,17 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 			logger.ErrorContext(ctx, "registry: dispatcher de rappels arrêté en erreur", "error", err)
 		}
 	}()
+
+	if missionRunner != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			if err := missionRunner.Run(ctx); err != nil && ctx.Err() == nil {
+				logger.ErrorContext(ctx, "registry: runner de missions arrêté en erreur", "error", err)
+			}
+		}()
+	}
 
 	// Réorganisation périodique de la mémoire (memory.consolidation) :
 	// indépendante du scheduler et du dispatcher de rappels — une tâche de
@@ -610,7 +632,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 // réutilisé tel quel par internal/scheduler pour exécuter les tâches
 // planifiées (plan de conception, §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
-func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, eventStores agent.EventStoreResolver, skillsProvider agent.SkillsProvider, clientResolver agent.ClientResolver, modelStore *llmclients.Store, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, error) {
+func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, eventStores agent.EventStoreResolver, skillsProvider agent.SkillsProvider, clientResolver agent.ClientResolver, modelStore *llmclients.Store, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, *agent.Registry, error) {
 	memoryTools := buildMemoryTools(cfg, authorizer, memStore, metrics)
 
 	// Outil open_profile_link : disponible dès que le serveur web est
@@ -657,7 +679,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 
 	agents, err := agent.NewRegistryWithMemory(cfg, memoryTools, reminderTools, profileTools, tenants, mcpManager, pluginProvider, skillsProvider, clientResolver, metrics, logger)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("construction du registre d'agents: %w", err)
 	}
 
 	// Registre distinct pour l'exécution des tâches planifiées : mêmes
@@ -673,12 +695,27 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 	// reprogrammerait indéfiniment.
 	taskAgents, err := agent.NewRegistryWithMemory(cfg, memoryTools, agent.ReminderTools{}, profileTools, tenants, mcpManager, pluginProvider, skillsProvider, clientResolver, metrics, logger)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("construction du registre d'agents des tâches planifiées: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("construction du registre d'agents des tâches planifiées: %w", err)
+	}
+
+	// Registre des réveils de missions : même principe que taskAgents — un
+	// tour de fond n'a AUCUN outil de programmation générale — mais avec le
+	// seul update_mission, lié au dossier du réveil par l'identité
+	// (internal/mission). C'est son unicité qui évite le bug de
+	// re-planification ci-dessus, tout en levant l'interdit d'honnêteté :
+	// noter une suite au journal est un vrai outil, pas une promesse.
+	missionAgents, err := agent.NewRegistryWithMemory(cfg, memoryTools, agent.ReminderTools{
+		DB:            db,
+		Missions:      persistence.NewMissionRepository(db.Cipher()),
+		MissionUpdate: true,
+	}, profileTools, tenants, mcpManager, pluginProvider, skillsProvider, clientResolver, metrics, logger)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("construction du registre d'agents des missions: %w", err)
 	}
 
 	mainAgent, err := agents.Get(mainAgentName)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("récupération de l'agent %q: %w", mainAgentName, err)
+		return nil, nil, nil, nil, fmt.Errorf("récupération de l'agent %q: %w", mainAgentName, err)
 	}
 
 	audioCfg := audio.Config{}
@@ -695,7 +732,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		} else {
 			transcriptionClient, err := agent.BuildTranscriptionClient(context.Background(), transcriptionCfg)
 			if err != nil {
-				return nil, nil, nil, fmt.Errorf("audio: construction du client de transcription %q: %w", clientName, err)
+				return nil, nil, nil, nil, fmt.Errorf("audio: construction du client de transcription %q: %w", clientName, err)
 			}
 
 			audioCfg = audio.Config{
@@ -775,7 +812,7 @@ func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer
 		handler = handler.WithCompactor(compactor)
 	}
 
-	return handler, agents, taskAgents, nil
+	return handler, agents, taskAgents, missionAgents, nil
 }
 
 // anyAgentExposesProfileLink indique si au moins un agent déclare

@@ -63,6 +63,15 @@ type ReminderTools struct {
 	// personne ne ferait.
 	Missions *persistence.MissionRepository
 
+	// MissionUpdate offre update_mission — le SEUL outil des tours de
+	// réveil (registre missionAgents) qui touche à la planification. Il
+	// n'exige ni Repo ni Authorizer : il n'écrit que dans notre base,
+	// sur la seule mission désignée par l'identité du tour, comme
+	// remember. Jamais vrai dans un tour de conversation : c'est
+	// l'unicité de l'outil de planification qui évite le bug de
+	// re-planification documenté à internal/registry.
+	MissionUpdate bool
+
 	// Events, non nil, permet à un plugin actif de tenir le magasin des
 	// rappels d'un membre à la place de la table reminders — un agenda
 	// CalDAV, par exemple. La résolution se fait membre par membre, à
@@ -98,7 +107,9 @@ func (t ReminderTools) now() time.Time {
 // (writeScope), et chaque appel repasse par l'Authorizer.
 func (t ReminderTools) buildReminderTools(identity model.ExecutionIdentity) []llm.Tool {
 	if !t.enabled() {
-		return nil
+		// Le registre des réveils de missions ne porte QUE update_mission :
+		// ni rappels, ni tâches, ni ouverture de nouvelles missions.
+		return t.buildMissionUpdateTool(identity)
 	}
 
 	tools := []llm.Tool{

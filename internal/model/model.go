@@ -93,6 +93,13 @@ const (
 	// canal, comme une tâche planifiée : refuser au membre ses propres
 	// données rendrait le déclencheur inutile.
 	TriggerPlugin Trigger = "plugin"
+
+	// TriggerMission est le réveil d'une mission (dossier au long cours,
+	// internal/mission) : l'agent relit le journal de bord du dossier,
+	// avance ce qui peut l'être et note ce qu'il laisse. Comme une tâche
+	// planifiée, le réveil porte l'identité du CRÉATEUR de la mission et
+	// suit les règles de son canal d'origine.
+	TriggerMission Trigger = "mission"
 )
 
 // ExecutionIdentity décrit l'identité d'exécution résolue pour un
@@ -119,6 +126,11 @@ type ExecutionIdentity struct {
 	ChannelKind    ChannelKind
 	Scope          Scope
 	ScopeID        ScopeID
+	// MissionID n'est renseigné que par le runner de missions
+	// (TriggerMission) : c'est lui qui lie l'outil update_mission au
+	// dossier en cours de réveil. Le modèle ne choisit jamais quelle
+	// mission il met à jour — même principe que le reste de l'identité.
+	MissionID string
 }
 
 // executionIdentityContextKey est un type dédié pour éviter toute collision

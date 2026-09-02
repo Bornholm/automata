@@ -257,6 +257,8 @@ func BuildContextBlock(identity model.ExecutionIdentity, channelName string, age
 		b.WriteString("- Trigger: a task you previously scheduled (nobody just wrote to you; deliver the result directly)\n")
 	case model.TriggerCron:
 		b.WriteString("- Trigger: a configured schedule (nobody just wrote to you; deliver the result directly)\n")
+	case model.TriggerMission:
+		b.WriteString("- Trigger: a scheduled check-in on a mission you follow (nobody just wrote to you)\n")
 	default:
 		b.WriteString("- Trigger: incoming user message\n")
 	}

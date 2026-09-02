@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -228,6 +229,156 @@ func (t ReminderTools) newAbandonMissionTool(identity model.ExecutionIdentity) l
 			return llm.NewToolResult(outcome), nil
 		},
 	)
+}
+
+// missionMinCheckIn et missionMaxCheckIn bornent l'espacement entre deux
+// réveils. Le plancher évite qu'une mission tourne en boucle serrée (chaque
+// réveil coûte un tour de modèle) ; le plafond évite qu'une faute de frappe
+// endorme un dossier pour des années.
+const (
+	missionMinCheckIn = 15 * time.Minute
+	missionMaxCheckIn = 90 * 24 * time.Hour
+)
+
+// buildMissionUpdateTool construit update_mission pour un tour de réveil.
+// La mission visée vient de l'identité, posée par le runner — jamais d'un
+// paramètre : le modèle ne peut pas se tromper de dossier.
+func (t ReminderTools) buildMissionUpdateTool(identity model.ExecutionIdentity) []llm.Tool {
+	if !t.MissionUpdate || t.DB == nil || t.Missions == nil || identity.MissionID == "" {
+		return nil
+	}
+
+	schema := llm.NewJSONSchema().
+		RequiredProperty("note", "Logbook note for THIS check-in: what you did, what you learned, what remains. Dense notes, not minutes — the logbook is capped and older lines are dropped first. Written in the mission's language.", "string").
+		Property("next_check_in", "Delay before the next check-in, as a number and unit: '45m', '12h', '7d' (minutes, hours, days). Required unless status is 'done'. Pick it from the matter's real pace: chasing a reply can wait days, not minutes.", "string").
+		Property("status", "'active' (default) to keep following the mission, 'done' when the objective is reached — after 'done' no check-in ever runs again.", "string")
+
+	tool := llm.NewFuncTool(
+		"update_mission",
+		"Write this check-in's outcome to the mission logbook and schedule the next check-in (or close the mission with status 'done'). ALWAYS call it exactly once before finishing, even when nothing moved — the note then says so and the next check-in is pushed further out.",
+		schema,
+		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
+			note := strings.TrimSpace(stringParam(params, "note"))
+			if note == "" {
+				return llm.NewToolResult("error: 'note' is required and cannot be empty."), nil
+			}
+
+			status := strings.TrimSpace(stringParam(params, "status"))
+			if status == "" {
+				status = persistence.MissionStatusActive
+			}
+			if status != persistence.MissionStatusActive && status != persistence.MissionStatusDone {
+				return llm.NewToolResult("error: 'status' must be 'active' or 'done'."), nil
+			}
+
+			now := t.now()
+
+			var nextCheckAt time.Time
+			if status == persistence.MissionStatusActive {
+				delay, err := parseCheckInDelay(stringParam(params, "next_check_in"))
+				if err != nil {
+					return llm.NewToolResult(fmt.Sprintf("error: %v", err)), nil
+				}
+				nextCheckAt = now.Add(delay).UTC()
+			}
+
+			var outcome string
+			err := t.DB.WithTx(ctx, func(tx *sql.Tx) error {
+				mission, found, err := t.Missions.FindByID(ctx, tx, identity.MissionID)
+				if err != nil {
+					return err
+				}
+				// La mission a pu être abandonnée depuis le début du tour :
+				// l'abandon humain gagne toujours sur le réveil en cours.
+				if !found || mission.Status != persistence.MissionStatusActive {
+					outcome = "the mission is no longer active; nothing recorded."
+					return nil
+				}
+
+				journal := appendJournalNote(mission.Journal, now, note)
+
+				if err := t.Missions.UpdateJournal(ctx, tx, mission.ID, journal, status, nextCheckAt, 0, now); err != nil {
+					return err
+				}
+
+				if status == persistence.MissionStatusDone {
+					outcome = "Mission closed as done. No further check-in will run."
+					return nil
+				}
+				outcome = fmt.Sprintf("Logbook updated; next check-in %s.", nextCheckAt.Format(time.RFC3339))
+				return nil
+			})
+			if err != nil {
+				return llm.NewToolResult(fmt.Sprintf("could not update the mission: %v", err)), nil
+			}
+
+			return llm.NewToolResult(outcome), nil
+		},
+	)
+
+	return []llm.Tool{tool}
+}
+
+// parseCheckInDelay lit un délai '45m' / '12h' / '7d' et le borne. Un format
+// volontairement plus étroit que time.ParseDuration : les unités composées
+// ('1h30m') n'apportent rien à l'échelle d'un dossier et compliquent le
+// message d'erreur.
+func parseCheckInDelay(raw string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, fmt.Errorf("'next_check_in' is required while the mission stays active (e.g. '12h', '7d')")
+	}
+
+	unit := raw[len(raw)-1]
+	value, err := strconv.Atoi(raw[:len(raw)-1])
+	if err != nil || value <= 0 {
+		return 0, fmt.Errorf("'next_check_in' must be a positive number followed by m, h or d (e.g. '45m', '12h', '7d')")
+	}
+
+	var delay time.Duration
+	switch unit {
+	case 'm':
+		delay = time.Duration(value) * time.Minute
+	case 'h':
+		delay = time.Duration(value) * time.Hour
+	case 'd':
+		delay = time.Duration(value) * 24 * time.Hour
+	default:
+		return 0, fmt.Errorf("'next_check_in' must end with m, h or d (e.g. '45m', '12h', '7d')")
+	}
+
+	if delay < missionMinCheckIn {
+		return 0, fmt.Errorf("'next_check_in' is too short: minimum %s", missionMinCheckIn)
+	}
+	if delay > missionMaxCheckIn {
+		return 0, fmt.Errorf("'next_check_in' is too long: maximum %d days", int(missionMaxCheckIn.Hours()/24))
+	}
+
+	return delay, nil
+}
+
+// appendJournalNote ajoute une note datée au journal et le tronque par le
+// DÉBUT s'il déborde : les notes récentes portent l'état courant du dossier,
+// les plus anciennes sont celles qu'on peut perdre.
+func appendJournalNote(journal string, now time.Time, note string) string {
+	entry := now.UTC().Format("2006-01-02") + ": " + note
+	if journal != "" {
+		journal = journal + "\n" + entry
+	} else {
+		journal = entry
+	}
+
+	for len(journal) > persistence.MaxJournalChars {
+		cut := strings.IndexByte(journal, '\n')
+		if cut < 0 {
+			// Une seule note plus longue que la borne : on garde sa fin.
+			journal = journal[len(journal)-persistence.MaxJournalChars:]
+			break
+		}
+		journal = journal[cut+1:]
+	}
+
+	return journal
 }
 
 // latestJournalLine retourne la dernière ligne non vide du journal de bord :
