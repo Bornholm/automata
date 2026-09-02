@@ -30,48 +30,56 @@ section de `configuration.md` correspondant à ce que vous voulez activer.
 
 ## Ce qu'Automata fait
 
-- Conversations privées et de groupe. Dans un groupe, un message est ignoré
-  sans le moindre appel au modèle tant que l'assistant n'est pas mentionné.
-- Messages texte, notes vocales (transcrites, jamais conservées), images et
-  documents.
-- Un agent généraliste qui délègue à des spécialistes. Chacun a son prompt,
-  ses serveurs MCP, ses permissions et ses limites.
-- Une mémoire persistante cloisonnée par portée, consultable, inscriptible et
-  supprimable — y compris **par la personne concernée**, qui voit dans son
-  profil ce qu'Automata retient d'elle, mot pour mot, et peut le corriger ou
-  l'effacer. Seuls ses souvenirs personnels y figurent : ceux d'un groupe
-  appartiennent au groupe.
-- Des plans d'actions confirmés en toutes lettres avant toute écriture
-  externe.
-- Des tâches planifiées qui s'exécutent sous une identité de service, en
-  lecture seule ou en proposant des actions à confirmer.
-- Un accueil pour les nouveaux arrivants : quatre questions dans le fil de la
-  conversation, dont les réponses deviennent des souvenirs personnels
-  ordinaires, et une page « Découvrir » dans le profil. La visite se quitte
-  d'un mot (« passe ») et ne se repropose jamais — et une vraie question
-  posée à la place d'une réponse y met fin d'elle-même, l'assistant reprenant
-  la main sur le message.
-- Un casier personnel : ce que l'assistant garde pour vous survit des mois,
-  scellé au repos, là où les fichiers de travail expirent en un jour
-  (voir [plugins-workspace.md](plugins-workspace.md)).
-- Des alertes d'exploitation portées à l'exploitant dans sa propre
-  conversation (voir [operations.md](operations.md), §4.1).
-- Une introspection hebdomadaire : Automata relit les frictions (actions
-  jamais confirmées, rappels en échec) et les habitudes observées, et
-  propose à chaque membre au plus une amélioration par semaine — sur sa
-  page de profil, poussée en conversation seulement quand le gain est net.
-  « Ne plus rien me proposer » coupe tout, définitivement. L'exploitant
-  reçoit chaque mois une synthèse anonyme des frictions par type, sans nom
-  ni contenu.
+Il tient des conversations privées et de groupe. Dans un groupe, il n'appelle
+aucun modèle tant qu'on ne l'a pas mentionné. Un vocal fait exception, parce
+qu'un audio ne peut pas porter de mention. Il est transcrit, et si votre nom
+pour l'assistant n'y est pas, la transcription est jetée.
+
+Il lit du texte, des notes vocales (transcrites, jamais conservées), des
+images et des documents.
+
+Un agent généraliste reçoit tout et délègue à des spécialistes. Chaque
+spécialiste a son prompt, ses serveurs MCP, ses permissions et ses limites
+de dépense.
+
+La mémoire est cloisonnée par personne, par groupe et par organisation. La
+personne concernée la voit dans son profil, mot pour mot, et peut corriger
+ou effacer. Elle ne voit que ses souvenirs personnels. Ceux d'un groupe
+appartiennent au groupe.
+
+Toute écriture externe passe par un plan d'actions confirmé en toutes
+lettres. Les tâches planifiées tournent sous une identité de service, en
+lecture seule ou en proposant des actions à confirmer.
+
+Un nouvel arrivant se voit proposer quatre questions dans le fil de la
+conversation. Les réponses deviennent des souvenirs ordinaires. "Passe" y
+met fin, et une vraie question posée à la place d'une réponse aussi. Une
+page "Découvrir" dans le profil donne des phrases à recopier pour essayer
+chaque capacité.
+
+Le casier garde des documents pendant des mois, chiffrés au repos, là où
+les fichiers de l'atelier expirent en un jour. Voir
+[plugins-workspace.md](plugins-workspace.md).
+
+L'exploitant reçoit les alertes dans sa propre conversation. Un compte de
+messagerie muet, un plugin arrêté. Voir [operations.md](operations.md).
+
+Chaque lundi, Automata relit les frictions de la semaine (actions jamais
+confirmées, rappels en échec) et les habitudes qu'il a observées, et
+propose à chaque membre au plus une amélioration. Elle attend sur le
+profil. Il ne la pousse en conversation que si le gain est net. "Ne plus
+rien me proposer" coupe tout. L'exploitant reçoit une synthèse mensuelle
+des frictions par type, sans nom ni contenu.
 
 ## Ce qu'il ne fait pas
 
-- Pas de haute disponibilité. Une seule instance à la fois, sans verrouillage
-  distribué.
-- Pas de chiffrement de la machine. Les contenus personnels (messages,
-  résumés, rappels, pièces jointes, souvenirs) sont chiffrés au repos dès
-  que `storage.encryption_key` est renseignée, ce qui protège une base
-  volée ou une sauvegarde égarée — pas un serveur compromis, qui détient
-  la clé. L'index de recherche de la mémoire reste en clair par nécessité.
-- Un seul transport de messagerie livré, WhatsApp via go-courier.
-- Un seul transport MCP, HTTP. Pas de serveur MCP lancé en sous-processus.
+Pas de haute disponibilité. Une instance à la fois, et un verrou sur le
+répertoire de données pour empêcher la seconde de démarrer.
+
+Pas de protection contre un serveur compromis. Les contenus personnels sont
+chiffrés au repos dès que `storage.encryption_key` est renseignée, ce qui
+protège une base volée ou une sauvegarde égarée. Pas la machine qui détient
+la clé. L'index de recherche de la mémoire reste en clair, il n'y a pas
+d'autre façon de chercher dedans.
+
+Un seul transport MCP, HTTP. Pas de serveur MCP lancé en sous-processus.

@@ -1,79 +1,92 @@
 # Automata
 
-Un assistant personnel qui vit dans votre messagerie — WhatsApp, Rocket.Chat,
-Discord, Signal, courriel — plutôt que dans une application de plus.
+Un assistant personnel qui vit dans la messagerie que vous utilisez déjà.
+WhatsApp, Rocket.Chat, Discord, Signal ou le courriel. Pas une application
+de plus à ouvrir.
 
-Automata reçoit vos messages, les confie à un agent généraliste qui délègue à
-des spécialistes, tient une mémoire persistante cloisonnée par personne et par
-groupe, programme des rappels et des tâches, manipule vos fichiers dans un bac
-à sable, et **demande toujours confirmation, en toutes lettres, avant toute
-action qui écrit quelque part**. Il peut servir plusieurs organisations sur
-une même instance, avec facturation, administration en ligne et export ou
-suppression des données personnelles à la demande.
+Vous lui écrivez comme à quelqu'un. Il retient ce que vous lui confiez, vous
+rappelle vos échéances, travaille sur les fichiers que vous lui envoyez, lit
+vos courriels si vous le lui permettez. Et avant d'écrire quoi que ce soit
+hors de la conversation, il vous demande de taper "confirmer". Toujours.
+C'est la règle qui rend le reste acceptable.
 
-> **Langue.** Le code, ses commentaires et la documentation sont écrits en
-> français. Les textes destinés aux modèles de langue sont en anglais. C'est
-> un choix délibéré, pas un oubli — les contributions sont bienvenues dans
-> l'une ou l'autre langue.
+Une instance peut servir plusieurs foyers ou équipes, avec facturation par
+crédits, administration en ligne et export ou suppression des données de
+chacun sur demande.
 
-## Ce qui le distingue
+## Une remarque sur la langue
 
-- **Rien ne s'exécute sans vous.** Toute écriture externe — envoyer un
-  courriel, poser un rendez-vous, publier une page — passe par un plan
-  d'actions que vous confirmez par le mot « confirmer ». Le modèle ne décide
-  jamais de l'identité, des permissions ni de la portée d'une opération.
-- **Une mémoire que vous voyez.** Ce qu'Automata retient de vous se lit mot
-  pour mot dans votre profil, se corrige et s'efface.
-- **Un système de plugins étanche.** Chaque plugin est un sous-processus qui
-  ne voit que ses propres données ; ses écritures passent par la même
-  confirmation humaine. Le SDK de plugins est sous licence Apache 2.0 pour
-  que chacun écrive les siens, ouverts ou non.
-- **Chiffré au repos**, cloisonné par organisation, et documenté jusque dans
-  ses limites : voir [docs/security-model.md](docs/security-model.md).
+Le code, ses commentaires et cette documentation sont en français. Les
+textes lus par les modèles de langue sont en anglais, parce que les modèles
+y sont plus fiables et que personne ne les lit à part eux. Ce n'est pas un
+oubli, et les contributions dans l'une ou l'autre langue sont les bienvenues.
+
+## Ce qui compte ici
+
+Rien ne s'exécute sans vous. Envoyer un courriel, poser un rendez-vous,
+publier une page, supprimer un fichier du casier. Chacune de ces actions
+devient un plan que vous confirmez en toutes lettres. Le modèle propose, il
+ne décide jamais de l'identité, des permissions ni de la portée d'une
+opération. J'ai vu trop d'assistants qui font confiance au modèle pour ce
+genre de chose.
+
+Vous voyez ce qu'il retient. La page de profil liste vos souvenirs mot pour
+mot, tels que le modèle les relira. Vous corrigez, vous effacez. Un souvenir
+faux est pire qu'un souvenir absent, alors autant pouvoir le lire.
+
+Les plugins sont étanches. Chaque plugin tourne dans son propre processus et
+ne voit que ses données. Ses écritures passent par la même confirmation. Le
+SDK est sous Apache 2.0 pour que vous puissiez écrire les vôtres, ouverts ou
+non.
+
+Le reste, chiffrement au repos, cloisonnement par organisation, limites
+connues, est écrit dans [docs/security-model.md](docs/security-model.md).
+Lisez aussi les limites. Elles sont là exprès.
 
 ## Démarrer
 
-La documentation complète est dans [`docs/`](docs/README.md). Pour une
-première installation : [docs/installation.md](docs/installation.md), puis
-la section de [docs/configuration.md](docs/configuration.md) correspondant à
-ce que vous voulez activer.
+Tout est dans [docs/](docs/README.md). Commencez par
+[installation.md](docs/installation.md), puis la section de
+[configuration.md](docs/configuration.md) qui correspond à ce que vous
+voulez activer.
 
 ```sh
-make build            # compile le binaire
-make build-plugins    # compile les plugins de référence
-make test             # lance la suite de tests
+make build            # le binaire
+make build-plugins    # les plugins de référence
+make test             # la suite, avec le détecteur de course
 ```
 
-Le binaire s'appuie sur des services séparés que vous hébergez : un
-fournisseur de modèles compatible OpenAI (ou Mistral, OpenRouter…), et pour
-l'atelier de fichiers, [LeaSH](https://github.com/Bornholm/leash), un serveur
-d'exécution en bac à sable.
+Vous hébergez vous-même les services autour. Un fournisseur de modèles
+compatible OpenAI (Mistral et OpenRouter marchent aussi), et pour l'atelier
+de fichiers, [LeaSH](https://github.com/Bornholm/leash), un serveur qui
+exécute des commandes en bac à sable sans accès réseau.
 
-## Avertissement sur WhatsApp
+## WhatsApp, à savoir avant de brancher
 
-Le transport WhatsApp repose sur [whatsmeow](https://github.com/tulir/whatsmeow),
-une implémentation du protocole WhatsApp Web, et non sur une API officielle.
-Son usage peut contrevenir aux conditions d'utilisation de WhatsApp ; un
-compte peut être suspendu. Vous seul portez ce risque. Les autres transports
-(Rocket.Chat, Discord, Signal, courriel) n'ont pas cette réserve.
+Le transport WhatsApp repose sur
+[whatsmeow](https://github.com/tulir/whatsmeow), qui parle le protocole de
+WhatsApp Web. Ce n'est pas une API officielle. WhatsApp peut y voir une
+violation de ses conditions et suspendre le compte. Ce risque est le vôtre.
+Les autres transports n'ont pas ce problème.
 
 ## Licences
 
-- **Automata** (ce dépôt) : [GNU Affero General Public License v3.0](LICENSE).
-  Si vous en faites tourner une version modifiée pour des tiers, ils doivent
-  pouvoir en obtenir les sources.
-- **SDK de plugins** (`pkg/pluginsdk`) et **plugins de référence**
-  (`plugins/*`) : [Apache License 2.0](pkg/pluginsdk/LICENSE). Un plugin ne
-  se lie qu'au SDK, jamais à Automata : vous pouvez écrire et distribuer les
-  vôtres sous la licence de votre choix.
+Automata, ce dépôt, est sous [AGPL-3.0](LICENSE). Si vous en faites tourner
+une version modifiée pour d'autres, ils doivent pouvoir en obtenir les
+sources.
 
-Pourquoi l'AGPL : Automata embarque des dépendances sous GPL-3.0
-(`libsignal` via whatsmeow, `json-repair`), ce qui exclut une licence
-permissive pour l'ensemble ; et un assistant qui détient les conversations et
-les souvenirs de ses utilisateurs est précisément le type de logiciel dont on
-veut pouvoir lire la version que l'on utilise.
+Le SDK de plugins (`pkg/pluginsdk`) et les plugins de référence
+(`plugins/*`) sont sous [Apache 2.0](pkg/pluginsdk/LICENSE). Un plugin ne se
+lie qu'au SDK, jamais au reste. Vous pouvez donc écrire et distribuer les
+vôtres sous la licence qui vous convient.
+
+Pourquoi l'AGPL et pas quelque chose de plus permissif. D'abord parce que
+deux dépendances sont sous GPL-3.0 (`libsignal` par whatsmeow, et
+`json-repair`), ce qui ferme la porte de toute façon. Ensuite parce qu'un
+logiciel qui détient vos conversations et vos souvenirs est exactement le
+genre de logiciel dont on veut pouvoir lire la version qu'on utilise.
 
 ## Contribuer
 
-Voir [CONTRIBUTING.md](CONTRIBUTING.md) pour les conventions du projet, et
-[SECURITY.md](SECURITY.md) pour signaler une faille.
+Les conventions sont dans [CONTRIBUTING.md](CONTRIBUTING.md). Pour signaler
+une faille, [SECURITY.md](SECURITY.md).

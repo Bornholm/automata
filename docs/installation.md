@@ -137,7 +137,7 @@ mkdir -p data
 
 Les comptes de messagerie et les modèles ne figurent pas dans ce fichier :
 ils se créent en ligne, dans l'administration, après le premier démarrage
-(section 6). Le fichier ne décrit que la machine — stockage, secrets, ports,
+(section 6). Le fichier ne décrit que la machine. Stockage, secrets, ports,
 agents.
 
 ## 4. Renseigner l'environnement
@@ -162,10 +162,10 @@ export SEARCH_MCP_URL=http://127.0.0.1:3000/mcp   # voir misc/web-search
 export SEARCH_MCP_TOKEN=...
 ```
 
-Les clés d'API des modèles ne sont **pas** des variables d'environnement :
+Les clés d'API des modèles ne sont pas des variables d'environnement :
 elles se saisissent dans l'administration et sont scellées en base. Perdre
 `WEB_SESSION_SECRET` ou `STORAGE_ENCRYPTION_KEY` rend illisible ce qu'ils
-protègent — sauvegardez-les à part.
+protègent. Sauvegardez-les à part.
 
 Une variable référencée mais absente est une erreur de démarrage, jamais une
 chaîne vide. C'est voulu : une clé d'API silencieusement vide produirait des
@@ -174,7 +174,7 @@ erreurs incompréhensibles bien plus tard.
 ### Rattacher les personnes et les groupes
 
 Vous n'avez plus d'identifiants WhatsApp à recopier. Les membres et les
-groupes se rattachent **par jeton** : l'administration génère un jeton
+groupes se rattachent par jeton : l'administration génère un jeton
 (`atm_…`) pour un membre pré-créé ou pour un groupe, la personne l'envoie à
 l'assistant depuis sa messagerie, et le rattachement est fait. Les sections
 `identities` et `channels` du fichier restent supportées pour un usage local
@@ -205,14 +205,14 @@ Notez le tiret simple. Le drapeau suit la convention Go, pas celle des
 doubles tirets.
 
 Au premier lancement, rien n'écoute encore aucune messagerie : ouvrez
-l'administration (`web.addr`, identifiants de `web.admin`), écran « Canaux
-et plateformes », et créez votre premier compte. Pour WhatsApp, le QR code à
+l'administration (`web.addr`, identifiants de `web.admin`), écran "Canaux
+et plateformes", et créez votre premier compte. Pour WhatsApp, le QR code à
 scanner (Appareils liés, Lier un appareil) s'affiche directement dans cet
 écran ; la session est ensuite conservée sur le disque et le QR code ne
 réapparaît plus, sauf si vous déliez l'appareil.
 
-Puis, écran « Modèles » : ajoutez au moins un client (fournisseur, modèle,
-clé d'API) et affectez-le aux rôles d'instance — `main` au minimum. Sans
+Puis, écran "Modèles" : ajoutez au moins un client (fournisseur, modèle,
+clé d'API) et affectez-le aux rôles d'instance, `main` au minimum. Sans
 modèle sur un rôle, la fonction correspondante reste muette et le dit dans
 les journaux.
 

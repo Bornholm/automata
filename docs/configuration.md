@@ -1,37 +1,34 @@
 # Référence de configuration
 
-## La frontière : le fichier décrit la machine, l'administration le reste
+## Ce que le fichier décrit, et ce qu'il ne décrit pas
 
-Le fichier YAML ne configure que ce qui démarre le processus : stockage et
+Le fichier YAML ne configure que ce qui démarre le processus. Stockage et
 chiffrement, ports et adresses, limites techniques, sauvegardes,
-observabilité — plus, pour cette phase, la définition des agents (prompts,
-délégations, serveurs MCP) et les rôles/permissions.
+observabilité. Il porte aussi, pour l'instant, la définition des agents
+(prompts, délégations, serveurs MCP) et les rôles.
 
-Tout ce qui décrit un client ou un réglage d'exploitation vit en base et
-s'administre en ligne : les organisations et leurs membres, les comptes de
+Tout ce qui décrit un client ou un réglage d'exploitation vit en base et se
+règle en ligne. Les organisations et leurs membres, les comptes de
 messagerie, les modèles et leur affectation à chaque agent
 ([models.md](models.md)), les tarifs, les compétences, l'activation des
-plugins. Il n'y a AUCUN semis : rien ne se copie du fichier vers la base, et
-ce qui est supprimé en ligne ne réapparaît jamais au redémarrage. Deux
-exceptions assumées : les compétences embarquées (contenu du projet, semées
-par go:embed) et le bootstrap MANUEL `automata web bootstrap`, qui importe
-une première organisation déclarée dans le fichier — un geste explicite,
-pas un mécanisme silencieux.
+plugins. Rien ne se copie du fichier vers la base, et ce qu'on supprime en
+ligne ne revient pas au redémarrage. J'ai eu un compte WhatsApp supprimé
+dans l'admin qui ressuscitait à chaque déploiement parce que le fichier le
+déclarait encore. C'est ce qui a fait tomber la décision.
 
-Ce document parcourt chaque section du fichier dans l'ordre où elle
-apparaît dans `config/config.example.yaml`.
+Deux exceptions. Les compétences embarquées dans le binaire sont semées au
+démarrage, parce qu'elles font partie du projet, pas de votre réglage. Et
+`automata web bootstrap` importe une première organisation déclarée dans le
+fichier, mais seulement si vous le lancez à la main.
 
-Trois règles valent partout.
+Ce document suit l'ordre de `config/config.example.yaml`.
 
-Les valeurs sensibles se référencent par variable d'environnement, avec la
-syntaxe `${NOM}`. L'expansion s'applique au fichier entier, commentaires
-compris, et une variable absente est une erreur de démarrage.
-
-Les chemins relatifs sont résolus depuis le répertoire du fichier de
-configuration.
-
-`automata config validate -config <fichier>` rejette la configuration avant
-tout accès réseau ou disque, et affiche toutes les erreurs d'un coup.
+Trois règles valent partout. Les valeurs sensibles se référencent par
+`${NOM}`, l'expansion s'applique au fichier entier commentaires compris, et
+une variable absente arrête le démarrage. Les chemins relatifs partent du
+répertoire du fichier de configuration. Et `automata config validate -config
+<fichier>` rejette la configuration avant tout accès au réseau ou au disque,
+en listant toutes les erreurs d'un coup.
 
 ## version
 
@@ -44,8 +41,8 @@ incompatibilité soit détectée au démarrage plutôt qu'à l'exécution.
 
 ## organizations
 
-Une instance peut servir plusieurs organisations — une maison et une équipe
-de travail, par exemple — sur les mêmes agents et le même processus.
+Une instance peut servir plusieurs organisations, une maison et une équipe
+de travail par exemple, sur les mêmes agents et le même processus.
 
 ```yaml
 organizations:
@@ -55,10 +52,10 @@ organizations:
     display_name: Bureau
 ```
 
-Cette section peut être **entièrement absente** quand l'interface web est
+Cette section peut être entièrement absente quand l'interface web est
 active (`web.enabled`) : les organisations sont alors créées depuis
 l'administration, les membres s'y rattachent par jeton et les canaux se
-lient dynamiquement — c'est le mode d'un déploiement multi-organisations,
+lient dynamiquement. C'est le mode d'un déploiement multi-organisations,
 où une organisation déclarée en dur n'aurait servi qu'à passer le
 chargement avant d'encombrer la liste réelle.
 
@@ -67,7 +64,7 @@ exister : `channels`, `identities.principals`, `schedules` et les
 surcharges `system_prompt.org_overrides` portent toutes un `org_id`. Un
 identifiant sans organisation correspondante ne se manifesterait
 qu'au premier message reçu, sous la forme d'un refus d'autorisation
-difficile à relier à sa cause — l'erreur de chargement nomme la section
+difficile à relier à sa cause. L'erreur de chargement nomme la section
 fautive.
 
 La forme abrégée reste acceptée quand il n'y en a qu'une :
@@ -82,7 +79,7 @@ organization:
 `display_name` est donné aux agents dans leur bloc de contexte, résolu à
 chaque requête depuis l'organisation du canal d'où vient le message.
 
-**Rien ne traverse la frontière d'une organisation** : mémoire, rappels et
+Rien ne traverse la frontière d'une organisation : mémoire, rappels et
 tâches d'une organisation sont inaccessibles depuis une autre, y compris pour
 un principal membre des deux (`internal/authorization`). C'est la séparation
 sur laquelle repose la cohabitation du personnel et du professionnel dans une
@@ -121,9 +118,9 @@ storage:
 
 Chiffre au repos les contenus personnels : messages, résumés de
 conversation, rappels, pièces jointes et leurs légendes. Sans cette clé,
-ils sont écrits en clair — c'est le comportement historique.
+ils sont écrits en clair, comme avant l'arrivée du chiffrement.
 
-Le chiffrement est **applicatif** : les valeurs partent chiffrées vers la
+Le chiffrement est applicatif : les valeurs partent chiffrées vers la
 base (AES-256-GCM, clé dérivée par HKDF-SHA256 avec un contexte propre aux
 contenus) et en reviennent telles quelles. Un chiffrement de fichier
 SQLite serait plus simple à activer, mais il adhérerait au moteur ; celui-ci
@@ -131,10 +128,10 @@ suivra tel quel vers PostgreSQL.
 
 **Ce que cela protège :** une base volée, une sauvegarde égarée, un disque
 revendu, un `sqlite3` ouvert par curiosité. **Ce que cela ne protège pas :**
-un processus compromis ou un accès root pendant que le service tourne — la
+un processus compromis ou un accès root pendant que le service tourne. La
 clé y est. C'est un chiffrement au repos, pas un coffre-fort.
 
-**Perdre la clé rend les contenus déjà chiffrés définitivement illisibles.**
+Perdre la clé rend les contenus déjà chiffrés définitivement illisibles.
 Elle se sauvegarde à part, jamais dans le même coffre que les données, et
 n'est pas dérivée de `web.session_secret` : faire tourner un secret de
 session ne doit pas rendre les archives muettes.
@@ -146,23 +143,23 @@ déjà en base :
 automata storage encrypt -config config.yaml
 ```
 
-L'opération est reprenable — une valeur déjà chiffrée est laissée telle
-quelle — et la lecture reste transparente entre-temps : une base à moitié
+L'opération est reprenable, une valeur déjà chiffrée est laissée telle
+quelle, et la lecture reste transparente entre-temps. Une base à moitié
 migrée fonctionne, les deux formes cohabitant sans que rien ne s'en aperçoive.
 
 La même clé protège les souvenirs de la mémoire : la base `amoxtli`
 chiffre le contenu de ses documents et de ses images (chiffrement porté
-par la bibliothèque, `amoxtli/crypto`, mêmes primitives — utilisable par
+par la bibliothèque, `amoxtli/crypto`, mêmes primitives, utilisable par
 tout projet adossé à amoxtli, SQLite ou PostgreSQL). La commande `storage encrypt` migre
 les deux bases, puis les reconstruit (`VACUUM`) : chiffrer les lignes ne
 suffit pas, les pages mortes et le journal WAL gardent sinon les anciennes
 versions en clair.
 
-**Ce qui reste en clair, à dessein.** L'enveloppe : identifiants,
+Ce qui reste en clair, à dessein. L'enveloppe : identifiants,
 horodatages, noms affichés des membres (l'admin les liste et les cherche),
 métadonnées de portée des souvenirs (la recherche filtre dessus). Et
 l'index plein texte de la mémoire (`memory.bleve`) : il stocke les termes
-du texte pour pouvoir chercher — le chiffrer casserait la recherche. Le
+du texte pour pouvoir chercher. Le chiffrer casserait la recherche. Le
 répertoire de données doit donc rester protégé par les permissions du
 système ; le chiffrement de la base protège ses copies, pas la machine.
 
@@ -178,9 +175,9 @@ consécutifs d'un même expéditeur arrivés pendant cette fenêtre sont
 fusionnés en un seul tour de conversation. `0s` désactive, deux secondes
 par défaut.
 
-Les **comptes de messagerie** (WhatsApp, Signal, Rocket.Chat, Discord,
+Les comptes de messagerie (WhatsApp, Signal, Rocket.Chat, Discord,
 mail) ne se déclarent plus dans ce fichier : ils se créent dans
-l'administration (« Canaux et plateformes »), qui range leur configuration
+l'administration ("Canaux et plateformes"), qui range leur configuration
 chiffrée en base et applique les changements à chaud. Un compte supprimé
 en ligne ne réapparaît jamais au redémarrage. Les noms de comptes restent
 ce que `origins`, `channels` et `schedules[].delivery.provider`
@@ -226,7 +223,7 @@ transcrits : joindre un `.mp3` plutôt qu'appuyer sur le bouton micro ne change
 pas l'intention.
 
 Le modèle de transcription est le rôle d'instance `transcription`, réglé à
-l'écran « Modèles » (voir [models.md](models.md)) ; il n'y a rien à
+l'écran "Modèles" (voir [models.md](models.md)) ; il n'y a rien à
 désigner ici.
 
 Le flux est lu de façon bornée, transcrit, puis les octets sont abandonnés.
@@ -238,8 +235,8 @@ transcrit est souvent plus sensible que le message écrit équivalent, parce
 qu'on parle plus librement qu'on n'écrit.
 
 Trois échecs viennent de l'audio lui-même et reçoivent une réponse qui dit
-quoi faire, plutôt que le repli générique « réessaie dans quelques
-instants » — qui serait un mauvais conseil, réessayer à l'identique donnant
+quoi faire, plutôt que le repli générique "réessaie dans quelques
+instants", qui serait un mauvais conseil, réessayer à l'identique donnant
 le même résultat :
 
 | Cause | Réponse envoyée |
@@ -249,8 +246,8 @@ le même résultat :
 | Format non reconnu | proposition de réenregistrer depuis l'application, ou d'écrire |
 
 Ces trois cas sont journalisés en `WARN`, pas en `ERROR` : un micro mal placé
-n'est pas une panne, et ne doit pas déclencher d'alerte. Tout le reste —
-fournisseur injoignable, dépassement de `timeout`, configuration fautive —
+n'est pas une panne, et ne doit pas déclencher d'alerte. Tout le reste,
+fournisseur injoignable, dépassement de `timeout`, configuration fautive,
 reste une erreur, avec le message de repli générique.
 
 ## attachments
@@ -279,7 +276,7 @@ Pièces jointes non vocales. Désactivé par défaut : sans cette section, une
 image est écartée, et l'agent en est informé pour pouvoir l'expliquer.
 
 `accepted_types` mérite votre attention. Un fournisseur refuse la requête
-**entière** quand une pièce jointe ne lui convient pas, ce qui laisse
+entière quand une pièce jointe ne lui convient pas, ce qui laisse
 l'utilisateur sans réponse. Le filtre existe pour écarter ces pièces avant
 l'appel. Alignez-le sur ce que votre modèle accepte vraiment : le provider
 OpenAI admet png, jpeg, webp, gif et les documents `text/*` seulement, un PDF
@@ -290,10 +287,10 @@ reçus. Un fichier annoncé `image/png` qui n'en est pas un atteindra le
 fournisseur, qui le rejettera.
 
 `tool_types` est l'autre moitié du problème. Une vidéo reçue par messagerie
-n'a rien à faire dans une requête au modèle — le fournisseur la refuserait,
-ou la facturerait pour rien — mais on veut quand même pouvoir la traiter. Les
+n'a rien à faire dans une requête au modèle, le fournisseur la refuserait
+ou la facturerait pour rien, mais on veut quand même pouvoir la traiter. Les
 types listés là sont retenus à la réception, conservés comme les autres
-pièces jointes, et **jamais** convertis vers le modèle : celui-ci n'en reçoit
+pièces jointes, et jamais convertis vers le modèle : celui-ci n'en reçoit
 que la liste (nom, type, taille), et un sous-agent de plugin va chercher les
 octets lui-même par les outils `import_attachment` / `attach_file` (voir la
 section `plugins`). Un même type ne peut pas figurer à la fois dans
@@ -305,8 +302,8 @@ au modèle : `16MiB` correspond à la limite d'une vidéo WhatsApp. C'est aussi
 la borne appliquée aux fichiers qu'un plugin renvoie en pièce jointe.
 
 `max_history` contrôle le rejeu. Les pièces jointes sont conservées en base et
-renvoyées au modèle aux tours suivants, ce qui permet de dire « et sur la
-photo d'avant ? ». Chaque image rejouée est retransmise à chaque message
+renvoyées au modèle aux tours suivants, ce qui permet de dire "et sur la
+photo d'avant ?". Chaque image rejouée est retransmise à chaque message
 suivant : la valeur pèse directement sur le coût. `0` désactive le rejeu sans
 désactiver la réception.
 
@@ -322,7 +319,7 @@ s'administre en ligne, clés d'API comprises (scellées au repos). Les champs
 `audio.transcription_client`, `conversation.compaction.client`,
 `memory.consolidation.client`, `memory.retrieval.client` et
 `memory.indexes[].client` ont disparu avec elles : chaque usage est un
-**rôle de l'instance**, réglé à l'écran « Modèles ». Voir
+rôle de l'instance, réglé à l'écran "Modèles". Voir
 [models.md](models.md).
 
 ## agents
@@ -347,7 +344,7 @@ Détaillé dans [agents.md](agents.md). Résumé des champs :
 ### description
 
 `description` est reprise dans la description de l'outil `delegate_to_<nom>`
-exposé à l'orchestrateur — c'est ce que le modèle lit pour décider de
+exposé à l'orchestrateur. C'est ce que le modèle lit pour décider de
 déléguer :
 
 ```yaml
@@ -357,17 +354,17 @@ déléguer :
 ```
 
 Sans elle, le modèle ne connaît du délégué que son nom, et un petit modèle
-préfère alors répondre qu'il ne sait pas faire (« je n'ai pas accès à
-Internet en temps réel ») plutôt qu'appeler un outil dont il ignore la
-portée — le spécialiste est là, opérationnel, et n'est jamais sollicité.
-Formulez-la à la troisième personne, en complétant « le spécialiste `x`, qui
-… ». Sans effet sur un orchestrateur, qui n'est le délégué de personne.
+préfère alors répondre qu'il ne sait pas faire ("je n'ai pas accès à
+Internet en temps réel") plutôt qu'appeler un outil dont il ignore la
+portée. Le spécialiste est là, opérationnel, et n'est jamais sollicité.
+Formulez-la à la troisième personne, en complétant "le spécialiste `x`, qui
+…". Sans effet sur un orchestrateur, qui n'est le délégué de personne.
 
 ### requires_attachments
 
-Un spécialiste qui ne sait travailler que sur une image ou un document — le
-lecteur d'images, un transcripteur — n'a rien à répondre quand le tour n'en
-porte aucun. Le déclarer ici fait refuser la délégation **avant** de
+Un spécialiste qui ne sait travailler que sur une image ou un document, le
+lecteur d'images ou un transcripteur, n'a rien à répondre quand le tour n'en
+porte aucun. Le déclarer ici fait refuser la délégation avant de
 l'exécuter : l'orchestrateur reçoit un résultat d'outil qui le lui dit, et
 aucun appel au modèle n'est facturé.
 
@@ -381,15 +378,15 @@ agents:
 
 Ce refus n'est pas une précaution de confort. Sollicité sans image, un
 modèle multimodal ne constate pas qu'il ne voit rien : il complète la
-description la plus plausible. En production le 2026-08-23, un « Mon
-profil » ambigu a déclenché une délégation à vide, et la vision a décrit un
+description la plus plausible. En production le 2026-08-23, un "Mon
+profil" ambigu a déclenché une délégation à vide, et la vision a décrit un
 petit-déjeuner entièrement inventé, que l'orchestrateur a relayé de bonne
 foi. Le prompt du spécialiste porte la même consigne en ceinture, mais
 elle demande au modèle qui invente de constater lui-même son invention :
 c'est au code de ne pas poser une question dont il sait qu'elle est sans
 matière.
 
-L'orchestrateur ne connaît aucun spécialiste par son nom — il interroge une
+L'orchestrateur ne connaît aucun spécialiste par son nom. Il interroge une
 capacité déclarée, comme pour les fichiers de l'historique.
 
 ### image_generation
@@ -416,24 +413,24 @@ modèle plutôt que de faire échouer le tour.
 
 ### reminders
 
-`reminders: true` donne à l'agent trois outils : `create_reminder` (« 
-rappelle-moi demain à 9h de sortir les poubelles »), `list_reminders` et
+`reminders: true` donne à l'agent trois outils : `create_reminder` ("
+rappelle-moi demain à 9h de sortir les poubelles"), `list_reminders` et
 `cancel_reminder`. À l'échéance, le message du rappel est envoyé sur le
-canal où il a été demandé — jamais ailleurs, la destination n'est pas un
+canal où il a été demandé, jamais ailleurs. La destination n'est pas un
 choix du modèle. Il vit dans la base applicative (table `reminders`),
 survit aux redémarrages, et un rappel devenu échu pendant un arrêt part dès
 le démarrage suivant.
 
-Un rappel peut être **récurrent** (« chaque mardi soir ») : il porte alors
+Un rappel peut être récurrent ("chaque mardi soir") : il porte alors
 une expression cron standard et un fuseau IANA, le même dialecte que
 `schedules`. L'application calcule elle-même la première occurrence, puis
-réarme l'échéance après chaque envoi — le rappel reste actif jusqu'à son
-annulation par `cancel_reminder`. Le fuseau garantit que « chaque mardi
-20h » reste 20h à travers les changements d'heure. Après un long arrêt du
+réarme l'échéance après chaque envoi. Le rappel reste actif jusqu'à son
+annulation par `cancel_reminder`. Le fuseau garantit que "chaque mardi
+20h" reste 20h à travers les changements d'heure. Après un long arrêt du
 worker, une seule livraison de rattrapage part, jamais une rafale : la
 prochaine occurrence est calculée depuis l'instant courant. La différence
 avec `schedules` : un schedule exécute un agent à heure fixe, un rappel
-récurrent renvoie un texte figé — et se crée en conversation, sans toucher
+récurrent renvoie un texte figé, et se crée en conversation sans toucher
 à la configuration.
 
 Chaque appel d'outil est autorisé par principal via les permissions du
@@ -445,14 +442,14 @@ que depuis sa conversation d'origine.
 ### scheduled_tasks
 
 `scheduled_tasks: true` ajoute `schedule_task`, `list_scheduled_tasks` et
-`cancel_scheduled_task`. Une tâche planifiée partage tout avec un rappel —
+`cancel_scheduled_task`. Une tâche planifiée partage tout avec un rappel,
 échéance, récurrence cron, fuseau, annulation, cloisonnement par
-conversation — sauf l'essentiel : à l'échéance, l'agent **travaille**, avec
+conversation, sauf l'essentiel. À l'échéance, l'agent travaille, avec
 ses outils et ses délégués, et c'est sa réponse qui est envoyée.
 
-C'est la différence qui compte à l'usage. « Chaque matin, un bulletin
-météo » n'est pas un rappel : un rappel enverrait tous les jours le texte
-« bulletin météo ». Une tâche va chercher la météo du jour.
+C'est la différence qui compte à l'usage. "Chaque matin, un bulletin
+météo" n'est pas un rappel : un rappel enverrait tous les jours le texte
+"bulletin météo". Une tâche va chercher la météo du jour.
 
 ```yaml
   main:
@@ -464,7 +461,7 @@ Trois garde-fous, aucun laissé au modèle :
 
 - **Identité figée.** La tâche s'exécute sous le principal qui l'a créée,
   dans sa conversation d'origine, avec la portée du canal telle qu'elle est
-  déclarée aujourd'hui — pas celle du jour de la création. Un canal qui
+  déclarée aujourd'hui, pas celle du jour de la création. Un canal qui
   change de portée emmène ses tâches avec lui. Elle ne peut donc rien faire
   que son auteur ne puisse demander en direct : c'est pourquoi son
   déclencheur (`scheduled_task`) suit les règles de son canal, là où un
@@ -472,8 +469,8 @@ Trois garde-fous, aucun laissé au modèle :
   nommément mandaté) reste tenu à l'écart des données personnelles.
 - **Aucun outil de programmation pendant l'exécution.** À l'échéance, l'agent
   n'a ni `schedule_task` ni `create_reminder`. Sans cela, devant une consigne
-  rédigée comme une demande (« Prépare un bulletin météo… »), il la
-  reprogramme au lieu de l'exécuter — et une tâche peut se réarmer
+  rédigée comme une demande ("Prépare un bulletin météo…"), il la
+  reprogramme au lieu de l'exécuter. Et une tâche peut se réarmer
   indéfiniment.
 - **Lecture seule stricte.** Les actions sensibles proposées pendant un tour
   planifié sont ignorées et signalées dans le message livré. Personne n'est
@@ -510,8 +507,8 @@ Atteint, le tour échoue au lieu de boucler.
 dépassement rejette le lot entier, jamais un préfixe : confirmer dix actions
 sur douze annoncées serait pire que tout refuser.
 
-`max_tool_result_bytes` plafonne **un** résultat d'outil.
-`max_tool_context_bytes` plafonne leur **cumul** sur le tour. Les deux sont
+`max_tool_result_bytes` plafonne un résultat d'outil.
+`max_tool_context_bytes` plafonne leur cumul sur le tour. Les deux sont
 nécessaires : huit appels tenant chacun sous le plafond unitaire dépassent
 largement le contexte prévu. Toute réduction est signalée au modèle.
 
@@ -529,7 +526,7 @@ agents:
 
 Un agent partagé entre plusieurs organisations peut porter une personnalité
 par organisation : la variante est choisie à chaque requête selon
-l'organisation du canal. Seule la personnalité change — les règles
+l'organisation du canal. Seule la personnalité change. Les règles
 invariantes, la section des capacités et les règles d'honnêteté sont
 recomposées à l'identique dans chaque variante, aucune organisation ne peut
 en être exemptée. Une organisation sans surcharge utilise le prompt par
@@ -558,7 +555,7 @@ mcp_servers:
 ```
 
 Trois transports existent. Deux parlent HTTP et se configurent exactement de
-la même façon — `url`, `headers` — mais pas le même protocole :
+la même façon, `url` et `headers`, mais pas le même protocole :
 
 | Transport | Révision du protocole MCP | Quand l'utiliser |
 | --- | --- | --- |
@@ -588,15 +585,15 @@ mcp_servers:
 ```
 
 `command` est l'exécutable puis ses arguments, sans interprétation par un
-shell. `env` complète l'environnement du worker pour le processus enfant —
+shell. `env` complète l'environnement du worker pour le processus enfant,
 les secrets passent TOUJOURS par `env`, jamais par `command` : les arguments
 d'un processus sont lisibles par tout processus local (`/proc/<pid>/cmdline`),
 son environnement non.
 
-Les patrons `{{nom}}` sont résolus **par principal** via
+Les patrons `{{nom}}` sont résolus par principal via
 `identities.principals[].mcp.<serveur>.values` (voir [agents.md](agents.md)),
 et fonctionnent sur tous les transports : `command` et `env` en stdio, `url`
-et valeurs de `headers` sur les deux transports HTTP —
+et valeurs de `headers` sur les deux transports HTTP,
 
 ```yaml
 meteo:
@@ -606,9 +603,9 @@ meteo:
     Authorization: Bearer {{token}}
 ```
 
-— chacun obtient ainsi sa propre connexion, établie avec SES identifiants
+Chacun obtient ainsi sa propre connexion, établie avec ses identifiants
 (processus dédié en stdio, connexion HTTP dédiée en http). Un principal sans
-`values` pour un serveur à patrons n'y a simplement pas accès — jamais de
+`values` pour un serveur à patrons n'y a simplement pas accès. Jamais de
 repli sur les valeurs d'un autre, jamais de patron littéral envoyé. Un
 serveur sans patron reste partagé par session, comme avant. La validation au
 chargement vérifie que chaque surcharge couvre tous les patrons du serveur
@@ -646,12 +643,12 @@ d'autorisation.
 Deux signaux servent à décider si un outil exige une confirmation.
 
 L'annotation `readOnlyHint` du protocole MCP, quand le serveur la fournit,
-est écoutée **de façon asymétrique** :
+est écoutée de façon asymétrique :
 
-- « cet outil écrit » est toujours cru, même si le nom commence par un
+- "cet outil écrit" est toujours cru, même si le nom commence par un
   préfixe de lecture. Un serveur qui se déclare dangereux ne gagne rien à
   mentir, et le croire ne coûte qu'une confirmation ;
-- « cet outil ne fait que lire » est ignoré par défaut. C'est le serveur qui
+- "cet outil ne fait que lire" est ignoré par défaut. C'est le serveur qui
   l'affirme sur lui-même, rien ne le vérifie : un serveur compromis
   annonçant une suppression comme lecture contournerait la confirmation,
   c'est-à-dire la garantie centrale du système. `trust_read_only_hint: true`
@@ -662,7 +659,7 @@ Les préfixes de nom prennent le relais quand le serveur n'annote rien. Ils
 restent nécessaires, la plupart des serveurs n'annotant pas leurs outils.
 
 Un point subtil du protocole : `readOnlyHint` est un booléen avec `omitempty`,
-si bien qu'une annotation absente et un « cet outil écrit » se ressemblent une
+si bien qu'une annotation absente et un "cet outil écrit" se ressemblent une
 fois sérialisés. Automata distingue les deux cas au niveau du bloc
 d'annotations entier. Un serveur qui n'annote rien conserve donc le
 comportement fondé sur les noms, au lieu de voir toutes ses lectures passer
@@ -719,7 +716,7 @@ hybride, fusionnée selon `weight`.
 
 `retrieval.profile` choisit le compromis coût/qualité de la recherche, calqué
 sur les profils amoxtli : `fast` (défaut) n'ajoute aucun appel LLM ;
-`balanced` active HyDE — le `client` déclaré (requis, un modèle économique
+`balanced` active HyDE. Le `client` déclaré (requis, un modèle économique
 suffit) reformule chaque requête distincte en document hypothétique avant la
 recherche, ce qui améliore nettement la recherche sémantique.
 
@@ -732,18 +729,18 @@ dans la mémoire commune. Le plan l'interdit et la valeur par défaut le reflèt
 s'accumulent pas sans limite : à la cadence `cron` (5 champs, heure locale du
 serveur, `"40 4 * * *"` par défaut), chaque portée comptant au moins
 `min_memories` souvenirs (10 par défaut) est soumise au `client` déclaré, qui
-propose un plan de réorganisation — fusionner les souvenirs redondants en un
+propose un plan de réorganisation. Fusionner les souvenirs redondants en un
 seul texte à jour, oublier les faits périmés ou sans valeur durable. Le plan
 est appliqué avec des garde-fous : jamais de fusion entre portées
 différentes, identifiants vérifiés, et au plus un tiers de la portée en
-oublis secs par passe — un plan qui propose de vider la mémoire est refusé.
+oublis secs par passe. Un plan qui propose de vider la mémoire est refusé.
 Désactivée par défaut.
 
-La même passe peut produire au plus deux « insights » par portée : des
+La même passe peut produire au plus deux "insights" par portée : des
 souvenirs de synthèse déduits d'un motif traversant plusieurs souvenirs
-(« consulte la météo chaque matin »), écrits avec l'origine `reflection`
-sans supprimer les originaux. Le prompt exige la parcimonie — aucun insight
-au moindre doute — et le compteur `memory_insights` de `/metrics` les
+("consulte la météo chaque matin"), écrits avec l'origine `reflection`
+sans supprimer les originaux. Le prompt exige la parcimonie, aucun insight
+au moindre doute, et le compteur `memory_insights` de `/metrics` les
 mesure.
 
 La dernière exécution est persistée (table `maintenance_runs`) : un
@@ -756,7 +753,7 @@ supprimés (fusionnés ou oubliés).
 `reflection` ajoute à la même passe une réflexion épisodique : les épisodes
 verbatim récents (`conversation.compaction.record_episodes`) de chaque
 portée personnelle ou de groupe sont relus pour en dégager des habitudes ou
-préférences récurrentes que personne n'a jamais énoncées — ce que ni
+préférences récurrentes que personne n'a jamais énoncées. Ce que ni
 l'extraction de faits (un fragment à la fois) ni les insights (limités aux
 faits déjà extraits) ne peuvent voir. Au plus deux motifs par portée et par
 passe, formulés prudemment, exigeant plusieurs occurrences, mémorisés avec
@@ -769,7 +766,7 @@ tokens (du verbatim, pas des faits condensés) : désactivée par défaut.
 
 `retention_days` (0 par défaut : conservation illimitée) purge les épisodes
 plus vieux que cet âge, mais JAMAIS un épisode qu'aucune réflexion réussie
-n'a couvert — consolider avant d'oublier. Les compteurs `episode_patterns`
+n'a couvert. Consolider avant d'oublier. Les compteurs `episode_patterns`
 et `episodes_purged` de `/metrics` mesurent la réflexion.
 
 ## conversation
@@ -793,12 +790,12 @@ simplement du contexte.
 La compaction leur donne une seconde vie : quand une conversation dépasse le
 double de la fenêtre, les messages excédentaires sont condensés en un résumé
 roulant persisté (table `conversation_summaries`), réinjecté en tête de
-contexte à chaque tour. L'assistant garde ainsi le fil — préférences émises,
-décisions prises, demandes en cours — bien après que les messages exacts ont
+contexte à chaque tour. L'assistant garde ainsi le fil, préférences émises,
+décisions prises, demandes en cours, bien après que les messages exacts ont
 quitté la fenêtre. Les messages couverts par le résumé ne sont plus rejoués
 verbatim.
 
-`client` référence l'entrée de `llm_clients` qui produit les résumés — un
+Le modèle qui produit les résumés est le rôle d'instance `compaction`, un
 modèle économique suffit, requis quand `enabled` est vrai. La compaction
 s'exécute en tête de tour, environ une fois tous les `history_limit`
 messages ; son échec n'est jamais bloquant, le tour continue avec le résumé
@@ -812,7 +809,7 @@ journalisé.
 compaction, les messages condensés sont aussi passés au même `client` pour en
 extraire les faits durables (préférences stables, décisions, engagements,
 dates importantes), stockés dans la mémoire Amoxtli avec la portée de la
-conversation — personnelle en privé, de groupe en groupe, jamais `org`. Au
+conversation, personnelle en privé, de groupe en groupe, jamais `org`. Au
 plus `max_facts` faits par compaction (5 par défaut). Requiert un système de
 mémoire configuré (section `memory`) ; un échec d'extraction n'est jamais
 bloquant. Le compteur `memories_extracted` de `/metrics` la mesure. Combinée
@@ -822,7 +819,7 @@ nocturne les fusionne et purge les périmés.
 
 `record_episodes` conserve en plus le fragment condensé VERBATIM dans la
 mémoire épisodique (même store Amoxtli, hors de portée de la consolidation
-et de `search_memory`), horodaté et étiqueté par nom affiché — jamais par
+et de `search_memory`), horodaté et étiqueté par nom affiché, jamais par
 identifiant interne. C'est ce qui alimente l'outil
 `search_conversation_history` (drapeau `memory.history` de l'agent) : quand
 le résumé et les faits extraits n'ont pas retenu le détail d'une discussion
@@ -833,8 +830,8 @@ supplémentaire : le fragment est enregistré tel quel. Le compteur
 Le drapeau `memory.recall` d'un agent active le rappel automatique : à
 chaque tour, une recherche mémoire sur le message entrant injecte jusqu'à
 trois souvenirs pertinents (datés) dans le contexte, sans attendre que le
-modèle pense à appeler `search_memory` — c'est ce qui fait qu'un assistant
-« se souvient tout seul ». Le coût est une recherche par tour (plus un
+modèle pense à appeler `search_memory`. C'est ce qui fait qu'un assistant
+"se souvient tout seul". Le coût est une recherche par tour (plus un
 appel HyDE si `memory.retrieval.profile` vaut `balanced`) ; jamais
 bloquant, portées lisibles uniquement. Le compteur `memory_recalls` de
 `/metrics` le mesure.
@@ -865,8 +862,8 @@ domaine est libre : `memory`, `calendar`, `todo`, ou le vôtre.
 par les tâches planifiées, avec le strict minimum de permissions.
 
 `orgs` liste les organisations auxquelles le principal appartient. Le champ
-est facultatif tant qu'une seule organisation est déclarée — le principal
-appartient alors à celle-ci — et **obligatoire au-delà** : hériter
+est facultatif tant qu'une seule organisation est déclarée, le principal
+appartient alors à celle-ci, et obligatoire au-delà. Hériter
 silencieusement de toutes les organisations donnerait à un collègue l'accès à
 la mémoire de la famille. Les rôles, eux, restent globaux au principal.
 
@@ -936,16 +933,16 @@ patiente une quinzaine de secondes après un média de groupe non adressé pour
 laisser le temps de taper cette mention ; ce sursis ne s'ouvre que dans ce
 cas précis, jamais en conversation privée ni pour un simple texte.
 
-**Les vocaux ont leur propre règle.** Un message audio ne peut porter aucune
-mention — sur WhatsApp, il n'a pas de légende. Deux gestes le rendent
+Les vocaux ont leur propre règle. Un message audio ne peut porter aucune
+mention. Sur WhatsApp, il n'a pas de légende. Deux gestes le rendent
 adressé :
 
-- **prononcer le nom de l'assistant dans le vocal** (« Automata, quel temps
-  fera-t-il samedi ? ») : chaque vocal du groupe est transcrit et le nom y
-  est cherché, sans tenir compte de la casse. Absent, le tour s'arrête là —
+- prononcer le nom de l'assistant dans le vocal ("Automata, quel temps
+  fera-t-il samedi ?") : chaque vocal du groupe est transcrit et le nom y
+  est cherché, sans tenir compte de la casse. Absent, le tour s'arrête là,
   aucune réponse, rien en base, aucun indicateur de saisie : le vocal a été
   écouté puis oublié ;
-- **écrire « @assistant » juste après le vocal** : la mention voisine vaut,
+- écrire "@assistant" juste après le vocal : la mention voisine vaut,
   et les deux messages forment un seul tour.
 
 Le premier geste a un coût et une implication à connaître : **tout vocal du
@@ -1048,52 +1045,51 @@ web:
 
 Écrans servis : connexion opérateur (`/admin/login`, session cookie signée
 12 h, 5 tentatives par quart d'heure), organisations (liste, détail avec
-portefeuille de crédits, gestes commerciaux, bascule « organisation
-offerte »), comptes membres avec **jeton de liaison affiché une seule
+portefeuille de crédits, gestes commerciaux, bascule "organisation
+offerte"), comptes membres avec **jeton de liaison affiché une seule
 fois** (seul le SHA-256 est stocké), canaux et plateformes, alertes
 d'exploitation, et les pages de profil ouvertes par **lien temporaire à
 usage unique** (15 minutes, `/p/<id>.<secret>`).
 
 Le profil d'un membre regroupe ce qui lui appartient : adresse de secours,
-crédits et consommation, **« Ce que je retiens »** — ses souvenirs
-personnels, mot pour mot, à corriger ou effacer un par un (jamais ceux d'un
-groupe, qui appartiennent au groupe) —, **« Suggestions »** (voir la
-section `introspection`), **« Découvrir »** (des phrases à recopier pour
-essayer chaque capacité), confidentialité (export et suppression), et un
-onglet par plugin actif doté d'une interface.
+crédits et consommation, "Ce que je retiens" (ses souvenirs personnels
+mot pour mot, à corriger ou effacer un par un, jamais ceux d'un groupe),
+"Suggestions" (voir la section `introspection`), "Découvrir" (des
+phrases à recopier pour essayer chaque capacité), confidentialité (export
+et suppression), et un onglet par plugin actif doté d'une interface.
 
 Le serveur web ne travaille pas seul : un expéditeur
 inconnu dont le message porte un jeton `atm_…` valide se rattache
-lui-même — le membre pré-créé prend son identité de messagerie, son canal
+lui-même. Le membre pré-créé prend son identité de messagerie, son canal
 privé (ou le groupe, pour un jeton de groupe) est lié à l'organisation, et
 l'assistant répond par un mot de bienvenue rédigé par l'application, jamais
 par le modèle. Les tenants ainsi enregistrés sont ensuite résolus depuis la
 base : la configuration YAML reste prioritaire, la base prend le relais pour
 ce qu'elle ne connaît pas. Les membres en ligne n'ont pas de rôle
 configurable ; leurs permissions découlent de leur rôle produit
-(`member`, `owner`, `readonly` — voir `identity.DynamicRolePermissions`).
+(`member`, `owner`, `readonly`, voir `identity.DynamicRolePermissions`).
 
-Ce jeu couvre les trois domaines applicatifs — `memory`, `reminder` et
-`task` — sur les portées personnelle et de groupe. Un `readonly` lit sans
+Ce jeu couvre les domaines `memory`, `reminder` et `task` sur les portées
+personnelle et de groupe. Un `readonly` lit sans
 écrire ; un `owner` gagne la vue d'organisation et la suppression des
 souvenirs du groupe.
 
-**Qui peut poser une échéance peut la retirer** : `reminder.group.delete` et
+Qui peut poser une échéance peut la retirer : `reminder.group.delete` et
 `task.group.delete` accompagnent les droits d'écriture correspondants. Les
-réserver au propriétaire enfermait la personne dans son erreur — une tâche
+réserver au propriétaire enfermait la personne dans son erreur. Une tâche
 hebdomadaire programmée à la mauvaise heure, reprogrammée, et la première
 impossible à annuler. Le garde-fou n'est pas le rôle mais la portée : une
 échéance n'est visible et annulable que depuis la conversation où elle a été
 posée. `memory.group.delete` reste réservé au propriétaire, la différence
 tenant à ce qu'un souvenir de groupe est du contenu accumulé, là où une
-échéance est un mécanisme qu'on vient de poser. **Un domaine oublié dans ce jeu est irréparable en ligne** :
+échéance est un mécanisme qu'on vient de poser. Un domaine oublié dans ce jeu est irréparable en ligne :
 la configuration des rôles a migré en base, plus rien ne permet de
 l'accorder à la main. L'agent proposerait alors un outil dont le refus ne
 peut être levé par personne, exploitant compris.
 
 Les agents déclarant `reminders: true` exposent aussi
 `list_recent_activity` : le journal de ce qui a réellement été délivré ou
-exécuté dans la conversation — rappels envoyés ou en échec, tâches
+exécuté dans la conversation, rappels envoyés ou en échec, tâches
 planifiées, plans d'actions confirmés. Il complète `list_reminders`, qui
 ne montre que ce qui reste à venir : sans lui, un assistant interrogé sur
 un rappel déjà reçu ne voyait qu'une liste vide et en concluait qu'il
@@ -1113,45 +1109,45 @@ agents:
 
 ### Comptes de messagerie
 
-Depuis le pilier 2, les comptes de messagerie vivent **en base** et se
-gèrent depuis l'écran « Canaux et plateformes » : ajout, arrêt, remise en
+Depuis le pilier 2, les comptes de messagerie vivent en base et se
+gèrent depuis l'écran "Canaux et plateformes" : ajout, arrêt, remise en
 route et retrait, sans redémarrage du processus. Les comptes encore
 déclarés dans `courier.providers` sont importés automatiquement au premier
-démarrage, **configuration reprise à l'identique** — le chemin de session
+démarrage, configuration reprise à l'identique. Le chemin de session
 WhatsApp compris, de sorte qu'aucun ré-appairage n'est nécessaire. Une fois
 importés, ils ne sont plus relus depuis le YAML : la base fait foi.
 
-La configuration de chaque compte est **chiffrée au repos**
+La configuration de chaque compte est chiffrée au repos
 (AES-256-GCM, clé dérivée de `web.session_secret` par HKDF) : elle porte
 des mots de passe et des jetons d'accès. Changer `web.session_secret` rend
 ces configurations illisibles, et les comptes concernés doivent alors être
 ressaisis.
 
-L'écran affiche l'état réel de chaque compte — connectée, appairage
-requis, arrêtée, déconnectée — et, pour un compte WhatsApp non encore lié,
-**le QR code à scanner directement dans le navigateur** (il n'est plus
+L'écran affiche l'état réel de chaque compte (connecté, appairage
+requis, arrêté, déconnecté) et, pour un compte WhatsApp non encore lié,
+le QR code à scanner directement dans le navigateur (il n'est plus
 imprimé dans les journaux du worker). Cela repose sur l'option
 `whatsapp.WithQRHandler` de go-courier.
 
 ### Personnalisation par organisation
 
-L'onglet « Personnalisation » d'une organisation règle ce qui distingue un
+L'onglet "Personnalisation" d'une organisation règle ce qui distingue un
 forfait d'un autre, sans toucher au fichier de configuration ni redémarrer
 le service :
 
-- une **consigne ajoutée** au prompt de l'assistant — après les règles de
+- une consigne ajoutée au prompt de l'assistant, après les règles de
   l'instance, jamais à leur place : une organisation précise le ton ou le
   contexte, elle ne s'accorde aucun droit ;
-- les **spécialistes disponibles** : en retirer un le rend invisible de
+- les spécialistes disponibles : en retirer un le rend invisible de
   l'assistant pour cette organisation, qui ne pourra plus lui déléguer ;
-- un **plafond d'appels d'outils** par tour, qui ne peut qu'abaisser celui
+- un plafond d'appels d'outils par tour, qui ne peut qu'abaisser celui
   de l'agent.
 
 Ces réglages sont relus à chaque tour de conversation. Une lecture en
 échec donne un tour aux réglages par défaut, jamais un tour raté.
 
-L'écran **Paramètres d'instance** montre en lecture ce qui tourne
-réellement — agents, modèles, serveurs d'outils, services de fond — sans
+L'écran Paramètres d'instance montre en lecture ce qui tourne
+réellement, agents, modèles, serveurs d'outils, services de fond, sans
 jamais afficher une clé d'API. La configuration technique reste dans le
 fichier YAML : la modifier demande de l'éditer puis de redémarrer.
 
@@ -1160,9 +1156,9 @@ fichier YAML : la modifier demande de l'éditer puis de redémarrer.
 Dès que le serveur web est activé, la consommation mesurée
 (`usage_records`) est convertie en débits de crédits toutes les dix
 minutes (`internal/billing`) et inscrite au portefeuille de chaque
-organisation, avec un libellé lisible par le client (« Usage —
-conversations », « Usage — génération d'images », « Usage — recherche »,
-« Usage — notes vocales »). Le premier passage ne fait que poser la borne
+organisation, avec un libellé lisible par le client ("Usage —
+conversations", "Usage — génération d'images", "Usage — recherche",
+"Usage — notes vocales"). Le premier passage ne fait que poser la borne
 temporelle : activer la facturation ne débite jamais rétroactivement. Une
 organisation absente des tables SaaS n'est facturée à personne.
 
@@ -1170,10 +1166,10 @@ Les organisations offertes sont remises à niveau une fois par mois civil :
 le solde est complété jusqu'à l'allocation, jamais cumulé d'un mois sur
 l'autre.
 
-**Avant la coupure**, l'organisation est prévenue dans sa conversation
+Avant la coupure, l'organisation est prévenue dans sa conversation
 dès que son solde passe sous 15 % de son dernier apport : un message
-rédigé par l'application — jamais par le modèle, une alerte de solde doit
-être exacte — accompagné d'un lien de recharge si le destinataire est
+rédigé par l'application et jamais par le modèle, parce qu'une alerte de
+solde doit être exacte. Il porte un lien de recharge si le destinataire est
 identifié. L'alerte part une seule fois par descente ; une recharge
 réarme le mécanisme. Les organisations offertes n'en reçoivent pas :
 elles n'ont rien à recharger. Le destinataire est le responsable de
@@ -1186,33 +1182,35 @@ explication et un lien de recharge, sans appel au modèle, au plus une fois
 par heure et par conversation. Une organisation sans aucun mouvement de
 portefeuille (instance non facturée) n'est jamais mise en pause.
 
-Depuis les écrans **Tarification** et **Consommation**, l'économie de la
+Depuis les écrans Tarification et Consommation, l'économie de la
 monnaie virtuelle se pilote sans redémarrage : les offres de crédits, le
 coût couvert par un crédit, les crédits de bienvenue et l'allocation par
 défaut vivent en base et priment sur `web.credits`. Tant qu'aucune offre
 n'a été créée en ligne, celles de la configuration font foi.
 
 Deux réglages fixent l'économie du produit et se lisent ensemble : le
-**coût couvert par un crédit** (`usd_per_credit`) dit ce qu'un crédit doit
-payer d'inférence, et la **marge visée** (`target_margin`, 60 % par
+coût couvert par un crédit (`usd_per_credit`) dit ce qu'un crédit doit
+payer d'inférence, et la marge visée (`target_margin`, 60 % par
 défaut) dit ce qu'il doit rapporter en plus. L'écran calcule alors, pour
-chaque offre, sa marge réelle et le prix qui atteindrait la cible — et
-signale en rouge toute offre **vendue à perte**, avant qu'elle ne soit
+chaque offre, sa marge réelle et le prix qui atteindrait la cible, et
+signale en rouge toute offre vendue à perte, avant qu'elle ne soit
 proposée aux clients plutôt qu'à la fin du mois.
 
 La marge visée n'est pas une contrainte : elle n'empêche pas de publier un
-tarif d'appel. Prévoyez-y de la place, car tout ne se facture pas — les
+tarif d'appel. Prévoyez-y de la place, car tout ne se facture pas. Les
 crédits offerts, les coûts qu'un fournisseur ne rapporte pas, les appels
 échoués pèsent sur le résultat sans être payés par personne.
 
 L'écran de tarification affiche surtout la seule mesure qui compte pour
-l'exploitant : **crédits vendus contre coût réel** sur le mois, avec la
+l'exploitant : crédits vendus contre coût réel sur le mois, avec la
 marge estimée et le nombre d'appels dont le fournisseur n'a rapporté aucun
-coût — la marge est optimiste d'autant. La conversion des dollars en euros
+coût, et la marge est optimiste d'autant. La conversion des dollars en euros
 utilise un taux configurable ; c'est un ordre de grandeur, pas une
 conversion comptable.
 
-**Repli tarifaire.** Tous les fournisseurs ne rapportent pas le coût de
+### Repli tarifaire
+
+Tous les fournisseurs ne rapportent pas le coût de
 leurs appels. Sans filet, un tel appel serait enregistré à zéro et
 décompté zéro crédit : la consommation partirait en fuite. Le coût est
 donc estimé à l'enregistrement, à partir des tokens et d'une grille
@@ -1221,7 +1219,7 @@ l'écran de tarification. Une entrée partielle couvre une famille entière
 (`deepseek/`), et les modèles absents de la grille retombent sur des
 tarifs de repli volontairement supérieurs aux modèles économiques : une
 surestimation se voit et se corrige, une sous-estimation disparaît.
-L'estimation n'est jamais présentée comme une mesure — `cost_reported`
+L'estimation n'est jamais présentée comme une mesure. `cost_reported`
 reste faux, et les écrans distinguent les deux.
 
 Pour les traces déjà enregistrées à zéro avant la mise en place de la
@@ -1235,7 +1233,7 @@ L'écran de consommation croise les traces d'usage selon les dimensions
 voulues (organisation, membre, agent, modèle, nature, fournisseur, jour,
 mois), sur la période choisie, et s'exporte en CSV avec les mêmes filtres.
 
-Le paiement en ligne s'active en renseignant les deux secrets Stripe —
+Le paiement en ligne s'active en renseignant les deux secrets Stripe,
 l'un sans l'autre est refusé au chargement (une session de paiement dont
 le résultat ne pourrait pas être crédité ferait payer un client pour
 rien) :
@@ -1252,52 +1250,56 @@ Le `tax_code` classe fiscalement les crédits vendus. Stripe l'exige dès
 que Stripe Tax est activé sur le compte : le produit est créé à la volée
 au moment du paiement, il n'existe pas de catalogue où le déclarer une
 fois pour toutes. Le défaut, `txcd_10000000`, correspond aux services
-fournis par voie électronique — ce que vend Automata. Un régime
+fournis par voie électronique, ce que vend Automata. Un régime
 particulier (logiciel professionnel en abonnement, par exemple) se règle
 ici, mais le choix du code relève du comptable, pas du logiciel.
 
 Les prix des offres sont hors taxes : Stripe ajoute la TVA applicable au
-moment du paiement, et la page de crédits l'annonce (« 35 € HT »). La
-recette inscrite au portefeuille est le prix hors taxes — la marge se
+moment du paiement, et la page de crédits l'annonce ("35 € HT"). La
+recette inscrite au portefeuille est le prix hors taxes, la marge se
 calcule donc sur ce qui revient réellement à l'exploitant.
 
 Un achat réglé est confirmé dans la conversation privée de l'acheteur :
 le message part du service, jamais du modèle, et n'est envoyé qu'une fois
 même si Stripe rejoue l'événement. Un membre non rattaché à une
-messagerie n'en reçoit pas — sa confirmation reste sur l'écran de retour.
+messagerie n'en reçoit pas. Sa confirmation reste sur l'écran de retour.
 
 Le retour de paiement ne vise jamais le lien de profil d'origine : celui-ci
 est à usage unique et déjà consommé au moment où Stripe renvoie le client.
 Un lien de retour neuf, valable une heure, est émis à l'ouverture de la
-session de paiement — sans quoi le client verrait « ce lien a déjà servi »
+session de paiement. Sans quoi le client verrait "ce lien a déjà servi"
 juste après avoir payé.
 
 Le point de réception des événements est `POST /stripe/webhook` (à
 exposer publiquement, contrairement au reste de l'interface) : la
 signature est vérifiée avec une tolérance de cinq minutes, et le crédit
-est idempotent — l'identifiant de session est unique en base, un
+est idempotent. L'identifiant de session est unique en base, un
 événement rejoué ne crédite jamais deux fois. Sans ces secrets, les
 boutons d'achat restent visibles mais inertes.
 
-**Ma consommation.** La page « Ma consommation » du profil montre l'usage
+### Ma consommation
+
+La page "Ma consommation" du profil montre l'usage
 du mois en catégories parlantes (conversations, recherches, images, notes
-vocales) et son évolution sur six mois, en crédits — le mot « token »
+vocales) et son évolution sur six mois, en crédits. Le mot "token"
 n'y apparaît jamais. Les chiffres couvrent l'organisation entière, ce que
 la page dit explicitement : les crédits sont partagés.
 
-**Confidentialité (RGPD).** La page de profil « Confidentialité » liste ce
+### Confidentialité
+
+La page de profil "Confidentialité" liste ce
 qu'Automata conserve d'une personne, et ouvre deux droits : télécharger
 ses données (JSON lisible, en français) et les faire effacer. La
-suppression exige d'écrire `SUPPRIMER` — elle est irréversible.
+suppression exige d'écrire `SUPPRIMER`. Elle est irréversible.
 
 Trois règles gouvernent la suppression, et méritent d'être connues avant
 de répondre à une demande :
 
-- **les conversations de groupe ne sont pas effacées** : elles appartiennent
+- les conversations de groupe ne sont pas effacées : elles appartiennent
   aussi aux autres participants ;
-- **le compte survit sous une identité neutre**, détaché de sa messagerie —
+- le compte survit sous une identité neutre, détaché de sa messagerie,
   le supprimer romprait les groupes auxquels la personne a participé ;
-- **les traces de consommation sont conservées mais dissociées** (le
+- les traces de consommation sont conservées mais dissociées (le
   principal disparaît, les montants restent) : ce sont des pièces
   comptables.
 
@@ -1333,26 +1335,26 @@ plugins:
 
 Les plugins étendent Automata sans toucher à son cœur : chaque binaire
 exécutable du répertoire est lancé en sous-processus (hashicorp/go-plugin,
-gRPC) et peut fournir un **sous-agent** délégué, des **déclencheurs**
+gRPC) et peut fournir un sous-agent délégué, des déclencheurs
 extérieurs (courriel entrant, alerte d'infrastructure) et sa propre
-**interface**, rendue en iframe dans l'administration et la page de profil.
+interface, rendue en iframe dans l'administration et la page de profil.
 Le SDK des auteurs de plugins est le module `pkg/pluginsdk` ; le plugin
 `plugins/email` sert d'exemple complet.
 
-**L'activation se décide par organisation**, sur la fiche de l'organisation
+L'activation se décide par organisation, sur la fiche de l'organisation
 (onglet Plugins). Elle est relue à chaque tour : une désactivation
 s'applique au message suivant. Activer un plugin accorde aux membres de
-l'organisation les permissions de son domaine (`email.personal.write`…) —
-mais la porte des écritures reste la **confirmation humaine** : tout outil
+l'organisation les permissions de son domaine (`email.personal.write`…),
+mais la porte des écritures reste la confirmation humaine : tout outil
 de plugin non marqué lecture seule produit une action à confirmer par un
-« confirmer » littéral dans la conversation, jamais une exécution directe.
+"confirmer" littéral dans la conversation, jamais une exécution directe.
 Aucun réglage, du membre, de l'administrateur ou du plugin, ne peut
 débrayer ce passage.
 
 Ce que l'hôte garantit, quel que soit le plugin :
 
 - les appels LLM des sous-agents passent par le client de l'instance
-  (`plugins.client`) — comptabilité d'usage et débit de crédits inchangés ;
+  (`plugins.client`), comptabilité d'usage et débit de crédits inchangés ;
 - l'identité d'un appel est construite par l'hôte, jamais par le modèle ni
   par le plugin ; un événement de déclencheur *désigne* une organisation et
   un membre, l'hôte re-vérifie l'activation et l'appartenance avant d'agir ;
@@ -1371,18 +1373,18 @@ Ce que l'hôte garantit, quel que soit le plugin :
   une heure. Un jeton ne décide de rien : l'activation du plugin et
   l'existence de l'organisation sont revérifiées à chaque requête, si bien
   qu'une désactivation coupe l'interface immédiatement ;
-- les rafales de déclencheurs sont bornées (`triggers.*`) — abandon compté,
+- les rafales de déclencheurs sont bornées (`triggers.*`), abandon compté,
   jamais de file illimitée.
 
 Une route publique, `GET /plugins/{nom}/oauth/callback`, est réservée aux
 retours d'autorisation OAuth des plugins (le plugin `email` s'en sert pour
 Gmail). Elle est délibérément étroite : seul ce chemin est proxifié, elle
 ne transporte aucune identité, et c'est au plugin de prouver l'origine de
-l'appel — le plugin `email` le fait par un paramètre `state` signé avec une
+l'appel. Le plugin `email` le fait par un paramètre `state` signé avec une
 graine propre au membre.
 
 Un plugin qui meurt est relancé au prochain usage, après le délai de
-refroidissement ; le bouton « Redémarrer » de l'écran Plugins force la
+refroidissement ; le bouton "Redémarrer" de l'écran Plugins force la
 relance. Le nom d'un plugin (déclaré par son descripteur) devient l'outil
 `delegate_to_<nom>` : une collision avec un agent configuré est refusée au
 chargement.
@@ -1396,29 +1398,29 @@ introspection:
   digest_cron: "50 5 1 * *"
 ```
 
-Chaque semaine, Automata relit pour chaque membre rattaché ses **frictions**
-des trente derniers jours — plans d'actions proposés jamais confirmés ou en
-échec, rappels et tâches en échec — et les **habitudes** que la réflexion
-épisodique a déjà rangées en mémoire, et en tire **au plus une** suggestion
+Chaque semaine, Automata relit pour chaque membre rattaché ses frictions
+des trente derniers jours (plans d'actions jamais confirmés ou en échec,
+rappels et tâches en échec) et les habitudes que la réflexion
+épisodique a déjà rangées en mémoire, et en tire au plus une suggestion
 d'amélioration : automatiser un geste répété, activer une capacité
 inutilisée, corriger ce qui échoue. La suggestion attend sur l'onglet
-« Suggestions » du profil ; seule une friction nette est poussée en
+"Suggestions" du profil ; seule une friction nette est poussée en
 conversation, au plus une par passe.
 
 Ce que le modèle reçoit est un dossier de métadonnées (outil, permission,
-statut, date) et de textes déjà produits par des modèles — **jamais un
-verbatim de conversation**. Un dossier vide ne déclenche aucun appel. Une
+statut, date) et de textes déjà produits par des modèles. Jamais un
+verbatim de conversation. Un dossier vide ne déclenche aucun appel. Une
 suggestion écartée par la personne est montrée au modèle avec ce sort, et
-ne revient pas. « Ne plus rien me proposer », sur la même page, coupe tout,
+ne revient pas. "Ne plus rien me proposer", sur la même page, coupe tout,
 collecte comprise.
 
 Le modèle se règle en ligne (rôle `introspection`). L'ancrage suit la règle
 de la consolidation : un déploiement ne déclenche jamais de passe, et un
 nouveau membre attend sa première échéance.
 
-`digest_cron` envoie à l'exploitant désigné (écran « Alertes ») une synthèse
+`digest_cron` envoie à l'exploitant désigné (écran "Alertes") une synthèse
 mensuelle des frictions par type et par domaine, et des suggestions émises,
-suivies et écartées — **des comptes seulement**, jamais un nom ni un contenu.
+suivies et écartées. Des comptes seulement, jamais un nom ni un contenu.
 
 ## backup
 
@@ -1437,14 +1439,14 @@ backup:
 
 La base applicative (`storage.application`) et la mémoire
 (`memory.store`) sont sauvegardées automatiquement ; `extra_paths` ajoute
-les bases annexes — la **session de messagerie** en particulier, sans
+les bases annexes, la session de messagerie en particulier, sans
 laquelle une restauration coûterait un ré-appairage de chaque compte.
 
 La copie se fait par `VACUUM INTO`, qui produit une base cohérente pendant
 que le service écrit : copier le fichier à chaud donnerait une sauvegarde
 corrompue en mode WAL. Chaque copie est d'abord écrite sous un nom
-temporaire puis renommée — une copie partielle ne doit jamais pouvoir
-passer pour une sauvegarde valide — et reçoit les permissions `0600`
+temporaire puis renommée, pour qu'une copie partielle ne puisse jamais
+passer pour une sauvegarde valide, et reçoit les permissions `0600`
 (le répertoire, `0700`) : elle porte les mêmes données personnelles que
 l'original.
 
@@ -1456,7 +1458,7 @@ n'empêche pas les autres d'être sauvegardées.
 Aucune clé de configuration : dès que le stockage applicatif est présent
 (`storage.application`), chaque appel d'inférence réussi (complétion,
 transcription, génération d'image) laisse une trace comptable dans la table
-`usage_records` — organisation, principal, conversation, composant
+`usage_records`. Organisation, principal, conversation, composant
 (`agent`, `compaction`, `consolidation`, `transcription`), agent, provider,
 modèle, volumes de tokens et, quand le provider le rapporte, le coût
 réellement facturé (OpenRouter le fait, en USD). Aucun contenu n'est jamais
@@ -1474,8 +1476,8 @@ Règles d'attribution :
   qu'ignoré.
 
 Limites connues : les embeddings de l'index sémantique (`sqlitevec`) ne
-sont pas comptabilisés — leurs appels partent de l'indexation asynchrone
-d'amoxtli, hors de tout contexte de requête — et les providers autres
+sont pas comptabilisés, leurs appels partent de l'indexation asynchrone
+d'amoxtli hors de tout contexte de requête, et les providers autres
 qu'OpenRouter ne rapportent pas de coût : seuls leurs tokens sont
 enregistrés (`cost_reported = 0`), la colonne `appels sans coût` du rapport
 signale ces trous.

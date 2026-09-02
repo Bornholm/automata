@@ -35,7 +35,7 @@ Son prompt système est composé par l'application, dans cet ordre :
 
 1. Les règles de sécurité invariantes. Codées en dur, jamais issues de la
    configuration, impossibles à désactiver.
-2. Votre contenu, sous le titre « Personnalité et mission ».
+2. Votre contenu, sous le titre "Personnalité et mission".
 3. Ses capacités effectives, listées à partir de `capabilities`.
 
 Puis, à chaque requête, un bloc de contexte séparé : nom de l'agent,
@@ -51,7 +51,7 @@ Un spécialiste ne reçoit pas l'historique de la conversation principale. Il
 obtient l'objectif, les éléments que l'orchestrateur a jugé utiles, la portée
 résolue et les pièces jointes du tour. Les pièces jointes font exception à la
 règle d'isolation parce qu'un modèle ne peut pas recopier une image dans une
-chaîne de caractères : sans cela, « lis cette affiche et crée le rendez-vous »
+chaîne de caractères : sans cela, "lis cette affiche et crée le rendez-vous"
 serait impossible.
 
 ## Ajouter un spécialiste
@@ -172,7 +172,7 @@ Les cinq limites sont obligatoires. Une valeur nulle ou négative fait échouer
 la validation.
 
 Le modèle qui sert cet agent ne se déclare pas ici : chaque agent est un
-**rôle de l'instance** (ici `ruches`), qui apparaît à l'écran « Modèles »
+rôle de l'instance (ici `ruches`), qui apparaît à l'écran "Modèles"
 de l'administration dès que l'agent est déclaré. Sans modèle affecté, l'agent
 refuse ses tours en expliquant quoi régler.
 
@@ -220,11 +220,11 @@ session donnée.
 
 ## Modèles à réflexion
 
-Un modèle à réflexion (« reasoning ») produit son raisonnement avant sa
+Un modèle à réflexion ("reasoning") produit son raisonnement avant sa
 réponse. Selon le fournisseur, deux choses arrivent au texte livré :
 
 - le raisonnement est exposé dans un champ séparé, et il ne reste que les
-  sauts de ligne qui l'entouraient — le message part alors avec une ou deux
+  sauts de ligne qui l'entouraient. Le message part alors avec une ou deux
   lignes vides avant le premier mot ;
 - il n'est pas séparé, et le bloc `<think>…</think>` se retrouve dans le
   message.
@@ -232,13 +232,13 @@ réponse. Selon le fournisseur, deux choses arrivent au texte livré :
 Les deux sont nettoyés avant persistance et envoi, sur tous les chemins de
 réponse. Un bloc de raisonnement n'est retiré que s'il est **en tête et
 refermé** : au milieu d'une phrase ces balises sont du contenu légitime, et
-une balise jamais refermée signale un flux tronqué — mieux vaut livrer la
+une balise jamais refermée signale un flux tronqué. Mieux vaut livrer la
 réponse telle quelle que la vider.
 
 Reste la latence, qu'aucun nettoyage ne rattrape : ces modèles réfléchissent
-avant de répondre, et un simple « coucou » peut demander plusieurs dizaines
+avant de répondre, et un simple "coucou" peut demander plusieurs dizaines
 de secondes. Le pipeline attend jusqu'à 5 minutes par message, mais
-l'indicateur « en train d'écrire » tourne pendant tout ce temps côté
+l'indicateur "en train d'écrire" tourne pendant tout ce temps côté
 utilisateur.
 
 ## Donner à chaque utilisateur ses propres identifiants
@@ -328,7 +328,7 @@ identities:
 Les patrons `{{nom}}` sont résolus sur la configuration EFFECTIVE : si le
 principal remplace l'URL du serveur par la sienne, ce sont les patrons de SA
 propre URL qui doivent être couverts, ceux de l'URL du serveur ne comptent
-plus. Un principal sans `values` pour un serveur à patrons n'y a pas accès —
+plus. Un principal sans `values` pour un serveur à patrons n'y a pas accès.
 le serveur n'est jamais appelé avec un patron littéral ni avec les valeurs
 d'un autre. Préférez un en-tête à une clé en variable d'URL quand le serveur
 le permet : une URL transite en clair dans les journaux de proxys et de
@@ -356,8 +356,8 @@ identities:
             password: ${ALICE_IMAP_PASSWORD}
 ```
 
-Chaque principal surchargé obtient **son propre processus serveur**, lancé
-avec ses valeurs — Alice interroge sa boîte mail, jamais celle de Léo, même
+Chaque principal surchargé obtient son propre processus serveur, lancé
+avec ses valeurs. Alice interroge sa boîte mail, jamais celle de Léo, même
 dans un groupe. Ce processus est partagé entre toutes les conversations du
 même principal (la frontière de sécurité est le principal, pas la
 conversation), ce qui borne le nombre de processus à un par couple
@@ -378,7 +378,7 @@ Une surcharge vide est refusée pour la même raison. La validation vérifie
 aussi la cohérence transport/surcharge (`url`/`headers` réservés à `http`,
 `values` valides sur les deux transports dès que le serveur déclare des
 patrons), que chaque surcharge couvre tous les patrons de la configuration
-effective, et qu'aucune valeur ne reste sans patron correspondant — les
+effective, et qu'aucune valeur ne reste sans patron correspondant. Les
 erreurs ne citent que les noms de patrons, jamais les valeurs.
 
 ### Ce que le mécanisme ne fait pas
@@ -412,12 +412,12 @@ un plan déjà annoncé à l'utilisateur.
 
 Un spécialiste ne réalise jamais une écriture externe dans le tour où il la
 décide. Il produit une action, qui devient un plan persisté. L'utilisateur
-répond « confirmer » ou « annuler » en toutes lettres. Ces deux mots sont
+répond "confirmer" ou "annuler" en toutes lettres. Ces deux mots sont
 interceptés avant tout appel au modèle : le modèle ne peut pas se
 confirmer lui-même.
 
 À la confirmation, l'application recharge le plan, vérifie son état et son
-expiration, contrôle qui confirme, **revérifie les permissions**, résout à
+expiration, contrôle qui confirme, revérifie les permissions, résout à
 nouveau les ressources, puis exécute les actions une par une. Le rapport
 distingue chaque succès et chaque échec.
 
@@ -427,7 +427,7 @@ n'a jamais été accordée. C'est voulu. L'autorisation obtenue au moment de la
 proposition ne vaut rien au moment d'écrire.
 
 Un spécialiste qui déclare `calendar.personal.write` dans `capabilities` doit
-aussi voir cette permission accordée au **rôle du principal**. Les deux sont
+aussi voir cette permission accordée au rôle du principal. Les deux sont
 nécessaires : les capacités de l'agent et les permissions de l'utilisateur se
 croisent.
 

@@ -1,33 +1,33 @@
 # Plugin Workspace
 
-Le plugin `workspace` donne à Automata un **atelier de fichiers** : un
-membre envoie une vidéo ou une image par sa messagerie, demande une
-opération dessus (« recadre cette vidéo », « retire le bas de l'image »),
-et reçoit le fichier transformé en pièce jointe de la réponse.
+Le plugin `workspace` est l'atelier de fichiers. Vous envoyez une vidéo
+ou une image par votre messagerie, vous demandez "recadre cette vidéo" ou
+"retire le bas de l'image", et le fichier transformé revient en pièce
+jointe. Même chose pour un `.docx` à corriger, un rapport à sortir en PDF,
+un `.odt` à convertir.
 
-Il en va de même des documents : envoyer un `.docx` et demander une
-correction, faire produire un rapport en PDF, convertir un `.odt`.
+Derrière, `ffmpeg` et `imagemagick` pour les médias, `pandoc` et
+LibreOffice pour les documents. Tout tourne dans
+[LeaSH](https://github.com/Bornholm/leash), un service à part qui exécute
+les commandes en bac à sable, sans réseau, chaque membre dans son propre
+répertoire.
 
-Le travail se fait avec `ffmpeg` et `imagemagick` pour les médias, `pandoc`
-et LibreOffice pour les documents, dans un bac à sable
-[LeaSH](https://github.com/Bornholm/leash) — un service séparé, sans accès
-réseau, où chaque membre a son propre répertoire.
-
-Aucune interface : tout passe par la conversation.
+Il n'y a pas d'interface. Tout passe par la conversation, et c'est ce qui
+rend l'atelier utilisable depuis un téléphone.
 
 ## Ce qui se passe pendant un tour
 
 1. La pièce jointe arrive. Son type figure dans `attachments.tool_types`
    (voir [configuration.md](configuration.md)) : elle est conservée mais
-   **jamais** transmise au modèle, qui n'en reçoit que le nom, le type et la
+   jamais transmise au modèle, qui n'en reçoit que le nom, le type et la
    taille. Une vidéo envoyée à un fournisseur texte-seul ferait échouer la
    requête entière.
 2. L'orchestrateur délègue à `delegate_to_workspace`.
 3. Le sous-agent appelle `import_attachment` : l'hôte pousse les octets au
    plugin, qui les dépose dans le workspace du membre côté LeaSH.
 4. Il inspecte (`ffprobe`, `identify`), puis transforme (`run_command`).
-5. Quand la demande dépend de ce à quoi ressemble le média — repérer un logo
-   à masquer, vérifier un rendu — il appelle `view_file` : l'hôte soumet
+5. Quand la demande dépend de ce à quoi ressemble le média (repérer un logo
+   à masquer, vérifier un rendu), il appelle `view_file`. L'hôte soumet
    l'image au modèle multimodal et lui rend la réponse en texte. Pour une
    vidéo, il extrait d'abord une trame avec `ffmpeg`.
 6. Il appelle `attach_file` : l'hôte récupère le résultat et le joint à la
@@ -48,17 +48,17 @@ Une fois importé, le fichier reste dans le workspace (`LEASH_TTL`, 24 h par
 défaut) : aux tours suivants, l'agent le retrouve avec `list_files` sans
 réimport.
 
-Cette transmission ne va qu'aux délégués qui **déclarent** savoir manipuler
+Cette transmission ne va qu'aux délégués qui déclarent savoir manipuler
 des fichiers (`delegation.FileCapable`) : le socle interroge une capacité,
 il ne connaît aucun plugin par son nom. Le spécialiste `vision`, par
-exemple, n'en reçoit rien. Et ces fichiers restent invisibles du modèle —
+exemple, n'en reçoit rien. Et ces fichiers restent invisibles du modèle.
 seuls les outils fichiers peuvent aller les chercher.
 
 ## Voir ce qu'il manipule
 
 Le modèle qui pilote le sous-agent est texte-seul : sans aide, il travaille
 en aveugle. Un agent aveugle à qui l'on demande de retirer un logo tente de
-« regarder » l'image en dumpant des histogrammes zone par zone — il épuise
+"regarder" l'image en dumpant des histogrammes zone par zone. Il épuise
 son budget d'appels d'outils avant d'avoir produit le moindre fichier.
 
 `view_file` lui donne des yeux : il désigne une image de son workspace et
@@ -70,34 +70,36 @@ gauche, avec les dimensions de référence) plutôt qu'en description d'image.
 L'outil refuse tout ce qui n'est pas une image, et le dit avec la commande
 à lancer : une vidéo entière coûterait cher et serait refusée par la
 plupart des fournisseurs. Sans `plugins.vision_client` configuré, l'outil
-n'est pas monté du tout — l'hôte ne propose que ce qu'il sait servir.
+n'est pas monté du tout. L'hôte ne propose que ce qu'il sait servir.
 
 ## Pourquoi les commandes ne demandent pas de confirmation
 
-Les outils d'exécution sont déclarés `read_only`, à dessein. Une commande
-lancée dans le bac à sable — réseau coupé, seul le workspace du membre
-monté en écriture — n'a d'effet que sur les fichiers de ce membre. La
-frontière de sécurité est le bac à sable, pas la confirmation ; exiger
-« confirmer » à chaque commande `ffmpeg` rendrait l'agent inutilisable.
+Les outils d'exécution sont déclarés `read_only`, et c'est voulu. Une
+commande lancée dans le bac à sable ne peut toucher que les fichiers de ce
+membre. Le réseau est coupé, seul son workspace est monté en écriture. La
+frontière de sécurité, c'est le bac à sable. Demander "confirmer" avant
+chaque `ffmpeg` rendrait l'agent inutilisable sans rien protéger de plus.
 
-L'invariant du dépôt reste entier : tout outil qui écrit **hors** du bac à
-sable passe par une action proposée. Rien ici n'écrit hors du bac à sable.
+L'invariant du dépôt tient toujours. Tout outil qui écrit hors du bac à
+sable passe par une action proposée, et rien ici n'écrit hors du bac à
+sable.
 
-**Corollaire** : le réseau ne doit jamais être ouvert dans la policy de ce
-bac à sable sans revenir sur cette décision. C'est aussi pourquoi la
-recherche d'information sur Internet n'a pas sa place ici : elle passe par
-le spécialiste `research` et son serveur MCP, et le résultat arrive au
-workspace sous forme de texte dans la délégation.
+D'où une règle que je tiens à écrire noir sur blanc. Le réseau ne doit
+jamais être ouvert dans la policy de ce bac à sable sans revenir sur toute
+la décision ci-dessus. C'est aussi pourquoi la recherche sur Internet n'a
+pas sa place ici. Elle passe par le spécialiste `research` et son serveur
+MCP, et le résultat arrive au workspace sous forme de texte dans la
+délégation.
 
-**Interpréteurs** : `python3` est présent dans l'image (`ocrmypdf` en
+Interpréteurs : `python3` est présent dans l'image (`ocrmypdf` en
 dépend et s'exécute par son shebang) mais n'est PAS dans la liste blanche.
-L'y ajouter changerait ce que cette liste signifie — elle ne dirait plus ce
+L'y ajouter changerait ce que cette liste signifie. Elle ne dirait plus ce
 que l'agent peut calculer, seulement ce qu'il peut atteindre. Décision
 d'exploitation, à ne pas prendre à la légère.
 
 ## Configuration
 
-Deux variables d'environnement, héritées de l'hôte — il n'y a rien à régler
+Deux variables d'environnement, héritées de l'hôte. Il n'y a rien à régler
 par membre :
 
 | Variable            | Description                                                    |
@@ -109,11 +111,11 @@ par membre :
 
 ### Télécharger une vidéo
 
-L'atelier n'a **pas** le réseau, et c'est ce qui rend `run_command`
+L'atelier n'a pas le réseau, et c'est ce qui rend `run_command`
 exécutable sans confirmation. Le téléchargement passe donc par une
-**seconde clé API** pointant sur `policies/fetch.yaml` côté LeaSH : une
+seconde clé API pointant sur `policies/fetch.yaml` côté LeaSH : une
 policy dont le seul binaire autorisé est `fetch-video` (un encadrement de
-`yt-dlp` — ni `--exec`, ni playlist, ni post-processeur, plafonds de taille
+`yt-dlp`. Ni `--exec`, ni playlist, ni post-processeur, plafonds de taille
 et de durée), sur le même workspace du membre. Deux clés, deux policies,
 un seul atelier :
 
@@ -123,9 +125,9 @@ LEASH_APIKEY_FETCH=…           LEASH_APIKEY_FETCH_POLICY=/app/policies/fetch.y
 ```
 
 L'outil `download_video` n'apparaît pour le modèle que si
-`LEASH_FETCH_API_KEY` est renseignée. L'URL est validée **deux fois** :
+`LEASH_FETCH_API_KEY` est renseignée. L'URL est validée deux fois :
 côté Automata contre `WORKSPACE_DOWNLOAD_DOMAINS` (schéma http(s),
-sous-domaines acceptés, adresses IP littérales refusées — la forme
+sous-domaines acceptés, adresses IP littérales refusées, la forme
 qu'aurait une tentative vers un service interne), puis par le script
 lui-même. Élargir la liste blanche est un geste d'exploitation ; élargir
 la policy LeaSH d'un binaire n'en est pas un.
@@ -146,7 +148,7 @@ attachments:
   max_tool_size: 16MiB
 ```
 
-`max_tool_size` borne les pièces entrantes **et** les fichiers renvoyés en
+`max_tool_size` borne les pièces entrantes et les fichiers renvoyés en
 pièce jointe. 16 Mio correspond à la limite d'une vidéo WhatsApp ; le
 prompt du sous-agent lui demande de viser ~15 Mio. Au-delà, le fichier
 repart par un lien (section suivante), et non plus par la messagerie.
@@ -157,24 +159,24 @@ fiche organisation.
 ## Récupérer un fichier trop lourd
 
 Une vidéo de trente minutes pèse plus de cent mégaoctets : aucune
-messagerie ne l'accepte. `share_file` est la seconde voie de sortie — un
-**lien de téléchargement temporaire** que l'assistant donne dans la
+messagerie ne l'accepte. `share_file` est la seconde voie de sortie, un
+lien de téléchargement temporaire que l'assistant donne dans la
 conversation.
 
-- **Valable 24 h**, comme l'espace de travail lui-même : un lien plus long
+- Valable 24 h, comme l'espace de travail lui-même : un lien plus long
   désignerait un fichier déjà effacé. Chaque accès au fichier rafraîchit ce
   délai côté LeaSH, si bien qu'un lien utilisé garde son contenu en vie.
-- **Sans compte ni authentification** : le lien porte un jeton signé, non
+- Sans compte ni authentification : le lien porte un jeton signé, non
   devinable, qui n'ouvre qu'UN chemin précis de l'espace de travail d'UN
-  membre. Quiconque l'obtient télécharge le fichier — c'est ce qui le rend
+  membre. Quiconque l'obtient télécharge le fichier. C'est ce qui le rend
   partageable, et ce qu'il faut savoir avant de le transmettre.
-- **Sans confirmation** : l'outil est en lecture seule, comme le reste de
+- Sans confirmation : l'outil est en lecture seule, comme le reste de
   l'atelier. Le membre récupère son propre fichier, là où il vient de le
   demander.
-- **Toujours en pièce jointe** côté navigateur (`Content-Disposition:
+- Toujours en pièce jointe côté navigateur (`Content-Disposition:
   attachment`) : rien n'est jamais interprété, même un HTML produit dans
   l'atelier.
-- **Coupé par la désactivation du plugin** : l'activation est relue à
+- Coupé par la désactivation du plugin : l'activation est relue à
   chaque accès, comme pour les pages publiques.
 
 Les octets ne sont ni copiés ni stockés : ils traversent depuis LeaSH
@@ -182,9 +184,9 @@ jusqu'au navigateur, par tranches d'un mégaoctet. Un fichier de 200 Mo ne
 coûte donc jamais sa taille en mémoire, quel que soit le nombre de
 téléchargements simultanés.
 
-**Limite connue** : les requêtes `Range` ne sont pas servies. Un
+Limite connue : les requêtes `Range` ne sont pas servies. Un
 téléchargement interrompu repart de zéro, et le lien ne permet pas de lire
-une vidéo en streaming dans le navigateur — seulement de la télécharger.
+une vidéo en streaming dans le navigateur, seulement de la télécharger.
 Le jeton voyage dans le chemin de l'URL, donc dans les journaux du reverse
 proxy : c'est la contrepartie assumée d'une durée de 24 h.
 
@@ -192,10 +194,10 @@ proxy : c'est la contrepartie assumée d'une durée de 24 h.
 
 Le workspace est un plan de travail : LeaSH le purge après son TTL, de
 l'ordre de la journée. Tout ce qui y traîne finit par disparaître, ce qui est
-exactement ce qu'on veut d'un bac à sable — et exactement ce qu'on ne veut
-pas quand quelqu'un demande « garde-moi ce document ».
+exactement ce qu'on veut d'un bac à sable, et exactement ce qu'on ne veut
+pas quand quelqu'un demande "garde-moi ce document".
 
-Le **casier** est ce rangement durable. Il s'adosse au magasin d'objets de
+Le casier est ce rangement durable. Il s'adosse au magasin d'objets de
 l'hôte, dans une collection `locker` propre à chaque membre, et rien n'y
 expire. Cinq outils l'exposent :
 
@@ -204,30 +206,30 @@ expire. Cinq outils l'exposent :
 | `locker_list` | lister ce qui est rangé | non |
 | `locker_save` | ranger un fichier du workspace | non |
 | `locker_get` | ressortir un fichier vers le workspace | non |
-| `locker_replace` | écraser un fichier déjà rangé | **oui** |
-| `locker_delete` | retirer un fichier | **oui** |
+| `locker_replace` | écraser un fichier déjà rangé | oui |
+| `locker_delete` | retirer un fichier | oui |
 
 Ranger un nouveau fichier ne détruit rien : l'outil est `read_only`, au même
-titre que les commandes du bac à sable. Ce qui détruit — écraser une version
-précédente, supprimer — passe par une confirmation littérale, comme tout
-outil d'écriture du projet. `locker_save` **refuse** d'écraser et renvoie
+titre que les commandes du bac à sable. Ce qui détruit, écraser une version
+précédente ou supprimer, passe par une confirmation littérale, comme tout
+outil d'écriture du projet. `locker_save` refuse d'écraser et renvoie
 vers `locker_replace` : le modèle ne peut pas perdre un document par
 inadvertance.
 
-**Les fichiers du casier sont scellés au repos** (AES-256-GCM, clé dérivée du
+Les fichiers du casier sont scellés au repos (AES-256-GCM, clé dérivée du
 secret de session par un contexte HKDF qui lui est propre). Ils ne se lisent
 pas dans une sauvegarde de la base. Deux conséquences :
 
-- une collection contenant un objet scellé **ne peut jamais être publiée** —
+- une collection contenant un objet scellé ne peut jamais être publiée.
   le site public sert les octets tels quels, les publier livrerait du
   chiffré, et les déchiffrer à la volée trahirait la promesse du scellement ;
-- sans clé exploitable, une écriture scellée est **refusée**, jamais dégradée
+- sans clé exploitable, une écriture scellée est refusée, jamais dégradée
   en écriture en clair. Perdre le casier vaut mieux que le croire protégé
   alors qu'il ne l'est pas.
 
 Un fichier rangé est plafonné à 15 Mo, sous la limite par objet du magasin ;
 le quota global d'un membre reste celui du magasin d'objets, et il se compte
-sur la taille **en clair** — le surcoût du chiffrement n'entame pas ce à quoi
+sur la taille en clair. Le surcoût du chiffrement n'entame pas ce à quoi
 la personne a droit.
 
 ## Documents
@@ -253,18 +255,18 @@ dans cet ordre :
 `soffice` n'est pas autorisé en direct, car invoqué sans garde-fous il écrit
 son profil utilisateur dans le workspace du membre.
 
-**La limite à connaître** : éditer un document reçu passe par une
+La limite à connaître : éditer un document reçu passe par une
 conversion en markdown, puis un retour au format d'origine. Le texte
 survit, la mise en page d'un document richement formaté non. La
 compétence demande à l'agent de le dire plutôt que de dégrader
-silencieusement le document — mais c'est une limite réelle, pas un défaut
+silencieusement le document. Mais c'est une limite réelle, pas un défaut
 à corriger par un réglage.
 
-## Le service LeaSH (« toolbox »)
+## Le service LeaSH ("toolbox")
 
 L'image est produite par `Dockerfile.toolbox` du dépôt LeaSH : le serveur
 MCP multi-tenant, `bubblewrap`, `ffmpeg` et `imagemagick`. Elle est déployée
-comme une application Dokku distincte, **sans aucune exposition publique**
+comme une application Dokku distincte, sans aucune exposition publique
 (`proxy:disable`, aucun domaine), jointe à Automata par un réseau Dokku
 interne.
 
@@ -277,11 +279,11 @@ namespaces :
 --security-opt systempaths=unconfined
 ```
 
-**Débit** : le limiteur de LeaSH compte par IP cliente (60 requêtes par
+Débit : le limiteur de LeaSH compte par IP cliente (60 requêtes par
 minute par défaut). Automata parle depuis une seule adresse pour tous ses
 membres, et chaque commande ouvre sa propre session MCP : le défaut se
 tarit au milieu d'une tâche un peu longue. L'application est configurée
-avec `LEASH_HTTP_RATE_LIMIT=600/minute` et `LEASH_HTTP_BURST=120` — le
+avec `LEASH_HTTP_RATE_LIMIT=600/minute` et `LEASH_HTTP_BURST=120`. Le
 service n'étant joignable que par Automata sur le réseau interne, ce qui
 borne réellement le travail est ailleurs : sérialisation par workspace,
 `max_duration` de 300 s et quota de 256 Mio.
@@ -289,7 +291,7 @@ borne réellement le travail est ailleurs : sérialisation par workspace,
 Sans eux, `bwrap` échoue successivement sur la création du user namespace,
 sur `mount --make-rslave /`, puis sur le montage de `/proc`. Si un
 exploitant ne peut pas les accorder, LeaSH accepte
-`LEASH_SANDBOX_BACKEND=chroot` — mais ce repli ne coupe pas le réseau et ne
+`LEASH_SANDBOX_BACKEND=chroot`. Mais ce repli ne coupe pas le réseau et ne
 monte rien : le conteneur redevient alors la seule frontière, ce qui
 invalide la décision de sécurité ci-dessus.
 
@@ -299,8 +301,8 @@ quota disque par workspace. Les fichiers d'un membre ne survivent donc pas
 
 ## Essai de bout en bout
 
-Le banc `internal/e2e` éprouve la chaîne complète — vrai sous-processus de
-plugin, vrai serveur LeaSH, vrai `ffmpeg` — contre un conteneur toolbox
+Le banc `internal/e2e` éprouve la chaîne complète, vrai sous-processus de
+plugin, vrai serveur LeaSH, vrai `ffmpeg`, contre un conteneur toolbox
 local :
 
 ```bash

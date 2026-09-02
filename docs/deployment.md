@@ -1,9 +1,9 @@
-# Déploiement — Automata
+# Déploiement
 
 Comment construire l'image Docker d'Automata et la déployer sur une machine
 locale unique avec `docker compose`. Pour la sauvegarde, la
 restauration et les procédures d'exploitation courantes (mise à jour,
-diagnostic de panne, endpoints de santé), voir `docs/operations.md` — ce
+diagnostic de panne, endpoints de santé), voir `docs/operations.md`. Ce
 document ne les duplique pas.
 
 Pour un déploiement sur une instance Dokku, voir
@@ -22,11 +22,11 @@ docker build .
 ```
 
 Chaque version taguée publie sur GitHub un binaire linux/amd64 prêt à
-l'emploi — la seule cible visée —, des paquets `.deb` et Arch, et une image
+l'emploi (la seule cible visée), des paquets `.deb` et Arch, et une image
 de conteneur minimale `ghcr.io/bornholm/automata`
 construite avec ko sur une base distroless. Les plugins de référence sont
-publiés séparément — archives `automata-plugin-<nom>_…` et paquets
-`automata-plugin-<nom>`, installés dans `/usr/lib/automata/plugins` — parce
+publiés séparément, en archives `automata-plugin-<nom>_…` et paquets
+`automata-plugin-<nom>` installés dans `/usr/lib/automata/plugins`, parce
 qu'ils n'ont pas la même licence (Apache 2.0) et qu'on n'en veut pas
 toujours tous. `automata version` affiche la version du binaire installé.
 
@@ -115,7 +115,7 @@ cp config/config.example.yaml config/config.yaml
 
 `config/config.yaml` est ignoré par git (voir `.gitignore`) : il porte les
 choix d'un déploiement donné. Les secrets ne figurent dans aucun des deux
-fichiers — ils sont référencés par variables d'environnement et lus au
+fichiers. Ils sont référencés par variables d'environnement et lus au
 chargement.
 
 Cet exemple référence les prompts par `../prompts/...` plutôt que par
@@ -125,7 +125,7 @@ directement depuis le dépôt, où `config/` et `prompts/` sont côte à côte.
 Un chemin absolu `/prompts/...` reste évidemment valable si la
 configuration n'est destinée qu'au conteneur.
 
-Valider avant tout démarrage — la commande échoue sur la moindre variable
+Validez avant tout démarrage. La commande échoue sur la moindre variable
 absente, référence inconnue ou expression cron invalide, avant toute
 connexion externe :
 
@@ -133,8 +133,8 @@ connexion externe :
 automata config validate -config config/config.yaml
 ```
 
-**Piège à connaître** : l'expansion des variables d'environnement s'applique
-au fichier entier, **y compris aux commentaires**. Une référence
+Piège à connaître : l'expansion des variables d'environnement s'applique
+au fichier entier, y compris aux commentaires. Une référence
 d'environnement écrite dans un commentaire, même à titre d'illustration,
 fait échouer le chargement si la variable n'existe pas.
 
@@ -145,7 +145,7 @@ docker build -t automata:local .
 ```
 
 Rien d'autre : ni Buildx, ni `--build-context`, ni dépôt frère. Le build a
-été réexécuté après la suppression des `replace` — succès, image finale
+été réexécuté après la suppression des `replace`. Succès, image finale
 d'environ 125 Mo.
 
 ## 4. Propriétaire du volume `/data`
@@ -178,7 +178,7 @@ docker compose logs -f automata
 `compose.yaml` monte `/data` (volume nommé Docker, persistant),
 `./config:/config:ro` et `./prompts:/prompts:ro` (montages bind en lecture
 seule). Les secrets référencés par `${...}` dans la configuration YAML
-(clés API, jetons, identifiants de canaux/ressources — voir l'exemple §2 et
+(clés API, jetons, identifiants de canaux et de ressources, voir l'exemple §2 et
 `internal/config` pour le mécanisme d'expansion) sont fournis via la
 section `environment:` de `compose.yaml`, à alimenter par un fichier `.env`
 non versionné ou par l'environnement de l'hôte.
@@ -205,10 +205,10 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD ["/usr/local/bin/automata", "healthcheck"]
 ```
 
-**Prérequis** : `observability.enabled` doit valoir `true` dans la
+Prérequis : `observability.enabled` doit valoir `true` dans la
 configuration montée, et `observability.addr` correspondre à l'adresse sondée
 (`127.0.0.1:9090` par défaut). Sans cela aucun serveur HTTP n'écoute, la
-sonde échoue, et le conteneur est signalé `unhealthy` — si l'observabilité
+sonde échoue, et le conteneur est signalé `unhealthy`. Si l'observabilité
 est délibérément désactivée, neutraliser la sonde côté `compose.yaml` :
 
 ```yaml
@@ -233,13 +233,13 @@ d'observabilité). `docker stop` envoie `SIGTERM` puis, après le délai de
 grâce (`--time`, 10s par défaut), `SIGKILL` si le processus n'a pas
 terminé : ce comportement est donc directement compatible.
 
-**Test réellement exécuté lors de cette phase** (conteneur démarré via
+Test réellement exécuté lors de cette phase (conteneur démarré via
 `docker run` avec une configuration de test minimale valide et le volume
 `/data` correctement `chown`-é, §5) : `docker stop -t 10` a bien produit,
 dans l'ordre, dans les logs JSON du conteneur, `"automata stopping"` puis
 `"mcp: gestionnaire fermé"` (fermeture du gestionnaire MCP,
 `internal/mcp.Manager.Close`, l'un des `defer` de `internal/registry.Run`),
-et le conteneur est passé à l'état `exited` avec le code de sortie `0` —
+et le conteneur est passé à l'état `exited` avec le code de sortie `0`.
 bien avant le délai de grâce de 10 s, donc sans `SIGKILL`. L'arrêt propre
 déjà en place fonctionne donc identiquement à travers
 Docker.
@@ -249,7 +249,7 @@ Docker.
 **Ne jamais faire tourner plusieurs instances (`replicas`/scale > 1) de ce
 service sur le même volume `/data`.** La base applicative SQLite est
 mono-écrivain, et le scheduler repose sur des verrous de
-concurrence en mémoire, par processus — aucun verrouillage distribué n'est
+concurrence en mémoire, par processus. Aucun verrouillage distribué n'est
 implémenté (voir le commentaire dédié dans `compose.yaml`). Plusieurs
 instances concurrentes corromperaient la base ou dupliqueraient les
 exécutions planifiées (rappels, livraisons). Tant qu'un mécanisme de

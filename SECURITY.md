@@ -1,7 +1,7 @@
 # Signaler une faille
 
 Automata détient les conversations, les souvenirs et parfois les courriels de
-ses utilisateurs : une faille y est grave. Merci de la signaler **en privé**
+ses utilisateurs : une faille y est grave. Merci de la signaler en privé
 plutôt que par une issue publique.
 
 ## Comment
@@ -21,14 +21,15 @@ d'autant plus rapide que la reproduction est nette.
 - Une évaluation, puis un correctif si la faille est confirmée, publié avec
   une note dans l'historique des versions. Vous serez crédité si vous le
   souhaitez.
-- Pas de programme de récompense : c'est un projet personnel.
+- Pas de programme de récompense. C'est un projet personnel, et je le dis
+pour que personne ne perde de temps à espérer une prime.
 
 ## Périmètre
 
-Le modèle de menace, les frontières de confiance et les **limitations
-assumées** sont écrits dans [docs/security-model.md](docs/security-model.md).
+Le modèle de menace, les frontières de confiance et les limitations
+assumées sont écrits dans [docs/security-model.md](docs/security-model.md).
 Lisez-le avant de signaler : ce qui y figure comme limitation connue n'est
-pas une faille — un rapport qui la conteste avec un scénario nouveau, en
+pas une faille. Un rapport qui la conteste avec un scénario nouveau, en
 revanche, est bienvenu.
 
 Points d'attention particuliers, où un rapport a le plus de valeur :
