@@ -161,6 +161,16 @@ agents:
       search: true
       remember: true
       forget: true
+      # Retrouver ce qui a été dit plus tôt dans la même conversation,
+      # verbatim et daté, au-delà de l'historique récent.
+      history: true
+      # Rappel automatique : à chaque tour, les souvenirs pertinents sont
+      # cherchés sur le message entrant et injectés dans le contexte. Sans
+      # lui, la mémoire n'est lue que si le modèle pense à appeler
+      # search_memory — ce qu'il ne fait pas pour une préférence qu'il ne
+      # sait pas qu'il ignore. C'est ce drapeau qui fait la différence
+      # entre un assistant qui se souvient et un qui stocke.
+      recall: true
     limits:
       max_sequential_tool_calls: 8
       max_actions_per_turn: 10
