@@ -1,12 +1,15 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -583,4 +586,65 @@ func TestActionExecutor_ExecutesConfirmedWrite(t *testing.T) {
 	if _, err := executor.Execute(context.Background(), identity, plan, act, nil); err == nil {
 		t.Fatal("l'action d'un plugin désactivé a été exécutée")
 	}
+}
+
+// Ce qu'un plugin écrit doit rejoindre le flux de l'hôte : la ligne
+// structurée avec son niveau, ET la ligne brute qu'écrit une bibliothèque
+// tierce en panne. C'est cette seconde que go-plugin classait en Debug, et
+// que l'hôte jetait ensuite (ClientConfig.Stderr valait io.Discard) — d'où
+// des plugins parfaitement muets quand une connexion échouait.
+func TestManager_PluginLogsReachTheHostStream(t *testing.T) {
+	var mu sync.Mutex
+	var captured bytes.Buffer
+
+	previous := slog.Default()
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	slog.SetDefault(slog.New(slog.NewJSONHandler(
+		&lockedWriter{mu: &mu, w: &captured},
+		&slog.HandlerOptions{Level: slog.LevelDebug},
+	)))
+
+	newTestManager(t, config.Plugins{})
+
+	read := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return captured.String()
+	}
+
+	// La sortie d'erreur d'un sous-processus arrive de façon asynchrone :
+	// on laisse aux lignes le temps de traverser le tube.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		out := read()
+		if strings.Contains(out, "echo-plugin-raw-stderr-marker") && strings.Contains(out, "echo-plugin-structured-marker") {
+			// Le nom du plugin accompagne la ligne : sans lui, impossible
+			// de savoir lequel des cinq parle.
+			if !strings.Contains(out, `"plugin":"echo"`) {
+				t.Errorf("ligne sans le nom du plugin: %s", out)
+			}
+			// Le niveau déclaré par le plugin est conservé.
+			if !strings.Contains(out, `"level":"WARN","msg":"echo-plugin-structured-marker"`) {
+				t.Errorf("niveau de la ligne structurée perdu: %s", out)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("les journaux du plugin ne sont pas remontés: %s", out)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// lockedWriter sérialise les écritures : go-plugin journalise depuis ses
+// propres goroutines.
+type lockedWriter struct {
+	mu *sync.Mutex
+	w  *bytes.Buffer
+}
+
+func (w *lockedWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.w.Write(p)
 }

@@ -50,9 +50,14 @@ func WrapWithNoopInit(impl proto.AutomataPluginServer) proto.AutomataPluginServe
 }
 
 // configureSlogFromEnv installs a JSON handler at the level the host
-// injected through AUTOMATA_LOGGER_LEVEL. JSON matters: go-plugin parses
-// the level field of each stderr line and forwards it at the right hclog
-// level instead of flattening everything to Debug.
+// injected through AUTOMATA_LOGGER_LEVEL.
+//
+// The key names are NOT slog's own. The host reads a plugin's stderr
+// through go-plugin, which recognises one shape and one only: hclog's
+// `@level`, `@message` and `@timestamp`. A line it cannot parse — slog's
+// default `level`/`msg`/`time` included — is forwarded whole, as a Debug
+// message, and a host running at INFO drops it. That is how a plugin that
+// logged an error every single time ended up looking completely silent.
 func configureSlogFromEnv() {
 	raw := os.Getenv("AUTOMATA_LOGGER_LEVEL")
 	if raw == "" {
@@ -63,8 +68,54 @@ func configureSlogFromEnv() {
 		return
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.Level(level),
+		Level:       slog.Level(level),
+		ReplaceAttr: hclogKeys,
 	})))
+}
+
+// hclogTimeFormat is the only timestamp layout go-plugin accepts; anything
+// else makes the whole line unparseable.
+const hclogTimeFormat = "2006-01-02T15:04:05.000000Z07:00"
+
+// hclogKeys renames the three attributes go-plugin looks for. Everything
+// else travels untouched, as key/value pairs the host logs alongside the
+// message.
+func hclogKeys(groups []string, attr slog.Attr) slog.Attr {
+	if len(groups) > 0 {
+		return attr
+	}
+
+	switch attr.Key {
+	case slog.TimeKey:
+		return slog.String("@timestamp", attr.Value.Time().Format(hclogTimeFormat))
+	case slog.LevelKey:
+		return slog.String("@level", hclogLevelName(attr.Value.Any()))
+	case slog.MessageKey:
+		return slog.String("@message", attr.Value.String())
+	default:
+		return attr
+	}
+}
+
+// hclogLevelName maps a slog level onto the name hclog understands.
+func hclogLevelName(value any) string {
+	level, ok := value.(slog.Level)
+	if !ok {
+		return "info"
+	}
+
+	switch {
+	case level < slog.LevelDebug:
+		return "trace"
+	case level < slog.LevelInfo:
+		return "debug"
+	case level < slog.LevelWarn:
+		return "info"
+	case level < slog.LevelError:
+		return "warn"
+	default:
+		return "error"
+	}
 }
 
 // Serve starts the plugin gRPC server. Call it from the plugin's main().

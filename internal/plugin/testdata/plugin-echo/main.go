@@ -7,7 +7,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/bornholm/automata/pkg/pluginsdk"
 	proto "github.com/bornholm/automata/pkg/pluginsdk/proto"
@@ -23,6 +25,10 @@ func (p *echoPlugin) SetHostClient(client pluginsdk.HostClient) {
 }
 
 func (p *echoPlugin) Describe(context.Context, *proto.DescribeRequest) (*proto.PluginDescriptor, error) {
+	// A structured line, emitted while the host is looking: it must reach
+	// the host's own log stream at the level declared here.
+	slog.Warn("echo-plugin-structured-marker", "detail", "quelque chose ne va pas")
+
 	return &proto.PluginDescriptor{
 		Name:             "echo",
 		Version:          "0.0.1",
@@ -124,4 +130,13 @@ func uiHandler() http.Handler {
 
 func main() {
 	pluginsdk.ServeWithUI(&echoPlugin{}, "echo", uiHandler())
+}
+
+func init() {
+	// Two lines the host must surface, and which used to vanish: a
+	// structured one, and a bare line on stderr — what a third-party
+	// library writes when it fails. Serve installs the JSON logger, so
+	// the structured line is emitted from the plugin's own handler after
+	// that; here we only need the raw one plus a marker the test can find.
+	fmt.Fprintln(os.Stderr, "echo-plugin-raw-stderr-marker")
 }

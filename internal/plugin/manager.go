@@ -18,7 +18,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hashicorp/go-hclog"
 	goplugin "github.com/hashicorp/go-plugin"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -347,11 +346,12 @@ func (m *Manager) loadPlugin(binaryPath string) (*Entry, error) {
 		Plugins:          pluginsdk.PluginMap,
 		Cmd:              cmd,
 		AllowedProtocols: []goplugin.Protocol{goplugin.ProtocolGRPC},
-		Logger: hclog.New(&hclog.LoggerOptions{
-			Name:   filepath.Base(binaryPath),
-			Level:  slogLevelToHCLog(ctx),
-			Output: os.Stderr,
-		}),
+		// Tout ce que dit le plugin rejoint le flux de l'hôte, au niveau
+		// qu'il a lui-même déclaré (voir logbridge.go). Auparavant ce
+		// logger écrivait sur os.Stderr dans son propre format, et une
+		// ligne non structurée — la seule que produise une bibliothèque
+		// tierce en panne — était classée Debug puis écartée.
+		Logger: newLogBridge(slog.Default(), filepath.Base(binaryPath)),
 	})
 
 	rpcClient, err := client.Client()
@@ -443,19 +443,5 @@ func currentSlogLevelInt(ctx context.Context) int {
 		return int(slog.LevelWarn)
 	default:
 		return int(slog.LevelError)
-	}
-}
-
-func slogLevelToHCLog(ctx context.Context) hclog.Level {
-	l := slog.Default()
-	switch {
-	case l.Enabled(ctx, slog.LevelDebug):
-		return hclog.Debug
-	case l.Enabled(ctx, slog.LevelInfo):
-		return hclog.Info
-	case l.Enabled(ctx, slog.LevelWarn):
-		return hclog.Warn
-	default:
-		return hclog.Error
 	}
 }
