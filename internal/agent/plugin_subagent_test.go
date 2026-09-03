@@ -1325,3 +1325,43 @@ func TestPluginSubAgent_CatalogWriteCarriesItsEntry(t *testing.T) {
 		t.Errorf("permission requise = %q", action.RequiredPermission)
 	}
 }
+
+// Chez un plugin à catalogue, chaque appel doit NOMMER l'entrée à laquelle
+// l'outil appartient : deux entrées peuvent exposer le même nom d'outil, et
+// le plugin refuse ce qu'il ne rattache à personne. Un nom perdu en route
+// rend le sous-agent entier inutilisable — « unknown sub-agent » à chaque
+// appel, connexion établie et outils annoncés (production, 2026-09-03).
+func TestPluginSubAgent_NamesItsCatalogEntryOnEveryCall(t *testing.T) {
+	caller := &fakePluginCaller{result: "policy: allow"}
+
+	spec := testPluginSpec()
+	spec.PluginName = "subagents"
+	spec.AgentName = "netprobe"
+	spec.SubAgentName = "netprobe"
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "email_read", `{"id":"x"}`)), nil
+			}
+			return scriptedFinalResponse("Fait."), nil
+		},
+	}
+
+	subAgent := agent.NewPluginSubAgent(spec, client, caller, 0, nil)
+
+	if _, err := subAgent.Execute(context.Background(), delegation.Request{
+		AgentID:  "netprobe",
+		Goal:     "Check the TLS certificate",
+		Identity: pluginTestIdentity(),
+	}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if len(caller.calls) != 1 {
+		t.Fatalf("%d appel(s) d'outil, attendu 1", len(caller.calls))
+	}
+	if got := caller.calls[0].Ctx.SubAgent; got != "netprobe" {
+		t.Fatalf("l'entrée de catalogue n'a pas été nommée: %q", got)
+	}
+}

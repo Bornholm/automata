@@ -121,14 +121,15 @@ type pluginToolCaller struct {
 }
 
 // CallPluginTool implémente agent.PluginToolCaller.
+//
+// La conversion passe par toPluginCallContext, comme les transferts de
+// fichiers : elle existait ici en double, recopiée champ par champ, et
+// cette copie-là ignorait SubAgent. Le sous-agent netprobe en est resté
+// inutilisable même après la correction de l'autre exemplaire — deux
+// conversions du même objet, c'est une de trop, et c'est celle qu'on oublie
+// qui casse (production, 2026-09-03).
 func (c pluginToolCaller) CallPluginTool(ctx context.Context, pluginName, toolName string, callCtx agent.PluginCallContext, argsJSON string, timeoutSeconds int) (string, bool, error) {
-	return c.manager.CallTool(ctx, pluginName, toolName, plugin.CallContext{
-		OrgID:          callCtx.OrgID,
-		MemberID:       callCtx.MemberID,
-		Scope:          callCtx.Scope,
-		ScopeID:        callCtx.ScopeID,
-		IdempotencyKey: callCtx.IdempotencyKey,
-	}, argsJSON, timeoutSeconds)
+	return c.manager.CallTool(ctx, pluginName, toolName, toPluginCallContext(callCtx), argsJSON, timeoutSeconds)
 }
 
 // pluginFileTransfer adapte les transferts de fichiers du gestionnaire au
