@@ -217,6 +217,21 @@ nfpms:
     dependencies: [automata]
     bindir: /usr/lib/automata/plugins
 
+  - id: automata-plugin-subagents
+    package_name: automata-plugin-subagents
+    ids: [plugin-subagents]
+    formats: [deb, archlinux]
+    vendor: bornholm
+    homepage: https://github.com/Bornholm/automata
+    maintainer: William Petit <1067759+Bornholm@users.noreply.github.com>
+    license: Apache-2.0
+    description: |-
+      Automata - plugin subagents.
+      Catalogue de sous-agents spécialisés adossés à des serveurs MCP,
+      activés par chaque membre depuis son profil.
+    dependencies: [automata]
+    bindir: /usr/lib/automata/plugins
+
   - id: automata-plugin-workspace
     package_name: automata-plugin-workspace
     ids: [plugin-workspace]
