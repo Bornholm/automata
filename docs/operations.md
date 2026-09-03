@@ -270,12 +270,31 @@ dokku logs automata --num 20000 | grep -a '"msg":"agent: tour terminé"' \
   | grep -a '"tool_calls":0'
 ```
 
+Pour trancher, la sonde reproduit le tour le plus petit possible :
+
+```sh
+automata admin probe-tools -config /config/config.yaml
+automata admin probe-tools -config /config/config.yaml -role research -org atelier
+```
+
+Elle envoie au modèle du rôle une question qu'il ne peut pas deviner, avec
+un outil qui y répond, puis recommence avec dix puis vingt-cinq outils. Le
+rapport sépare trois causes que les journaux confondent : un modèle qui
+n'appelle jamais rien est inapte au rôle, un modèle qui appelle avec un
+outil et renonce avec vingt est noyé par leur nombre, et un modèle qui
+appelle à chaque fois innocente le modèle.
+
 La cause est presque toujours le modèle affecté au rôle `main` : tous n'ont
 pas la même aptitude à l'appel d'outils, et celle-ci se dégrade quand le
 nombre d'outils monte. Le champ `model` de la ligne dit lequel accuser —
 le catalogue peut en servir un autre par organisation, la configuration ne
-suffit donc pas à le déduire. La leçon de 2026-08-18 reste valable :
-vérifier ce qui part et revient sur le fil avant de retoucher les prompts.
+suffit donc pas à le déduire. Réduire le nombre d'outils se fait dans la
+configuration de l'agent : moins de `delegates`, `reminders: false`,
+`scheduled_tasks: false`, ou moins d'outils mémoire.
+
+La leçon de 2026-08-18 reste valable : vérifier ce qui part et revient sur
+le fil avant de retoucher les prompts. C'est exactement ce que fait la
+sonde.
 
 Pour isoler ce qui vient d'Automata dans une sortie mêlée :
 
@@ -341,6 +360,11 @@ qu'un récapitulatif opérationnel, pas une redocumentation complète (voir
   d'actions (`plans`) ou des exécutions planifiées (`runs`). Première
   commande à exécuter pour diagnostiquer un plan bloqué, une confirmation
   qui semble ne jamais aboutir, ou un schedule qui ne se déclenche pas.
+- `automata admin probe-tools -config <chemin> [-role main] [-org <id>]` :
+  vérifie que le modèle d'un rôle appelle bien ses outils, avec un jeu
+  d'outils croissant. Aucune écriture, aucun contenu de conversation : la
+  sonde pose sa propre question. À exécuter quand l'assistant répond sans
+  jamais rien faire (voir §4.2).
 
 ## 6.2 Liens de profil et aperçus de messagerie
 

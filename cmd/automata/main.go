@@ -671,6 +671,59 @@ func newAdminCommand() *cobra.Command {
 	}
 
 	cmd.AddCommand(newAdminInspectCommand())
+	cmd.AddCommand(newAdminProbeToolsCommand())
+
+	return cmd
+}
+
+// newAdminProbeToolsCommand construit "admin probe-tools" : elle envoie au
+// modèle d'un rôle le plus petit tour possible qui exige un appel d'outil,
+// puis recommence avec un jeu d'outils croissant.
+//
+// Elle existe parce qu'un assistant qui n'appelle jamais ses outils ne
+// produit AUCUNE erreur : il répond de mémoire et invente des excuses. Les
+// journaux d'une instance en marche ne distinguent pas un modèle inapte
+// d'un modèle noyé sous vingt outils ; cette commande, si.
+func newAdminProbeToolsCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:                "probe-tools",
+		Short:              "Vérifie que le modèle d'un rôle appelle bien ses outils",
+		DisableFlagParsing: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fs := flag.NewFlagSet("probe-tools", flag.ContinueOnError)
+			fs.SetOutput(cmd.ErrOrStderr())
+
+			configPath := fs.String("config", "", "chemin du fichier de configuration YAML (requis)")
+			role := fs.String("role", "main", "rôle à sonder (main, research, plugins, compaction...)")
+			orgID := fs.String("org", "", "organisation dont la surcharge de modèle s'applique; vide: défaut de l'instance")
+
+			if err := fs.Parse(args); err != nil {
+				return errSilent
+			}
+
+			if *configPath == "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), "le drapeau -config est requis")
+				return errSilent
+			}
+
+			cfg, err := config.Load(*configPath)
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "configuration invalide:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
+
+			if err := registry.ProbeTools(cmd.Context(), cfg, *role, *orgID, cmd.OutOrStdout()); err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), "sonde échouée:")
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+
+				return errSilent
+			}
+
+			return nil
+		},
+	}
 
 	return cmd
 }
