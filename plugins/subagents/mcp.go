@@ -34,6 +34,9 @@ const (
 	idleTimeout = 10 * time.Minute
 	// reapInterval est la période de passage de la faucheuse.
 	reapInterval = time.Minute
+	// retireGrace laisse un appel en vol se terminer sur une connexion
+	// devenue obsolète après une montée de version.
+	retireGrace = 2 * time.Minute
 	// maxClients plafonne les connexions simultanées, toutes entrées
 	// confondues. Atteint, le pool refuse d'en ouvrir une de plus plutôt
 	// que de laisser un plugin épuiser la machine.
@@ -62,10 +65,16 @@ type pooledClient struct {
 	tools  map[string]llm.Tool
 	// agentName, orgID et memberID servent à oublier les connexions d'une
 	// entrée quand le membre la désactive ou change ses identifiants.
-	agentName string
-	orgID     string
-	memberID  string
-	lastUsed  time.Time
+	agentName  string
+	serverName string
+	orgID      string
+	memberID   string
+	version    string
+	lastUsed   time.Time
+	// retiredAt marque une connexion devenue obsolète (montée de version).
+	// Elle n'est plus servie, et la faucheuse la ferme après un délai de
+	// grâce : un appel encore en vol doit pouvoir se terminer.
+	retiredAt time.Time
 }
 
 // toolDescriptor est un outil tel qu'annoncé à l'hôte.
@@ -103,6 +112,10 @@ type connection struct {
 	// values porte les identifiants du membre, résolus dans les patrons au
 	// moment de la connexion. Jamais journalisées.
 	values map[string]string
+	// version est celle réellement installée. Elle entre dans la clé : une
+	// montée de version ne réutilise pas une connexion qui parle encore à
+	// l'ancien binaire.
+	version string
 }
 
 func (c connection) key() string {
@@ -110,7 +123,7 @@ func (c connection) key() string {
 	if member := c.scopedMemberID(); member != "" {
 		scope = c.orgID + "|" + member
 	}
-	return c.agent.Name + "|" + c.server.Name + "|" + scope
+	return c.agent.Name + "|" + c.server.Name + "|" + c.version + "|" + scope
 }
 
 // scopedMemberID est le membre qui borne la connexion, ou la chaîne vide
@@ -204,13 +217,15 @@ func (p *pool) connect(conn connection) (*pooledClient, error) {
 	}
 
 	entry := &pooledClient{
-		client:    client,
-		tools:     map[string]llm.Tool{},
-		agentName: conn.agent.Name,
-		orgID:     conn.orgID,
+		client:     client,
+		tools:      map[string]llm.Tool{},
+		agentName:  conn.agent.Name,
+		serverName: conn.server.Name,
+		orgID:      conn.orgID,
 		// Vide pour une connexion partagée par l'organisation : elle
 		// n'appartient à aucun membre en particulier.
 		memberID: conn.scopedMemberID(),
+		version:  conn.version,
 		lastUsed: time.Now(),
 	}
 	descriptors := make([]toolDescriptor, 0, len(tools))
@@ -388,7 +403,33 @@ func (p *pool) forget(agentName, orgID, memberID string) {
 	}
 }
 
-// reap ferme les connexions inutilisées depuis idleTimeout.
+// retire met de côté les connexions d'un serveur qui parlent à une autre
+// version que celle installée. Elles ne sont PAS fermées ici : un appel
+// peut être en vol, et le coupé au milieu se verrait par un échec sans
+// cause visible. La faucheuse s'en charge après le délai de grâce.
+func (p *pool) retire(agentName, serverName, version string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	now := time.Now()
+	for key, entry := range p.clients {
+		if entry.agentName != agentName || entry.serverName != serverName || entry.version == version {
+			continue
+		}
+		if entry.retiredAt.IsZero() {
+			entry.retiredAt = now
+			slog.Info("subagents: connexion retirée après une montée de version",
+				"agent", agentName, "server", serverName, "from", entry.version, "to", version)
+		}
+		// Le descripteur, lui, part tout de suite : une version peut avoir
+		// ajouté ou retiré un outil, et c'est la nouvelle liste qui doit
+		// être annoncée au tour suivant.
+		delete(p.descriptors, key)
+	}
+}
+
+// reap ferme les connexions inutilisées depuis idleTimeout, et les
+// connexions retirées passé leur délai de grâce.
 func (p *pool) reap() {
 	ticker := time.NewTicker(reapInterval)
 	defer ticker.Stop()
@@ -398,12 +439,15 @@ func (p *pool) reap() {
 		case <-p.baseCtx.Done():
 			return
 		case <-ticker.C:
-			deadline := time.Now().Add(-idleTimeout)
+			now := time.Now()
+			idleDeadline := now.Add(-idleTimeout)
+			retireDeadline := now.Add(-retireGrace)
 
 			p.mu.Lock()
 			var closing []genaimcp.Client
 			for key, entry := range p.clients {
-				if entry.lastUsed.Before(deadline) {
+				retired := !entry.retiredAt.IsZero() && entry.retiredAt.Before(retireDeadline)
+				if entry.lastUsed.Before(idleDeadline) || retired {
 					closing = append(closing, entry.client)
 					delete(p.clients, key)
 				}

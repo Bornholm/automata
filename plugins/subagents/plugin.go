@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"maps"
 	"strings"
 	"sync"
 
@@ -17,15 +19,43 @@ import (
 type Plugin struct {
 	proto.UnimplementedAutomataPluginServer
 
-	catalog catalog
-	pool    *pool
+	catalog   catalog
+	pool      *pool
+	installer *installer
 
 	mu   sync.Mutex
 	host pluginsdk.HostClient
 }
 
 func newPlugin(cat catalog) *Plugin {
-	return &Plugin{catalog: cat, pool: newPool()}
+	return &Plugin{catalog: cat, pool: newPool(), installer: newInstaller()}
+}
+
+// connectionFor prépare la connexion à un serveur : installation à jour si
+// le catalogue en déclare une, puis patrons résolus avec les identifiants
+// du membre ET les valeurs posées par l'installation.
+func (p *Plugin) connectionFor(ctx context.Context, agent catalogAgent, server serverSpec, orgID, memberID string, credentials map[string]string) (connection, error) {
+	installed, err := p.installer.ensure(ctx, agent, server)
+	if err != nil {
+		return connection{}, err
+	}
+
+	// Une montée de version laisse des connexions parlant à l'ancien
+	// binaire : elles sont retirées, et fermées à leur retour au repos —
+	// jamais tuées en plein appel.
+	if installed["version"] != "" {
+		p.pool.retire(agent.Name, server.Name, installed["version"])
+	}
+
+	values := make(map[string]string, len(credentials)+len(installed))
+	maps.Copy(values, credentials)
+	maps.Copy(values, installed)
+
+	return connection{
+		agent: agent, server: server,
+		orgID: orgID, memberID: memberID,
+		values: values, version: installed["version"],
+	}, nil
 }
 
 // SetHostClient implémente pluginsdk.HostClientSetter.
@@ -122,9 +152,14 @@ func (p *Plugin) toolsFor(ctx context.Context, agent catalogAgent, orgID, member
 	var tools []*proto.ToolDescriptor
 
 	for _, server := range agent.Servers {
-		descriptors, err := p.pool.tools(ctx, connection{
-			agent: agent, server: server, orgID: orgID, memberID: memberID, values: values,
-		})
+		conn, err := p.connectionFor(ctx, agent, server, orgID, memberID, values)
+		if err != nil {
+			slog.Warn("subagents: serveur indisponible, outils ignorés ce tour",
+				"agent", agent.Name, "server", server.Name, "error", err)
+			continue
+		}
+
+		descriptors, err := p.pool.tools(ctx, conn)
 		if err != nil {
 			continue
 		}
@@ -172,14 +207,12 @@ func (p *Plugin) CallTool(ctx context.Context, in *proto.CallToolInput) (*proto.
 		}
 	}
 
-	server, ok := p.serverOf(ctx, agent, orgID, memberID, values, in.Name)
+	conn, ok := p.connectionOf(ctx, agent, orgID, memberID, values, in.Name)
 	if !ok {
 		return toolError(fmt.Sprintf("unknown tool %q for this sub-agent", in.Name)), nil
 	}
 
-	result, err := p.pool.call(ctx, connection{
-		agent: agent, server: server, orgID: orgID, memberID: memberID, values: values,
-	}, in.Name, args)
+	result, err := p.pool.call(ctx, conn, in.Name, args)
 	if err != nil {
 		// Le message d'erreur part au modèle : il ne nomme que le serveur,
 		// jamais la configuration résolue, qui porte des identifiants.
@@ -189,22 +222,25 @@ func (p *Plugin) CallTool(ctx context.Context, in *proto.CallToolInput) (*proto.
 	return &proto.CallToolOutput{ResultText: result}, nil
 }
 
-// serverOf retrouve le serveur d'une entrée qui expose l'outil nommé.
-func (p *Plugin) serverOf(ctx context.Context, agent catalogAgent, orgID, memberID string, values map[string]string, toolName string) (serverSpec, bool) {
+// connectionOf retrouve le serveur d'une entrée qui expose l'outil nommé,
+// et la connexion à lui adresser.
+func (p *Plugin) connectionOf(ctx context.Context, agent catalogAgent, orgID, memberID string, values map[string]string, toolName string) (connection, bool) {
 	for _, server := range agent.Servers {
-		descriptors, err := p.pool.tools(ctx, connection{
-			agent: agent, server: server, orgID: orgID, memberID: memberID, values: values,
-		})
+		conn, err := p.connectionFor(ctx, agent, server, orgID, memberID, values)
+		if err != nil {
+			continue
+		}
+		descriptors, err := p.pool.tools(ctx, conn)
 		if err != nil {
 			continue
 		}
 		for _, descriptor := range descriptors {
 			if descriptor.Name == toolName {
-				return server, true
+				return conn, true
 			}
 		}
 	}
-	return serverSpec{}, false
+	return connection{}, false
 }
 
 // isEnabled re-vérifie l'activation au moment de l'appel : une entrée

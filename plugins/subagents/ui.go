@@ -42,6 +42,7 @@ button.off{background:#fff;color:#161c27;border:1px solid #d8dce4}
 <div class="agent">
 	<h2>{{.Name}}{{if .Enabled}}<span class="state on">activé</span>{{end}}</h2>
 	<div class="desc">{{.Description}}</div>
+	{{range .Servers}}<div class="hint">{{.Label}}</div>{{end}}
 	<form method="post" action="{{$.Base}}save">
 		<input type="hidden" name="agent" value="{{.Name}}">
 		{{range .Credentials}}
@@ -72,10 +73,16 @@ type uiCredential struct {
 	Defined bool
 }
 
+// uiServer est l'état d'installation d'un serveur, dit en une ligne.
+type uiServer struct {
+	Label string
+}
+
 type uiAgent struct {
 	Name        string
 	Description string
 	Enabled     bool
+	Servers     []uiServer
 	Credentials []uiCredential
 	// Missing : au moins un identifiant requis manque.
 	Missing      bool
@@ -120,6 +127,12 @@ func (p *Plugin) handleUIRoot(w http.ResponseWriter, r *http.Request) {
 			Name:        agent.Name,
 			Description: agent.Description,
 			Enabled:     cfg.enabled(agent.Name),
+		}
+
+		for _, server := range agent.Servers {
+			if label := p.installLabel(agent.Name, server); label != "" {
+				row.Servers = append(row.Servers, uiServer{Label: label})
+			}
 		}
 
 		var missing []string
@@ -213,6 +226,29 @@ func (p *Plugin) handleUISave(w http.ResponseWriter, r *http.Request) {
 		done = "enabled"
 	}
 	http.Redirect(w, r, pluginsdk.BasePath(r)+"?done="+done, http.StatusSeeOther)
+}
+
+// installLabel dit en une ligne où en est le serveur : rien à installer,
+// version en service, mise à jour en attente, ou installation impossible.
+// Vide quand il n'y a rien à en dire.
+func (p *Plugin) installLabel(agentName string, server serverSpec) string {
+	if server.Install == nil {
+		return ""
+	}
+	if !p.installer.available() {
+		return "Serveur « " + server.Name + " » : installation impossible, l'instance n'a pas de répertoire de données (" + envDataDir + ")."
+	}
+
+	state, pending := p.installer.pending(agentName, server)
+	switch {
+	case pending:
+		return "Serveur « " + server.Name + " » : version " + state.Version +
+			" en service, mise à jour vers " + server.Version + " à la prochaine utilisation."
+	case state.Version != "":
+		return "Serveur « " + server.Name + " » : version " + state.Version + " installée."
+	default:
+		return "Serveur « " + server.Name + " » : version " + server.Version + ", installée à la première activation."
+	}
 }
 
 // credentialLabel retombe sur la clé quand l'exploitant n'a pas écrit de

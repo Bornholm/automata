@@ -224,3 +224,48 @@ func TestRenderHTTP_ResolvesURLAndHeaders(t *testing.T) {
 		t.Errorf("une valeur d'identifiant a fuité dans l'erreur: %v", err)
 	}
 }
+
+// Une montée de version ne coupe pas la connexion en cours : elle la
+// retire, la nouvelle sert les appels suivants, et l'ancienne est fermée
+// par la faucheuse une fois son délai de grâce passé.
+func TestPool_RetiresTheOldVersionWithoutCuttingIt(t *testing.T) {
+	p := newPool()
+	t.Cleanup(p.close)
+
+	agent := fakeAgent()
+	conn := connection{
+		agent: agent, server: agent.Servers[0],
+		orgID: "atelier", memberID: "cam", version: "1.0.0",
+		values: map[string]string{"token": "jeton"},
+	}
+
+	if _, err := p.tools(context.Background(), conn); err != nil {
+		t.Fatalf("tools: %v", err)
+	}
+
+	p.retire(agent.Name, agent.Servers[0].Name, "2.0.0")
+
+	p.mu.Lock()
+	entry, ok := p.clients[conn.key()]
+	_, cached := p.descriptors[conn.key()]
+	p.mu.Unlock()
+
+	if !ok {
+		t.Fatal("la connexion a été supprimée immédiatement : un appel en vol échouerait")
+	}
+	if entry.retiredAt.IsZero() {
+		t.Error("la connexion n'a pas été marquée retirée")
+	}
+	// Les outils sont réinterrogés : une version peut en ajouter ou en
+	// retirer.
+	if cached {
+		t.Error("le cache d'outils survit à la montée de version")
+	}
+
+	// La nouvelle version n'emprunte pas la connexion de l'ancienne.
+	next := conn
+	next.version = "2.0.0"
+	if next.key() == conn.key() {
+		t.Error("deux versions partagent la même clé de connexion")
+	}
+}

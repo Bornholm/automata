@@ -89,6 +89,18 @@ type serverSpec struct {
 	Env     map[string]string `yaml:"env"`
 	URL     string            `yaml:"url"`
 	Headers map[string]string `yaml:"headers"`
+	// Version est l'identité de l'installation, pas une décoration :
+	// changer ce numéro dans le catalogue est ce qui déclenche une mise à
+	// jour. Obligatoire dès qu'Install est déclaré.
+	Version string `yaml:"version"`
+	// Install dit comment obtenir le binaire d'un serveur stdio à la
+	// première activation. Absent : le binaire est censé être déjà là.
+	Install *installSpec `yaml:"install"`
+	// Files sont des fichiers posés dans {{files}} avant le démarrage —
+	// une politique d'autorisation, une configuration. Ils sont réécrits à
+	// chaque vérification : le catalogue peut en changer le contenu sans
+	// changer de version.
+	Files map[string]string `yaml:"files"`
 	// ReadOnly épingle les outils à considérer comme des lectures quand le
 	// serveur ne les annote pas lui-même. Tout le reste est une écriture,
 	// donc soumis à la confirmation de l'hôte.
@@ -203,6 +215,43 @@ func (s serverSpec) validate(declaredCredentials map[string]struct{}) error {
 		if strings.TrimSpace(s.URL) == "" {
 			return fmt.Errorf("url requise en %s", s.Transport)
 		}
+		if s.Install != nil {
+			return fmt.Errorf("install n'a de sens qu'en stdio")
+		}
+	}
+
+	if s.Install != nil {
+		// Sans version, « installer si le binaire est absent » fige le
+		// serveur au premier jour : une correction publiée en amont ne
+		// serait jamais reprise.
+		if strings.TrimSpace(s.Version) == "" {
+			return fmt.Errorf("version requise dès qu'une installation est déclarée")
+		}
+		if strings.ContainsAny(s.Version, `/\`) {
+			return fmt.Errorf("version %q invalide (elle nomme un répertoire)", s.Version)
+		}
+		if s.Install.Fetch == nil && len(s.Install.Command) == 0 {
+			return fmt.Errorf("install sans fetch ni command")
+		}
+		if s.Install.Fetch != nil && s.Install.Fetch.Sha256 == "" && s.Install.Fetch.Checksums == "" {
+			return fmt.Errorf("install.fetch sans somme de contrôle (sha256 ou checksums)")
+		}
+	}
+
+	for name := range s.Files {
+		if strings.ContainsAny(name, `/\`) || name == "." || name == ".." {
+			return fmt.Errorf("nom de fichier %q invalide (pas de chemin)", name)
+		}
+	}
+
+	// L'installation et les fichiers sont posés UNE FOIS par serveur, pas
+	// par membre : un identifiant n'y a pas de valeur, et l'y placer
+	// mettrait ceux d'une personne dans un fichier partagé.
+	for _, name := range s.installPlaceholders() {
+		if !slices.Contains(reservedTemplateNames, name) {
+			return fmt.Errorf("patron {{%s}} dans une installation ou un fichier : seuls %s y sont disponibles",
+				name, strings.Join(reservedTemplateNames, ", "))
+		}
 	}
 
 	// Un patron sans source est une erreur de catalogue, pas une surprise
@@ -230,6 +279,23 @@ func (s serverSpec) placeholders() []string {
 	}
 	for _, key := range slices.Sorted(mapKeys(s.Headers)) {
 		texts = append(texts, s.Headers[key])
+	}
+
+	return templateNamesIn(texts...)
+}
+
+// installPlaceholders retourne les patrons de l'installation et des
+// fichiers déclarés.
+func (s serverSpec) installPlaceholders() []string {
+	var texts []string
+	if s.Install != nil {
+		texts = append(texts, s.Install.Command...)
+		if s.Install.Fetch != nil {
+			texts = append(texts, s.Install.Fetch.URL, s.Install.Fetch.Checksums, s.Install.Fetch.Extract, s.Install.Fetch.Binary)
+		}
+	}
+	for _, key := range slices.Sorted(mapKeys(s.Files)) {
+		texts = append(texts, s.Files[key])
 	}
 
 	return templateNamesIn(texts...)
