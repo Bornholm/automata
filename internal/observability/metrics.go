@@ -55,6 +55,7 @@ type Metrics struct {
 	deliveryErrors           atomic.Int64
 	toolResultsTruncated     atomic.Int64
 	profileLinks             atomic.Int64
+	profileLinkRepairs       atomic.Int64
 	walletDebits             atomic.Int64
 	servicePauses            atomic.Int64
 	usageRecords             atomic.Int64
@@ -371,6 +372,18 @@ func (m *Metrics) IncProfileLink() {
 	m.profileLinks.Add(1)
 }
 
+// IncProfileLinkRepair incrémente le compteur de réponses où le modèle a
+// recopié le marqueur d'un lien caviardé au lieu d'appeler
+// open_profile_link. Un compteur qui monte dit qu'un modèle est trop
+// faible pour cet outil : la réparation côté hôte sauve le tour, elle ne
+// remplace pas le diagnostic.
+func (m *Metrics) IncProfileLinkRepair() {
+	if m == nil {
+		return
+	}
+	m.profileLinkRepairs.Add(1)
+}
+
 // IncUsageRecord incrémente le compteur de traces d'usage d'inférence
 // enregistrées (internal/usage, refacturation par organisation).
 func (m *Metrics) IncUsageRecord() {
@@ -522,6 +535,7 @@ func (m *Metrics) Snapshot() map[string]any {
 		"episodes_purged":             m.episodesPurged.Load(),
 		"delivery_errors":             m.deliveryErrors.Load(),
 		"profile_links":               m.profileLinks.Load(),
+		"profile_link_repairs":        m.profileLinkRepairs.Load(),
 		"wallet_debits":               m.walletDebits.Load(),
 		"service_pauses":              m.servicePauses.Load(),
 		"usage_records":               m.usageRecords.Load(),

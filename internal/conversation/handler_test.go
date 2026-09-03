@@ -279,15 +279,112 @@ func TestHandler_ProfileLinksNeverReturnToTheModel(t *testing.T) {
 		}
 	}
 
-	// Le modèle doit tout de même savoir qu'un lien a été donné, sans quoi
-	// il ne comprendrait pas la suite de l'échange.
+	// Le modèle doit tout de même savoir qu'un lien a été donné, et quoi
+	// faire pour en produire un neuf. La consigne est en anglais, comme
+	// tout ce qui s'adresse au modèle : en français, au milieu d'un fil
+	// français, elle se lisait comme une réponse à recopier.
 	var mentioned bool
 	for _, m := range lastReq.History {
-		if strings.Contains(m.Content, "lien de profil") {
+		if strings.Contains(m.Content, "open_profile_link") {
 			mentioned = true
 		}
 	}
 	if !mentioned {
 		t.Error("le caviardage a effacé jusqu'à la trace du lien")
+	}
+}
+
+// Le marqueur de caviardage ne s'adresse qu'au modèle : une personne ne
+// doit jamais le lire. Reproduit le défaut vu en production le
+// 2026-09-03 — « Voici votre lien : [lien de profil déjà utilisé] » —
+// où le modèle recopie ce qu'il voit dans l'historique au lieu d'appeler
+// open_profile_link.
+func TestHandler_CopiedRedactionMarkerIsRepairedWithAFreshLink(t *testing.T) {
+	db := openTestDB(t)
+
+	const firstLink = "https://automata.test/p/cw2vj0.bq7yaptagka09h9mnt7c"
+	const freshLink = "https://automata.test/p/h07jrm.bq7yaptagka09h9mnt7c"
+
+	// Un modèle qui, au second tour, recopie servilement la dernière
+	// réponse de l'assistant telle qu'il la voit dans son historique.
+	a := &recordingAgent{}
+	a.replyFunc = func(req agent.Request) string {
+		if len(req.History) == 0 {
+			return "Voici votre lien : " + firstLink
+		}
+		last := req.History[len(req.History)-1].Content
+		return "Voici votre lien : " + strings.TrimPrefix(last, "Voici votre lien : ")
+	}
+
+	h := conversation.NewHandler(db, a, nil, 10, audio.Config{}, nil, false, nil).
+		WithBilling(fakeProfileLinks{url: freshLink})
+
+	identity := model.ExecutionIdentity{
+		PrincipalID: model.PrincipalID("alice"),
+		OrgID:       model.OrgID("home"),
+	}
+	conv := testConversation(model.ConversationID("conv-a"), "chan-a")
+	ctx := context.Background()
+
+	if _, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "Mon profil")); err != nil {
+		t.Fatalf("Handle (1): %v", err)
+	}
+
+	reply, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "Mon profil"))
+	if err != nil {
+		t.Fatalf("Handle (2): %v", err)
+	}
+
+	// Le modèle a bien recopié : c'est la situation qu'on répare.
+	if strings.Contains(reply, "[") {
+		t.Errorf("un marqueur est parti à l'utilisateur: %q", reply)
+	}
+	if !strings.Contains(reply, freshLink) {
+		t.Errorf("aucun lien neuf dans la réponse: %q", reply)
+	}
+	// Et surtout pas l'ancien, qui est un secret déjà consommé.
+	if strings.Contains(reply, firstLink) {
+		t.Errorf("l'ancien lien a été renvoyé: %q", reply)
+	}
+}
+
+// Sans générateur de liens, le marqueur ne doit pas non plus partir tel
+// quel : la personne mérite de savoir que quelque chose a manqué.
+func TestHandler_CopiedRedactionMarkerNeverReachesTheUser(t *testing.T) {
+	db := openTestDB(t)
+
+	const firstLink = "https://automata.test/p/cw2vj0.bq7yaptagka09h9mnt7c"
+
+	a := &recordingAgent{}
+	a.replyFunc = func(req agent.Request) string {
+		if len(req.History) == 0 {
+			return "Voici votre lien : " + firstLink
+		}
+		return req.History[len(req.History)-1].Content
+	}
+
+	// Aucun WithBilling : rien pour produire un lien de remplacement.
+	h := conversation.NewHandler(db, a, nil, 10, audio.Config{}, nil, false, nil)
+
+	identity := model.ExecutionIdentity{
+		PrincipalID: model.PrincipalID("alice"),
+		OrgID:       model.OrgID("home"),
+	}
+	conv := testConversation(model.ConversationID("conv-b"), "chan-b")
+	ctx := context.Background()
+
+	if _, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "Mon profil")); err != nil {
+		t.Fatalf("Handle (1): %v", err)
+	}
+	reply, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "Mon profil"))
+	if err != nil {
+		t.Fatalf("Handle (2): %v", err)
+	}
+
+	if strings.Contains(reply, "[") || strings.Contains(reply, "profile link") {
+		t.Errorf("le marqueur est parti à l'utilisateur: %q", reply)
+	}
+	if !strings.Contains(reply, "redemande") {
+		t.Errorf("la réponse ne dit pas quoi faire: %q", reply)
 	}
 }

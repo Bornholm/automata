@@ -365,7 +365,11 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		return "", nil, fmt.Errorf("conversation: exécution de l'agent: %w", err)
 	}
 
-	reply := result.Reply
+	// Le marqueur de caviardage ne s'adresse qu'au modèle : une personne ne
+	// doit jamais le lire. S'il est là, c'est que le modèle l'a recopié au
+	// lieu d'appeler open_profile_link — l'hôte produit alors le lien
+	// lui-même (profile_link_repair.go).
+	reply := h.repairRedactedProfileLink(ctx, identity, result.Reply)
 
 	if h.actions != nil && len(result.ProposedActions) > 0 {
 		_, planText, err := h.actions.CreatePlan(ctx, identity, result.ProposedActions)

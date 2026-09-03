@@ -1,6 +1,9 @@
 package conversation
 
-import "regexp"
+import (
+	"regexp"
+	"strings"
+)
 
 // Les liens de profil sont des SECRETS à usage unique : le segment
 // « <id>.<secret> » vaut mot de passe pendant un quart d'heure. Ils n'ont
@@ -34,7 +37,18 @@ var profileLinkPattern = regexp.MustCompile(`(?i)(?:https?://\S+?)?/p/[0-9a-hjkm
 // redactedProfileLink remplace le lien. Le marqueur est explicite plutôt
 // que muet : il dit au modèle qu'un lien a bien été donné, donc qu'il doit
 // en produire un neuf s'il en faut un autre.
-const redactedProfileLink = "[lien de profil déjà utilisé]"
+//
+// Il est rédigé en ANGLAIS et à l'impératif, comme toute consigne destinée
+// au modèle. La première version, « [lien de profil déjà utilisé] », était
+// en français : au milieu d'une conversation française, elle se lisait
+// comme une réponse à recopier, et c'est exactement ce qui s'est produit —
+// « Voici votre lien : [lien de profil déjà utilisé] », envoyé tel quel à
+// la personne le 2026-09-03. Une annotation en anglais dans un fil
+// français ne se confond plus avec le texte de la réponse.
+//
+// Le modèle peut malgré tout la recopier : c'est pourquoi l'hôte vérifie
+// la réponse sortante avant de l'envoyer (repairRedactedProfileLink).
+const redactedProfileLink = "[expired profile link removed — call open_profile_link to issue a new one]"
 
 // redactProfileLinks retire les liens de profil d'un texte destiné au
 // modèle.
@@ -43,4 +57,11 @@ func redactProfileLinks(text string) string {
 		return text
 	}
 	return profileLinkPattern.ReplaceAllString(text, redactedProfileLink)
+}
+
+// containsRedactedProfileLink dit si un texte porte le marqueur. Utilisé
+// sur la réponse SORTANTE : le marqueur ne s'adresse qu'au modèle, une
+// personne ne doit jamais le lire.
+func containsRedactedProfileLink(text string) bool {
+	return strings.Contains(text, redactedProfileLink)
 }
