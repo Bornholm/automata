@@ -1,0 +1,10 @@
+# Catalogue embarqué : les sous-agents proposés par défaut aux membres.
+#
+# Un exploitant qui veut le sien pointe SUBAGENTS_CATALOG sur son fichier ;
+# celui-ci REMPLACE alors le catalogue embarqué, il ne s'y ajoute pas.
+#
+# Attention à ce qui est déposé ici : une entrée peut lancer un processus
+# sur le serveur, avec les droits d'Automata. Y ajouter un serveur MCP
+# engage la même confiance que déposer un binaire dans le répertoire des
+# plugins.
+agents: []

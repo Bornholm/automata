@@ -1,4 +1,4 @@
-// Espace de travail des six modules du dépôt. Sans lui, gopls ne voit que
+// Espace de travail des sept modules du dépôt. Sans lui, gopls ne voit que
 // le module racine et affiche de faux « undefined » dans les plugins et le
 // SDK — un bruit qui a coûté du temps de diagnostic à chaque session.
 go 1.26.5
@@ -9,5 +9,6 @@ use (
 	./plugins/caldav
 	./plugins/email
 	./plugins/pages
+	./plugins/subagents
 	./plugins/workspace
 )

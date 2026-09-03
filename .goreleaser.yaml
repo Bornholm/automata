@@ -7,6 +7,7 @@ before:
     - sh -c "cd plugins/caldav && go mod tidy"
     - sh -c "cd plugins/email && go mod tidy"
     - sh -c "cd plugins/pages && go mod tidy"
+    - sh -c "cd plugins/subagents && go mod tidy"
     - sh -c "cd plugins/workspace && go mod tidy"
 
 # Une seule cible, linux/amd64 : c'est celle des déploiements visés (Dokku,
@@ -57,6 +58,16 @@ builds:
     mod_timestamp: "{{ .CommitTimestamp }}"
     dir: ./plugins/pages
     binary: pages
+    flags: [-trimpath]
+    ldflags: [-w -s]
+
+  - id: plugin-subagents
+    env: [CGO_ENABLED=0]
+    goos: [linux]
+    goarch: [amd64]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    dir: ./plugins/subagents
+    binary: subagents
     flags: [-trimpath]
     ldflags: [-w -s]
 
@@ -111,6 +122,16 @@ archives:
       - src: plugins/pages/LICENSE
         dst: LICENSE
       - src: plugins/pages/NOTICE
+        dst: NOTICE
+
+  - id: plugin-subagents
+    ids: [plugin-subagents]
+    name_template: "automata-plugin-subagents_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    files:
+      - src: plugins/subagents/LICENSE
+        dst: LICENSE
+      - src: plugins/subagents/NOTICE
         dst: NOTICE
 
   - id: plugin-workspace
