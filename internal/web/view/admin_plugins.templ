@@ -13,7 +13,10 @@ type PluginRow struct {
 	HasUI       bool
 	HasTriggers bool
 	HasSubAgent bool
-	ActiveOrgs  []string
+	// SubAgentCatalog : les sous-agents sont choisis par chaque membre,
+	// leur liste n'a donc pas de sens ici.
+	SubAgentCatalog bool
+	ActiveOrgs      []string
 }
 
 type PluginsPage struct {
@@ -60,7 +63,9 @@ templ AdminPlugins(page PluginsPage) {
 					<div class="flex flex-wrap items-baseline gap-x-6 gap-y-1.5 px-5 py-3">
 						<div class="text-[13px] text-text-3">
 							Capacités :
-							if p.HasSubAgent {
+							if p.SubAgentCatalog {
+								<span class="text-text">sous-agents au choix du membre</span>
+							} else if p.HasSubAgent {
 								<span class="text-text">sous-agent</span>
 							}
 							if p.HasTriggers {

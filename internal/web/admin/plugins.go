@@ -57,6 +57,8 @@ func (h *Handlers) HandlePlugins(w http.ResponseWriter, r *http.Request) {
 			HasUI:       st.HasUI,
 			HasTriggers: st.HasTriggers,
 			HasSubAgent: st.HasSubAgent,
+
+			SubAgentCatalog: st.SubAgentCatalog,
 		}
 		for _, orgID := range orgsByPlugin[st.Name] {
 			name := orgNames[orgID]

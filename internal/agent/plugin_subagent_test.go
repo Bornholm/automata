@@ -1217,3 +1217,111 @@ func TestPluginSubAgent_ConclusionSurvivesAnExhaustedLoopDeadline(t *testing.T) 
 		t.Fatal("la conclusion ne doit pas être vide")
 	}
 }
+
+// Une entrée de catalogue est montée sous SON nom, mais les appels
+// continuent de router vers le plugin : le modèle voit « netprobe », le
+// sous-processus appelé reste celui du plugin qui l'héberge.
+func TestPluginSubAgent_CatalogEntryKeepsItsOwnName(t *testing.T) {
+	caller := &fakePluginCaller{result: "open"}
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "tcp_probe", `{"target":"example.test:443"}`)), nil
+			}
+			return scriptedFinalResponse("Le port répond."), nil
+		},
+	}
+
+	spec := agent.PluginSubAgentSpec{
+		PluginName:       "subagents",
+		AgentName:        "netprobe",
+		SubAgentName:     "netprobe",
+		SystemPrompt:     "You are a network probing specialist.",
+		PermissionDomain: "subagents",
+		Tools: []agent.PluginToolSpec{
+			{Name: "tcp_probe", Description: "Probe a TCP port.", SchemaJSON: `{"type":"object"}`, ReadOnly: true},
+			{Name: "block_host", Description: "Block a host.", SchemaJSON: `{"type":"object"}`},
+		},
+	}
+
+	result, err := agent.NewPluginSubAgent(spec, client, caller, 0, nil).
+		Execute(context.Background(), delegation.Request{
+			AgentID:  "netprobe",
+			Goal:     "Check whether example.test answers on 443",
+			Identity: pluginTestIdentity(),
+		})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.Summary == "" {
+		t.Fatal("réponse vide")
+	}
+
+	if len(caller.calls) != 1 {
+		t.Fatalf("%d appel(s) d'outil, attendu 1", len(caller.calls))
+	}
+	call := caller.calls[0]
+	// Le routage reste le plugin ; l'entrée du catalogue voyage à part.
+	if call.Plugin != "subagents" {
+		t.Errorf("appel routé vers %q, attendu subagents", call.Plugin)
+	}
+	if call.Ctx.SubAgent != "netprobe" {
+		t.Errorf("entrée de catalogue perdue: %q", call.Ctx.SubAgent)
+	}
+}
+
+// L'action proposée par une entrée de catalogue porte l'entrée dans son
+// identifiant d'agent : c'est ce qui permet à l'exécuteur de rejouer
+// l'appel sur la bonne, sans nouvelle colonne en base.
+func TestPluginSubAgent_CatalogWriteCarriesItsEntry(t *testing.T) {
+	caller := &fakePluginCaller{}
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, _ *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			if turn == 0 {
+				return scriptedToolCallResponse(llm.NewToolCall("c1", "block_host", `{"host":"example.test"}`)), nil
+			}
+			return scriptedFinalResponse("En attente de confirmation."), nil
+		},
+	}
+
+	spec := agent.PluginSubAgentSpec{
+		PluginName:       "subagents",
+		AgentName:        "netprobe",
+		SubAgentName:     "netprobe",
+		SystemPrompt:     "You are a network probing specialist.",
+		PermissionDomain: "subagents",
+		Tools: []agent.PluginToolSpec{
+			{Name: "block_host", Description: "Block a host.", SchemaJSON: `{"type":"object"}`},
+		},
+	}
+
+	result, err := agent.NewPluginSubAgent(spec, client, caller, 0, nil).
+		Execute(context.Background(), delegation.Request{
+			AgentID:  "netprobe",
+			Goal:     "Block example.test",
+			Identity: pluginTestIdentity(),
+		})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(caller.calls) != 0 {
+		t.Fatalf("l'écriture a été exécutée pendant le tour: %+v", caller.calls)
+	}
+	if len(result.ProposedActions) != 1 {
+		t.Fatalf("%d action(s) proposée(s), attendu 1", len(result.ProposedActions))
+	}
+
+	action := result.ProposedActions[0]
+	if action.AgentID != "plugin:subagents:netprobe" {
+		t.Errorf("identifiant d'agent = %q, attendu plugin:subagents:netprobe", action.AgentID)
+	}
+	// La clé de l'exécuteur, elle, reste celle du plugin.
+	if action.MCPServer != "plugin:subagents" {
+		t.Errorf("clé d'exécuteur = %q, attendu plugin:subagents", action.MCPServer)
+	}
+	if action.RequiredPermission != "subagents.personal.write" {
+		t.Errorf("permission requise = %q", action.RequiredPermission)
+	}
+}

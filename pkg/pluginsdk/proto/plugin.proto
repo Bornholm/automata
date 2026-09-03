@@ -10,6 +10,12 @@ service AutomataPlugin {
   rpc Initialize(InitializeRequest) returns (InitializeResponse);
   rpc ListTools(ListToolsInput) returns (ListToolsOutput);
   rpc CallTool(CallToolInput) returns (CallToolOutput);
+  // ListSubAgents lets one plugin mount SEVERAL named sub-agents, chosen
+  // per member: a catalogue the member picks from, rather than the single
+  // sub-agent of the descriptor. The host calls it instead of ListTools
+  // when the descriptor sets provides_sub_agents, once per turn — answer
+  // from cached state, never by connecting to anything.
+  rpc ListSubAgents(ListSubAgentsInput) returns (ListSubAgentsOutput);
   rpc WatchTriggers(WatchTriggersRequest) returns (stream TriggerEvent);
   // PutFile and GetFile move file bytes between the host and the plugin's
   // own storage. They exist because tool results are text and bounded: a
@@ -111,6 +117,32 @@ message PluginDescriptor {
   // for the same member is a configuration error; the host takes the
   // first in activation order and logs the collision.
   bool provides_event_store = 8;
+  // provides_sub_agents tells the host to mount the sub-agents returned by
+  // ListSubAgents, per member, instead of the single sub_agent above. A
+  // plugin setting it leaves sub_agent empty and is never called on
+  // ListTools.
+  bool provides_sub_agents = 9;
+}
+
+// NamedSubAgent is one entry of a plugin's sub-agent catalogue.
+message NamedSubAgent {
+  // name is what the model sees: it becomes delegate_to_<name>. It must
+  // not collide with a configured agent, another plugin, or another entry
+  // — the host skips a colliding entry, since two identical delegation
+  // tools are indistinguishable to the model.
+  string name = 1;
+  SubAgentDescriptor sub_agent = 2;
+  // tools are this sub-agent's tools. Two entries may expose the same tool
+  // name: CallTool carries the sub-agent it belongs to.
+  repeated ToolDescriptor tools = 3;
+}
+
+message ListSubAgentsInput {
+  // ctx designates the member: answer with the entries THEY enabled.
+  CallContext ctx = 1;
+}
+message ListSubAgentsOutput {
+  repeated NamedSubAgent sub_agents = 1;
 }
 
 message SubAgentDescriptor {
@@ -176,6 +208,10 @@ message CallToolInput {
   CallContext ctx = 1;
   string name = 2;
   string arguments_json = 3;
+  // sub_agent names the ListSubAgents entry the tool belongs to. Empty for
+  // a plugin with a single sub-agent. It travels through the confirmation
+  // of a write too: the host restores it before replaying the action.
+  string sub_agent = 4;
 }
 message CallToolOutput {
   string result_text = 1;

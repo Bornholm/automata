@@ -12,6 +12,9 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
 	"github.com/bornholm/automata/pkg/pluginsdk"
 	proto "github.com/bornholm/automata/pkg/pluginsdk/proto"
 )
@@ -38,7 +41,16 @@ const maxToolResultBytes = 48 * 1024
 
 // SubAgentSpec décrit le sous-agent d'un plugin actif, prêt à être monté.
 type SubAgentSpec struct {
-	PluginName       string
+	// PluginName route : c'est lui qui désigne le sous-processus à appeler
+	// et la clé de l'exécuteur d'actions confirmées.
+	PluginName string
+	// AgentName est le nom vu par le modèle (delegate_to_<nom>). Il vaut
+	// PluginName pour un plugin à sous-agent unique, et le nom de l'entrée
+	// pour un plugin qui en fournit un catalogue.
+	AgentName string
+	// SubAgentName est l'entrée du catalogue à laquelle appartiennent les
+	// outils, transmise à CallTool. Vide pour un sous-agent unique.
+	SubAgentName     string
 	SystemPrompt     string
 	Description      string
 	PermissionDomain string
@@ -67,6 +79,11 @@ type CallContext struct {
 	Scope          string
 	ScopeID        string
 	IdempotencyKey string
+	// SubAgent désigne l'entrée du catalogue à laquelle appartient l'outil
+	// appelé. Vide pour un plugin à sous-agent unique. Il voyage à part du
+	// contexte transmis au plugin (toProtoContext) : c'est un routage, pas
+	// une identité.
+	SubAgent string
 }
 
 // ActiveSubAgents retourne les sous-agents des plugins actifs pour
@@ -88,41 +105,138 @@ func (m *Manager) ActiveSubAgents(ctx context.Context, db dbTx, callCtx CallCont
 	}
 
 	var specs []SubAgentSpec
+	// mounted retient les noms déjà pris CE tour : deux delegate_to_<x>
+	// homonymes seraient indiscernables pour le modèle.
+	mounted := make(map[string]struct{})
+
 	for _, name := range enabled {
 		client, desc, ok := m.GetOrRestart(ctx, name)
-		if !ok || desc.SubAgent == nil {
+		if !ok {
 			continue
 		}
 
-		listCtx, cancel := context.WithTimeout(ctx, pluginToolTimeout)
-		tools, err := client.ListTools(listCtx, &proto.ListToolsInput{Ctx: toProtoContext(callCtx)})
-		cancel()
-		if err != nil {
-			slog.WarnContext(ctx, "plugin: ListTools en échec, sous-agent ignoré ce tour",
-				"plugin", name, "error", err)
-			continue
+		var candidates []SubAgentSpec
+		switch {
+		case desc.ProvidesSubAgents:
+			candidates = m.catalogSubAgents(ctx, client, desc, name, callCtx)
+		case desc.SubAgent != nil:
+			candidates = m.singleSubAgent(ctx, client, desc, name, callCtx)
 		}
 
-		spec := SubAgentSpec{
-			PluginName:       name,
-			SystemPrompt:     desc.SubAgent.SystemPrompt,
-			Description:      desc.SubAgent.Description,
-			PermissionDomain: desc.PermissionDomain,
-			MaxToolCalls:     int(desc.SubAgent.MaxSequentialToolCalls),
-			SupportsFiles:    desc.SupportsFiles,
+		for _, spec := range candidates {
+			if reason, taken := m.nameTaken(spec.AgentName, mounted); taken {
+				slog.WarnContext(ctx, "plugin: nom de sous-agent déjà pris, entrée ignorée",
+					"plugin", name, "sub_agent", spec.AgentName, "reason", reason)
+				continue
+			}
+			mounted[spec.AgentName] = struct{}{}
+			specs = append(specs, spec)
 		}
-		for _, t := range tools.Tools {
-			spec.Tools = append(spec.Tools, ToolSpec{
-				Name:           t.Name,
-				Description:    t.Description,
-				SchemaJSON:     t.InputSchemaJson,
-				ReadOnly:       t.ReadOnly,
-				TimeoutSeconds: int(t.TimeoutSeconds),
-			})
-		}
-		specs = append(specs, spec)
 	}
 
+	return specs
+}
+
+// nameTaken dit si agentName ne peut pas être monté, et pourquoi. Les
+// collisions avec les agents configurés sont refusées au chargement pour
+// le NOM du plugin (voir Manager.agentNames) ; les entrées d'un catalogue,
+// elles, ne sont connues qu'ici, à l'exécution.
+func (m *Manager) nameTaken(agentName string, mounted map[string]struct{}) (string, bool) {
+	if agentName == "" {
+		return "nom vide", true
+	}
+	if _, ok := m.agentNames[agentName]; ok {
+		return "agent configuré", true
+	}
+	if _, ok := mounted[agentName]; ok {
+		return "déjà monté ce tour", true
+	}
+	return "", false
+}
+
+// singleSubAgent est le chemin historique : un plugin, un sous-agent, dont
+// les outils viennent de ListTools taillé pour le membre.
+func (m *Manager) singleSubAgent(ctx context.Context, client proto.AutomataPluginClient, desc *proto.PluginDescriptor, name string, callCtx CallContext) []SubAgentSpec {
+	listCtx, cancel := context.WithTimeout(ctx, pluginToolTimeout)
+	tools, err := client.ListTools(listCtx, &proto.ListToolsInput{Ctx: toProtoContext(callCtx)})
+	cancel()
+	if err != nil {
+		slog.WarnContext(ctx, "plugin: ListTools en échec, sous-agent ignoré ce tour",
+			"plugin", name, "error", err)
+		return nil
+	}
+
+	return []SubAgentSpec{{
+		PluginName:       name,
+		AgentName:        name,
+		SystemPrompt:     desc.SubAgent.SystemPrompt,
+		Description:      desc.SubAgent.Description,
+		PermissionDomain: desc.PermissionDomain,
+		MaxToolCalls:     int(desc.SubAgent.MaxSequentialToolCalls),
+		SupportsFiles:    desc.SupportsFiles,
+		Tools:            toToolSpecs(tools.Tools),
+	}}
+}
+
+// catalogSubAgents interroge ListSubAgents : un plugin qui fournit un
+// catalogue rend les entrées que CE membre a activées, chacune avec son
+// prompt, sa description et ses outils.
+//
+// Un plugin qui pose le drapeau sans implémenter la RPC (binaire compilé
+// contre un SDK antérieur) retombe sur son sous-agent unique : mieux vaut
+// un plugin dégradé qu'un plugin muet.
+func (m *Manager) catalogSubAgents(ctx context.Context, client proto.AutomataPluginClient, desc *proto.PluginDescriptor, name string, callCtx CallContext) []SubAgentSpec {
+	listCtx, cancel := context.WithTimeout(ctx, pluginToolTimeout)
+	out, err := client.ListSubAgents(listCtx, &proto.ListSubAgentsInput{Ctx: toProtoContext(callCtx)})
+	cancel()
+	if err != nil {
+		if status.Code(err) == codes.Unimplemented && desc.SubAgent != nil {
+			slog.WarnContext(ctx, "plugin: ListSubAgents absent malgré provides_sub_agents, repli sur le sous-agent unique",
+				"plugin", name)
+			return m.singleSubAgent(ctx, client, desc, name, callCtx)
+		}
+		slog.WarnContext(ctx, "plugin: ListSubAgents en échec, sous-agents ignorés ce tour",
+			"plugin", name, "error", err)
+		return nil
+	}
+
+	specs := make([]SubAgentSpec, 0, len(out.SubAgents))
+	for _, entry := range out.SubAgents {
+		if entry.SubAgent == nil {
+			slog.WarnContext(ctx, "plugin: entrée de catalogue sans sous-agent, ignorée",
+				"plugin", name, "sub_agent", entry.Name)
+			continue
+		}
+
+		specs = append(specs, SubAgentSpec{
+			PluginName:       name,
+			AgentName:        entry.Name,
+			SubAgentName:     entry.Name,
+			SystemPrompt:     entry.SubAgent.SystemPrompt,
+			Description:      entry.SubAgent.Description,
+			PermissionDomain: desc.PermissionDomain,
+			MaxToolCalls:     int(entry.SubAgent.MaxSequentialToolCalls),
+			SupportsFiles:    desc.SupportsFiles,
+			Tools:            toToolSpecs(entry.Tools),
+		})
+	}
+
+	return specs
+}
+
+// toToolSpecs convertit les descripteurs d'outils du protocole vers le
+// type local du pont.
+func toToolSpecs(tools []*proto.ToolDescriptor) []ToolSpec {
+	specs := make([]ToolSpec, 0, len(tools))
+	for _, t := range tools {
+		specs = append(specs, ToolSpec{
+			Name:           t.Name,
+			Description:    t.Description,
+			SchemaJSON:     t.InputSchemaJson,
+			ReadOnly:       t.ReadOnly,
+			TimeoutSeconds: int(t.TimeoutSeconds),
+		})
+	}
 	return specs
 }
 
@@ -148,6 +262,7 @@ func (m *Manager) CallTool(ctx context.Context, pluginName, toolName string, cal
 		Ctx:           toProtoContext(callCtx),
 		Name:          toolName,
 		ArgumentsJson: argsJSON,
+		SubAgent:      callCtx.SubAgent,
 	})
 	duration := time.Since(started)
 

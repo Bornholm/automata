@@ -23,6 +23,7 @@ const (
 	AutomataPlugin_Initialize_FullMethodName    = "/automata.plugin.v1.AutomataPlugin/Initialize"
 	AutomataPlugin_ListTools_FullMethodName     = "/automata.plugin.v1.AutomataPlugin/ListTools"
 	AutomataPlugin_CallTool_FullMethodName      = "/automata.plugin.v1.AutomataPlugin/CallTool"
+	AutomataPlugin_ListSubAgents_FullMethodName = "/automata.plugin.v1.AutomataPlugin/ListSubAgents"
 	AutomataPlugin_WatchTriggers_FullMethodName = "/automata.plugin.v1.AutomataPlugin/WatchTriggers"
 	AutomataPlugin_PutFile_FullMethodName       = "/automata.plugin.v1.AutomataPlugin/PutFile"
 	AutomataPlugin_GetFile_FullMethodName       = "/automata.plugin.v1.AutomataPlugin/GetFile"
@@ -43,6 +44,12 @@ type AutomataPluginClient interface {
 	Initialize(ctx context.Context, in *InitializeRequest, opts ...grpc.CallOption) (*InitializeResponse, error)
 	ListTools(ctx context.Context, in *ListToolsInput, opts ...grpc.CallOption) (*ListToolsOutput, error)
 	CallTool(ctx context.Context, in *CallToolInput, opts ...grpc.CallOption) (*CallToolOutput, error)
+	// ListSubAgents lets one plugin mount SEVERAL named sub-agents, chosen
+	// per member: a catalogue the member picks from, rather than the single
+	// sub-agent of the descriptor. The host calls it instead of ListTools
+	// when the descriptor sets provides_sub_agents, once per turn — answer
+	// from cached state, never by connecting to anything.
+	ListSubAgents(ctx context.Context, in *ListSubAgentsInput, opts ...grpc.CallOption) (*ListSubAgentsOutput, error)
 	WatchTriggers(ctx context.Context, in *WatchTriggersRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[TriggerEvent], error)
 	// PutFile and GetFile move file bytes between the host and the plugin's
 	// own storage. They exist because tool results are text and bounded: a
@@ -106,6 +113,16 @@ func (c *automataPluginClient) CallTool(ctx context.Context, in *CallToolInput, 
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(CallToolOutput)
 	err := c.cc.Invoke(ctx, AutomataPlugin_CallTool_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *automataPluginClient) ListSubAgents(ctx context.Context, in *ListSubAgentsInput, opts ...grpc.CallOption) (*ListSubAgentsOutput, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSubAgentsOutput)
+	err := c.cc.Invoke(ctx, AutomataPlugin_ListSubAgents_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -205,6 +222,12 @@ type AutomataPluginServer interface {
 	Initialize(context.Context, *InitializeRequest) (*InitializeResponse, error)
 	ListTools(context.Context, *ListToolsInput) (*ListToolsOutput, error)
 	CallTool(context.Context, *CallToolInput) (*CallToolOutput, error)
+	// ListSubAgents lets one plugin mount SEVERAL named sub-agents, chosen
+	// per member: a catalogue the member picks from, rather than the single
+	// sub-agent of the descriptor. The host calls it instead of ListTools
+	// when the descriptor sets provides_sub_agents, once per turn — answer
+	// from cached state, never by connecting to anything.
+	ListSubAgents(context.Context, *ListSubAgentsInput) (*ListSubAgentsOutput, error)
 	WatchTriggers(*WatchTriggersRequest, grpc.ServerStreamingServer[TriggerEvent]) error
 	// PutFile and GetFile move file bytes between the host and the plugin's
 	// own storage. They exist because tool results are text and bounded: a
@@ -245,6 +268,9 @@ func (UnimplementedAutomataPluginServer) ListTools(context.Context, *ListToolsIn
 }
 func (UnimplementedAutomataPluginServer) CallTool(context.Context, *CallToolInput) (*CallToolOutput, error) {
 	return nil, status.Error(codes.Unimplemented, "method CallTool not implemented")
+}
+func (UnimplementedAutomataPluginServer) ListSubAgents(context.Context, *ListSubAgentsInput) (*ListSubAgentsOutput, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSubAgents not implemented")
 }
 func (UnimplementedAutomataPluginServer) WatchTriggers(*WatchTriggersRequest, grpc.ServerStreamingServer[TriggerEvent]) error {
 	return status.Error(codes.Unimplemented, "method WatchTriggers not implemented")
@@ -357,6 +383,24 @@ func _AutomataPlugin_CallTool_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AutomataPlugin_ListSubAgents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSubAgentsInput)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AutomataPluginServer).ListSubAgents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AutomataPlugin_ListSubAgents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AutomataPluginServer).ListSubAgents(ctx, req.(*ListSubAgentsInput))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _AutomataPlugin_WatchTriggers_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(WatchTriggersRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -462,6 +506,10 @@ var AutomataPlugin_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CallTool",
 			Handler:    _AutomataPlugin_CallTool_Handler,
+		},
+		{
+			MethodName: "ListSubAgents",
+			Handler:    _AutomataPlugin_ListSubAgents_Handler,
 		},
 		{
 			MethodName: "PutEvent",

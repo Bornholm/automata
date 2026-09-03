@@ -90,12 +90,22 @@ type PluginCallContext struct {
 	Scope          string
 	ScopeID        string
 	IdempotencyKey string
+	// SubAgent désigne l'entrée du catalogue à laquelle appartient l'outil,
+	// pour un plugin qui en fournit plusieurs. Vide sinon.
+	SubAgent string
 }
 
 // PluginSubAgentSpec décrit un sous-agent prêt à être monté comme
 // spécialiste délégué.
 type PluginSubAgentSpec struct {
-	PluginName       string
+	// PluginName route les appels vers le sous-processus.
+	PluginName string
+	// AgentName est le nom vu par le modèle (delegate_to_<nom>). Vide :
+	// PluginName fait office, cas du plugin à sous-agent unique.
+	AgentName string
+	// SubAgentName est l'entrée du catalogue, transmise au plugin à chaque
+	// appel d'outil. Vide pour un sous-agent unique.
+	SubAgentName     string
 	SystemPrompt     string
 	Description      string
 	PermissionDomain string
@@ -103,6 +113,26 @@ type PluginSubAgentSpec struct {
 	// SupportsFiles monte les outils fichiers de l'hôte sur ce sous-agent.
 	SupportsFiles bool
 	Tools         []PluginToolSpec
+}
+
+// agentName est le nom sous lequel le sous-agent est monté et attribué :
+// celui de l'entrée du catalogue, à défaut celui du plugin.
+func (s PluginSubAgentSpec) agentName() string {
+	if s.AgentName != "" {
+		return s.AgentName
+	}
+	return s.PluginName
+}
+
+// executorAgentID identifie le sous-agent dans une action proposée. Le
+// suffixe permet à l'exécuteur de retrouver l'entrée du catalogue au
+// moment de la confirmation, sans nouvelle colonne en base — la clé de
+// l'exécuteur, elle, reste "plugin:<nom du plugin>".
+func (s PluginSubAgentSpec) executorAgentID() string {
+	if s.SubAgentName == "" {
+		return "plugin:" + s.PluginName
+	}
+	return "plugin:" + s.PluginName + ":" + s.SubAgentName
 }
 
 // PluginToolSpec décrit un outil du plugin. ReadOnly faux = écriture :
@@ -238,7 +268,7 @@ func (a *PluginSubAgent) SupportsFiles() bool {
 // Goal/RelevantInput/Constraints et les pièces jointes du tour composent
 // l'entrée — jamais l'historique de la conversation principale.
 func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (delegation.Result, error) {
-	agentName := a.spec.PluginName
+	agentName := a.spec.agentName()
 	ctx = withUsageAttribution(ctx, req.Identity, "plugin:"+agentName)
 
 	// Modèles du tour : résolus par le catalogue (défaut d'instance,
@@ -377,6 +407,7 @@ func (a *PluginSubAgent) buildTool(spec PluginToolSpec, identity model.Execution
 		MemberID: string(identity.PrincipalID),
 		Scope:    string(identity.Scope),
 		ScopeID:  string(identity.ScopeID),
+		SubAgent: a.spec.SubAgentName,
 	}
 
 	if spec.ReadOnly {
@@ -419,7 +450,7 @@ func (a *PluginSubAgent) buildTool(spec PluginToolSpec, identity model.Execution
 		// sans ambiguïté.
 		added := collector.addIfNew(delegation.ProposedAction{
 			Summary:            summarizeAction(spec.Name, args),
-			AgentID:            "plugin:" + a.spec.PluginName,
+			AgentID:            a.spec.executorAgentID(),
 			MCPServer:          "plugin:" + a.spec.PluginName,
 			ToolName:           spec.Name,
 			Arguments:          args,

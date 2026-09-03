@@ -51,7 +51,12 @@ type Status struct {
 	HasUI       bool
 	HasTriggers bool
 	HasSubAgent bool
-	RestartedAt time.Time
+	// SubAgentCatalog signale un plugin qui fournit ses sous-agents par
+	// membre (ListSubAgents). Leur liste dépend de qui regarde : elle n'a
+	// pas de sens dans un écran d'administration, seul le fait d'en avoir
+	// un catalogue en a un.
+	SubAgentCatalog bool
+	RestartedAt     time.Time
 }
 
 // Manager découvre et pilote les sous-processus de plugins.
@@ -166,8 +171,10 @@ func (m *Manager) Statuses() []Status {
 			Running:     !e.gopClient.Exited(),
 			HasUI:       e.httpPort != 0,
 			HasTriggers: e.Descriptor.HasTriggers,
-			HasSubAgent: e.Descriptor.SubAgent != nil,
-			RestartedAt: e.lastRestartAt,
+			HasSubAgent: e.Descriptor.SubAgent != nil || e.Descriptor.ProvidesSubAgents,
+
+			SubAgentCatalog: e.Descriptor.ProvidesSubAgents,
+			RestartedAt:     e.lastRestartAt,
 		})
 	}
 	return statuses

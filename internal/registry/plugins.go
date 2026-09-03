@@ -76,6 +76,8 @@ func (p *pluginSpecialistProvider) SpecialistsFor(ctx context.Context, identity 
 	for _, spec := range specs {
 		agentSpec := agent.PluginSubAgentSpec{
 			PluginName:       spec.PluginName,
+			AgentName:        spec.AgentName,
+			SubAgentName:     spec.SubAgentName,
 			SystemPrompt:     spec.SystemPrompt,
 			Description:      spec.Description,
 			PermissionDomain: spec.PermissionDomain,
@@ -103,8 +105,10 @@ func (p *pluginSpecialistProvider) SpecialistsFor(ctx context.Context, identity 
 			subAgent = subAgent.WithFiles(pluginFileTransfer{p.manager}, p.maxFileBytes)
 		}
 
-		specialists[spec.PluginName] = subAgent
-		descriptions[spec.PluginName] = spec.Description
+		// Indexé par le nom vu par le modèle : pour un plugin à catalogue,
+		// deux entrées du MÊME plugin donnent deux délégués distincts.
+		specialists[spec.AgentName] = subAgent
+		descriptions[spec.AgentName] = spec.Description
 	}
 
 	return specialists, descriptions

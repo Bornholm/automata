@@ -17,10 +17,14 @@ import (
 	proto "github.com/bornholm/automata/pkg/pluginsdk/proto"
 )
 
-// echoBinary est compilé une fois pour toute la suite : lancer de vrais
-// sous-processus est le seul moyen d'éprouver le handshake, le broker et
-// les redémarrages.
-var echoBinary string
+// Les plugins d'essai sont compilés une fois pour toute la suite : lancer
+// de vrais sous-processus est le seul moyen d'éprouver le handshake, le
+// broker et les redémarrages. echo porte un sous-agent unique, catalog en
+// fournit plusieurs par membre.
+var (
+	echoBinary    string
+	catalogBinary string
+)
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "automata-plugin-test")
@@ -28,14 +32,20 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	echoBinary = filepath.Join(dir, "echo")
+	catalogBinary = filepath.Join(dir, "catalog")
 
-	build := exec.Command("go", "build", "-o", echoBinary, ".")
-	build.Dir = "testdata/plugin-echo"
-	// GOWORK=off : le plugin d'essai est son propre module, hors du
-	// go.work du dépôt — et -mod=mod est interdit en mode workspace.
-	build.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOWORK=off")
-	if out, err := build.CombinedOutput(); err != nil {
-		panic("compilation du plugin d'essai: " + err.Error() + "\n" + string(out))
+	for src, out := range map[string]string{
+		"testdata/plugin-echo":    echoBinary,
+		"testdata/plugin-catalog": catalogBinary,
+	} {
+		build := exec.Command("go", "build", "-o", out, ".")
+		build.Dir = src
+		// GOWORK=off : le plugin d'essai est son propre module, hors du
+		// go.work du dépôt — et -mod=mod est interdit en mode workspace.
+		build.Env = append(os.Environ(), "GOFLAGS=-mod=mod", "GOWORK=off")
+		if out, err := build.CombinedOutput(); err != nil {
+			panic("compilation du plugin d'essai " + src + ": " + err.Error() + "\n" + string(out))
+		}
 	}
 
 	code := m.Run()
@@ -374,14 +384,32 @@ func TestHostService_NothingInClearOnDisk(t *testing.T) {
 
 func activateEcho(t *testing.T, db *persistence.DB, orgID string) {
 	t.Helper()
+	activatePlugin(t, db, "echo", orgID)
+}
+
+func activatePlugin(t *testing.T, db *persistence.DB, name, orgID string) {
+	t.Helper()
 	now := time.Now().UTC()
 	err := db.WithTx(context.Background(), func(tx *sql.Tx) error {
 		return persistence.NewPluginActivationRepository().Upsert(context.Background(), tx, persistence.PluginActivation{
-			PluginName: "echo", OrgID: orgID, Enabled: true, CreatedAt: now, UpdatedAt: now,
+			PluginName: name, OrgID: orgID, Enabled: true, CreatedAt: now, UpdatedAt: now,
 		})
 	})
 	if err != nil {
 		t.Fatalf("activation: %v", err)
+	}
+}
+
+// installBinary dépose un binaire de plugin dans un répertoire de
+// découverte, sous le nom attendu par le manager.
+func installBinary(t *testing.T, dir, name, binary string) {
+	t.Helper()
+	data, err := os.ReadFile(binary)
+	if err != nil {
+		t.Fatalf("lecture du binaire %s: %v", name, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), data, 0o755); err != nil {
+		t.Fatalf("installation du binaire %s: %v", name, err)
 	}
 }
 
@@ -411,6 +439,107 @@ func TestManager_ActiveSubAgentsHonorsActivation(t *testing.T) {
 	// L'autre organisation n'a rien activé.
 	if specs := manager.ActiveSubAgents(context.Background(), db, CallContext{OrgID: "autre"}); len(specs) != 0 {
 		t.Errorf("sous-agents servis à une organisation sans activation")
+	}
+}
+
+// Un plugin qui fournit un catalogue monte AUTANT de sous-agents que
+// d'entrées activées par le membre, chacun avec son propre prompt — et
+// deux entrées peuvent porter le même nom d'outil, distinguées par
+// l'entrée à laquelle elles appartiennent.
+func TestManager_CatalogMountsSeveralSubAgents(t *testing.T) {
+	dir := t.TempDir()
+	installBinary(t, dir, "catalog", catalogBinary)
+
+	manager, db := newTestManager(t, config.Plugins{Dir: dir})
+	seedOrgAndMember(t, db, "atelier", "cam")
+	activatePlugin(t, db, "catalog", "atelier")
+
+	specs := manager.ActiveSubAgents(context.Background(), db,
+		CallContext{OrgID: "atelier", MemberID: "cam", Scope: "personal", ScopeID: "cam"})
+
+	// L'entrée « main » heurte un agent configuré : elle est écartée.
+	if len(specs) != 2 {
+		t.Fatalf("%d sous-agent(s) monté(s), attendu 2 (alpha, beta) : %+v", len(specs), specs)
+	}
+
+	byName := map[string]SubAgentSpec{}
+	for _, spec := range specs {
+		byName[spec.AgentName] = spec
+	}
+
+	alpha, ok := byName["alpha"]
+	if !ok {
+		t.Fatalf("sous-agent alpha absent: %+v", specs)
+	}
+	if alpha.PluginName != "catalog" || alpha.SubAgentName != "alpha" {
+		t.Errorf("routage inattendu: plugin=%q sous-agent=%q", alpha.PluginName, alpha.SubAgentName)
+	}
+	// Le prompt vient de l'entrée, pas du descripteur, et il est taillé
+	// pour le membre du tour.
+	if !strings.Contains(alpha.SystemPrompt, "member cam") {
+		t.Errorf("prompt sans l'identité du membre: %q", alpha.SystemPrompt)
+	}
+	if alpha.MaxToolCalls != 3 {
+		t.Errorf("max_sequential_tool_calls=%d, attendu 3", alpha.MaxToolCalls)
+	}
+	// Le domaine de permission reste celui du plugin : il est commun à
+	// toutes les entrées du catalogue.
+	if alpha.PermissionDomain != "catalog" {
+		t.Errorf("domaine de permission %q, attendu catalog", alpha.PermissionDomain)
+	}
+
+	beta, ok := byName["beta"]
+	if !ok {
+		t.Fatalf("sous-agent beta absent: %+v", specs)
+	}
+	// Même nom d'outil dans les deux entrées, annotations différentes.
+	if len(alpha.Tools) != 1 || len(beta.Tools) != 1 || alpha.Tools[0].Name != beta.Tools[0].Name {
+		t.Fatalf("outils inattendus: alpha=%+v beta=%+v", alpha.Tools, beta.Tools)
+	}
+	if !alpha.Tools[0].ReadOnly || beta.Tools[0].ReadOnly {
+		t.Errorf("annotations read_only inattendues: alpha=%v beta=%v",
+			alpha.Tools[0].ReadOnly, beta.Tools[0].ReadOnly)
+	}
+
+	if _, collided := byName["main"]; collided {
+		t.Error("une entrée homonyme d'un agent configuré a été montée")
+	}
+}
+
+// Une action d'écriture confirmée revient à l'entrée du catalogue qui l'a
+// proposée : sans cela, deux entrées exposant le même nom d'outil
+// exécuteraient l'une pour l'autre.
+func TestActionExecutor_RoutesConfirmedWriteToItsSubAgent(t *testing.T) {
+	dir := t.TempDir()
+	installBinary(t, dir, "catalog", catalogBinary)
+
+	manager, db := newTestManager(t, config.Plugins{Dir: dir})
+	seedOrgAndMember(t, db, "atelier", "cam")
+	activatePlugin(t, db, "catalog", "atelier")
+
+	executor := NewActionExecutor(manager, db, "catalog")
+
+	identity := model.ExecutionIdentity{PrincipalID: "cam", OrgID: "atelier"}
+	plan := persistence.ActionPlan{ID: "plan-1", OrgID: "atelier", Scope: model.ScopePersonal, ScopeID: "cam"}
+	act := persistence.Action{ID: "act-3", ToolName: "probe", AgentID: "plugin:catalog:beta"}
+
+	result, err := executor.Execute(context.Background(), identity, plan, act, map[string]any{})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(result, "sub_agent=beta") {
+		t.Errorf("action routée hors de son sous-agent: %s", result)
+	}
+
+	// Forme historique, sans suffixe : une confirmation en attente au
+	// moment de la mise à jour reste exécutable.
+	act.AgentID = "plugin:catalog"
+	result, err = executor.Execute(context.Background(), identity, plan, act, map[string]any{})
+	if err != nil {
+		t.Fatalf("Execute (forme historique): %v", err)
+	}
+	if !strings.Contains(result, "sub_agent= idem=act-3") {
+		t.Errorf("forme historique mal interprétée: %s", result)
 	}
 }
 

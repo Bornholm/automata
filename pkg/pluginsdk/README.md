@@ -41,6 +41,16 @@ What the host enforces — do not fight it, design with it:
 - **Sub-agent LLM calls run host-side.** Declare a system prompt, a
   description and tools in `Describe`; the host runs the loop with its
   own accounted clients.
+- **A plugin may offer a catalogue of sub-agents.** Set
+  `provides_sub_agents` and implement `ListSubAgents`, and the host mounts
+  one delegate per entry you return — each with its own name, prompt,
+  description and tools, chosen per member. `ListSubAgents` runs once per
+  turn: answer from cached state, never by connecting to anything. Tool
+  names need only be unique within an entry; `CallToolInput.sub_agent`
+  says which one the call belongs to, on a confirmed write too. A name
+  colliding with a configured agent or another mounted sub-agent is
+  skipped: two identical `delegate_to_<name>` tools are indistinguishable
+  to the model.
 - **Every tool not marked `read_only` is a write**: it is never executed
   during a turn, only proposed for the user's literal confirmation, then
   replayed with an `idempotency_key`. Make writes idempotent.
