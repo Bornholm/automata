@@ -79,10 +79,11 @@ personnel. Répondre non met un jeton unique au niveau du serveur, ce qui
 convient à une recherche web. Le détail est dans [agents.md](agents.md).
 
 Le spécialiste de recherche a besoin d'un serveur MCP en face. Si vous n'en
-avez pas, [misc/web-search](../misc/web-search/README.md) en construit un :
-une instance SearXNG privée et son serveur MCP dans un conteneur, démarrés
-par `make web-search-up`, à brancher sur `SEARCH_MCP_URL` et
-`SEARCH_MCP_TOKEN`.
+avez pas, [misc/web-search](../misc/web-search/README.md) en fournit un :
+une instance SearXNG privée et son serveur MCP dans un conteneur, publié
+par l'intégration continue sous `ghcr.io/bornholm/automata-web-search`. En
+local, `make web-search-up` le construit et le démarre ; à brancher sur
+`SEARCH_MCP_URL` et `SEARCH_MCP_TOKEN`.
 
 Le wizard couvre l'ossature. Les réglages fins, une seconde organisation, un
 spécialiste maison, plusieurs groupes, se font ensuite dans le fichier, avec

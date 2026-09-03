@@ -9,7 +9,25 @@ SearXNG : séparés, il faudrait exposer l'API JSON de SearXNG sur le réseau,
 alors qu'ici elle ne quitte jamais la boucle locale du conteneur. Une seule
 surface est publiée — le point d'entrée MCP — et elle exige un jeton.
 
-## Démarrer
+## L'image publiée
+
+L'intégration continue construit cette image et la publie sur GHCR à chaque
+poussée sur `main` (`latest`) et à chaque tag (la version) :
+
+```
+ghcr.io/bornholm/automata-web-search:<version>
+```
+
+Un déploiement la tire plutôt que de la construire. Ce n'est pas seulement
+une économie de temps : le Dockerfile part de `searxng/searxng:latest`, dont
+le contenu bouge. Construite sur chaque hôte, deux machines provisionnées à
+deux semaines d'écart n'obtenaient pas le même moteur de recherche, sans que
+rien ne le signale. Publiée, la version est figée au moment du tag.
+
+## Démarrer en local
+
+Les cibles ci-dessous construisent l'image sur place : c'est la boucle de
+développement, quand on touche au Dockerfile ou aux réglages SearXNG.
 
 ```sh
 make web-search-up     # construit l'image et démarre le conteneur
