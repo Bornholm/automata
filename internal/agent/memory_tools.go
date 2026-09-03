@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/bornholm/genai/llm"
@@ -48,6 +49,19 @@ type MemoryTools struct {
 	// Metrics observe le nombre de recherches mémoire (search_memory,
 	// plan de conception, §14.3, Phase 20). nil désactive l'observation.
 	Metrics *observability.Metrics
+	// Logger sert au rappel automatique, seul endroit où une recherche
+	// mémoire échoue sans que personne ne le voie : le modèle n'a rien
+	// demandé, l'utilisateur n'attend rien de précis, et un tour sans
+	// souvenir ressemble en tout point à un tour sans souvenir PERTINENT.
+	// nil retombe sur slog.Default().
+	Logger *slog.Logger
+}
+
+func (t MemoryTools) logger() *slog.Logger {
+	if t.Logger != nil {
+		return t.Logger
+	}
+	return slog.Default()
 }
 
 func (t MemoryTools) maxResults() int {
@@ -313,6 +327,17 @@ func (t MemoryTools) recallNote(ctx context.Context, identity model.ExecutionIde
 
 	results, err := t.searchAuthorizedScopes(ctx, identity, readScopes(identity), "read", query)
 	if err != nil {
+		// Le tour continue sans souvenirs — le rappel n'est jamais
+		// bloquant — mais il laisse une trace : sans elle, un index
+		// corrompu ou une base verrouillée se présente exactement comme
+		// « rien de pertinent », et une mémoire en panne peut passer des
+		// mois inaperçue. Des identifiants et l'erreur, jamais la requête,
+		// qui est le message de la personne.
+		t.logger().WarnContext(ctx, "memory: rappel automatique en échec, tour sans souvenirs",
+			"org_id", identity.OrgID,
+			"principal_id", identity.PrincipalID,
+			"scope", identity.Scope,
+			"error", err)
 		return ""
 	}
 

@@ -1,9 +1,12 @@
 package agent_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -37,6 +40,9 @@ type fakeMemoryStore struct {
 	}
 	forgotten     []string
 	rememberCalls []memory.NewMemory
+	// searchErr, non nil, fait échouer toute recherche : le cas d'un index
+	// corrompu ou d'une base verrouillée.
+	searchErr error
 }
 
 func newFakeMemoryStore() *fakeMemoryStore {
@@ -90,6 +96,10 @@ func (f *fakeMemoryStore) Remember(ctx context.Context, mem memory.NewMemory) (m
 func (f *fakeMemoryStore) Search(ctx context.Context, q memory.Query) ([]memory.Memory, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	if f.searchErr != nil {
+		return nil, f.searchErr
+	}
 
 	var results []memory.Memory
 	for id, m := range f.memories {
@@ -718,5 +728,42 @@ func TestOrchestratorAgent_RecallDisabledOrEmptyInputInjectsNothing(t *testing.T
 	}
 	if system := executeWithSystemCapture(t, enabled, privateIdentity("alice"), "   "); strings.Contains(system, "Possibly relevant memories") {
 		t.Errorf("rappel injecté sans texte de requête: %q", system)
+	}
+}
+
+// Une recherche mémoire en panne ne doit PAS ressembler à une absence de
+// souvenirs pertinents. Le tour continue — le rappel n'est jamais bloquant
+// — mais il laisse une trace, faute de quoi une mémoire hors service reste
+// invisible aussi longtemps que personne ne la cherche à la main.
+func TestOrchestratorAgent_RecallFailureIsLoggedNotSwallowed(t *testing.T) {
+	store := newFakeMemoryStore()
+	store.seed("m-1", "souvenir pertinent café", "home", model.ScopePersonal, "alice")
+	store.searchErr = errors.New("index corrompu")
+
+	var journal bytes.Buffer
+	tools := agent.MemoryTools{
+		Store:      store,
+		Authorizer: authorization.NewAuthorizer(memoryTestConfig()),
+		Recall:     true,
+		Logger:     slog.New(slog.NewTextHandler(&journal, &slog.HandlerOptions{Level: slog.LevelWarn})),
+	}
+
+	system := executeWithSystemCapture(t, tools, privateIdentity("alice"), "café")
+
+	// Le tour a bien eu lieu, sans souvenirs.
+	if strings.Contains(system, "Possibly relevant memories") {
+		t.Errorf("des souvenirs ont été injectés malgré l'échec: %q", system)
+	}
+
+	trace := journal.String()
+	if !strings.Contains(trace, "rappel automatique en échec") {
+		t.Fatalf("l'échec de recherche n'a laissé aucune trace: %q", trace)
+	}
+	if !strings.Contains(trace, "index corrompu") {
+		t.Errorf("la cause de l'échec manque au journal: %q", trace)
+	}
+	// Jamais la requête : c'est le message de la personne.
+	if strings.Contains(trace, "café") {
+		t.Errorf("le journal expose le contenu du message: %q", trace)
 	}
 }

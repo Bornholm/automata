@@ -634,7 +634,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 // planifiées (plan de conception, §11) : un seul registre d'agents par instance,
 // jamais reconstruit.
 func buildConversationHandler(cfg *config.Config, db *persistence.DB, authorizer *authorization.Authorizer, memStore *memory.AmoxtliStore, mcpManager *mcp.Manager, actionEngine *action.Engine, tenants *tenantSource, pluginProvider agent.PluginSpecialistProvider, eventStores agent.EventStoreResolver, skillsProvider agent.SkillsProvider, clientResolver agent.ClientResolver, modelStore *llmclients.Store, metrics *observability.Metrics, logger *slog.Logger) (ingress.Handler, *agent.Registry, *agent.Registry, *agent.Registry, error) {
-	memoryTools := buildMemoryTools(cfg, authorizer, memStore, metrics)
+	memoryTools := buildMemoryTools(cfg, authorizer, memStore, metrics, logger)
 
 	// Outil open_profile_link : disponible dès que le serveur web est
 	// configuré (sans base_url, aucun lien n'est composable).

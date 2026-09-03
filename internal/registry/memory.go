@@ -322,7 +322,7 @@ func MemoryReindex(ctx context.Context, logger interface {
 // comprise : en reconstruire un ici perdrait les membres rattachés par
 // jeton, qui se verraient refuser la mémoire alors que les rappels — même
 // identité, autre outil — leur sont ouverts.
-func buildMemoryTools(cfg *config.Config, authorizer *authorization.Authorizer, store *memory.AmoxtliStore, metrics *observability.Metrics) agent.MemoryTools {
+func buildMemoryTools(cfg *config.Config, authorizer *authorization.Authorizer, store *memory.AmoxtliStore, metrics *observability.Metrics, logger *slog.Logger) agent.MemoryTools {
 	if store == nil {
 		return agent.MemoryTools{}
 	}
@@ -338,6 +338,7 @@ func buildMemoryTools(cfg *config.Config, authorizer *authorization.Authorizer, 
 		Recall:     true,
 		MaxResults: 5,
 		Metrics:    metrics,
+		Logger:     logger,
 	}
 }
 
