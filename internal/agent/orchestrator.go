@@ -73,6 +73,17 @@ type OrchestratorAgent struct {
 	// binding permet de servir un modèle différent selon l'organisation,
 	// résolu à chaque exécution.
 	binding clientBinding
+	// judge relit les réponses produites sans aucun appel d'outil ; nil
+	// quand aucun modèle n'est affecté au rôle « judge » (voir judge.go).
+	judge Judge
+}
+
+// WithJudge câble le juge des réponses sans appel d'outil. Nil désactive la
+// vérification : c'est la valeur par défaut, et une instance sans modèle
+// affecté au rôle fonctionne exactement comme avant.
+func (a *OrchestratorAgent) WithJudge(judge Judge) *OrchestratorAgent {
+	a.judge = judge
+	return a
 }
 
 // NewOrchestratorAgent construit un OrchestratorAgent. specialists associe
@@ -197,10 +208,13 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 		return Result{}, err
 	}
 
-	// Une adresse que rien n'a fournie au modèle est une adresse qu'il a
-	// composée : elle ne mène nulle part, et la personne cliquera dessus.
-	// Le tour lui est rendu une fois, outils compris (voir
-	// unsourced_url.go).
+	// Deux relectures, dans cet ordre. La première décide sur une PREUVE :
+	// le tour n'a appelé aucun outil, et le juge dit si la réponse affirme
+	// pourtant quelque chose (voir judge.go). La seconde décide sur un
+	// FAIT : une adresse que rien n'a fournie au modèle a été composée par
+	// lui (voir unsourced_url.go). Chacune rend le tour au modèle une fois,
+	// ses outils toujours offerts ; aucune ne réécrit sa réponse.
+	loopResult = a.reviewGrounding(ctx, client, req.Identity, messages, tools, maxIterations, req.Input, loopResult)
 	loopResult = a.verifyURLSources(ctx, client, messages, tools, maxIterations, loopResult)
 
 	proposals := collector.take()

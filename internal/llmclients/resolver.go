@@ -64,6 +64,11 @@ const (
 	// RoleIntrospection sert la passe hebdomadaire de suggestions
 	// (internal/introspection).
 	RoleIntrospection = "introspection"
+	// RoleJudge relit les réponses produites sans aucun appel d'outil et
+	// dit si elles affirment un fait que rien n'appuie (voir
+	// internal/agent/judge.go). Sans modèle affecté, la vérification est
+	// simplement absente : aucune réponse n'en dépend.
+	RoleJudge = "judge"
 	// RoleImagePrefix préfixe le rôle de génération d'images d'un agent :
 	// « image:imagine ». Un agent a deux modèles distincts — celui qui
 	// converse et celui qui dessine.
@@ -100,6 +105,11 @@ func Roles(cfg *config.Config) []string {
 			roles = append(roles, ImageRole(name))
 		}
 	}
+
+	// Toujours proposé : la vérification des réponses sans appel d'outil
+	// n'a pas de drapeau de configuration, elle s'active en affectant un
+	// modèle au rôle et se désactive en le retirant.
+	roles = append(roles, RoleJudge)
 
 	if cfg.Plugins.Enabled {
 		roles = append(roles, RolePlugins, RolePluginsVision)

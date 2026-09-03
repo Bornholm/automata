@@ -242,6 +242,10 @@ func TestRolesFollowConfiguredFeatures(t *testing.T) {
 		llmclients.RoleCompaction: true, llmclients.RoleTranscription: true,
 		llmclients.RoleConsolidation: true, llmclients.RoleRetrieval: true,
 		"embeddings:semantic": true,
+		// Toujours proposé, quelle que soit la configuration : la
+		// relecture des réponses sans appel d'outil s'active en affectant
+		// un modèle au rôle, et se désactive en le retirant.
+		llmclients.RoleJudge: true,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("%d rôles (%v), attendus %d", len(got), got, len(want))

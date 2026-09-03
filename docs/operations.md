@@ -381,6 +381,54 @@ recopie tronquée :
 Rien de tout cela ne remplace le choix d'un modèle apte : cela empêche
 qu'une seule invention enferme une conversation entière.
 
+### Le juge des réponses sans outil
+
+Le signal structurel dit qu'un tour n'a appelé aucun outil ; il ne dit pas
+ce que la réponse PRÉTEND. « Le service de calendrier est indisponible » et
+« je n'ai pas d'idée pour ce soir » sont deux textes écrits sans outil, et
+un seul des deux est un mensonge.
+
+Un second modèle lit cette différence, et elle seule. Il reçoit la demande,
+la réponse, et le fait qu'aucun outil n'a été appelé ; il ne reçoit ni
+l'historique, ni les outils. Sa sortie est contrainte par un schéma JSON —
+`grounded` (booléen) et `reason` (une phrase) — sans quoi un modèle rend de
+la prose au lieu d'un avis exploitable.
+
+Ce cadre est ce qui rend un juge acceptable dans le chemin d'une réponse :
+
+- **une preuve décide QUAND, une opinion décide QUOI.** Le juge n'est
+  consulté que si le tour n'a appelé aucun outil alors qu'il en avait. Un
+  tour normal ne coûte donc aucune complétion de plus ;
+- **son verdict ne réécrit jamais la réponse.** Il déclenche UNE relance du
+  modèle d'origine, à qui la raison est transmise telle quelle, ses outils
+  toujours offerts, avec deux issues : appeler l'outil, ou dire honnêtement
+  ce qui n'a pas été fait. « Ta réponse n'est pas fondée » sans la raison
+  ferait recommencer à l'identique ;
+- **tout ce qui peut mal se passer laisse le tour inchangé** : aucun modèle
+  affecté au rôle, juge en erreur, avis illisible, verdict sans raison,
+  relance en échec. Une vérification indisponible ne doit pas coûter sa
+  réponse à la personne qui attend.
+
+Le modèle se choisit dans l'administration, écran Modèles, rôle **judge**.
+Aucun modèle affecté = aucune relecture, et l'instance se comporte
+exactement comme avant. Il peut — et devrait — être différent de celui du
+rôle `main` : un modèle qui invente est mal placé pour juger ses propres
+inventions.
+
+Ce que le juge ne peut pas faire : vérifier la véracité. Sans outils, il ne
+sait pas si le service est réellement indisponible. Il ne dit que ceci :
+cette réponse affirme quelque chose que rien n'appuie.
+
+À surveiller :
+
+```sh
+dokku logs automata --num 20000 | grep -a "jugée non fondée"
+curl -s http://127.0.0.1:9090/metrics | jq .ungrounded_replies
+```
+
+Un compteur qui monte dit que le modèle du rôle `main` affirme au lieu
+d'appeler : la relance sauve le tour, elle ne remplace pas le diagnostic.
+
 ### Une adresse que personne n'a fournie
 
 Un modèle qui n'appelle pas son outil ne se contente pas toujours de

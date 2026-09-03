@@ -431,6 +431,10 @@ var roleLabels = map[string][2]string{
 		"Regard sur les images",
 		"Le modèle multimodal derrière view_file, quand un sous-agent doit voir une image.",
 	},
+	llmclients.RoleJudge: {
+		"Relecture des réponses sans outil",
+		"Le modèle qui relit une réponse écrite sans qu'aucun outil ait été appelé, et dit si elle affirme un fait que rien n'appuie. Sans modèle affecté, aucune relecture n'a lieu.",
+	},
 	llmclients.RoleCompaction: {
 		"Compaction de l'historique",
 		"Le modèle qui condense les vieux messages en résumé roulant.",

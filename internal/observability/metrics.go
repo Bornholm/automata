@@ -56,6 +56,7 @@ type Metrics struct {
 	toolResultsTruncated     atomic.Int64
 	profileLinks             atomic.Int64
 	profileLinkRepairs       atomic.Int64
+	ungroundedReplies        atomic.Int64
 	walletDebits             atomic.Int64
 	servicePauses            atomic.Int64
 	usageRecords             atomic.Int64
@@ -377,6 +378,18 @@ func (m *Metrics) IncProfileLink() {
 // open_profile_link. Un compteur qui monte dit qu'un modèle est trop
 // faible pour cet outil : la réparation côté hôte sauve le tour, elle ne
 // remplace pas le diagnostic.
+// IncUngroundedReply incrémente le compteur de réponses que le juge a
+// déclarées non fondées : le tour n'avait appelé aucun outil et affirmait
+// pourtant un fait. Un compteur qui monte dit que le modèle affecté au rôle
+// invente plutôt que d'appeler — la relance sauve le tour, elle ne remplace
+// pas le diagnostic.
+func (m *Metrics) IncUngroundedReply() {
+	if m == nil {
+		return
+	}
+	m.ungroundedReplies.Add(1)
+}
+
 func (m *Metrics) IncProfileLinkRepair() {
 	if m == nil {
 		return
@@ -536,6 +549,7 @@ func (m *Metrics) Snapshot() map[string]any {
 		"delivery_errors":             m.deliveryErrors.Load(),
 		"profile_links":               m.profileLinks.Load(),
 		"profile_link_repairs":        m.profileLinkRepairs.Load(),
+		"ungrounded_replies":          m.ungroundedReplies.Load(),
 		"wallet_debits":               m.walletDebits.Load(),
 		"service_pauses":              m.servicePauses.Load(),
 		"usage_records":               m.usageRecords.Load(),

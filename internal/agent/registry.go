@@ -225,7 +225,11 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			WithOrgSystemPrompts(orgPrompts[name]).
 			WithClientResolver(clientResolver, name, logger).
 			WithSpecialistDescriptions(specialistDescriptions).
-			WithSkills(skills)
+			WithSkills(skills).
+			// Le juge n'agit que si un modèle est affecté au rôle
+			// « judge » : le câbler ici ne l'active pas, cela le rend
+			// possible (voir judge.go).
+			WithJudge(NewJudge(clientResolver))
 
 		agentMemoryTools := memoryTools
 		agentMemoryTools.Search = memoryTools.Search && agentCfg.Memory.Search
