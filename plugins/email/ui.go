@@ -20,20 +20,38 @@ var uiTemplate = template.Must(template.New("ui").Parse(`<!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 body{font-family:system-ui,sans-serif;font-size:14px;color:#161c27;margin:0;padding:16px;background:#fff}
-label{display:block;margin-top:10px;font-weight:600;font-size:13px}
-input[type=text],input[type=password],input[type=number]{width:100%;box-sizing:border-box;height:34px;padding:0 10px;margin-top:4px;border:1px solid #d8dce4;border-radius:8px;font-size:14px}
-.row{display:flex;gap:10px}.row>div{flex:1}
-.check{display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:600;font-size:13px}
-.hint{font-weight:400;color:#8a93a5;font-size:12px;margin-top:2px}
-button{margin-top:16px;height:36px;padding:0 16px;border:0;border-radius:8px;background:#5b5bd6;color:#fff;font-weight:600;font-size:14px;cursor:pointer}
-.flash{margin-top:12px;padding:8px 12px;border-radius:8px;background:#e7f4ef;color:#17795e;font-size:13px}
+/* La page vit dans une iframe large : sans plafond, une ligne de texte
+   traverserait l'écran, et les champs seraient démesurés devant leur
+   contenu. Centrée et aérée, elle se lit comme un formulaire. */
+main{max-width:820px;margin:0 auto}
+@media (min-width:720px){body{padding:28px 32px}}
+label{display:block;margin-top:18px;font-weight:600;font-size:13px}
+/* textarea AVEC les autres champs : oublié de cette liste, il gardait la
+   police à chasse fixe et la largeur par défaut du navigateur — vingt
+   colonnes posées à côté de leur propre intitulé. */
+input[type=text],input[type=password],input[type=number],textarea{display:block;width:100%;box-sizing:border-box;padding:0 10px;margin-top:6px;border:1px solid #d8dce4;border-radius:8px;font-family:inherit;font-size:14px;color:inherit}
+input[type=text],input[type=password],input[type=number]{height:36px}
+textarea{min-height:110px;padding:10px;line-height:1.5;resize:vertical}
+input:focus,textarea:focus{outline:2px solid #c7c7f5;outline-offset:-1px;border-color:#5b5bd6}
+.row{display:flex;flex-wrap:wrap;gap:14px}.row>div{flex:1;min-width:180px}
+.check{display:flex;align-items:center;gap:8px;margin-top:14px;font-weight:600;font-size:13px}
+.hint{font-weight:400;color:#8a93a5;font-size:12px;margin-top:4px;line-height:1.5}
+button{height:36px;padding:0 16px;border:0;border-radius:8px;background:#5b5bd6;color:#fff;font-weight:600;font-size:14px;cursor:pointer}
+.flash{margin-top:16px;padding:10px 14px;border-radius:8px;background:#e7f4ef;color:#17795e;font-size:13px}
 .error{background:#fce9e7;color:#b42318}
-.notice{margin-top:14px;padding:8px 12px;border-radius:8px;background:#f5f5fe;color:#3f3fa8;font-size:12px;line-height:1.5}
-.google{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-top:6px;padding:12px 14px;border:1px solid #d8dce4;border-radius:10px}
+.notice{margin-top:16px;padding:12px 14px;border-radius:8px;background:#f5f5fe;color:#3f3fa8;font-size:12px;line-height:1.6}
+.google{display:flex;align-items:center;gap:12px;justify-content:space-between;margin-top:16px;padding:14px 16px;border:1px solid #d8dce4;border-radius:10px}
 .google.connected{border-color:#bfe3d4;background:#f2faf7}
-.google button{margin-top:0}
 button.ghost{background:#fff;color:#161c27;border:1px solid #d8dce4}
-</style></head><body>
+/* Les boutons vivent dans des rangées, jamais seuls au fil du texte : une
+   marge posée sur le bouton lui-même le décalait de la phrase qu'il
+   accompagne, et le renvoyait à la ligne. */
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}
+.actions form{margin:0}
+.exceptions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.exceptions form{margin:0}
+.exceptions button{height:30px;padding:0 12px;font-size:12px}
+</style></head><body><main>
 {{if .Saved}}<div class="flash">Configuration enregistrée.</div>{{end}}
 {{if .Tested}}<div class="flash {{if not .TestOK}}error{{end}}">{{.TestMessage}}</div>{{end}}
 {{if .Cert}}
@@ -45,30 +63,34 @@ button.ghost{background:#fff;color:#161c27;border:1px solid #d8dce4}
 	<div><span class="hint">Valide jusqu'au</span> {{.CertExpiry}}</div>
 	<div style="margin-top:6px"><span class="hint">Empreinte SHA-256</span><br><code style="font-size:11px;word-break:break-all">{{.CertFingerprint}}</code></div>
 	<div style="margin-top:8px">Comparez cette empreinte à celle de votre serveur avant d'accepter. L'exception ne vaudra que pour <em>ce</em> certificat, sur <em>ce</em> serveur : un autre restera refusé.</div>
-	<form method="post" action="{{.Base}}accept-certificate" style="margin:0">
-		<input type="hidden" name="protocol" value="{{.CertProtocol}}">
-		<input type="hidden" name="fingerprint" value="{{.Cert.Fingerprint}}">
-		<button type="submit">Accepter ce certificat</button>
-	</form>
+	<div class="actions">
+		<form method="post" action="{{.Base}}accept-certificate">
+			<input type="hidden" name="protocol" value="{{.CertProtocol}}">
+			<input type="hidden" name="fingerprint" value="{{.Cert.Fingerprint}}">
+			<button type="submit">Accepter ce certificat</button>
+		</form>
+	</div>
 </div>
 {{end}}
 {{if .Exceptions}}
 <div class="notice">
-	Exception de certificat enregistrée pour : {{range $i, $p := .Exceptions}}{{if $i}}, {{end}}{{$p}}{{end}}.
-	{{range .Exceptions}}
-	<form method="post" action="{{$.Base}}accept-certificate" style="margin:0;display:inline-block">
-		<input type="hidden" name="protocol" value="{{.}}">
-		<input type="hidden" name="fingerprint" value="">
-		<button type="submit" style="background:#fff;color:#161c27;border:1px solid #d8dce4">Retirer l'exception {{.}}</button>
-	</form>
-	{{end}}
+	<div class="exceptions">
+		<span>Exception de certificat enregistrée pour : {{range $i, $p := .Exceptions}}{{if $i}}, {{end}}{{$p}}{{end}}.</span>
+		{{range .Exceptions}}
+		<form method="post" action="{{$.Base}}accept-certificate">
+			<input type="hidden" name="protocol" value="{{.}}">
+			<input type="hidden" name="fingerprint" value="">
+			<button type="submit" class="ghost">Retirer l'exception {{.}}</button>
+		</form>
+		{{end}}
+	</div>
 </div>
 {{end}}
 {{if .OAuthMessage}}<div class="flash {{if .OAuthError}}error{{end}}">{{.OAuthMessage}}</div>{{end}}
 {{if .GoogleConnected}}
 <div class="google connected">
 	<div><strong>Compte Google connecté</strong><div class="hint">{{.Cfg.Username}} — les serveurs Gmail sont réglés automatiquement, aucun mot de passe à saisir.</div></div>
-	<form method="post" action="{{.Base}}disconnect"><button type="submit" class="ghost">Déconnecter</button></form>
+	<form method="post" action="{{.Base}}disconnect" style="margin:0"><button type="submit" class="ghost">Déconnecter</button></form>
 </div>
 <form method="post" action="{{.Base}}save">
 	<input type="hidden" name="imap_host" value="{{.Cfg.IMAPHost}}"><input type="hidden" name="imap_port" value="{{.Cfg.IMAPPort}}">
@@ -81,13 +103,13 @@ button.ghost{background:#fff;color:#161c27;border:1px solid #d8dce4}
 	<div class="hint">Écrivez-les comme vous les diriez. Elles s'appliquent à chaque courriel reçu et l'emportent sur le jugement de l'agent.</div>
 	<label>Marquer les courriels traités<input type="text" name="processed_label" value="{{.Cfg.ProcessedLabel}}" placeholder="Automata"></label>
 	<div class="hint">Le mot-clé posé sur un courriel dont l'agent s'est occupé. Vos courriels ne sont jamais marqués comme lus : cet état vous appartient.</div>
-	<button type="submit">Enregistrer</button>
+	<div class="actions"><button type="submit">Enregistrer</button></div>
 </form>
 {{else}}
 {{if .GoogleAvailable}}
 <div class="google">
 	<div><strong>Boîte Gmail</strong><div class="hint">Connectez votre compte Google : rien à saisir, et aucun mot de passe conservé.</div></div>
-	<form method="post" action="{{.Base}}connect"><button type="submit">Connecter Gmail</button></form>
+	<form method="post" action="{{.Base}}connect" style="margin:0"><button type="submit">Connecter Gmail</button></form>
 </div>
 <p class="hint" style="margin-top:14px">Ou configurez un autre fournisseur ci-dessous.</p>
 {{end}}
@@ -111,11 +133,13 @@ button.ghost{background:#fff;color:#161c27;border:1px solid #d8dce4}
 	<div class="hint">Écrivez-les comme vous les diriez. Elles s'appliquent à chaque courriel reçu et l'emportent sur le jugement de l'agent.</div>
 	<label>Marquer les courriels traités<input type="text" name="processed_label" value="{{.Cfg.ProcessedLabel}}" placeholder="Automata"></label>
 	<div class="hint">Le mot-clé posé sur un courriel dont l'agent s'est occupé. Vos courriels ne sont jamais marqués comme lus : cet état vous appartient.</div>
-	<button type="submit">Enregistrer</button>
-	<button type="submit" formaction="{{.Base}}test" style="background:#fff;color:#161c27;border:1px solid #d8dce4;margin-left:8px">Tester la connexion</button>
+	<div class="actions">
+		<button type="submit">Enregistrer</button>
+		<button type="submit" formaction="{{.Base}}test" class="ghost">Tester la connexion</button>
+	</div>
 </form>
 {{end}}
-</body></html>`))
+</main></body></html>`))
 
 type uiData struct {
 	Base         string
