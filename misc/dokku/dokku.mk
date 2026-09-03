@@ -9,6 +9,7 @@
 #   make dokku-tls       — activer HTTPS (Let's Encrypt)
 #   make dokku-logs      — suivre les journaux
 #   make dokku-qr        — retrouver le QR code de liaison WhatsApp
+#   make dokku-healthcheck — interroger GET /healthz par l'URL publique
 #   make dokku-build     — construire l'image exactement comme Dokku le fera
 #   make dokku-run       — lancer l'image en local, comme en production
 #
@@ -51,7 +52,7 @@ DOKKU := ssh $(DOKKU_DEPLOY_URL)
 
 .PHONY: dokku-setup dokku-storage dokku-env dokku-config dokku-config-check dokku-deploy \
         dokku-scale dokku-tls dokku-logs dokku-qr dokku-healthcheck dokku-ps \
-        dokku-build dokku-run
+        dokku-build dokku-run dokku-healthcheck-local
 
 # Préparation initiale de l'application. Idempotent : peut être relancé.
 dokku-setup:
@@ -223,8 +224,32 @@ dokku-logs:
 dokku-qr:
 	$(DOKKU) logs $(DOKKU_APP) --num 200
 
+# Interroge la sonde du service (GET /healthz) par son URL publique : elle
+# répond 200 quand la base est joignable et le câblage interne terminé.
+# Passer par le domaine éprouve toute la chaîne — nginx, certificat,
+# application — là où un appel depuis le conteneur ne dirait rien du proxy.
 dokku-healthcheck:
-	$(DOKKU) run $(DOKKU_APP) healthcheck
+	@set -eu; \
+	url="https://$(DOKKU_DOMAIN)/healthz"; \
+	echo "Sonde $$url"; \
+	code=$$(curl -sS -o /tmp/automata-healthz -w '%{http_code}' --max-time 10 "$$url" || echo 000); \
+	body=$$(cat /tmp/automata-healthz 2>/dev/null || true); \
+	rm -f /tmp/automata-healthz; \
+	if [ "$$code" = "200" ]; then \
+		echo "OK ($$code) : $$body"; \
+	else \
+		echo "ÉCHEC ($$code) : $$body"; \
+		echo "Diagnostic : make dokku-ps, puis make dokku-logs."; \
+		exit 1; \
+	fi
+
+# La même sonde, mais DEPUIS le conteneur : elle court-circuite nginx et le
+# certificat, ce qui départage une application en panne d'un proxy mal
+# configuré. L'entrypoint de l'image est vide (voir le Dockerfile), la
+# commande doit donc nommer le binaire par son chemin.
+dokku-healthcheck-local:
+	$(DOKKU) run $(DOKKU_APP) /usr/local/bin/automata healthcheck \
+		-addr 127.0.0.1:$(DOKKU_APP_PORT) -path /healthz
 
 # Construit l'image exactement comme Dokku le fera, pour valider le
 # Dockerfile avant de pousser.

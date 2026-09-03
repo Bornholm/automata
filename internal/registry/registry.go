@@ -575,6 +575,7 @@ func Run(ctx context.Context, logger *slog.Logger, cfg *config.Config) error {
 		})
 
 		webServer := web.NewServer(cfg, db, mailSender, logger).
+			WithReadiness(ready.Load).
 			WithPlatformManager(platforms).
 			// Un paiement se confirme là où il a été décidé : dans la
 			// conversation, pas seulement sur l'écran de retour que le

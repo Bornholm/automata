@@ -215,11 +215,18 @@ entrypoint — dans le `Procfile` comme dans le `CMD` par défaut.
 ## Journaux et diagnostic
 
 ```bash
-make dokku-logs         # suivre
-make dokku-ps           # état des process
-make dokku-healthcheck  # sonde interne
-make dokku-qr           # 200 dernières lignes (QR WhatsApp)
+make dokku-logs               # suivre
+make dokku-ps                 # état des process
+make dokku-healthcheck        # GET /healthz par l'URL publique
+make dokku-healthcheck-local  # la même sonde depuis le conteneur
+make dokku-qr                 # 200 dernières lignes (QR WhatsApp)
 ```
+
+`/healthz` répond 200 quand la base est joignable et le câblage interne
+terminé ; c'est aussi ce que Dokku interroge au démarrage
+(`app.json`). Les deux cibles se complètent : la première passe par nginx
+et le certificat, la seconde les court-circuite. Une sonde locale verte
+avec une sonde publique rouge désigne le proxy, pas l'application.
 
 Le QR code de liaison WhatsApp n'apparaît qu'au premier démarrage et
 expire vite ; `dokku ps:restart` en produit un nouveau.

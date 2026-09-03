@@ -156,6 +156,26 @@ curl -s http://127.0.0.1:9090/healthz/ready
 curl -s http://127.0.0.1:9090/metrics | jq .
 ```
 
+### La sonde du service web
+
+Le serveur web expose sa propre sonde, `GET /healthz`, sur le port
+applicatif et sans authentification. Elle est là pour les orchestrateurs
+qui ne publient que ce port et ne peuvent donc pas atteindre l'adresse
+d'observabilité, locale et désactivable. Elle est active dès que
+`web.enabled` l'est, sans rien à configurer.
+
+Elle répond 200 et `ok` quand la base répond et que le câblage interne est
+terminé ; 503 et `starting` pendant le démarrage, `database unavailable` si
+la base ne répond pas dans les trois secondes. Interroger la base est le
+point : un port ouvert devant une base bloquée est exactement ce qu'un
+healthcheck sur une page rendue laisse passer. Le corps de la réponse ne
+dit qu'un état, jamais un chemin ni une erreur de pilote, qui vont au
+journal.
+
+C'est cette route que vise le healthcheck de démarrage du déploiement
+Dokku (`misc/dokku/app.json`), et `make dokku-healthcheck` l'interroge par
+l'URL publique, ce qui éprouve du même coup nginx et le certificat.
+
 Format de l'export retenu : JSON simple (pas le format texte Prometheus).
 plan de conception, §14.3 ne prescrit aucun format particulier ; un export Prometheus
 aurait ajouté du travail de mise en forme (types de métriques, labels,
@@ -347,8 +367,9 @@ propriétaire.
 
 Ordre recommandé, du plus rapide au plus détaillé :
 
-1. `GET /healthz/live` et `/healthz/ready` (si le serveur d'observabilité
-   est activé) : le processus tourne-t-il, est-il prêt ?
+1. `GET /healthz` sur le port web : la base répond-elle, le service est-il
+   prêt ? (Ou `/healthz/live` et `/healthz/ready` si le serveur
+   d'observabilité est activé.)
 2. `GET /metrics` : y a-t-il un pic d'erreurs de livraison, d'appels MCP en
    erreur, d'origines refusées, de résultats tronqués ? Ces compteurs
    suffisent souvent à localiser le composant en cause (ingress, MCP,

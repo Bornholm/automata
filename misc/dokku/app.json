@@ -3,9 +3,9 @@
     "web": [
       {
         "type": "startup",
-        "name": "administration joignable",
-        "description": "La page de connexion ne répond que si la configuration a été chargée, la base ouverte et les migrations appliquées. La tolérance couvre un premier démarrage, qui crée les bases et l'index de mémoire.",
-        "path": "/admin/login",
+        "name": "service prêt",
+        "description": "GET /healthz ne répond 200 que si la base est joignable et le câblage interne terminé : il interroge la base, là où une page rendue prouve seulement que le port est ouvert. La tolérance couvre un premier démarrage, qui crée les bases et l'index de mémoire.",
+        "path": "/healthz",
         "attempts": 12,
         "initialDelay": 15,
         "wait": 10,

@@ -209,6 +209,14 @@ func (db *DB) Close() error {
 	return db.sqlDB.Close()
 }
 
+// Ping vérifie que la base répond. La sonde de santé s'en sert : le pool
+// est limité à une connexion, et une écriture longue la retient — un ping
+// qui n'obtient pas la main dans le délai de ctx signale exactement ce qui
+// rendrait le service inutilisable.
+func (db *DB) Ping(ctx context.Context) error {
+	return db.sqlDB.PingContext(ctx)
+}
+
 // WithTx exécute fn au sein d'une transaction : commit si fn retourne nil,
 // rollback si fn retourne une erreur ou panique. La panique est propagée
 // après le rollback.

@@ -265,6 +265,10 @@ func newHealthcheckCommand() *cobra.Command {
 			fs.SetOutput(cmd.ErrOrStderr())
 
 			addr := fs.String("addr", defaultHealthcheckAddr, "adresse du serveur d'observabilité à interroger")
+			// Le serveur d'observabilité est facultatif : là où il est
+			// désactivé, la sonde du service web (-addr <hôte>:5000 -path
+			// /healthz) rend le même service, et interroge la base en plus.
+			path := fs.String("path", "/healthz/ready", "chemin de la sonde (/healthz pour celle du serveur web)")
 			timeout := fs.Duration("timeout", 3*time.Second, "délai maximal de la sonde")
 
 			if err := fs.Parse(args); err != nil {
@@ -274,7 +278,7 @@ func newHealthcheckCommand() *cobra.Command {
 			ctx, cancel := context.WithTimeout(cmd.Context(), *timeout)
 			defer cancel()
 
-			url := "http://" + *addr + "/healthz/ready"
+			url := "http://" + *addr + *path
 
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 			if err != nil {

@@ -39,6 +39,9 @@ type Server struct {
 	*core.Deps
 
 	httpServer *http.Server
+	// ready, non nil, rapporte la disponibilité de l'instance à /healthz
+	// (voir health.go).
+	ready func() bool
 }
 
 // NewServer construit le serveur décrit par cfg.Web. mail peut être nil
@@ -64,6 +67,10 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/dashboard", http.StatusFound)
 	})
+
+	// Sonde de santé, sans authentification : c'est l'orchestrateur qui
+	// l'appelle, pas une personne. Voir health.go.
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
 	mux.HandleFunc("GET /admin/login", adm.HandleLoginForm)
 	mux.HandleFunc("POST /admin/login", adm.HandleLogin)
