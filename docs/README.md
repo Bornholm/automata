@@ -20,6 +20,7 @@ seul sur des expressions cron.
 | [plugins-caldav.md](plugins-caldav.md) | Plugin d'agenda : rappels rangés dans un agenda CalDAV |
 | [plugins-workspace.md](plugins-workspace.md) | Plugin d'atelier de fichiers : retouche vidéo et image en bac à sable |
 | [plugins-pages.md](plugins-pages.md) | Plugin de pages web : brouillons par membre, publication confirmée sous lien public court |
+| [plugins-subagents.md](plugins-subagents.md) | Plugin de sous-agents : catalogue de spécialistes adossés à des serveurs MCP, activés par chaque membre |
 | [skills.md](skills.md) | Bibliothèque de compétences : modes opératoires chargés à la demande par les agents |
 | [models.md](models.md) | Catalogue de modèles : édition depuis l'administration, modèles par organisation, organisations gratuites sans limite |
 | [security-model.md](security-model.md) | Modèle de menace, frontières de confiance, limitations assumées |

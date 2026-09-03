@@ -7,4 +7,73 @@
 # sur le serveur, avec les droits d'Automata. Y ajouter un serveur MCP
 # engage la même confiance que déposer un binaire dans le répertoire des
 # plugins.
-agents: []
+agents:
+  - name: netprobe
+    description: >-
+      checks whether a host, a port, a website or a certificate is reachable
+      from the server, and diagnoses DNS, TLS and HTTP problems
+    # Anglais : ce texte part au modèle.
+    system_prompt: |
+      You are a network diagnostics specialist. You answer questions such as
+      "is example.com reachable?", "why does this certificate fail?" or
+      "what does this domain resolve to?" by probing, never by guessing.
+
+      Work like an engineer, not like a scanner:
+      - Probe what the question is about, one target at a time. Do not sweep
+        ranges or enumerate ports: the policy will refuse it, and it is not
+        what was asked.
+      - Report what you observed — the code, the latency, the certificate
+        dates, the resolved addresses — and say plainly what it means.
+      - When a probe is refused by the policy, say so and say which target
+        was refused. That is an answer, not a failure to work around: do not
+        retry with a variation of the same target.
+      - You probe from the server, not from the user's machine. If that
+        distinction matters to the answer, say it.
+    max_tool_calls: 8
+    servers:
+      - name: netprobe
+        transport: stdio
+        version: "0.4.0"
+        # Téléchargement vérifié : le plugin va chercher l'archive et
+        # refuse tout ce dont le sha256 ne correspond pas au checksums.txt
+        # de la release. Fonctionne dans l'image distroless, qui n'a ni
+        # shell ni compilateur.
+        install:
+          fetch:
+            url: https://github.com/Bornholm/netprobe-mcp/releases/download/v{{version}}/netprobe-mcp_{{version}}_{{os}}_{{arch}}.tar.gz
+            checksums: https://github.com/Bornholm/netprobe-mcp/releases/download/v{{version}}/checksums.txt
+            extract: netprobe-mcp
+        # Sans --config, netprobe applique sa politique interne, et c'est
+        # celle qu'on veut : les cinq sondes actives, l'Internet public
+        # autorisé, et refus de la boucle locale, des plages privées et du
+        # point d'accès de métadonnées des fournisseurs cloud
+        # (169.254.169.254), qui sert des identifiants d'instance. netprobe
+        # sonde DEPUIS LE SERVEUR : sans ce refus, c'est un SSRF offert sur
+        # le réseau interne.
+        #
+        # Un exploitant qui VEUT sonder son propre réseau interne fournit
+        # son catalogue avec sa politique — geste explicite, pas un défaut
+        # permissif :
+        #
+        #   command: ["{{bin}}/netprobe-mcp", "--config", "{{files}}/policy.yaml"]
+        #   files:
+        #     policy.yaml: |
+        #       security: ...
+        #
+        # Attention, en 0.4.0 : une politique explicite désactive les sondes
+        # DNS et TLS (leur section `probes:` fait paniquer le serveur au
+        # démarrage, étiquette YAML invalide dans son propre type de
+        # configuration). À revoir quand le correctif sera publié.
+        command: ["{{bin}}/netprobe-mcp"]
+        # Les sept outils sont des lectures : ils observent, ils ne
+        # changent rien. Exiger un « confirmer » pour chaque ping rendrait
+        # le sous-agent inutilisable, et la vraie barrière n'est pas là —
+        # c'est la liste d'autorisation de netprobe.
+        read_only:
+          - tcp_probe
+          - http_probe
+          - dns_probe
+          - tls_diagnose
+          - icmp_probe
+          - probe_policy
+          - probe_check_target

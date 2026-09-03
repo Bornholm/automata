@@ -373,6 +373,20 @@ verts (`go test ./...`, `go test -race ./...`).
   mais à réévaluer si les origines devenaient ouvertes.
 - Chemin de fichier de prompt non neutralisé (A.4) : accepté, la
   configuration étant administrée, pas fournie par un attaquant distant.
+- Le catalogue du plugin `subagents` est **du code exécuté avec les droits
+  d'Automata**, au même titre qu'un binaire déposé dans le répertoire des
+  plugins (voir [plugins-subagents.md](plugins-subagents.md)). Une entrée
+  peut télécharger un binaire et le lancer, hors de tout bac à sable —
+  contrairement à l'atelier `workspace`, qui passe par LeaSH. Le fichier
+  doit rester sous le contrôle exclusif de l'exploitant. Trois garde-fous,
+  qui ne remplacent pas cette exigence : la source d'une URL ou d'une
+  commande n'est jamais un membre ni le modèle ; un téléchargement sans
+  somme de contrôle déclarée est refusé au chargement du catalogue, et une
+  somme qui ne correspond pas annule l'installation ; les identifiants d'un
+  membre ne peuvent pas figurer dans une installation, posée une fois pour
+  tous. Un serveur MCP ainsi lancé sonde ou appelle **depuis le serveur** :
+  c'est à sa propre configuration de borner ce qu'il peut atteindre, et
+  c'est ce que fait la politique de `netprobe`.
 - Aucune limite de taille sur un message texte brut (A.7). Accepté, risque
   modéré. Les plateformes bornent déjà ce qu'elles transportent.
 - Nouveau serveur MCP porteur d'une ressource résolue (A.2) : il doit

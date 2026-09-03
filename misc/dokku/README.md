@@ -95,6 +95,17 @@ Les chemins pointent les volumes montés : `/data` (bases SQLite, index de
 mémoire, session WhatsApp) et `/config`. Les prompts et les plugins, eux,
 font partie de l'image — c'est du code, il se déploie avec l'application.
 
+Le plugin `subagents` installe ses serveurs MCP dans le répertoire que
+désigne `SUBAGENTS_DATA_DIR` : sur Dokku, un sous-répertoire du volume de
+données, à poser dans `config/config.env` avant `make dokku-env`.
+
+```
+SUBAGENTS_DATA_DIR=/data/subagents
+```
+
+Sans elle, les sous-agents à installer restent inactifs et leur page de
+profil le dit (voir [plugins-subagents.md](../../docs/plugins-subagents.md)).
+
 **`STORAGE_ENCRYPTION_KEY` se sauvegarde à part.** La perdre rend
 illisibles les conversations et les souvenirs déjà chiffrés, sauvegardes
 comprises.
