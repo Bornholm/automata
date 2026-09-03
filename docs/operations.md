@@ -277,6 +277,17 @@ automata admin probe-tools -config /config/config.yaml
 automata admin probe-tools -config /config/config.yaml -role research -org atelier
 ```
 
+Sur un déploiement Dokku, la commande s'exécute dans le conteneur en marche.
+Attention : `dokku enter` ouvre un processus neuf, sans les variables
+engendrées au démarrage par l'entrypoint — `INTERNET_SEARCH_MCP_TOKEN` en
+particulier, que la configuration référence. Il faut donc la fournir, sa
+valeur étant sans importance ici (la sonde ne touche à aucun serveur MCP) :
+
+```sh
+dokku enter automata web -- /usr/bin/env INTERNET_SEARCH_MCP_TOKEN=sonde \
+  /usr/local/bin/automata admin probe-tools -config /config/config.yaml
+```
+
 Elle envoie au modèle du rôle une question qu'il ne peut pas deviner, avec
 un outil qui y répond, puis recommence avec dix puis vingt-cinq outils. Le
 rapport sépare trois causes que les journaux confondent : un modèle qui
