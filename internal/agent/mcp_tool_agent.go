@@ -122,8 +122,9 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 	// surchargé par organisation). Le client du constructeur ne sert plus
 	// qu'aux tests, qui n'ont pas de résolveur.
 	client, textOnly := a.client, a.textOnly
+	var modelName string
 	if resolved, resolveErr := a.binding.resolve(ctx, req.Identity.OrgID); resolveErr == nil {
-		client, textOnly = resolved.Client, !resolved.SupportsVision
+		client, textOnly, modelName = resolved.Client, !resolved.SupportsVision, resolved.Model
 	} else if !errors.Is(resolveErr, errNoResolver) {
 		return Result{}, fmt.Errorf("agent %q: %w", a.agentName, resolveErr)
 	}
@@ -198,7 +199,7 @@ func (a *MCPToolAgent) Execute(ctx context.Context, req Request) (Result, error)
 	// créé par tour : les outils, eux, sont partagés par toutes les requêtes.
 	mediaCollector := newMediaCollector()
 
-	loopResult, err := runToolLoop(withMediaCollector(ctx, mediaCollector), client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, a.agentName)
+	loopResult, err := runToolLoop(withMediaCollector(ctx, mediaCollector), client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, a.agentName, modelName)
 	if err != nil {
 		return Result{}, err
 	}

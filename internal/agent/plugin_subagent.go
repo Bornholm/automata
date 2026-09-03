@@ -276,8 +276,9 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 	// rien n'impose que deux organisations le règlent de la même façon —
 	// et son absence dégrade (pas de view_file), jamais n'échoue.
 	client, modelTextOnly := a.client, a.textOnly
+	var modelName string
 	if resolved, resolveErr := a.binding.resolve(ctx, req.Identity.OrgID); resolveErr == nil {
-		client, modelTextOnly = resolved.Client, !resolved.SupportsVision
+		client, modelTextOnly, modelName = resolved.Client, !resolved.SupportsVision, resolved.Model
 	} else if !errors.Is(resolveErr, errNoResolver) {
 		return delegation.Result{}, fmt.Errorf("plugin agent %q: %w", agentName, resolveErr)
 	}
@@ -377,7 +378,7 @@ func (a *PluginSubAgent) Execute(ctx context.Context, req delegation.Request) (d
 		defer cancel()
 	}
 
-	loopResult, err := runToolLoop(loopCtx, client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, "plugin:"+agentName)
+	loopResult, err := runToolLoop(loopCtx, client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxToolCallsReached, a.logger, "plugin:"+agentName, modelName)
 	if err != nil {
 		return delegation.Result{}, err
 	}

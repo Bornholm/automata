@@ -255,6 +255,27 @@ sous-processus était réduit au silence par un défaut de format
 (`@level` attendu par go-plugin, `level` émis par slog), et les lignes non
 structurées étaient purement jetées.
 
+### Un assistant qui n'appelle jamais ses outils
+
+`agent: tour terminé` porte `tool_calls`, `tools_offered` et le `model` qui
+a servi le tour. Un `tool_calls: 0` isolé est normal — une salutation
+n'appelle rien. Le même à CHAQUE tour, avec vingt outils offerts, ne l'est
+pas : l'assistant répond alors de mémoire, invente des excuses (« ce
+spécialiste n'est pas joignable »), et ni les rappels ni la mémoire ni les
+délégations ne se produisent.
+
+```sh
+dokku logs automata --num 20000 | grep -a '"msg":"agent: tour terminé"' \
+  | grep -a '"tool_calls":0'
+```
+
+La cause est presque toujours le modèle affecté au rôle `main` : tous n'ont
+pas la même aptitude à l'appel d'outils, et celle-ci se dégrade quand le
+nombre d'outils monte. Le champ `model` de la ligne dit lequel accuser —
+le catalogue peut en servir un autre par organisation, la configuration ne
+suffit donc pas à le déduire. La leçon de 2026-08-18 reste valable :
+vérifier ce qui part et revient sur le fil avant de retoucher les prompts.
+
 Pour isoler ce qui vient d'Automata dans une sortie mêlée :
 
 ```sh

@@ -403,7 +403,7 @@ func withConclusionBudget(ctx context.Context) (context.Context, context.CancelF
 	return context.WithTimeout(context.WithoutCancel(ctx), conclusionBudget)
 }
 
-func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages []llm.Message, tools []llm.Tool, maxIterations int, maxContextBytes int64, maxReachedErr error, logger *slog.Logger, agentName string) (toolLoopResult, error) {
+func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages []llm.Message, tools []llm.Tool, maxIterations int, maxContextBytes int64, maxReachedErr error, logger *slog.Logger, agentName, modelName string) (toolLoopResult, error) {
 	if maxIterations <= 0 {
 		maxIterations = 1
 	}
@@ -413,7 +413,12 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 		for i, tool := range tools {
 			toolNames[i] = tool.Name()
 		}
-		logger.InfoContext(ctx, "agent: tour démarré", "agent", agentName, "tools", toolNames, "max_iterations", maxIterations)
+		// Le modèle est nommé : un tour qui n'appelle jamais d'outil est
+		// d'abord une question de modèle, et sans cette ligne rien ne dit
+		// lequel servait le tour. Un catalogue peut en servir un autre par
+		// organisation, la configuration ne suffit donc pas à le déduire.
+		logger.InfoContext(ctx, "agent: tour démarré",
+			"agent", agentName, "model", modelName, "tools", toolNames, "max_iterations", maxIterations)
 	}
 
 	var (
@@ -522,7 +527,13 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 			}
 
 			if logger != nil {
-				logger.InfoContext(ctx, "agent: tour terminé", "agent", agentName, "iterations", iteration+1, "tool_calls", totalCalls, "reply_bytes", len(text))
+				logger.InfoContext(ctx, "agent: tour terminé",
+					"agent", agentName, "model", modelName,
+					"iterations", iteration+1, "tool_calls", totalCalls, "reply_bytes", len(text),
+					// Un tour qui dispose d'outils et n'en appelle aucun n'est
+					// pas anormal en soi ; l'être à CHAQUE tour l'est, et c'est
+					// ce que ce couple permet de compter.
+					"tools_offered", len(tools))
 			}
 
 			return toolLoopResult{Text: text, ToolResults: toolResults, Attachments: attachments}, nil

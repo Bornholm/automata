@@ -105,8 +105,9 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	// surchargé par organisation). Le client du constructeur ne sert plus
 	// qu'aux tests, qui n'ont pas de résolveur.
 	client, textOnly := a.client, a.textOnly
+	var modelName string
 	if resolved, resolveErr := a.binding.resolve(ctx, req.Identity.OrgID); resolveErr == nil {
-		client, textOnly = resolved.Client, !resolved.SupportsVision
+		client, textOnly, modelName = resolved.Client, !resolved.SupportsVision, resolved.Model
 	} else if !errors.Is(resolveErr, errNoResolver) {
 		return Result{}, fmt.Errorf("agent %q: %w", a.agentName, resolveErr)
 	}
@@ -191,7 +192,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 		maxIterations = custom.MaxToolCalls
 	}
 
-	loopResult, err := runToolLoop(ctx, client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxDelegationsReached, a.logger, a.agentName)
+	loopResult, err := runToolLoop(ctx, client, messages, tools, maxIterations, a.maxToolContextBytes, ErrMaxDelegationsReached, a.logger, a.agentName, modelName)
 	if err != nil {
 		return Result{}, err
 	}
