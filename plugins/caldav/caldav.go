@@ -57,6 +57,27 @@ func dial(ctx context.Context, cfg memberConfig, password string) (*session, err
 	return &session{client: client, calendar: calendars[0].Path}, nil
 }
 
+// probeServer éprouve réellement la connexion : une session, puis un
+// aller-retour qui exige que le serveur réponde et que l'authentification
+// passe. Réservé au bouton « Tester la connexion », qui doit constater et
+// non supposer — les opérations courantes, elles, n'ont pas à payer cet
+// aller-retour à chaque appel.
+func probeServer(ctx context.Context, cfg memberConfig, password string) error {
+	sess, err := dial(ctx, cfg, password)
+	if err != nil {
+		return err
+	}
+
+	// La découverte du principal est le plus petit échange qui prouve les
+	// trois choses que la personne veut savoir : le serveur répond, le
+	// certificat est accepté, les identifiants passent.
+	if _, err := sess.client.FindCurrentUserPrincipal(ctx); err != nil {
+		return fmt.Errorf("the server refused the connection (check the address and the credentials): %w", err)
+	}
+
+	return nil
+}
+
 // discoverCalendars remonte du principal à l'ensemble des agendas du
 // compte. C'est la séquence prescrite par CalDAV, et la seule qui marche
 // sur les serveurs où l'URL saisie n'est pas déjà celle d'une collection.

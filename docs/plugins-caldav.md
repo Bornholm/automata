@@ -21,7 +21,12 @@ Radicale, Baïkal.
 3. "Tester la connexion" vérifie les identifiants et propose la liste
    des agendas du compte. Sans choix explicite, le premier agenda publié
    par le serveur sert par défaut, ce qui convient à la majorité des
-   comptes.
+   comptes. Le test fait toujours un aller-retour réel jusqu'au serveur,
+   même quand un agenda est déjà choisi : ouvrir une session n'interroge
+   alors personne, et le bouton répondait « connexion réussie » à un
+   serveur éteint, un mot de passe changé ou un certificat refusé — donc
+   sans jamais proposer l'exception, qui a besoin d'un échec pour paraître
+   (signalé le 2026-09-03).
 4. Trois interrupteurs, tous décidés par le membre :
    - "L'assistant peut consulter mon agenda" expose
      `calendar_list_events` et `calendar_search_events` ;

@@ -317,7 +317,15 @@ func handleUITest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := dial(r.Context(), cfg, password)
+	// Éprouver la connexion pour de bon, et non seulement construire un
+	// client : dial rend la main SANS aucun aller-retour réseau dès qu'un
+	// agenda est choisi (voir caldav.go) — c'est le bon comportement pour
+	// une opération de tous les jours, et c'est exactement ce qu'il ne faut
+	// pas ici. Le test répondait donc « connexion réussie » serveur éteint,
+	// mot de passe changé ou certificat refusé, et le panneau d'exception,
+	// qui a besoin d'un échec pour paraître, ne s'affichait jamais : le
+	// bouton semblait sans effet. Signalé le 2026-09-03.
+	err := probeServer(r.Context(), cfg, password)
 	if err == nil {
 		redirectTested(w, r, true, "", false)
 		return

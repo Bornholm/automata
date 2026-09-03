@@ -96,6 +96,15 @@ peuvent être deux machines, avec deux certificats, et chacune a la sienne.
 Le test de connexion éprouve les deux, IMAP puis SMTP — un envoi qui
 échoue ne se découvre donc plus au moment de confirmer un courriel.
 
+Le certificat est regardé de la même façon que la connexion réelle
+l'établit : TLS d'emblée en IMAP et sur le port SMTP 465, STARTTLS sur tout
+autre port SMTP — 587 en tête. La distinction n'est pas théorique : un
+serveur de soumission répond à une poignée de main directe par sa bannière
+en clair, l'inspection échouait alors sans rien montrer, et la personne
+lisait « certificat signé par une autorité inconnue » sans jamais pouvoir
+l'accepter, le panneau exigeant un certificat pour s'afficher (vu sur
+smtp.cadoles.com:587 le 2026-09-03).
+
 L'exception appartient au membre, comme le reste de sa configuration : elle
 est enregistrée pour lui seul, et le bandeau de sa page rappelle qu'elle
 existe, avec de quoi la retirer.

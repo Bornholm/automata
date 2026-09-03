@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/smtp"
 	"strings"
 	"time"
 )
@@ -92,6 +93,67 @@ func InspectTLS(ctx context.Context, address string) (CertificateInfo, error) {
 
 	state := conn.(*tls.Conn).ConnectionState()
 	if len(state.PeerCertificates) == 0 {
+		return CertificateInfo{}, errors.New("the server presented no certificate")
+	}
+
+	return describeCertificate(state.PeerCertificates, host), nil
+}
+
+// InspectSMTPSTARTTLS reports what an SMTP server presents on a port that
+// starts in the clear and upgrades with STARTTLS — the submission port 587,
+// almost always. Nothing is trusted as a result of calling it.
+//
+// It exists because InspectTLS cannot see that certificate at all: a direct
+// handshake against 587 is answered by the SMTP greeting, not by a TLS
+// server hello, and fails with "wrong version number". The member was then
+// shown the connection error with no way to act on it, while the exception
+// panel — which needs a certificate to display — stayed hidden. Observed on
+// smtp.cadoles.com:587, 2026-09-03.
+//
+// Inspection must therefore reach the certificate the same way the real
+// connection does. What the caller decides here is only HOW to reach it;
+// what is presented is what gets pinned either way.
+func InspectSMTPSTARTTLS(ctx context.Context, address string) (CertificateInfo, error) {
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return CertificateInfo{}, fmt.Errorf("address %q is not host:port: %w", address, err)
+	}
+
+	dialCtx, cancel := context.WithTimeout(ctx, TLSInspectTimeout)
+	defer cancel()
+
+	var dialer net.Dialer
+	conn, err := dialer.DialContext(dialCtx, "tcp", address)
+	if err != nil {
+		return CertificateInfo{}, err
+	}
+	defer func() { _ = conn.Close() }()
+
+	// The whole exchange — greeting, EHLO, STARTTLS, handshake — is bounded
+	// by the same deadline: a server that answers the greeting and then
+	// stalls must not hold the request open.
+	if deadline, ok := dialCtx.Deadline(); ok {
+		_ = conn.SetDeadline(deadline)
+	}
+
+	client, err := smtp.NewClient(conn, host)
+	if err != nil {
+		return CertificateInfo{}, err
+	}
+	defer func() { _ = client.Close() }()
+
+	if ok, _ := client.Extension("STARTTLS"); !ok {
+		return CertificateInfo{}, errors.New("the server does not offer STARTTLS on this port")
+	}
+
+	// Deliberately: the point is to LOOK at what is served, including what
+	// verification would reject. Nothing here trusts it.
+	if err := client.StartTLS(&tls.Config{InsecureSkipVerify: true, ServerName: host}); err != nil {
+		return CertificateInfo{}, err
+	}
+
+	state, ok := client.TLSConnectionState()
+	if !ok || len(state.PeerCertificates) == 0 {
 		return CertificateInfo{}, errors.New("the server presented no certificate")
 	}
 

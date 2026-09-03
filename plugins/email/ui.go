@@ -240,7 +240,7 @@ func handleUIHome(w http.ResponseWriter, r *http.Request) {
 		if protocol == "smtp" {
 			host, port = data.Cfg.SMTPHost, data.Cfg.SMTPPort
 		}
-		if info, ok := inspectServerCertificate(r.Context(), host, port); ok {
+		if info, ok := inspectServerCertificate(r.Context(), protocol, host, port); ok {
 			data.Cert = &info
 			data.CertProtocol = protocol
 			data.CertFingerprint = info.FormattedFingerprint()

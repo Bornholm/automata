@@ -79,16 +79,35 @@ func serverAddress(host string, port int) string {
 	return fmt.Sprintf("%s:%d", host, port)
 }
 
+// implicitTLSSMTPPort est le port SMTP qui parle TLS d'emblée. Tous les
+// autres — 587 en tête — commencent en clair et montent en TLS par
+// STARTTLS. C'est la règle que gomail applique pour se connecter (SSL si et
+// seulement si le port vaut 465), et l'inspection doit suivre la MÊME, sans
+// quoi elle regarde ailleurs que la connexion réelle.
+const implicitTLSSMTPPort = 465
+
 // inspectServerCertificate regarde ce que présente un serveur, sans rien
 // accepter. Utilisé par l'interface après un échec, pour montrer le
 // certificat avant que la personne ne décide.
-func inspectServerCertificate(ctx context.Context, host string, port int) (pluginsdk.CertificateInfo, bool) {
+//
+// protocol vaut "imap" ou "smtp". La distinction n'est pas cosmétique : un
+// serveur de soumission SMTP sur 587 répond à un handshake TLS direct par
+// sa bannière en clair, et l'inspection échouait alors sans rien montrer —
+// la personne voyait l'erreur de certificat sans jamais pouvoir l'accepter
+// (vu sur smtp.cadoles.com:587 le 2026-09-03). IMAP, lui, n'est appelé
+// qu'en TLS implicite par dialIMAP.
+func inspectServerCertificate(ctx context.Context, protocol, host string, port int) (pluginsdk.CertificateInfo, bool) {
 	address := serverAddress(host, port)
 	if address == "" {
 		return pluginsdk.CertificateInfo{}, false
 	}
 
-	info, err := pluginsdk.InspectTLS(ctx, address)
+	inspect := pluginsdk.InspectTLS
+	if protocol == "smtp" && port != implicitTLSSMTPPort {
+		inspect = pluginsdk.InspectSMTPSTARTTLS
+	}
+
+	info, err := inspect(ctx, address)
 	if err != nil {
 		return pluginsdk.CertificateInfo{}, false
 	}
