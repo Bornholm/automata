@@ -231,7 +231,8 @@ Le journal des alertes est conservé un mois, puis purgé.
 ## 4.2 Lire les journaux
 
 Les journaux d'Automata sont structurés en JSON sur la sortie d'erreur, au
-niveau INFO. Deux composants écrivent à côté, dans leur propre format :
+niveau INFO — tout le processus, y compris les lignes remontées des
+plugins. Un composant écrit à côté, dans son propre format :
 
 - whatsmeow (la bibliothèque WhatsApp) écrit sur la sortie standard, à un
   niveau aligné sur celui de l'instance. En DEBUG il imprime chaque trame du

@@ -26,6 +26,15 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
+	// Le même logger devient celui par défaut. Sans cela, tout composant
+	// qui appelle slog au niveau paquet — le gestionnaire de plugins, et
+	// donc les lignes remontées des sous-processus — écrivait en TEXTE, à
+	// côté du JSON de tout le reste. Deux formats dans un même flux
+	// n'étaient filtrables par aucun outil : c'est ce qui a rendu les
+	// journaux des plugins pénibles à exploiter, une fois qu'ils y sont
+	// enfin arrivés.
+	slog.SetDefault(logger)
+
 	if err := newRootCommand(logger).Execute(); err != nil {
 		os.Exit(1)
 	}
