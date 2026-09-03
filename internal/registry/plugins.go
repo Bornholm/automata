@@ -160,6 +160,15 @@ func (t pluginFileTransfer) OpenPluginFile(ctx context.Context, pluginName strin
 	}, body, nil
 }
 
+// toPluginCallContext convertit l'identité d'appel de la couche agent vers
+// celle du gestionnaire de plugins.
+//
+// TOUS les champs voyagent, SubAgent compris : c'est lui qui désigne
+// l'entrée du catalogue chez un plugin qui en expose plusieurs, et son
+// oubli ici a rendu le sous-agent netprobe entièrement inutilisable — le
+// plugin recevait un nom vide et répondait « unknown sub-agent » à chaque
+// outil, alors que sa connexion MCP était établie et ses sept outils
+// annoncés (production, 2026-09-03).
 func toPluginCallContext(callCtx agent.PluginCallContext) plugin.CallContext {
 	return plugin.CallContext{
 		OrgID:          callCtx.OrgID,
@@ -167,6 +176,7 @@ func toPluginCallContext(callCtx agent.PluginCallContext) plugin.CallContext {
 		Scope:          callCtx.Scope,
 		ScopeID:        callCtx.ScopeID,
 		IdempotencyKey: callCtx.IdempotencyKey,
+		SubAgent:       callCtx.SubAgent,
 	}
 }
 

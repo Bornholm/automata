@@ -485,12 +485,18 @@ func (a *PluginSubAgent) buildTool(spec PluginToolSpec, identity model.Execution
 
 // pluginCallContext construit l'identité d'appel du tour. MemberID est un
 // identifiant de confiance : il part au plugin, jamais au modèle.
-func pluginCallContext(identity model.ExecutionIdentity) PluginCallContext {
+//
+// SubAgent en fait partie, au même titre que pour les outils du plugin
+// lui-même : chez un plugin à catalogue, un transfert de fichier doit
+// désigner l'entrée à laquelle il appartient, sans quoi le plugin ne sait
+// pas de qui vient la demande.
+func (a *PluginSubAgent) pluginCallContext(identity model.ExecutionIdentity) PluginCallContext {
 	return PluginCallContext{
 		OrgID:    string(identity.OrgID),
 		MemberID: string(identity.PrincipalID),
 		Scope:    string(identity.Scope),
 		ScopeID:  string(identity.ScopeID),
+		SubAgent: a.spec.SubAgentName,
 	}
 }
 
@@ -508,7 +514,7 @@ func (a *PluginSubAgent) newImportAttachmentTool(req delegation.Request) llm.Too
 	schema := llm.NewJSONSchema().
 		RequiredProperty("filename", "Exact name of the file attached to the user's message, as listed to you.", "string")
 
-	callCtx := pluginCallContext(req.Identity)
+	callCtx := a.pluginCallContext(req.Identity)
 	// Les pièces du tour d'abord : à noms égaux, c'est le fichier que
 	// l'utilisateur vient d'envoyer qui l'emporte sur son homonyme ancien.
 	attachments := append(append([]media.Media(nil), req.Attachments...), req.RecentAttachments...)
@@ -573,7 +579,7 @@ func (a *PluginSubAgent) newAttachFileTool(req delegation.Request, collector *me
 	schema := llm.NewJSONSchema().
 		RequiredProperty("path", "Path of the file in your workspace, as returned by your other tools.", "string")
 
-	callCtx := pluginCallContext(req.Identity)
+	callCtx := a.pluginCallContext(req.Identity)
 
 	// La taille maximale est CHIFFRÉE au modèle, ici et dans l'échec :
 	// « trop gros, réencode plus petit » ne dit pas quelle cible viser, et
@@ -686,7 +692,7 @@ func (a *PluginSubAgent) newViewFileTool(req delegation.Request, vision llm.Chat
 		RequiredProperty("path", "Path of the image in your workspace. Extract a frame with ffmpeg first to look at a video.", "string").
 		RequiredProperty("question", "What you need to know about the image, e.g. \"where is the logo, and how big is it?\".", "string")
 
-	callCtx := pluginCallContext(req.Identity)
+	callCtx := a.pluginCallContext(req.Identity)
 
 	// Un service de vision en panne l'est pour tout le tour : le disjoncteur
 	// du client reste ouvert. Sans le dire clairement, l'agent rappelle
