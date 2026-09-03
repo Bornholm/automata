@@ -68,13 +68,25 @@ const probeSystemPrompt = "You are a diagnostic assistant. When a tool can answe
 // décline à nouveau au tour suivant, sans jamais essayer.
 const probeRefusal = "Je suis désolé, ce service est temporairement indisponible. Je ne peux pas récupérer cette information pour l'instant."
 
-// probeStage est un essai : un nombre d'outils, un prompt système, et un
-// historique.
+// probeStage est un essai : un nombre d'outils, un prompt système, un
+// historique, et la question posée.
 type probeStage struct {
 	label   string
 	tools   int
 	prompt  string
 	history []llm.Message
+	// question remplace probeQuestion quand elle est renseignée.
+	question string
+	// expect, non vide, exige que ce soit CET outil qui soit appelé. Un
+	// leurre appelé à sa place n'est pas une réussite.
+	expect string
+}
+
+func (s probeStage) ask() string {
+	if s.question != "" {
+		return s.question
+	}
+	return probeQuestion
 }
 
 // probeStages compose la bissection. Chaque étage ajoute UN élément du tour
@@ -114,10 +126,27 @@ func probeStages(cfg *config.Config, role string) []probeStage {
 				llm.NewMessage(llm.RoleAssistant, probeRefusal),
 			},
 		},
+		// Le dernier étage retire la béquille : les précédents ORDONNENT
+		// d'appeler un outil (« Use your tools; do not guess »), ce qu'aucun
+		// message réel ne fait. Ici, une demande de deux mots, en français,
+		// et au modèle de reconnaître l'outil qui y répond parmi les
+		// autres — c'est exactement le travail qu'un tour lui demande, et
+		// c'est là que la consigne explicite masquait le problème.
+		probeStage{
+			label:    "+ une demande réelle, sans consigne",
+			tools:    probeFullTools,
+			prompt:   full,
+			question: probeRealQuestion,
+			expect:   agent.ProfileLinkToolName,
+		},
 	)
 
 	return stages
 }
+
+// probeRealQuestion est un message tel qu'une personne l'écrit : court, en
+// français, sans dire quel outil employer.
+const probeRealQuestion = "Mon profil"
 
 // ProbeTools exécute la sonde pour un rôle et écrit son rapport.
 func ProbeTools(ctx context.Context, cfg *config.Config, role, orgID string, out io.Writer) error {
@@ -177,6 +206,8 @@ type probeResult struct {
 	called bool
 	err    error
 	reply  string
+	// tool est l'outil appelé, quand il y en a un.
+	tool string
 }
 
 func (r probeResult) line(stageLabel string) string {
@@ -185,6 +216,8 @@ func (r probeResult) line(stageLabel string) string {
 	switch {
 	case r.err != nil:
 		return label + "ÉCHEC        " + firstLine(r.err.Error())
+	case r.called && r.tool != "":
+		return label + "outil appelé   (" + r.tool + ")"
 	case r.called:
 		return label + "outil appelé"
 	default:
@@ -200,11 +233,11 @@ func probeOnce(ctx context.Context, client llm.ChatCompletionClient, stage probe
 
 	messages := []llm.Message{llm.NewMessage(llm.RoleSystem, stage.prompt)}
 	messages = append(messages, stage.history...)
-	messages = append(messages, llm.NewMessage(llm.RoleUser, probeQuestion))
+	messages = append(messages, llm.NewMessage(llm.RoleUser, stage.ask()))
 
 	resp, err := client.ChatCompletion(callCtx,
 		llm.WithMessages(messages...),
-		llm.WithTools(probeTools(stage.tools)...),
+		llm.WithTools(probeTools(stage.tools, stage.expect)...),
 		// Exactement ce que fait un tour réel (voir runToolLoop) : la sonde
 		// ne vaudrait rien si elle interrogeait le modèle autrement.
 		llm.WithToolChoice(llm.ToolChoiceAuto),
@@ -213,8 +246,15 @@ func probeOnce(ctx context.Context, client llm.ChatCompletionClient, stage probe
 		return probeResult{err: err}
 	}
 
-	if len(resp.ToolCalls()) > 0 {
-		return probeResult{called: true}
+	if calls := resp.ToolCalls(); len(calls) > 0 {
+		name := calls[0].Name()
+		// Un leurre appelé à la place de l'outil attendu n'est pas une
+		// réussite : le modèle a bien appelé quelque chose, mais pas ce que
+		// la demande exigeait.
+		if stage.expect != "" && name != stage.expect {
+			return probeResult{reply: "a appelé " + name + " au lieu de " + stage.expect}
+		}
+		return probeResult{called: true, tool: name}
 	}
 
 	reply := ""
@@ -231,7 +271,10 @@ func probeOnce(ctx context.Context, client llm.ChatCompletionClient, stage probe
 // probeTools construit le jeu d'outils : le premier répond à la question,
 // les suivants sont des leurres crédibles. Ils ne sont jamais exécutés —
 // seul compte le fait que le modèle en demande un.
-func probeTools(count int) []llm.Tool {
+//
+// expect, non vide, remplace l'outil qui répond par le VRAI outil de ce
+// nom, description comprise : c'est elle que le modèle lit pour décider.
+func probeTools(count int, expect string) []llm.Tool {
 	answer := llm.NewFuncTool(
 		"get_maintenance_code",
 		"Return the maintenance code of a unit, by its number.",
@@ -240,6 +283,17 @@ func probeTools(count int) []llm.Tool {
 			return llm.NewToolResult("K-4417"), nil
 		},
 	)
+
+	if expect == agent.ProfileLinkToolName {
+		answer = llm.NewFuncTool(
+			agent.ProfileLinkToolName,
+			agent.ProfileLinkToolDescription,
+			llm.NewJSONSchema(),
+			func(context.Context, map[string]any) (llm.ToolResult, error) {
+				return llm.NewToolResult("https://example.test/p/aaaaaa.bbbbbbbbbbbbbbbbbbbb"), nil
+			},
+		)
+	}
 
 	tools := []llm.Tool{answer}
 	for i := 1; i < count; i++ {
@@ -271,8 +325,9 @@ func probeVerdict(stages []probeStage, results []probeResult) string {
 
 	switch {
 	case firstFailure < 0:
-		return "Ce modèle appelle ses outils dans toutes les conditions essayées,\n" +
-			"prompt de l'agent et historique de refus compris.\n" +
+		return "Ce modèle appelle ses outils dans toutes les conditions essayées :\n" +
+			"jeu fourni, prompt de l'agent, refus dans l'historique, et demande\n" +
+			"ordinaire sans consigne d'outil.\n" +
 			"Si l'assistant reste muet en conversation, la cause n'est ni le modèle,\n" +
 			"ni le nombre d'outils, ni le prompt : comparez avec les lignes\n" +
 			"« agent: tour démarré » d'un vrai tour (champs model et tools)."
@@ -288,6 +343,15 @@ func probeVerdict(stages []probeStage, results []probeResult) string {
 			"Deux issues, cumulables : lui en offrir moins (retirez des délégués, les\n" +
 			"rappels ou les tâches planifiées de l'agent concerné dans la\n" +
 			"configuration), ou lui préférer un modèle qui tient la charge."
+
+	case stages[firstFailure].question != "":
+		return "Ce modèle appelle ses outils quand on le lui ORDONNE, et pas quand\n" +
+			"il doit reconnaître lui-même l'outil qui répond à une demande\n" +
+			"ordinaire. C'est le cas de tous les vrais messages : personne n'écrit\n" +
+			"« utilise tes outils ».\n\n" +
+			"Aucun réglage ne rattrape cela : c'est l'aptitude même du modèle à\n" +
+			"choisir un outil sur description. Changez-en pour le rôle concerné, ou\n" +
+			"réduisez le jeu d'outils pour que le bon soit plus facile à trouver."
 
 	case len(stages[firstFailure].history) > 0:
 		return "Ce modèle appelle ses outils, SAUF quand un refus figure dans\n" +

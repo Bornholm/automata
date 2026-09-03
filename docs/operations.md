@@ -301,7 +301,15 @@ la cause, et le verdict la nomme :
   propre réponse précédente au lieu d'essayer. La panne est alors
   auto-entretenue — un premier refus en engendre une suite — et repartir
   d'une conversation neuve suffit à la lever ;
+- il décroche sur la dernière, une demande ordinaire (« Mon profil ») : le
+  modèle appelle ses outils quand on le lui ORDONNE, et pas quand il doit
+  reconnaître lui-même celui qui répond. Or aucun message réel ne dit
+  « utilise tes outils ». C'est l'aptitude même du modèle qui manque ;
 - tout passe : ni le modèle, ni le nombre d'outils, ni le prompt.
+
+Les quatre premières étapes disent explicitement au modèle d'appeler un
+outil. C'est une béquille, et elle masque le défaut le plus courant : la
+dernière étape la retire.
 
 La cause est presque toujours le modèle affecté au rôle `main` : tous n'ont
 pas la même aptitude à l'appel d'outils, et celle-ci se dégrade quand le

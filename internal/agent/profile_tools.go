@@ -48,19 +48,27 @@ func (t ProfileTools) buildProfileTools(identity model.ExecutionIdentity) []llm.
 	return []llm.Tool{t.newOpenProfileLinkTool(identity)}
 }
 
-// newOpenProfileLinkTool construit open_profile_link. La description est en
-// anglais (elle part au modèle) ; le lien retourné, lui, est destiné à être
-// recopié tel quel dans une réponse française.
+// ProfileLinkToolName et ProfileLinkToolDescription sont exportés pour que
+// la sonde de diagnostic (internal/registry) éprouve le modèle avec l'outil
+// RÉEL, description comprise : c'est elle que le modèle lit pour décider
+// d'appeler, et une description approchée mesurerait autre chose.
+const ProfileLinkToolName = "open_profile_link"
+
+// ProfileLinkToolDescription part au modèle : anglais.
+const ProfileLinkToolDescription = "Give the user a private link to their own profile page, where they can manage their recovery email, " +
+	"see their credit balance and top it up. Use it whenever they ask about their account, their credits, " +
+	"paying, an invoice, or say the service seems paused. The link expires in 15 minutes and opens once, " +
+	"on the button the page shows: generate a fresh one every time, never repeat an old one. It opens " +
+	"their own profile only — never someone else's, and never an administration page."
+
+// newOpenProfileLinkTool construit open_profile_link. Le lien retourné est
+// destiné à être recopié tel quel dans une réponse française.
 func (t ProfileTools) newOpenProfileLinkTool(identity model.ExecutionIdentity) llm.Tool {
 	schema := llm.NewJSONSchema()
 
 	return llm.NewFuncTool(
-		"open_profile_link",
-		"Give the user a private link to their own profile page, where they can manage their recovery email, "+
-			"see their credit balance and top it up. Use it whenever they ask about their account, their credits, "+
-			"paying, an invoice, or say the service seems paused. The link expires in 15 minutes and opens once, "+
-			"on the button the page shows: generate a fresh one every time, never repeat an old one. It opens "+
-			"their own profile only — never someone else's, and never an administration page.",
+		ProfileLinkToolName,
+		ProfileLinkToolDescription,
 		schema,
 		func(ctx context.Context, params map[string]any) (llm.ToolResult, error) {
 			url, ok, err := t.Generator.GenerateProfileLink(ctx, string(identity.OrgID), string(identity.PrincipalID))

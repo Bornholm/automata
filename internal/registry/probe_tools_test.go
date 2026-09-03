@@ -8,6 +8,7 @@ import (
 
 	"github.com/bornholm/genai/llm"
 
+	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/config"
 )
 
@@ -103,7 +104,7 @@ func TestProbeOnce_ReportsAFailure(t *testing.T) {
 // Le jeu d'outils contient l'outil qui répond, puis des leurres : c'est le
 // NOMBRE qu'on mesure, la question restant la même.
 func TestProbeTools_FirstAnswersTheQuestion(t *testing.T) {
-	tools := probeTools(10)
+	tools := probeTools(10, "")
 	if len(tools) != 10 {
 		t.Fatalf("%d outil(s), attendu 10", len(tools))
 	}
@@ -119,8 +120,19 @@ func TestProbeTools_FirstAnswersTheQuestion(t *testing.T) {
 		seen[tool.Name()] = struct{}{}
 	}
 
-	if len(probeTools(1)) != 1 {
+	if len(probeTools(1, "")) != 1 {
 		t.Error("un seul outil demandé doit en donner un seul")
+	}
+
+	// Avec un outil attendu, c'est le VRAI outil qui est présenté au
+	// modèle : sa description est ce qu'il lit pour décider d'appeler, et
+	// une description approchée mesurerait autre chose.
+	real := probeTools(25, agent.ProfileLinkToolName)
+	if real[0].Name() != agent.ProfileLinkToolName {
+		t.Errorf("premier outil = %q, attendu %q", real[0].Name(), agent.ProfileLinkToolName)
+	}
+	if real[0].Description() != agent.ProfileLinkToolDescription {
+		t.Error("la description de l'outil réel n'est pas celle du produit")
 	}
 }
 
@@ -129,8 +141,8 @@ func TestProbeTools_FirstAnswersTheQuestion(t *testing.T) {
 // prompts quand ce n'est pas le prompt qui casse.
 func TestProbeVerdict_NamesTheStageThatBroke(t *testing.T) {
 	stages := probeStages(fullProbeConfig(), "main")
-	if len(stages) != 5 {
-		t.Fatalf("%d étage(s), attendu 5 (1, 10, 25 outils, prompt, historique)", len(stages))
+	if len(stages) != 6 {
+		t.Fatalf("%d étage(s), attendu 6 (1, 10, 25 outils, prompt, historique, demande réelle)", len(stages))
 	}
 
 	called := probeResult{called: true}
@@ -140,11 +152,12 @@ func TestProbeVerdict_NamesTheStageThatBroke(t *testing.T) {
 		results []probeResult
 		needle  string
 	}{
-		"tout passe":             {[]probeResult{called, called, called, called, called}, "n'est ni le modèle"},
-		"jamais":                 {[]probeResult{failed, failed, failed, failed, failed}, "inapte au rôle"},
-		"décroche sur le nombre": {[]probeResult{called, called, failed, failed, failed}, "entre 10 et 25 outils"},
-		"le prompt inhibe":       {[]probeResult{called, called, called, failed, failed}, "prompt qui l'inhibe"},
-		"imite son refus":        {[]probeResult{called, called, called, called, failed}, "imite"},
+		"tout passe":             {[]probeResult{called, called, called, called, called, called}, "n'est ni le modèle"},
+		"jamais":                 {[]probeResult{failed, failed, failed, failed, failed, failed}, "inapte au rôle"},
+		"décroche sur le nombre": {[]probeResult{called, called, failed, failed, failed, failed}, "entre 10 et 25 outils"},
+		"le prompt inhibe":       {[]probeResult{called, called, called, failed, failed, failed}, "prompt qui l'inhibe"},
+		"imite son refus":        {[]probeResult{called, called, called, called, failed, failed}, "imite"},
+		"seulement sur ordre":    {[]probeResult{called, called, called, called, called, failed}, "ORDONNE"},
 	}
 
 	for name, tc := range cases {
@@ -163,7 +176,7 @@ func TestProbeVerdict_IgnoresTransportFailures(t *testing.T) {
 	stages := probeStages(fullProbeConfig(), "main")
 	results := []probeResult{
 		{called: true}, {called: true}, {err: errors.New("502 Bad Gateway")},
-		{called: true}, {called: true},
+		{called: true}, {called: true}, {called: true},
 	}
 
 	if verdict := probeVerdict(stages, results); !strings.Contains(verdict, "n'est ni le modèle") {
@@ -186,7 +199,16 @@ func TestProbeStages_ContextStagesNeedAConfiguredAgent(t *testing.T) {
 		t.Error("l'étage du prompt n'utilise pas le prompt assemblé de l'agent")
 	}
 	if len(full[4].history) == 0 {
-		t.Error("le dernier étage doit porter un refus dans l'historique")
+		t.Error("l'étage de l'historique doit porter un refus")
+	}
+	// Le dernier étage retire la consigne d'appel d'outil : sans cela, la
+	// sonde mesure une obéissance, pas la capacité à reconnaître l'outil.
+	last := full[5]
+	if last.question == "" || strings.Contains(strings.ToLower(last.ask()), "tool") {
+		t.Errorf("le dernier étage garde une consigne d'outil: %q", last.ask())
+	}
+	if last.expect != agent.ProfileLinkToolName {
+		t.Errorf("le dernier étage n'attend pas l'outil réel: %q", last.expect)
 	}
 }
 
