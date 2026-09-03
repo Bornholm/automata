@@ -190,20 +190,24 @@ outils, tous des lectures — exiger un « confirmer » pour chaque ping
 rendrait le sous-agent inutilisable, et ce n'est pas là qu'est la barrière.
 
 **La barrière est la liste d'autorisation de netprobe.** Il sonde depuis le
-serveur : sans elle, c'est un SSRF offert sur le réseau interne. La
-politique interne du serveur s'applique par défaut, et c'est celle qu'on
-veut — l'Internet public autorisé, la boucle locale, les plages privées, le
-lien-local et le point d'accès de métadonnées des fournisseurs cloud
-(`169.254.169.254`, qui sert des identifiants d'instance) refusés.
+serveur : sans elle, c'est un SSRF offert sur le réseau interne. Le
+catalogue embarqué déclare donc sa propre politique — l'Internet public
+autorisé, et refus de la boucle locale, des plages privées, du lien-local,
+du multicast et du point d'accès de métadonnées des fournisseurs cloud
+(`169.254.169.254`, qui sert des identifiants d'instance).
+
+Elle n'est pas laissée à la politique interne de netprobe : celle-ci
+n'autorise qu'une poignée d'hôtes de diagnostic, et refuserait presque
+toutes les questions qu'on pose au sous-agent.
 
 Un exploitant qui veut sonder son propre réseau interne le décide en
 fournissant son catalogue avec sa propre politique. C'est un geste
 explicite, pas un défaut permissif.
 
-> En 0.4.0, une politique explicite désactive les sondes DNS et TLS : leur
-> section `probes:` fait paniquer le serveur au démarrage (étiquette YAML
-> invalide dans son propre type de configuration). À revoir quand le
-> correctif sera publié.
+> netprobe-mcp antérieur à 0.4.1 **panique au démarrage** dès qu'une
+> politique déclare une section `probes:` (étiquette YAML invalide dans son
+> propre type de configuration). Ne pas revenir en deçà de cette version
+> dans le catalogue.
 
 ## Recette
 

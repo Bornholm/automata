@@ -60,12 +60,20 @@ func TestNetprobe_EndToEnd(t *testing.T) {
 		}
 	}
 
-	public, err := p.pool.call(context.Background(), conn, "http_probe", map[string]any{"url": "https://example.com"})
+	// Une cible publique QUELCONQUE, délibérément absente de la liste
+	// d'autorisation interne de netprobe : celle-ci ne connaît qu'une
+	// poignée d'hôtes de diagnostic, et un catalogue qui l'appliquerait par
+	// mégarde refuserait presque toutes les questions posées. Un
+	// example.com ne verrait pas la différence.
+	public, err := p.pool.call(context.Background(), conn, "http_probe", map[string]any{"url": "https://www.wikipedia.org"})
 	if err != nil {
 		t.Fatalf("sonde publique: %v", err)
 	}
-	if !strings.Contains(public, "200") {
-		t.Errorf("réponse inattendue: %s", public)
+	// Ce qui compte est que la cible ait été JOIGNABLE, pas le code rendu :
+	// un site peut répondre 403 à une sonde sans que la politique y soit
+	// pour quoi que ce soit.
+	if !strings.Contains(public, "http_probe OK") {
+		t.Errorf("cible publique non atteinte: %s", public)
 	}
 
 	// Le refus des adresses privées est ce qui sépare un outil de
