@@ -381,6 +381,36 @@ recopie tronquée :
 Rien de tout cela ne remplace le choix d'un modèle apte : cela empêche
 qu'une seule invention enferme une conversation entière.
 
+### Une adresse que personne n'a fournie
+
+Un modèle qui n'appelle pas son outil ne se contente pas toujours de
+refuser : il lui arrive de FABRIQUER ce que l'outil aurait rendu. Vu deux
+fois le 2026-09-03 — « Voici votre lien :
+https://profile.cadoles.com/?t=8c2a4f9d1e7b5c3a », d'une forme plausible et
+d'un domaine plausible, entièrement inventé.
+
+Le contrôle est structurel et ne lit aucun sens : une URL présente dans la
+réponse doit venir du message de la personne, de l'historique, ou d'un
+résultat d'outil de ce tour. Absente des trois, personne ne la lui a
+montrée.
+
+L'hôte ne tranche pas à sa place. Il lui rend le tour UNE fois, en nommant
+les adresses en cause, avec ses outils toujours offerts et deux issues
+seulement : appeler l'outil qui produit cette adresse, ou répondre sans
+elle en disant ce qu'il n'a pas pu fournir. Puis il revérifie la nouvelle
+réponse, structurellement — ce qui décide n'est jamais la déclaration du
+modèle : lui demander « cette adresse est-elle légitime ? » ne prouverait
+rien, celui qui invente sait aussi affirmer.
+
+Si l'adresse survit à la relance, la réponse part telle quelle et
+l'incident est journalisé (`agent: adresse fabriquée maintenue après
+relance`). L'hôte ne réécrit pas le texte à la place du modèle, mais
+l'exploitant doit savoir que celui affecté au rôle compose des adresses :
+
+```sh
+dokku logs automata --num 20000 | grep -a "adresse fabriquée"
+```
+
 Pour isoler ce qui vient d'Automata dans une sortie mêlée :
 
 ```sh

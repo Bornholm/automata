@@ -197,6 +197,12 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 		return Result{}, err
 	}
 
+	// Une adresse que rien n'a fournie au modèle est une adresse qu'il a
+	// composée : elle ne mène nulle part, et la personne cliquera dessus.
+	// Le tour lui est rendu une fois, outils compris (voir
+	// unsourced_url.go).
+	loopResult = a.verifyURLSources(ctx, client, messages, tools, maxIterations, loopResult)
+
 	proposals := collector.take()
 
 	// Plafond d'actions par tour (plan de conception, §9.4, agents.<nom>.limits.
