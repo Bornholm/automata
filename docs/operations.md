@@ -289,11 +289,19 @@ dokku enter automata web -- /usr/bin/env INTERNET_SEARCH_MCP_TOKEN=sonde \
 ```
 
 Elle envoie au modèle du rôle une question qu'il ne peut pas deviner, avec
-un outil qui y répond, puis recommence avec dix puis vingt-cinq outils. Le
-rapport sépare trois causes que les journaux confondent : un modèle qui
-n'appelle jamais rien est inapte au rôle, un modèle qui appelle avec un
-outil et renonce avec vingt est noyé par leur nombre, et un modèle qui
-appelle à chaque fois innocente le modèle.
+un outil qui y répond, puis rejoue le même essai en ajoutant à chaque fois
+UN élément du tour réel : dix outils, vingt-cinq, le prompt assemblé de
+l'agent, puis un refus dans l'historique. Le premier étage qui casse désigne
+la cause, et le verdict la nomme :
+
+- rien n'est jamais appelé : le modèle est inapte au rôle ;
+- il décroche entre dix et vingt-cinq outils : c'est leur nombre ;
+- il décroche en ajoutant le prompt : c'est le prompt de l'agent ;
+- il décroche en ajoutant un refus dans l'historique : le modèle imite sa
+  propre réponse précédente au lieu d'essayer. La panne est alors
+  auto-entretenue — un premier refus en engendre une suite — et repartir
+  d'une conversation neuve suffit à la lever ;
+- tout passe : ni le modèle, ni le nombre d'outils, ni le prompt.
 
 La cause est presque toujours le modèle affecté au rôle `main` : tous n'ont
 pas la même aptitude à l'appel d'outils, et celle-ci se dégrade quand le

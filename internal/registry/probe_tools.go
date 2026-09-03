@@ -42,10 +42,14 @@ import (
 // prompt, registre, historique, modèle) ont précédé la vraie cause, un
 // tool_choice à "none" : reproduire en isolé AVANT de toucher aux prompts.
 
-// probeToolCounts sont les tailles de jeu d'outils essayées par défaut. La
-// première mesure l'aptitude, les suivantes le seuil de décrochage — un
+// probeToolCounts sont les tailles de jeu d'outils essayées. La première
+// mesure l'aptitude, les suivantes le seuil de décrochage — un
 // orchestrateur complet en expose une vingtaine.
 var probeToolCounts = []int{1, 10, 25}
+
+// probeFullTools est la taille utilisée par les étages qui ajoutent le
+// contexte d'un vrai tour : celui d'un orchestrateur réel.
+const probeFullTools = 25
 
 // probeTimeout borne chaque essai.
 const probeTimeout = 60 * time.Second
@@ -55,8 +59,65 @@ const probeTimeout = 60 * time.Second
 // connaître ce nombre.
 const probeQuestion = "What is the maintenance code of unit 47? Use your tools; do not guess."
 
-// probeSystemPrompt part au modèle : anglais.
+// probeSystemPrompt part au modèle : anglais. Volontairement minimal —
+// c'est l'étalon auquel les étages suivants comparent le prompt réel.
 const probeSystemPrompt = "You are a diagnostic assistant. When a tool can answer the question, call it."
+
+// probeRefusal est le refus injecté dans l'historique du dernier étage. Il
+// reproduit la forme observée en production : l'assistant décline, puis
+// décline à nouveau au tour suivant, sans jamais essayer.
+const probeRefusal = "Je suis désolé, ce service est temporairement indisponible. Je ne peux pas récupérer cette information pour l'instant."
+
+// probeStage est un essai : un nombre d'outils, un prompt système, et un
+// historique.
+type probeStage struct {
+	label   string
+	tools   int
+	prompt  string
+	history []llm.Message
+}
+
+// probeStages compose la bissection. Chaque étage ajoute UN élément du tour
+// réel à celui d'avant : le premier qui casse désigne la cause, ce qu'aucun
+// journal d'instance en marche ne peut faire.
+func probeStages(cfg *config.Config, role string) []probeStage {
+	stages := make([]probeStage, 0, len(probeToolCounts)+2)
+	for _, count := range probeToolCounts {
+		stages = append(stages, probeStage{
+			label:  fmt.Sprintf("%2d outil(s)", count),
+			tools:  count,
+			prompt: probeSystemPrompt,
+		})
+	}
+
+	agentCfg, ok := cfg.Agents[role]
+	if !ok {
+		return stages
+	}
+
+	// Le prompt réel, assemblé comme au tour : règles invariantes,
+	// personnalité, capacités et règles d'honnêteté comprises.
+	full := agent.BuildSystemPrompt(role, agentCfg)
+
+	stages = append(stages,
+		probeStage{
+			label:  "+ le prompt de l'agent",
+			tools:  probeFullTools,
+			prompt: full,
+		},
+		probeStage{
+			label:  "+ un refus dans l'historique",
+			tools:  probeFullTools,
+			prompt: full,
+			history: []llm.Message{
+				llm.NewMessage(llm.RoleUser, probeQuestion),
+				llm.NewMessage(llm.RoleAssistant, probeRefusal),
+			},
+		},
+	)
+
+	return stages
+}
 
 // ProbeTools exécute la sonde pour un rôle et écrit son rapport.
 func ProbeTools(ctx context.Context, cfg *config.Config, role, orgID string, out io.Writer) error {
@@ -96,17 +157,17 @@ func ProbeTools(ctx context.Context, cfg *config.Config, role, orgID string, out
 	fmt.Fprintf(out, "  client  %s\n", resolved.Name)
 	fmt.Fprintf(out, "  modèle  %s\n\n", resolved.Model)
 
-	called := 0
-	for _, count := range probeToolCounts {
-		result := probeOnce(ctx, resolved.Client, count)
-		if result.called {
-			called++
-		}
-		fmt.Fprintln(out, result.line(count))
+	stages := probeStages(cfg, role)
+
+	var results []probeResult
+	for _, stage := range stages {
+		result := probeOnce(ctx, resolved.Client, stage)
+		results = append(results, result)
+		fmt.Fprintln(out, result.line(stage.label))
 	}
 
 	fmt.Fprintln(out)
-	fmt.Fprintln(out, probeVerdict(called, len(probeToolCounts)))
+	fmt.Fprintln(out, probeVerdict(stages, results))
 
 	return nil
 }
@@ -118,8 +179,8 @@ type probeResult struct {
 	reply  string
 }
 
-func (r probeResult) line(count int) string {
-	label := fmt.Sprintf("  %2d outil(s) : ", count)
+func (r probeResult) line(stageLabel string) string {
+	label := fmt.Sprintf("  %-30s : ", stageLabel)
 
 	switch {
 	case r.err != nil:
@@ -131,19 +192,19 @@ func (r probeResult) line(count int) string {
 	}
 }
 
-// probeOnce envoie une question à laquelle seul l'outil peut répondre, avec
-// count outils au total : le vrai, et des leurres plausibles pour mesurer
-// l'effet du nombre.
-func probeOnce(ctx context.Context, client llm.ChatCompletionClient, count int) probeResult {
+// probeOnce envoie une question à laquelle seul l'outil peut répondre, dans
+// les conditions de l'étage : nombre d'outils, prompt système, historique.
+func probeOnce(ctx context.Context, client llm.ChatCompletionClient, stage probeStage) probeResult {
 	callCtx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
+	messages := []llm.Message{llm.NewMessage(llm.RoleSystem, stage.prompt)}
+	messages = append(messages, stage.history...)
+	messages = append(messages, llm.NewMessage(llm.RoleUser, probeQuestion))
+
 	resp, err := client.ChatCompletion(callCtx,
-		llm.WithMessages(
-			llm.NewMessage(llm.RoleSystem, probeSystemPrompt),
-			llm.NewMessage(llm.RoleUser, probeQuestion),
-		),
-		llm.WithTools(probeTools(count)...),
+		llm.WithMessages(messages...),
+		llm.WithTools(probeTools(stage.tools)...),
 		// Exactement ce que fait un tour réel (voir runToolLoop) : la sonde
 		// ne vaudrait rien si elle interrogeait le modèle autrement.
 		llm.WithToolChoice(llm.ToolChoiceAuto),
@@ -196,23 +257,51 @@ func probeTools(count int) []llm.Tool {
 	return tools
 }
 
-// probeVerdict traduit le compte en une conclusion actionnable. C'est la
-// seule ligne que beaucoup liront.
-func probeVerdict(called, total int) string {
+// probeVerdict traduit les résultats en une conclusion actionnable. C'est
+// la seule ligne que beaucoup liront, et elle doit nommer l'étage qui a
+// cassé — c'est lui la cause.
+func probeVerdict(stages []probeStage, results []probeResult) string {
+	firstFailure := -1
+	for i, result := range results {
+		if !result.called && result.err == nil {
+			firstFailure = i
+			break
+		}
+	}
+
 	switch {
-	case called == total:
-		return "Ce modèle appelle ses outils, y compris avec un jeu fourni.\n" +
-			"Si l'assistant reste muet en conversation, la cause est ailleurs :\n" +
-			"comparez avec les lignes « agent: tour terminé » (champs model et tool_calls)."
-	case called == 0:
-		return "Ce modèle n'appelle AUCUN outil, même seul face à une question qui l'exige.\n" +
-			"Il est inapte au rôle : changez-en depuis l'administration (écran Modèles).\n" +
-			"Aucun réglage de prompt ne rattrape cela."
+	case firstFailure < 0:
+		return "Ce modèle appelle ses outils dans toutes les conditions essayées,\n" +
+			"prompt de l'agent et historique de refus compris.\n" +
+			"Si l'assistant reste muet en conversation, la cause n'est ni le modèle,\n" +
+			"ni le nombre d'outils, ni le prompt : comparez avec les lignes\n" +
+			"« agent: tour démarré » d'un vrai tour (champs model et tools)."
+
+	case firstFailure == 0:
+		return "Ce modèle n'appelle AUCUN outil, même seul face à une question qui\n" +
+			"l'exige. Il est inapte au rôle : changez-en depuis l'administration\n" +
+			"(écran Modèles). Aucun réglage de prompt ne rattrape cela."
+
+	case stages[firstFailure].tools > stages[firstFailure-1].tools:
+		return fmt.Sprintf("Ce modèle décroche entre %d et %d outils : c'est leur NOMBRE qui le noie.\n",
+			stages[firstFailure-1].tools, stages[firstFailure].tools) +
+			"Deux issues, cumulables : lui en offrir moins (retirez des délégués, les\n" +
+			"rappels ou les tâches planifiées de l'agent concerné dans la\n" +
+			"configuration), ou lui préférer un modèle qui tient la charge."
+
+	case len(stages[firstFailure].history) > 0:
+		return "Ce modèle appelle ses outils, SAUF quand un refus figure dans\n" +
+			"l'historique : il imite alors sa propre réponse précédente au lieu\n" +
+			"d'essayer. C'est ce qui rend la panne persistante — un premier refus\n" +
+			"en engendre une suite, et repartir d'une conversation neuve suffit à\n" +
+			"tout débloquer. Le prompt le lui interdit déjà (règles d'honnêteté,\n" +
+			"« TRY IT AGAIN this turn ») : ce modèle ne suit pas la consigne."
+
 	default:
-		return "Ce modèle appelle ses outils quand ils sont peu nombreux, et renonce\n" +
-			"au-delà. Deux issues, cumulables : lui en offrir moins (retirez des\n" +
-			"délégués, les rappels ou les tâches planifiées de l'agent concerné dans\n" +
-			"la configuration), ou lui préférer un modèle qui tient la charge."
+		return "Ce modèle appelle ses outils, SAUF avec le prompt de l'agent : c'est\n" +
+			"le prompt qui l'inhibe, pas le nombre d'outils ni le modèle lui-même.\n" +
+			"Regardez la personnalité de l'agent (agents.<nom>.system_prompt) avant\n" +
+			"les règles invariantes, qui, elles, ne se configurent pas."
 	}
 }
 
