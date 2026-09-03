@@ -51,6 +51,16 @@ type Request struct {
 	// configuration. Les notes vocales n'y figurent jamais : elles sont
 	// transcrites vers Input.
 	Attachments []media.Media
+	// LastReplyWithoutTools dit que la dernière réponse de l'assistant dans
+	// cette conversation a été écrite sans qu'aucun outil soit appelé,
+	// alors qu'il en avait. Le modèle imite cette réponse au tour suivant —
+	// et si elle prétendait une impossibilité, il la reprend sans essayer.
+	//
+	// Le fait est énoncé dans le message SYSTÈME (toollessNotice), jamais
+	// accolé au message lui-même : tout ce qu'on écrit dans le contenu d'un
+	// message d'assistant finit recopié dans une réponse envoyée à
+	// quelqu'un (vu le 2026-09-03 ; voir internal/conversation/toolless.go).
+	LastReplyWithoutTools bool
 }
 
 // Result est le résultat d'une exécution d'Agent.
@@ -280,6 +290,12 @@ func buildChatMessages(systemPrompt, agentName string, textOnly bool, recallNote
 	// mémoire.
 	if recallNote != "" {
 		systemMessage += "\n\n---\n\n" + recallNote
+	}
+
+	// Le constat sur la réponse précédente : ici, dans le message système,
+	// et surtout pas accolé à la réponse en question.
+	if req.LastReplyWithoutTools {
+		systemMessage += "\n\n---\n\n" + toollessNotice
 	}
 
 	messages = append(messages, llm.NewMessage(llm.RoleSystem, systemMessage))

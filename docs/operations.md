@@ -344,44 +344,41 @@ relit au tour suivant et le recopie plutôt que d'essayer. Vu en production
 le 2026-09-03 — sept tours d'affilée sans aucun appel d'outil sur une
 demande de lien de profil, deux liens entièrement inventés au passage, alors
 que `open_profile_link` figurait dans les vingt-quatre outils offerts à
-chaque tour. Il a fallu écrire « utilise l'outil à ta disposition » pour
-que la boucle cède, ce qu'aucun message ordinaire ne dit.
+chaque tour.
 
-L'hôte la rompt désormais de lui-même
-(`internal/conversation/toolless.go`). Toute réponse de l'assistant écrite
-sans qu'AUCUN outil ait été appelé, alors que des outils lui étaient
-offerts, revient au modèle suivie du constat `[no tool was called for this
-message]`. Les règles d'honnêteté du prompt (`internal/agent/prompt.go`,
-`honestyRules`) en énoncent une fois la conséquence : un message ainsi
-marqué n'a rien observé, il n'établit donc rien sur ce qui marche.
+Ce qu'un tour a fait est enregistré comme un ATTRIBUT du message, jamais
+comme du texte : `messages.answered_without_tools` (migration 0029) dit que
+la réponse a été écrite alors que des outils étaient offerts et qu'aucun n'a
+été appelé. Le fait n'est connu qu'à l'instant du tour, et rien dans le
+texte ne permet de le retrouver après coup.
 
-Le critère est structurel, et lui seul : le fait est enregistré au moment du
-tour (`messages.answered_without_tools`, migration 0029), seul instant où il
-est connu. Rien n'est déduit de ce que le message DIT. Un lexique de refus
-aurait été tentant ; il se trompe dans les deux sens — il manque le refus
-déguisé en constat (« le service n'a pas accepté la requête », qui ne
-contient aucun mot d'impossibilité) et se déclenche sur des phrases
-anodines. Le constat, lui, est vrai partout où il est posé, y compris sur
-une salutation : c'est ce qui permet de le poser sans jamais juger le sens.
+Au tour suivant, si la DERNIÈRE réponse de l'assistant porte cet attribut,
+le message système reçoit un paragraphe (`agent.toollessNotice`) qui
+l'énonce : cette réponse n'a rien observé, elle n'établit rien, et un outil
+offert maintenant doit être appelé. Seule la dernière compte — c'est celle
+que le modèle a sous les yeux et qu'il imite.
 
-Ce qui n'est jamais marqué, et pourquoi :
+**Ce texte ne va jamais dans le contenu d'un message.** La première version
+accolait le constat au message fautif, dans l'historique. Le modèle l'a
+recopié dans sa réponse, tronqué de son crochet fermant, et la personne a lu
+« Le service de calendrier est indisponible. Réessayez plus tard. [no tool
+was called for this message ». La leçon vaut au-delà de ce cas, et elle
+valait déjà pour le caviardage des liens : tout texte glissé dans le contenu
+d'un message d'assistant finit un jour dans une réponse envoyée à
+quelqu'un.
 
-- une réponse appuyée sur un appel d'outil — elle a observé quelque chose,
-  et son « je ne peux pas » est un constat vrai. Le contredire remplacerait
-  la boucle qu'on enlève par une boucle de tentatives sur ce qui vient
-  d'échouer ;
-- une réponse écrite par l'hôte (visite d'accueil, confirmation d'action) ou
-  par un agent sans outils : aucun modèle n'a rien deviné ;
-- les messages de la personne, et tout l'historique antérieur à la migration
-  — faute de savoir ce que ces tours avaient appelé, ils valent « rien à
-  signaler ».
+Deux filets en découlent, tous deux tolérants à l'altération — la
+comparaison de chaîne exacte est précisément ce qui a laissé passer la
+recopie tronquée :
 
-Les messages ne sont pas modifiés en base : seul le texte remis au modèle
-l'est, et la personne garde sa conversation telle qu'elle l'a lue. Si le
-modèle recopie le constat dans sa réponse — ce qui est arrivé au marqueur de
-caviardage —, l'hôte le retire avant l'envoi.
+- sur les réponses sortantes, le marqueur de caviardage d'un lien de profil
+  est remplacé par un lien neuf (`profile_link_repair.go`), et tout reste de
+  constat est retiré ;
+- sur l'historique relu, les recopies déjà enregistrées en base sont
+  effacées : la base n'est jamais réécrite, et les relire au modèle serait
+  lui montrer un modèle de réponse à imiter.
 
-Cette rupture ne remplace pas le choix d'un modèle apte : elle empêche
+Rien de tout cela ne remplace le choix d'un modèle apte : cela empêche
 qu'une seule invention enferme une conversation entière.
 
 Pour isoler ce qui vient d'Automata dans une sortie mêlée :

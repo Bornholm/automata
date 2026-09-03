@@ -268,6 +268,11 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 
 	messageID := uuid.NewString()
 
+	// Vrai quand la dernière réponse de l'assistant a été écrite sans
+	// qu'aucun outil soit appelé : le message système le dira au modèle
+	// (voir toolless.go pour ce que cette information a remplacé).
+	var lastReplyWithoutTools bool
+
 	err = h.db.WithTx(ctx, func(tx *sql.Tx) error {
 		if err := h.ensureConversation(ctx, tx, conv); err != nil {
 			return err
@@ -292,6 +297,11 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		if err != nil {
 			return err
 		}
+
+		// Le seul refus qui compte est le DERNIER : c'est celui que le
+		// modèle a sous les yeux et qu'il imite. Le fait vient de la
+		// persistance, où il a été écrit à l'instant du tour.
+		lastReplyWithoutTools = lastAssistantAnsweredWithoutTools(records)
 
 		if err := h.messages.Insert(ctx, tx, persistence.Message{
 			ID:                messageID,
@@ -359,6 +369,9 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		Summary:      summary,
 		Input:        text,
 		Attachments:  attachments,
+		// Le fait, et non son inscription dans un message : il part au
+		// message système, hors de ce que le modèle recopie.
+		LastReplyWithoutTools: lastReplyWithoutTools,
 	})
 	h.metrics.ObserveAgentLatency(time.Since(agentStart))
 	if err != nil {
@@ -543,19 +556,39 @@ func toAgentHistory(records []persistence.Message) []agent.Message {
 	for _, m := range records {
 		history = append(history, agent.Message{
 			Role: m.Role,
-			// Deux transformations, pour le même travers : ce que le modèle
+			// Deux nettoyages, pour le même travers : ce que le modèle
 			// relit, il le recopie.
 			//
 			// Les liens de profil sont caviardés — ce sont des secrets à
 			// usage unique, et il les recopie au lieu d'en demander un neuf
-			// (voir redact.go). Les réponses écrites sans qu'aucun outil ait
-			// été appelé sont marquées comme telles — sinon il recopie un
-			// ancien refus au lieu d'essayer, et la panne s'entretient
-			// d'elle-même (voir toolless.go).
-			Content: annotateToolless(redactProfileLinks(m.Content), m.Role == "assistant" && m.AnsweredWithoutTools),
+			// (voir redact.go). Le constat d'absence d'appel d'outil, lui,
+			// est retiré : il a été recopié dans de vraies réponses, donc
+			// enregistré, et le relire serait proposer au modèle un modèle
+			// de réponse à imiter (voir toolless.go).
+			Content: stripToollessMarker(redactProfileLinks(m.Content)),
 		})
 	}
 	return history
+}
+
+// lastAssistantAnsweredWithoutTools dit si la DERNIÈRE réponse de
+// l'assistant dans l'historique a été produite sans qu'aucun outil soit
+// appelé, alors que des outils lui étaient offerts.
+//
+// Seule la dernière compte : c'est elle que le modèle a sous les yeux au
+// moment de répondre, et c'est elle qu'il imite. Les plus anciennes sont
+// déjà loin dans le contexte, et les énumérer ferait du bruit là où une
+// seule phrase agit.
+func lastAssistantAnsweredWithoutTools(records []persistence.Message) bool {
+	for i := len(records) - 1; i >= 0; i-- {
+		if records[i].Role != "assistant" {
+			continue
+		}
+
+		return records[i].AnsweredWithoutTools
+	}
+
+	return false
 }
 
 // explainAudioFailure attache un message destiné à l'utilisateur aux échecs

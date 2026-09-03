@@ -57,7 +57,10 @@ func (h *Handler) repairRedactedProfileLink(ctx context.Context, identity model.
 		"repaired", replacement != repairFallback,
 		"remède", "le modèle affecté au rôle principal n'appelle pas open_profile_link de façon fiable")
 
-	return strings.ReplaceAll(reply, redactedProfileLink, replacement)
+	// Le remplacement suit le MÊME motif tolérant que la détection : sans
+	// cela, un marqueur reconnu parce qu'altéré resterait dans la réponse,
+	// et le lien de réparation viendrait s'ajouter à côté de lui.
+	return strings.TrimSpace(redactedProfileLinkPattern.ReplaceAllString(reply, replacement))
 }
 
 // warn journalise sans exiger que le logger soit renseigné : le Handler

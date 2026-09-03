@@ -392,12 +392,49 @@ func TestHandler_CopiedRedactionMarkerNeverReachesTheUser(t *testing.T) {
 	}
 }
 
-// Un refus inventé — écrit sans qu'aucun outil ait été appelé — revient dans
-// l'historique du tour suivant, où le modèle le recopie au lieu d'essayer.
-// Il doit donc y revenir marqué. Reproduit la boucle observée en production
-// le 2026-09-03, où sept tours d'affilée se sont terminés sans aucun appel
-// d'outil sur une demande de lien de profil.
-func TestHandler_ReplyWrittenWithoutToolsComesBackMarked(t *testing.T) {
+// Le modèle ne recopie pas au caractère près : il TRONQUE. Vu le
+// 2026-09-03 — « Voici un nouveau lien, valable 15 minutes et à usage
+// unique : [expired profile link removed — call open_profile_link to issue
+// a new one », sans crochet fermant. La détection par comparaison exacte
+// n'a rien vu, la réparation ne s'est pas déclenchée, et la personne a reçu
+// le marqueur au lieu d'un lien.
+func TestHandler_TruncatedRedactionMarkerIsStillCaught(t *testing.T) {
+	db := openTestDB(t)
+
+	a := &recordingAgent{}
+	a.replyFunc = func(req agent.Request) string {
+		return "Voici un nouveau lien, valable 15 minutes et à usage unique : " +
+			"[expired profile link removed — call open_profile_link to issue a new one"
+	}
+
+	h := conversation.NewHandler(db, a, nil, 10, audio.Config{}, nil, false, nil)
+
+	identity := model.ExecutionIdentity{
+		PrincipalID: model.PrincipalID("alice"),
+		OrgID:       model.OrgID("home"),
+	}
+	conv := testConversation(model.ConversationID("conv-tronque"), "chan-t")
+
+	reply, _, err := h.Handle(context.Background(), identity, conv, testMessage("alice", "Mon profil"))
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+
+	if strings.Contains(reply, "profile link") || strings.Contains(reply, "open_profile_link") {
+		t.Fatalf("le marqueur tronqué est parti à l'utilisateur: %q", reply)
+	}
+	if !strings.Contains(reply, "redemande") {
+		t.Errorf("la réponse ne dit pas quoi faire: %q", reply)
+	}
+}
+
+// Le fait « cette réponse a été écrite sans appeler d'outil » est un
+// ATTRIBUT du message, pas du texte : il est enregistré en base
+// (messages.answered_without_tools) et voyage jusqu'à l'agent dans la
+// requête. Il n'est jamais accolé au contenu — la version qui le faisait a
+// été recopiée par le modèle dans une réponse lue par une personne
+// (2026-09-03).
+func TestHandler_ToollessReplyTravelsAsAnAttribute(t *testing.T) {
 	db := openTestDB(t)
 
 	a := &recordingAgent{answeredWithoutTools: true}
@@ -419,29 +456,30 @@ func TestHandler_ReplyWrittenWithoutToolsComesBackMarked(t *testing.T) {
 
 	lastReq := a.requests[len(a.requests)-1]
 
-	var marked bool
-	for _, m := range lastReq.History {
-		if m.Role == "assistant" && strings.Contains(m.Content, "no tool was called") {
-			marked = true
-		}
-	}
-	if !marked {
-		t.Fatalf("la réponse est revenue au modèle sans le constat: %+v", lastReq.History)
+	if !lastReq.LastReplyWithoutTools {
+		t.Error("le fait n'a pas voyagé jusqu'à l'agent")
 	}
 
-	// Le message de la personne n'est jamais marqué : elle n'a pas d'outils
-	// à appeler, et son texte lui appartient.
+	// Et le contenu, lui, est intact : rien n'y a été ajouté.
 	for _, m := range lastReq.History {
-		if m.Role == "user" && strings.Contains(m.Content, "no tool was called") {
-			t.Errorf("un message de la personne a été marqué: %q", m.Content)
+		if strings.Contains(m.Content, "no tool was called") {
+			t.Errorf("le contenu d'un message porte encore un marqueur: %q", m.Content)
 		}
+	}
+	var found bool
+	for _, m := range lastReq.History {
+		if m.Role == "assistant" && m.Content == "Le service de profil n'est pas disponible en ce moment." {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("la réponse précédente n'est pas revenue telle quelle: %+v", lastReq.History)
 	}
 }
 
-// Un tour qui a appelé un outil a observé quelque chose : sa réponse revient
-// intacte, quoi qu'elle dise. Sans quoi la boucle qu'on enlève serait
-// remplacée par une boucle de tentatives sur ce qui vient d'échouer.
-func TestHandler_ReplyBackedByAToolCallIsNeverMarked(t *testing.T) {
+// Une réponse appuyée sur un appel d'outil a observé quelque chose : le
+// fait ne remonte pas, et rien ne conteste ce qu'elle dit.
+func TestHandler_ReplyBackedByAToolCallCarriesNoFact(t *testing.T) {
 	db := openTestDB(t)
 
 	a := &recordingAgent{answeredWithoutTools: false}
@@ -461,10 +499,8 @@ func TestHandler_ReplyBackedByAToolCallIsNeverMarked(t *testing.T) {
 		t.Fatalf("Handle (2): %v", err)
 	}
 
-	for _, m := range a.requests[len(a.requests)-1].History {
-		if strings.Contains(m.Content, "no tool was called") {
-			t.Errorf("une réponse appuyée sur un appel d'outil a été marquée: %q", m.Content)
-		}
+	if a.requests[len(a.requests)-1].LastReplyWithoutTools {
+		t.Error("une réponse appuyée sur un appel d'outil a été signalée comme sans outil")
 	}
 }
 
@@ -479,13 +515,11 @@ func TestHandler_CopiedToollessMarkerNeverReachesTheUser(t *testing.T) {
 		if len(a.requests) == 1 {
 			return "Le service est indisponible."
 		}
-		// Second tour : le modèle recopie ce qu'il voit dans l'historique.
-		for _, m := range req.History {
-			if strings.Contains(m.Content, "no tool was called") {
-				return m.Content
-			}
-		}
-		return "rien à recopier"
+		// Second tour : le modèle produit le marqueur de lui-même, et
+		// TRONQUÉ de son crochet fermant — la forme exacte qui est arrivée
+		// à une personne le 2026-09-03, et que la comparaison de chaîne
+		// exacte laissait passer.
+		return "Le service de calendrier est indisponible. Réessayez plus tard. [no tool was called for this message"
 	}
 	h := conversation.NewHandler(db, a, nil, 0, audio.Config{}, nil, false, nil)
 

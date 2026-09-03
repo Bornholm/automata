@@ -2,49 +2,65 @@ package conversation
 
 import "testing"
 
-// L'annotation ne dépend que du fait structurel — ce tour avait des outils
-// et n'en a appelé aucun — jamais de ce que le message dit. Deux textes
-// opposés, même traitement : c'est ce qui la rend incapable de se tromper
-// sur le sens.
-func TestAnnotateToollessIgnoresWhatTheMessageSays(t *testing.T) {
-	texts := []string{
-		"Le service de profil n'est pas disponible en ce moment.",
-		"Le service de profil n'a pas accepté la requête pour l'instant.",
-		"Bonjour ! Comment puis-je t'aider ?",
-		"Il fera 21 degrés demain matin.",
+// Le constat était accolé aux messages de l'assistant dans l'historique.
+// Le modèle l'a recopié dans sa réponse, TRONQUÉ de son crochet fermant, et
+// la personne l'a lu (2026-09-03). Le nettoyage doit donc reconnaître le
+// marqueur altéré — c'est la comparaison exacte qui a laissé passer.
+func TestStripToollessMarker_ToleratesAlteredCopies(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			// La forme exacte observée en production, sans crochet fermant.
+			name: "crochet fermant absent",
+			in:   "Le service de calendrier est indisponible. Réessayez plus tard. [no tool was called for this message",
+			want: "Le service de calendrier est indisponible. Réessayez plus tard.",
+		},
+		{
+			name: "forme complète",
+			in:   "Le service est indisponible. [no tool was called for this message]",
+			want: "Le service est indisponible.",
+		},
+		{
+			name: "casse changée",
+			in:   "Indisponible. [No Tool Was Called for this message]",
+			want: "Indisponible.",
+		},
+		{
+			name: "fin reformulée",
+			in:   "Indisponible. [no tool was called when writing this reply]",
+			want: "Indisponible.",
+		},
+		{
+			name: "au milieu de la phrase",
+			in:   "Indisponible [no tool was called for this message] pour l'instant.",
+			want: "Indisponible pour l'instant.",
+		},
+		{
+			name: "rien à retirer",
+			in:   "Voici votre lien : https://exemple.test/p/aaaaaa.bbbbbbbbbbbbbbbbbbbb",
+			want: "Voici votre lien : https://exemple.test/p/aaaaaa.bbbbbbbbbbbbbbbbbbbb",
+		},
 	}
 
-	for _, text := range texts {
-		if got := annotateToolless(text, true); got != text+toollessMarker {
-			t.Errorf("sans appel d'outil, attendu annoté\n  texte  %q\n  obtenu %q", text, got)
-		}
-		// Un tour qui a appelé un outil a observé quelque chose : son
-		// « je ne peux pas » est un constat, et l'annoter dirait au modèle
-		// de réessayer ce qui vient d'échouer.
-		if got := annotateToolless(text, false); got != text {
-			t.Errorf("après un appel d'outil, attendu intact\n  texte  %q\n  obtenu %q", text, got)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stripToollessMarker(tc.in); got != tc.want {
+				t.Errorf("stripToollessMarker(%q)\n  = %q\nattendu %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 
-func TestAnnotateToollessLeavesEmptyTextAlone(t *testing.T) {
-	if got := annotateToolless("", true); got != "" {
-		t.Fatalf("texte vide annoté: %q", got)
-	}
-}
+// Le nettoyage ne dévore pas le reste du message : le motif s'arrête au
+// crochet fermant, ou à la fin de ce qu'il peut raisonnablement absorber.
+func TestStripToollessMarker_StopsAtTheClosingBracket(t *testing.T) {
+	in := "Indisponible. [no tool was called for this message] Voici la suite, qui doit rester."
+	want := "Indisponible. Voici la suite, qui doit rester."
 
-// L'annotation ne s'adresse qu'au modèle. S'il la recopie dans sa réponse —
-// ce qui est arrivé au marqueur de caviardage — la personne ne doit pas la
-// lire.
-func TestStripToollessMarker(t *testing.T) {
-	annotated := annotateToolless("Le service est indisponible.", true)
-
-	if got := stripToollessMarker(annotated); got != "Le service est indisponible." {
-		t.Fatalf("marqueur mal retiré: %q", got)
-	}
-
-	const clean = "Voici votre lien."
-	if got := stripToollessMarker(clean); got != clean {
-		t.Fatalf("texte sans marqueur modifié: %q", got)
+	if got := stripToollessMarker(in); got != want {
+		t.Fatalf("stripToollessMarker a dévoré la suite:\n  = %q\nattendu %q", got, want)
 	}
 }

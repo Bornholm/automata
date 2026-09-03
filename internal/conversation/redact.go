@@ -1,9 +1,6 @@
 package conversation
 
-import (
-	"regexp"
-	"strings"
-)
+import "regexp"
 
 // Les liens de profil sont des SECRETS à usage unique : le segment
 // « <id>.<secret> » vaut mot de passe pendant un quart d'heure. Ils n'ont
@@ -59,9 +56,21 @@ func redactProfileLinks(text string) string {
 	return profileLinkPattern.ReplaceAllString(text, redactedProfileLink)
 }
 
-// containsRedactedProfileLink dit si un texte porte le marqueur. Utilisé
-// sur la réponse SORTANTE : le marqueur ne s'adresse qu'au modèle, une
-// personne ne doit jamais le lire.
+// redactedProfileLinkPattern reconnaît le marqueur, y compris ALTÉRÉ :
+// crochet fermant absent, casse changée, fin tronquée ou reformulée.
+//
+// La comparaison exacte ne suffit pas, et c'est la panne du 2026-09-03 :
+// le modèle a envoyé « Voici un nouveau lien […] : [expired profile link
+// removed — call open_profile_link to issue a new one » sans son crochet
+// fermant. strings.Contains n'a rien reconnu, la réparation ne s'est pas
+// déclenchée, et la personne a reçu le marqueur au lieu d'un lien. Un
+// modèle ne recopie pas au caractère près : le motif s'accroche donc au
+// début, seul repère stable.
+var redactedProfileLinkPattern = regexp.MustCompile(`(?i)\[\s*expired profile link removed[^\]]{0,120}\]?`)
+
+// containsRedactedProfileLink dit si un texte porte le marqueur, sous une
+// forme même approximative. Utilisé sur la réponse SORTANTE : le marqueur
+// ne s'adresse qu'au modèle, une personne ne doit jamais le lire.
 func containsRedactedProfileLink(text string) bool {
-	return strings.Contains(text, redactedProfileLink)
+	return redactedProfileLinkPattern.MatchString(text)
 }

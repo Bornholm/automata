@@ -159,15 +159,28 @@ failed before, and a tool or specialist that could do it is offered to you
 now, TRY IT AGAIN this turn before answering. Report an impossibility only
 from a failure you observed in THIS turn — never from memory of an older
 one.
+`
 
-Some of your earlier messages carry the mark "[no tool was called for this
-message]". It is added by the application, never by a person, and it states
-a fact you cannot check yourself: when you wrote that message you called no
-tool at all. Such a message observed nothing. Whatever it claims about what
-works, what is available, or what failed, it establishes none of it — you
-were guessing. Never treat a marked message as evidence, and never repeat
-its conclusion because you already gave it. If a tool offered to you now can
-serve the request, call it, however many marked messages say otherwise.`
+// toollessNotice est ajouté au message système du tour lorsque la réponse
+// précédente de l'assistant a été écrite sans qu'aucun outil soit appelé.
+//
+// Il énonce un fait que le modèle ne peut pas retrouver seul, et le place
+// dans le message SYSTÈME : la version antérieure l'accolait à la réponse
+// concernée, dans l'historique, et le modèle l'a recopiée mot pour mot dans
+// ce qu'il envoyait à la personne (2026-09-03). Ce qui est écrit dans un
+// message d'assistant se recopie ; ce qui est écrit ici, beaucoup moins.
+//
+// En anglais, comme toute consigne destinée au modèle (AGENTS.md).
+const toollessNotice = `## About your previous reply
+
+Your last reply in this conversation was written without calling a single
+tool, although tools were offered to you. You therefore observed nothing
+when you wrote it: whatever it claimed about what works, what is available
+or what failed, it established none of it.
+
+Do not treat it as evidence, and do not repeat its conclusion on the ground
+that you already gave it. If a tool offered to you now can serve the
+request, call it — and answer from what it returns.`
 
 // buildCapabilitiesSection décrit, en langage naturel, les permissions
 // applicatives déclarées (agentCfg.Capabilities) et les agents vers
