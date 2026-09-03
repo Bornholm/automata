@@ -243,12 +243,20 @@ dokku-healthcheck:
 		exit 1; \
 	fi
 
-# La même sonde, mais DEPUIS le conteneur : elle court-circuite nginx et le
-# certificat, ce qui départage une application en panne d'un proxy mal
-# configuré. L'entrypoint de l'image est vide (voir le Dockerfile), la
-# commande doit donc nommer le binaire par son chemin.
+# La même sonde, mais DEPUIS le conteneur en cours : elle court-circuite
+# nginx et le certificat, ce qui départage une application en panne d'un
+# proxy mal configuré.
+#
+# `enter`, jamais `run` : `run` démarre un conteneur NEUF, où rien n'écoute
+# sur le port du serveur web — la sonde y échouerait toujours, et sur une
+# base montée par un second écrivain de surcroît. Le binaire est nommé par
+# son chemin absolu : l'entrypoint de l'image est vide (voir le Dockerfile)
+# et le PATH n'est pas garanti.
+#
+# Silencieuse quand tout va bien : seul le code de sortie compte (0 prêt,
+# 1 sinon).
 dokku-healthcheck-local:
-	$(DOKKU) run $(DOKKU_APP) /usr/local/bin/automata healthcheck \
+	$(DOKKU) enter $(DOKKU_APP) web /usr/local/bin/automata healthcheck \
 		-addr 127.0.0.1:$(DOKKU_APP_PORT) -path /healthz
 
 # Construit l'image exactement comme Dokku le fera, pour valider le
