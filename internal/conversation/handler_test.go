@@ -24,6 +24,9 @@ import (
 type recordingAgent struct {
 	requests  []agent.Request
 	replyFunc func(req agent.Request) string
+	// answeredWithoutTools reproduit un tour qui disposait d'outils et n'en
+	// a appelé aucun — la condition structurelle de l'annotation de refus.
+	answeredWithoutTools bool
 }
 
 func (a *recordingAgent) Execute(ctx context.Context, req agent.Request) (agent.Result, error) {
@@ -32,7 +35,7 @@ func (a *recordingAgent) Execute(ctx context.Context, req agent.Request) (agent.
 	if a.replyFunc != nil {
 		reply = a.replyFunc(req)
 	}
-	return agent.Result{Reply: reply}, nil
+	return agent.Result{Reply: reply, AnsweredWithoutTools: a.answeredWithoutTools}, nil
 }
 
 var _ agent.Agent = &recordingAgent{}
@@ -386,5 +389,119 @@ func TestHandler_CopiedRedactionMarkerNeverReachesTheUser(t *testing.T) {
 	}
 	if !strings.Contains(reply, "redemande") {
 		t.Errorf("la réponse ne dit pas quoi faire: %q", reply)
+	}
+}
+
+// Un refus inventé — écrit sans qu'aucun outil ait été appelé — revient dans
+// l'historique du tour suivant, où le modèle le recopie au lieu d'essayer.
+// Il doit donc y revenir marqué. Reproduit la boucle observée en production
+// le 2026-09-03, où sept tours d'affilée se sont terminés sans aucun appel
+// d'outil sur une demande de lien de profil.
+func TestHandler_ReplyWrittenWithoutToolsComesBackMarked(t *testing.T) {
+	db := openTestDB(t)
+
+	a := &recordingAgent{answeredWithoutTools: true}
+	a.replyFunc = func(req agent.Request) string {
+		return "Le service de profil n'est pas disponible en ce moment."
+	}
+	h := conversation.NewHandler(db, a, nil, 0, audio.Config{}, nil, false, nil)
+
+	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
+	conv := testConversation(model.ConversationID("conv-refus"), "chan-1")
+	ctx := context.Background()
+
+	if _, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "mon profil")); err != nil {
+		t.Fatalf("Handle (1): %v", err)
+	}
+	if _, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "et mon solde ?")); err != nil {
+		t.Fatalf("Handle (2): %v", err)
+	}
+
+	lastReq := a.requests[len(a.requests)-1]
+
+	var marked bool
+	for _, m := range lastReq.History {
+		if m.Role == "assistant" && strings.Contains(m.Content, "no tool was called") {
+			marked = true
+		}
+	}
+	if !marked {
+		t.Fatalf("la réponse est revenue au modèle sans le constat: %+v", lastReq.History)
+	}
+
+	// Le message de la personne n'est jamais marqué : elle n'a pas d'outils
+	// à appeler, et son texte lui appartient.
+	for _, m := range lastReq.History {
+		if m.Role == "user" && strings.Contains(m.Content, "no tool was called") {
+			t.Errorf("un message de la personne a été marqué: %q", m.Content)
+		}
+	}
+}
+
+// Un tour qui a appelé un outil a observé quelque chose : sa réponse revient
+// intacte, quoi qu'elle dise. Sans quoi la boucle qu'on enlève serait
+// remplacée par une boucle de tentatives sur ce qui vient d'échouer.
+func TestHandler_ReplyBackedByAToolCallIsNeverMarked(t *testing.T) {
+	db := openTestDB(t)
+
+	a := &recordingAgent{answeredWithoutTools: false}
+	a.replyFunc = func(req agent.Request) string {
+		return "Le service de profil n'est pas disponible en ce moment."
+	}
+	h := conversation.NewHandler(db, a, nil, 0, audio.Config{}, nil, false, nil)
+
+	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
+	conv := testConversation(model.ConversationID("conv-outil"), "chan-1")
+	ctx := context.Background()
+
+	if _, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "mon profil")); err != nil {
+		t.Fatalf("Handle (1): %v", err)
+	}
+	if _, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "et alors ?")); err != nil {
+		t.Fatalf("Handle (2): %v", err)
+	}
+
+	for _, m := range a.requests[len(a.requests)-1].History {
+		if strings.Contains(m.Content, "no tool was called") {
+			t.Errorf("une réponse appuyée sur un appel d'outil a été marquée: %q", m.Content)
+		}
+	}
+}
+
+// Le constat ne s'adresse qu'au modèle. S'il le recopie dans sa réponse, la
+// personne ne doit pas le lire — même leçon que le marqueur de caviardage,
+// recopié tel quel en production le 2026-09-03.
+func TestHandler_CopiedToollessMarkerNeverReachesTheUser(t *testing.T) {
+	db := openTestDB(t)
+
+	a := &recordingAgent{answeredWithoutTools: true}
+	a.replyFunc = func(req agent.Request) string {
+		if len(a.requests) == 1 {
+			return "Le service est indisponible."
+		}
+		// Second tour : le modèle recopie ce qu'il voit dans l'historique.
+		for _, m := range req.History {
+			if strings.Contains(m.Content, "no tool was called") {
+				return m.Content
+			}
+		}
+		return "rien à recopier"
+	}
+	h := conversation.NewHandler(db, a, nil, 0, audio.Config{}, nil, false, nil)
+
+	identity := model.ExecutionIdentity{PrincipalID: model.PrincipalID("alice")}
+	conv := testConversation(model.ConversationID("conv-recopie"), "chan-1")
+	ctx := context.Background()
+
+	if _, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "mon profil")); err != nil {
+		t.Fatalf("Handle (1): %v", err)
+	}
+	reply, _, err := h.Handle(ctx, identity, conv, testMessage("alice", "et alors ?"))
+	if err != nil {
+		t.Fatalf("Handle (2): %v", err)
+	}
+
+	if strings.Contains(reply, "no tool was called") {
+		t.Fatalf("le constat a été envoyé à la personne: %q", reply)
 	}
 }

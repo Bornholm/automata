@@ -33,9 +33,11 @@ func (r *MessageRepository) Insert(ctx context.Context, q Querier, m Message) er
 
 	_, err = q.ExecContext(ctx, `
 		INSERT INTO messages (
-			id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, m.ID, m.ConversationID, m.ExternalMessageID, m.PrincipalID, m.Role, m.Content, m.ContentKind, m.CreatedAt)
+			id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at,
+			answered_without_tools
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, m.ID, m.ConversationID, m.ExternalMessageID, m.PrincipalID, m.Role, m.Content, m.ContentKind, m.CreatedAt,
+		m.AnsweredWithoutTools)
 	if err != nil {
 		return fmt.Errorf("insertion du message %q: %w", m.ID, err)
 	}
@@ -46,13 +48,13 @@ func (r *MessageRepository) Insert(ctx context.Context, q Querier, m Message) er
 // s'il n'existe pas.
 func (r *MessageRepository) FindByID(ctx context.Context, q Querier, id string) (Message, bool, error) {
 	row := q.QueryRowContext(ctx, `
-		SELECT id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at
+		SELECT id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at, answered_without_tools
 		FROM messages
 		WHERE id = ?
 	`, id)
 
 	var m Message
-	if err := row.Scan(&m.ID, &m.ConversationID, &m.ExternalMessageID, &m.PrincipalID, &m.Role, &m.Content, &m.ContentKind, &m.CreatedAt); err != nil {
+	if err := row.Scan(&m.ID, &m.ConversationID, &m.ExternalMessageID, &m.PrincipalID, &m.Role, &m.Content, &m.ContentKind, &m.CreatedAt, &m.AnsweredWithoutTools); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Message{}, false, nil
 		}
@@ -75,9 +77,9 @@ func (r *MessageRepository) FindByID(ctx context.Context, q Querier, id string) 
 // seconde.
 func (r *MessageRepository) ListRecentByConversation(ctx context.Context, q Querier, conversationID model.ConversationID, limit int) ([]Message, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at
+		SELECT id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at, answered_without_tools
 		FROM (
-			SELECT rowid, id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at
+			SELECT rowid, id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at, answered_without_tools
 			FROM messages
 			WHERE conversation_id = ?
 			ORDER BY rowid DESC
@@ -93,7 +95,7 @@ func (r *MessageRepository) ListRecentByConversation(ctx context.Context, q Quer
 	messages := make([]Message, 0, limit)
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.ConversationID, &m.ExternalMessageID, &m.PrincipalID, &m.Role, &m.Content, &m.ContentKind, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.ConversationID, &m.ExternalMessageID, &m.PrincipalID, &m.Role, &m.Content, &m.ContentKind, &m.CreatedAt, &m.AnsweredWithoutTools); err != nil {
 			return nil, fmt.Errorf("lecture de l'historique de la conversation %q: %w", conversationID, err)
 		}
 
@@ -120,9 +122,9 @@ func (r *MessageRepository) ListRecentByConversation(ctx context.Context, q Quer
 // à ListRecentByConversation.
 func (r *MessageRepository) ListRecentByConversationAfterRowID(ctx context.Context, q Querier, conversationID model.ConversationID, afterRowID int64, limit int) ([]Message, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at
+		SELECT id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at, answered_without_tools
 		FROM (
-			SELECT rowid, id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at
+			SELECT rowid, id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at, answered_without_tools
 			FROM messages
 			WHERE conversation_id = ? AND rowid > ?
 			ORDER BY rowid DESC
@@ -138,7 +140,7 @@ func (r *MessageRepository) ListRecentByConversationAfterRowID(ctx context.Conte
 	messages := make([]Message, 0, limit)
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&m.ID, &m.ConversationID, &m.ExternalMessageID, &m.PrincipalID, &m.Role, &m.Content, &m.ContentKind, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.ConversationID, &m.ExternalMessageID, &m.PrincipalID, &m.Role, &m.Content, &m.ContentKind, &m.CreatedAt, &m.AnsweredWithoutTools); err != nil {
 			return nil, fmt.Errorf("lecture de l'historique de la conversation %q: %w", conversationID, err)
 		}
 
@@ -180,7 +182,7 @@ func (r *MessageRepository) CountByConversationAfterRowID(ctx context.Context, q
 // d'entre eux (0 si aucun) — la future frontière du résumé de compaction.
 func (r *MessageRepository) ListOldestByConversationAfterRowID(ctx context.Context, q Querier, conversationID model.ConversationID, afterRowID int64, limit int) ([]Message, int64, error) {
 	rows, err := q.QueryContext(ctx, `
-		SELECT rowid, id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at
+		SELECT rowid, id, conversation_id, external_message_id, principal_id, role, content, content_kind, created_at, answered_without_tools
 		FROM messages
 		WHERE conversation_id = ? AND rowid > ?
 		ORDER BY rowid ASC
@@ -197,7 +199,7 @@ func (r *MessageRepository) ListOldestByConversationAfterRowID(ctx context.Conte
 	)
 	for rows.Next() {
 		var m Message
-		if err := rows.Scan(&lastRowID, &m.ID, &m.ConversationID, &m.ExternalMessageID, &m.PrincipalID, &m.Role, &m.Content, &m.ContentKind, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&lastRowID, &m.ID, &m.ConversationID, &m.ExternalMessageID, &m.PrincipalID, &m.Role, &m.Content, &m.ContentKind, &m.CreatedAt, &m.AnsweredWithoutTools); err != nil {
 			return nil, 0, fmt.Errorf("lecture des messages à compacter de la conversation %q: %w", conversationID, err)
 		}
 

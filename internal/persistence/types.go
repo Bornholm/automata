@@ -55,6 +55,10 @@ type Message struct {
 	Content           string
 	ContentKind       string
 	CreatedAt         string
+	// AnsweredWithoutTools ne vaut que pour un message "assistant" : le
+	// tour qui l'a produit disposait d'outils et n'en a appelé aucun. Voir
+	// la migration 0029 et internal/conversation/toolless.go.
+	AnsweredWithoutTools bool
 }
 
 // MessageAttachment est le DTO de persistance de la table

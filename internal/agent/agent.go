@@ -70,6 +70,17 @@ type Result struct {
 	// d'outils MCP : graphique, capture, document), à joindre à la réponse
 	// envoyée à l'utilisateur.
 	Attachments []media.Media
+	// AnsweredWithoutTools dit que ce tour disposait d'outils et n'en a
+	// appelé AUCUN : la réponse ne vient donc que du modèle, qui n'a rien
+	// observé en l'écrivant. Le fait est relu au tour suivant, où il
+	// empêche de prendre un ancien refus pour un constat (voir
+	// internal/conversation/toolless.go).
+	//
+	// Faux pour un agent sans outils (GenAIAgent) : n'en ayant aucun à
+	// appeler, son « je ne peux pas » est un vrai constat, pas une
+	// invention. La valeur zéro est donc la valeur sûre — elle n'annote
+	// rien.
+	AnsweredWithoutTools bool
 }
 
 // Agent exécute une conversation applicative et produit une réponse.

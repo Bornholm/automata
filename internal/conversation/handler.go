@@ -329,7 +329,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 			return "", nil, fmt.Errorf("conversation: visite d'accueil: %w", err)
 		}
 		if handled {
-			if err := h.persistAssistantReply(ctx, identity, conv, reply); err != nil {
+			if err := h.persistAssistantReply(ctx, identity, conv, reply, false); err != nil {
 				return "", nil, err
 			}
 			return reply, nil, nil
@@ -343,7 +343,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 				return "", nil, fmt.Errorf("conversation: traitement de la commande de confirmation: %w", err)
 			}
 
-			if err := h.persistAssistantReply(ctx, identity, conv, reply); err != nil {
+			if err := h.persistAssistantReply(ctx, identity, conv, reply, false); err != nil {
 				return "", nil, err
 			}
 
@@ -371,6 +371,12 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 	// lui-même (profile_link_repair.go).
 	reply := h.repairRedactedProfileLink(ctx, identity, result.Reply)
 
+	// Le constat d'absence d'appel d'outil ne s'adresse qu'au modèle : s'il
+	// est là, c'est qu'il a recopié un ancien message jusque dans sa
+	// réponse. On le retire plutôt que de le laisser lire (voir
+	// toolless.go).
+	reply = stripToollessMarker(reply)
+
 	if h.actions != nil && len(result.ProposedActions) > 0 {
 		_, planText, err := h.actions.CreatePlan(ctx, identity, result.ProposedActions)
 		if err != nil {
@@ -379,7 +385,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 		reply = strings.TrimSpace(reply + "\n\n" + planText)
 	}
 
-	if err := h.persistAssistantReply(ctx, identity, conv, reply); err != nil {
+	if err := h.persistAssistantReply(ctx, identity, conv, reply, result.AnsweredWithoutTools); err != nil {
 		return "", nil, err
 	}
 
@@ -477,7 +483,13 @@ func (h *Handler) buildHistory(ctx context.Context, tx *sql.Tx, records []persis
 
 // persistAssistantReply enregistre reply comme message "assistant" de la
 // conversation conv.
-func (h *Handler) persistAssistantReply(ctx context.Context, identity model.ExecutionIdentity, conv model.Conversation, reply string) error {
+//
+// answeredWithoutTools dit que le tour disposait d'outils et n'en a appelé
+// aucun : ce fait n'est connu qu'ici, à l'instant du tour, et sert au tour
+// suivant (voir toolless.go). Les réponses écrites par l'hôte lui-même
+// (visite d'accueil, confirmation d'action) passent à faux : elles ne
+// sortent d'aucun modèle.
+func (h *Handler) persistAssistantReply(ctx context.Context, identity model.ExecutionIdentity, conv model.Conversation, reply string, answeredWithoutTools bool) error {
 	err := h.db.WithTx(ctx, func(tx *sql.Tx) error {
 		return h.messages.Insert(ctx, tx, persistence.Message{
 			ID:                uuid.NewString(),
@@ -488,6 +500,8 @@ func (h *Handler) persistAssistantReply(ctx context.Context, identity model.Exec
 			Content:           reply,
 			ContentKind:       contentKindText,
 			CreatedAt:         h.now().UTC().Format(time.RFC3339),
+
+			AnsweredWithoutTools: answeredWithoutTools,
 		})
 	})
 	if err != nil {
@@ -529,10 +543,16 @@ func toAgentHistory(records []persistence.Message) []agent.Message {
 	for _, m := range records {
 		history = append(history, agent.Message{
 			Role: m.Role,
-			// Les liens de profil sont caviardés : ce sont des secrets à
-			// usage unique, et le modèle les recopie au lieu d'en
-			// demander un neuf (voir redact.go).
-			Content: redactProfileLinks(m.Content),
+			// Deux transformations, pour le même travers : ce que le modèle
+			// relit, il le recopie.
+			//
+			// Les liens de profil sont caviardés — ce sont des secrets à
+			// usage unique, et il les recopie au lieu d'en demander un neuf
+			// (voir redact.go). Les réponses écrites sans qu'aucun outil ait
+			// été appelé sont marquées comme telles — sinon il recopie un
+			// ancien refus au lieu d'essayer, et la panne s'entretient
+			// d'elle-même (voir toolless.go).
+			Content: annotateToolless(redactProfileLinks(m.Content), m.Role == "assistant" && m.AnsweredWithoutTools),
 		})
 	}
 	return history

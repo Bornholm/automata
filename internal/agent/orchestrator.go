@@ -212,14 +212,26 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 			len(proposals), a.maxActionsPerTurn, a.agentName,
 		)
 
-		return Result{Reply: loopResult.Text + notice, Attachments: a.collectedMedia(loopResult, mediaCollector)}, nil
+		return Result{
+			Reply:                loopResult.Text + notice,
+			Attachments:          a.collectedMedia(loopResult, mediaCollector),
+			AnsweredWithoutTools: answeredWithoutTools(tools, loopResult),
+		}, nil
 	}
 
 	return Result{
-		Reply:           loopResult.Text,
-		ProposedActions: proposals,
-		Attachments:     a.collectedMedia(loopResult, mediaCollector),
+		Reply:                loopResult.Text,
+		ProposedActions:      proposals,
+		Attachments:          a.collectedMedia(loopResult, mediaCollector),
+		AnsweredWithoutTools: answeredWithoutTools(tools, loopResult),
 	}, nil
+}
+
+// answeredWithoutTools dit si le tour avait des outils et n'en a appelé
+// aucun. Les deux conditions comptent : sans outils offerts, ne rien
+// appeler est le fonctionnement normal et n'apprend rien.
+func answeredWithoutTools(tools []llm.Tool, loopResult toolLoopResult) bool {
+	return len(tools) > 0 && loopResult.ToolCalls == 0
 }
 
 // collectedMedia agrège les médias produits durant le tour : ceux des outils

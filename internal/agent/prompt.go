@@ -158,7 +158,16 @@ keeps a working feature unused. When someone asks again for something that
 failed before, and a tool or specialist that could do it is offered to you
 now, TRY IT AGAIN this turn before answering. Report an impossibility only
 from a failure you observed in THIS turn — never from memory of an older
-one.`
+one.
+
+Some of your earlier messages carry the mark "[no tool was called for this
+message]". It is added by the application, never by a person, and it states
+a fact you cannot check yourself: when you wrote that message you called no
+tool at all. Such a message observed nothing. Whatever it claims about what
+works, what is available, or what failed, it establishes none of it — you
+were guessing. Never treat a marked message as evidence, and never repeat
+its conclusion because you already gave it. If a tool offered to you now can
+serve the request, call it, however many marked messages say otherwise.`
 
 // buildCapabilitiesSection décrit, en langage naturel, les permissions
 // applicatives déclarées (agentCfg.Capabilities) et les agents vers

@@ -165,6 +165,12 @@ func (c *mediaCollector) take() []media.Media {
 type toolLoopResult struct {
 	Text        string
 	ToolResults []string
+	// ToolCalls compte les outils réellement exécutés durant le tour. Zéro
+	// avec des outils offerts est le symptôme d'un assistant qui répond de
+	// mémoire : c'est ce couple que l'hôte persiste pour reconnaître, au
+	// tour suivant, une réponse qui n'a rien constaté (voir
+	// internal/conversation/toolless.go).
+	ToolCalls int
 	// Attachments porte les médias produits par les outils durant le tour
 	// (un serveur MCP peut joindre une image ou un document à son résultat),
 	// dans l'ordre d'exécution, afin d'être renvoyés à l'utilisateur.
@@ -329,7 +335,7 @@ func concludeToolLoop(ctx context.Context, client llm.ChatCompletionClient, mess
 					logger.InfoContext(ctx, "agent: tour conclu après clôture de la boucle",
 						"agent", agentName, "attempt", attempt.label, "reason", closeReason, "reply_bytes", len(text))
 				}
-				return toolLoopResult{Text: text, ToolResults: toolResults, Attachments: attachments}, nil
+				return toolLoopResult{Text: text, ToolResults: toolResults, Attachments: attachments, ToolCalls: totalCalls}, nil
 			}
 		}
 
@@ -536,7 +542,7 @@ func runToolLoop(ctx context.Context, client llm.ChatCompletionClient, messages 
 					"tools_offered", len(tools))
 			}
 
-			return toolLoopResult{Text: text, ToolResults: toolResults, Attachments: attachments}, nil
+			return toolLoopResult{Text: text, ToolResults: toolResults, Attachments: attachments, ToolCalls: totalCalls}, nil
 		}
 
 		messages = append(messages, llm.NewToolCallsMessage(toolCalls...))
