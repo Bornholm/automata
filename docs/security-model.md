@@ -373,6 +373,17 @@ verts (`go test ./...`, `go test -race ./...`).
   mais à réévaluer si les origines devenaient ouvertes.
 - Chemin de fichier de prompt non neutralisé (A.4) : accepté, la
   configuration étant administrée, pas fournie par un attaquant distant.
+- **Exception de certificat TLS** (plugins `caldav` et `email`) : un membre
+  peut accepter un certificat que la vérification refuse — le cas d'un
+  serveur auto-hébergé. Ce n'est pas un « ne rien vérifier » : la personne
+  voit ce que le serveur présente (sujet, émetteur, empreinte SHA-256) et
+  épingle CE certificat. La connexion est ensuite acceptée s'il vérifie
+  normalement OU s'il correspond exactement à l'empreinte retenue ; un
+  intermédiaire présentant un autre certificat reste refusé, et l'exception
+  ne s'étend ni à un autre serveur ni à un autre membre. Le risque
+  résiduel est celui de la première acceptation : c'est un choix explicite
+  de la personne, devant l'empreinte à comparer, et l'exploitant ne peut
+  pas le prendre à sa place.
 - Le catalogue du plugin `subagents` est **du code exécuté avec les droits
   d'Automata**, au même titre qu'un binaire déposé dans le répertoire des
   plugins (voir [plugins-subagents.md](plugins-subagents.md)). Une entrée

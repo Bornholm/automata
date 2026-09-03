@@ -31,7 +31,11 @@ type session struct {
 // serveur sert par défaut — ce qui est le bon comportement pour la grande
 // majorité des comptes, qui n'en ont qu'un.
 func dial(ctx context.Context, cfg memberConfig, password string) (*session, error) {
-	httpClient := webdav.HTTPClientWithBasicAuth(&http.Client{Timeout: dialTimeout}, cfg.Username, password)
+	base := &http.Client{
+		Timeout:   dialTimeout,
+		Transport: newTransport(cfg),
+	}
+	httpClient := webdav.HTTPClientWithBasicAuth(base, cfg.Username, password)
 
 	client, err := caldav.NewClient(httpClient, cfg.ServerURL)
 	if err != nil {

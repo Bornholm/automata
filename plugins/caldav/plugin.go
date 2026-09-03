@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -190,10 +191,33 @@ func (p *Plugin) session(ctx context.Context, cc *proto.CallContext) (memberConf
 
 	sess, err := dial(ctx, cfg, password)
 	if err != nil {
+		// La cause part au journal de l'exploitant, pas seulement au
+		// modèle : un échec de connexion sans trace est indiagnosticable
+		// à distance, et c'est exactement ce qui manquait.
+		logDialFailure(ctx, cfg, err)
 		return memberConfig{}, nil, err.Error()
 	}
 
 	return cfg, sess, ""
+}
+
+// logDialFailure journalise un échec de connexion avec de quoi le
+// comprendre : l'adresse du serveur, et la cause telle qu'elle remonte.
+// Jamais l'identifiant ni le mot de passe.
+func logDialFailure(ctx context.Context, cfg memberConfig, err error) {
+	attrs := []any{
+		"server", tlsServerName(cfg.ServerURL),
+		"has_tls_exception", cfg.TLSFingerprint != "",
+		"error", err.Error(),
+	}
+	// Un échec de certificat a sa propre issue — poser une exception — et
+	// mérite d'être nommé comme tel plutôt que noyé dans « connexion
+	// impossible ».
+	if isCertificateError(err) {
+		attrs = append(attrs, "cause", "certificat refusé")
+	}
+
+	slog.WarnContext(ctx, "caldav: connexion au serveur impossible", attrs...)
 }
 
 func (p *Plugin) listEvents(ctx context.Context, sess *session, args map[string]any) (*proto.CallToolOutput, error) {

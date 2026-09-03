@@ -238,7 +238,22 @@ niveau INFO. Deux composants écrivent à côté, dans leur propre format :
   protocole, dont une paire de maintien toutes les vingt-cinq secondes : de
   quoi ensevelir tout le reste. Ne l'activez que pour examiner le protocole
   lui-même.
-- Les plugins journalisent par leur propre canal, également aligné.
+- Les plugins écrivent dans le MÊME flux JSON qu'Automata, au niveau qu'ils
+  déclarent, avec un champ `plugin` qui les nomme. Ce qu'un plugin écrit sur
+  sa sortie d'erreur sans structure — la trace d'une bibliothèque en panne —
+  y arrive aussi, au niveau DEBUG.
+
+Pour ne garder que ce que dit un plugin :
+
+```sh
+dokku logs automata --num 20000 | grep -a '"plugin":"email"'
+```
+
+Un plugin qui n'apparaît nulle part dans les journaux alors qu'il échoue
+est un symptôme à part entière : jusqu'à la version 0.6.2, le flux des
+sous-processus était réduit au silence par un défaut de format
+(`@level` attendu par go-plugin, `level` émis par slog), et les lignes non
+structurées étaient purement jetées.
 
 Pour isoler ce qui vient d'Automata dans une sortie mêlée :
 

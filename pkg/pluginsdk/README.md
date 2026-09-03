@@ -70,6 +70,20 @@ What the host enforces — do not fight it, design with it:
 - **Per-plugin isolation.** The host binds each broker connection to the
   plugin that established it: you can only ever see your own configs and
   secrets, and only for organizations that activated you.
+- **Log with `slog`, and your lines join the host's stream.** `Serve`
+  installs a handler whose shape the host actually reads; write to
+  `slog` and nothing else, at the level you mean. Unstructured output on
+  stderr reaches the host too, but as Debug. Say what failed and why —
+  a plugin that swallows the cause of a connection error cannot be
+  diagnosed from the other side of a deployment.
+- **Certificate exceptions.** `TrustedTLSConfig(serverName, fingerprint)`
+  builds the `*tls.Config` for a connection: ordinary verification with an
+  empty fingerprint, and with one, a certificate accepted when it verifies
+  normally OR matches that exact pin. `InspectTLS` reports what a server
+  presents — subject, issuer, SHA-256 — without trusting any of it, so a
+  member can see a certificate before accepting it. Never ship a blanket
+  `InsecureSkipVerify`: it accepts a machine-in-the-middle just as
+  happily.
 
 The bundled `plugins/email` is a complete working example (tools, member
 switches, triggers, UI, secret discipline).

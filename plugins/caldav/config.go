@@ -36,6 +36,13 @@ type memberConfig struct {
 	// seul champ de ce document qu'il lit.
 	EventStore bool `json:"automata_event_store"`
 
+	// TLSFingerprint est l'exception TLS du membre : l'empreinte SHA-256
+	// du certificat qu'il a explicitement accepté, après l'avoir vu. Vide
+	// — le cas normal — donne la vérification habituelle. Elle vaut pour
+	// CE certificat seulement : un intermédiaire qui en présente un autre
+	// reste refusé.
+	TLSFingerprint string `json:"tls_fingerprint,omitempty"`
+
 	// PollSeconds est la période de balayage des échéances ; 0 garde le
 	// défaut.
 	PollSeconds int `json:"poll_seconds,omitempty"`

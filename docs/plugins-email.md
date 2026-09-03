@@ -66,6 +66,40 @@ disponibles dans le même écran.
    re-autorisée au moment de la confirmation, idempotente (une
    confirmation rejouée ne renvoie pas le courriel).
 
+## Certificat auto-signé ou refusé
+
+Un serveur auto-hébergé présente souvent un certificat qu'aucune autorité
+publique n'a signé : auto-signé, émis par une autorité interne, ou
+simplement expiré. La connexion échoue alors, et « Tester la connexion »
+dit maintenant POURQUOI — la cause remontée par le serveur, et non une
+phrase passe-partout.
+
+Quand le motif est le certificat, la page montre ce que le serveur a
+présenté : sujet, émetteur, date de fin, et l'empreinte SHA-256. Comparez
+cette empreinte à celle de votre serveur avant d'accepter :
+
+```sh
+openssl s_client -connect imap.exemple.fr:993 </dev/null 2>/dev/null \
+  | openssl x509 -noout -fingerprint -sha256
+```
+
+Le bouton « Accepter ce certificat » enregistre une **exception**, au sens
+du navigateur : ce certificat-là est accepté, et lui seul. Un intermédiaire
+qui en présenterait un autre reste refusé — ce qu'un simple « ne pas
+vérifier les certificats » accepterait sans un mot. Si le serveur renouvelle
+son certificat pour un certificat valide, la connexion continue de
+fonctionner ; s'il le renouvelle pour un autre certificat auto-signé, il
+faut réaccepter, et c'est voulu.
+
+L'exception vaut pour UN serveur : la messagerie entrante et la sortante
+peuvent être deux machines, avec deux certificats, et chacune a la sienne.
+Le test de connexion éprouve les deux, IMAP puis SMTP — un envoi qui
+échoue ne se découvre donc plus au moment de confirmer un courriel.
+
+L'exception appartient au membre, comme le reste de sa configuration : elle
+est enregistrée pour lui seul, et le bandeau de sa page rappelle qu'elle
+existe, avec de quoi la retirer.
+
 ## Courriels entrants
 
 Le plugin surveille l'INBOX (relève selon `poll_seconds`, 120 s par

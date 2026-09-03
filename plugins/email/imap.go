@@ -8,6 +8,8 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+
+	"github.com/bornholm/automata/pkg/pluginsdk"
 )
 
 // emailSummary is what the reading tools return about a message.
@@ -26,29 +28,37 @@ func dialIMAP(cfg memberConfig, credential string) (*imapclient.Client, error) {
 	var client *imapclient.Client
 	var err error
 	// beta.6 : DialInsecure panique sur des options nil.
-	opts := &imapclient.Options{}
+	opts := &imapclient.Options{
+		TLSConfig: pluginsdk.TrustedTLSConfig(cfg.IMAPHost, cfg.IMAPTLSFingerprint),
+	}
 	if cfg.IMAPInsecure {
 		client, err = imapclient.DialInsecure(addr, opts)
 	} else {
 		client, err = imapclient.DialTLS(addr, opts)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("IMAP connection failed")
+		// La cause est CONSERVÉE, et journalisée. Elle était jetée ici, et
+		// c'est ce qui rendait un certificat auto-signé indiscernable d'un
+		// mot de passe faux, d'un port fermé ou d'un serveur éteint.
+		logConnectionFailure("imap", addr, cfg.IMAPTLSFingerprint != "", err)
+		return nil, fmt.Errorf("IMAP connection to %s failed: %w", addr, err)
 	}
 
 	if cfg.oauth() {
 		if err := client.Authenticate(&imapXOAUTH2{username: cfg.Username, accessToken: credential}); err != nil {
 			_ = client.Close()
-			return nil, fmt.Errorf("Google refused the mailbox token (reconnect the account)")
+			logConnectionFailure("imap", addr, cfg.IMAPTLSFingerprint != "", err)
+			return nil, fmt.Errorf("Google refused the mailbox token (reconnect the account): %w", err)
 		}
 	} else if err := client.Login(cfg.Username, credential).Wait(); err != nil {
 		_ = client.Close()
-		return nil, fmt.Errorf("IMAP authentication refused")
+		logConnectionFailure("imap", addr, cfg.IMAPTLSFingerprint != "", err)
+		return nil, fmt.Errorf("IMAP authentication refused by %s: %w", addr, err)
 	}
 
 	if _, err := client.Select("INBOX", nil).Wait(); err != nil {
 		_ = client.Close()
-		return nil, fmt.Errorf("INBOX unavailable")
+		return nil, fmt.Errorf("INBOX unavailable: %w", err)
 	}
 
 	return client, nil

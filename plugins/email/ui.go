@@ -1,9 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -35,6 +36,34 @@ button.ghost{background:#fff;color:#161c27;border:1px solid #d8dce4}
 </style></head><body>
 {{if .Saved}}<div class="flash">Configuration enregistrée.</div>{{end}}
 {{if .Tested}}<div class="flash {{if not .TestOK}}error{{end}}">{{.TestMessage}}</div>{{end}}
+{{if .Cert}}
+<div class="notice warn">
+	<strong>Le serveur {{.CertProtocol}} présente un certificat que la vérification refuse.</strong>
+	<div class="hint" style="margin-top:6px">{{.Cert.VerifyError}}</div>
+	<div style="margin-top:8px"><span class="hint">Sujet</span> {{.Cert.Subject}}</div>
+	<div><span class="hint">Émetteur</span> {{.Cert.Issuer}}{{if .Cert.SelfSigned}} (auto-signé){{end}}</div>
+	<div><span class="hint">Valide jusqu'au</span> {{.CertExpiry}}</div>
+	<div style="margin-top:6px"><span class="hint">Empreinte SHA-256</span><br><code style="font-size:11px;word-break:break-all">{{.CertFingerprint}}</code></div>
+	<div style="margin-top:8px">Comparez cette empreinte à celle de votre serveur avant d'accepter. L'exception ne vaudra que pour <em>ce</em> certificat, sur <em>ce</em> serveur : un autre restera refusé.</div>
+	<form method="post" action="{{.Base}}accept-certificate" style="margin:0">
+		<input type="hidden" name="protocol" value="{{.CertProtocol}}">
+		<input type="hidden" name="fingerprint" value="{{.Cert.Fingerprint}}">
+		<button type="submit">Accepter ce certificat</button>
+	</form>
+</div>
+{{end}}
+{{if .Exceptions}}
+<div class="notice">
+	Exception de certificat enregistrée pour : {{range $i, $p := .Exceptions}}{{if $i}}, {{end}}{{$p}}{{end}}.
+	{{range .Exceptions}}
+	<form method="post" action="{{$.Base}}accept-certificate" style="margin:0;display:inline-block">
+		<input type="hidden" name="protocol" value="{{.}}">
+		<input type="hidden" name="fingerprint" value="">
+		<button type="submit" style="background:#fff;color:#161c27;border:1px solid #d8dce4">Retirer l'exception {{.}}</button>
+	</form>
+	{{end}}
+</div>
+{{end}}
 {{if .OAuthMessage}}<div class="flash {{if .OAuthError}}error{{end}}">{{.OAuthMessage}}</div>{{end}}
 {{if .GoogleConnected}}
 <div class="google connected">
@@ -97,6 +126,16 @@ type uiData struct {
 	Tested       bool
 	TestOK       bool
 	TestMessage  string
+	// Cert est le certificat que le serveur présente, montré après un
+	// échec de vérification pour que la personne décide en connaissance de
+	// cause. Nil le reste du temps.
+	Cert            *pluginsdk.CertificateInfo
+	CertProtocol    string
+	CertFingerprint string
+	CertExpiry      string
+	// Exceptions liste les protocoles pour lesquels une exception est
+	// enregistrée ("imap", "smtp").
+	Exceptions []string
 
 	// OAuth : état de la connexion Google.
 	GoogleAvailable bool
@@ -110,6 +149,7 @@ func newUIHandler() http.Handler {
 	mux.HandleFunc("GET /", handleUIRoot)
 	mux.HandleFunc("POST /save", handleUISave)
 	mux.HandleFunc("POST /test", handleUITest)
+	mux.HandleFunc("POST /accept-certificate", handleUIAcceptCertificate)
 	// Connexion Google : consentement, retour, déconnexion.
 	mux.HandleFunc("POST /connect", handleConnect)
 	mux.HandleFunc("POST /disconnect", handleDisconnect)
@@ -152,6 +192,13 @@ func loadUIData(r *http.Request) uiData {
 		data.HasPassword = true
 	}
 
+	if data.Cfg.IMAPTLSFingerprint != "" {
+		data.Exceptions = append(data.Exceptions, "imap")
+	}
+	if data.Cfg.SMTPTLSFingerprint != "" {
+		data.Exceptions = append(data.Exceptions, "smtp")
+	}
+
 	// La connexion Google n'est proposée que si l'organisation a
 	// enregistré une application.
 	if _, err := loadOAuthApp(r.Context(), host, orgID); err == nil {
@@ -177,11 +224,30 @@ func handleUIHome(w http.ResponseWriter, r *http.Request) {
 		data.Tested = true
 		data.TestOK = msg == "ok"
 		if data.TestOK {
-			data.TestMessage = "Connexion IMAP réussie."
+			data.TestMessage = "Connexion réussie, en lecture comme en envoi."
 		} else {
-			data.TestMessage = "Connexion impossible : vérifiez le serveur, l'identifiant et le mot de passe."
+			// La cause telle qu'elle remonte du serveur, et pas une phrase
+			// passe-partout : « vérifiez le mot de passe » ne dit rien
+			// quand le vrai motif est un certificat auto-signé.
+			data.TestMessage = "Connexion impossible : " + testFailureCause(r)
 		}
 	}
+
+	// Après un échec de certificat, on montre ce que le serveur présente.
+	// L'inspection ne fait rien confiance : elle regarde.
+	if protocol := r.URL.Query().Get("cert"); protocol != "" && data.Tested && !data.TestOK {
+		host, port := data.Cfg.IMAPHost, data.Cfg.IMAPPort
+		if protocol == "smtp" {
+			host, port = data.Cfg.SMTPHost, data.Cfg.SMTPPort
+		}
+		if info, ok := inspectServerCertificate(r.Context(), host, port); ok {
+			data.Cert = &info
+			data.CertProtocol = protocol
+			data.CertFingerprint = info.FormattedFingerprint()
+			data.CertExpiry = info.NotAfter.Local().Format("02/01/2006 15:04")
+		}
+	}
+
 	_ = uiTemplate.Execute(w, data)
 }
 
@@ -247,13 +313,121 @@ func handleUITest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result := "ko"
-	if cfg.complete() && password != "" {
-		if client, err := dialIMAP(cfg, password); err == nil {
-			_ = client.Close()
-			result = "ok"
+	if !cfg.complete() || password == "" {
+		redirectTested(w, r, false, "renseignez le serveur, l'identifiant et le mot de passe.", "")
+		return
+	}
+
+	client, err := dialIMAP(cfg, password)
+	if err != nil {
+		certificate := ""
+		if isCertificateError(err) {
+			certificate = "imap"
+		}
+		redirectTested(w, r, false, err.Error(), certificate)
+		return
+	}
+	_ = client.Close()
+
+	// L'envoi est éprouvé aussi : les deux serveurs peuvent être deux
+	// machines, avec deux certificats, et un envoi qui échoue ne se
+	// découvrait qu'au moment de confirmer un courriel.
+	if err := dialSMTP(cfg, password); err != nil {
+		certificate := ""
+		if isCertificateError(err) {
+			certificate = "smtp"
+		}
+		redirectTested(w, r, false, err.Error(), certificate)
+		return
+	}
+
+	redirectTested(w, r, true, "", "")
+}
+
+// redirectTested renvoie vers la page avec le résultat du test. La cause
+// voyage dans l'URL : elle est destinée à être lue, pas devinée.
+func redirectTested(w http.ResponseWriter, r *http.Request, ok bool, cause, certificateProtocol string) {
+	params := url.Values{}
+	if ok {
+		params.Set("tested", "ok")
+	} else {
+		params.Set("tested", "ko")
+		if cause != "" {
+			params.Set("cause", cause)
+		}
+		if certificateProtocol != "" {
+			params.Set("cert", certificateProtocol)
 		}
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("%s?tested=%s", pluginsdk.BasePath(r), result), http.StatusSeeOther)
+	http.Redirect(w, r, pluginsdk.BasePath(r)+"?"+params.Encode(), http.StatusSeeOther)
+}
+
+// testFailureCause retourne la cause portée par la redirection, bornée
+// pour ne pas déverser une page entière dans l'interface.
+func testFailureCause(r *http.Request) string {
+	cause := strings.TrimSpace(r.URL.Query().Get("cause"))
+	if cause == "" {
+		return "vérifiez le serveur, l'identifiant et le mot de passe."
+	}
+	if len(cause) > maxCauseChars {
+		cause = cause[:maxCauseChars] + "…"
+	}
+	return cause
+}
+
+// maxCauseChars borne le message affiché. Une erreur de bibliothèque peut
+// être très longue ; l'essentiel est en tête.
+const maxCauseChars = 400
+
+// handleUIAcceptCertificate enregistre — ou retire — une exception TLS du
+// membre, pour l'un des deux serveurs. Une empreinte vide retire
+// l'exception ; toute autre valeur doit être une empreinte SHA-256, sans
+// quoi rien n'est écrit.
+//
+// L'empreinte vient du formulaire, donc du navigateur : elle est revalidée
+// ici, et n'est de toute façon qu'une CIBLE d'épinglage — la poser sur une
+// valeur fantaisiste ne fait rien accepter, elle fait échouer la connexion.
+func handleUIAcceptCertificate(w http.ResponseWriter, r *http.Request) {
+	if pluginsdk.MemberID(r) == "" {
+		http.Error(w, "member context required", http.StatusForbidden)
+		return
+	}
+
+	host := pluginsdk.HostClientFromContext(r.Context())
+	orgID, memberID := pluginsdk.OrgID(r), pluginsdk.MemberID(r)
+
+	var cfg memberConfig
+	if raw, found, err := host.GetConfig(r.Context(), orgID, memberID); err == nil && found {
+		cfg, _ = parseConfig(raw)
+	}
+
+	raw := strings.TrimSpace(r.FormValue("fingerprint"))
+	fingerprint := pluginsdk.NormalizeTLSFingerprint(raw)
+	if raw != "" && fingerprint == "" {
+		redirectTested(w, r, false, "empreinte de certificat illisible.", "")
+		return
+	}
+
+	protocol := r.FormValue("protocol")
+	switch protocol {
+	case "imap":
+		cfg.IMAPTLSFingerprint = fingerprint
+	case "smtp":
+		cfg.SMTPTLSFingerprint = fingerprint
+	default:
+		http.Error(w, "unknown protocol", http.StatusBadRequest)
+		return
+	}
+
+	if err := host.SaveConfig(r.Context(), orgID, memberID, cfg.marshal()); err != nil {
+		http.Error(w, "save failed", http.StatusInternalServerError)
+		return
+	}
+
+	slog.WarnContext(r.Context(), "email: exception de certificat modifiée",
+		"protocol", protocol,
+		"accepted", fingerprint != "")
+
+	http.Redirect(w, r, pluginsdk.BasePath(r)+"?saved=1", http.StatusSeeOther)
 }

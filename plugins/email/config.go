@@ -29,6 +29,14 @@ type memberConfig struct {
 	IMAPInsecure bool `json:"imap_insecure,omitempty"`
 	SMTPInsecure bool `json:"smtp_insecure,omitempty"`
 
+	// Exceptions TLS du membre : l'empreinte SHA-256 du certificat qu'il a
+	// explicitement accepté, après l'avoir vu. Vide — le cas normal —
+	// donne la vérification habituelle. Une exception vaut pour CE
+	// certificat et pour ce serveur : les deux sont distinctes parce que
+	// la messagerie entrante et la sortante peuvent être deux machines.
+	IMAPTLSFingerprint string `json:"imap_tls_fingerprint,omitempty"`
+	SMTPTLSFingerprint string `json:"smtp_tls_fingerprint,omitempty"`
+
 	// AuthMode is "password" (default) or "oauth" for a Google mailbox
 	// connected through the consent screen.
 	AuthMode string `json:"auth_mode,omitempty"`
