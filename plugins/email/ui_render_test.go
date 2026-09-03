@@ -3,6 +3,9 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/bornholm/automata/pkg/pluginsdk"
 )
 
 // Le gabarit membre a deux visages : compte Google connecté (aucun champ
@@ -78,5 +81,73 @@ func TestAdminTemplate_ShowsRedirectURIWithoutSecret(t *testing.T) {
 	}
 	if strings.Contains(html, "SECRET-CLIENT") {
 		t.Error("le secret client apparaît dans la page")
+	}
+}
+
+// Après un échec de certificat, l'écran montre ce que le serveur présente,
+// et dit lequel des deux serveurs est en cause : la messagerie entrante et
+// la sortante peuvent être deux machines.
+func TestMemberTemplate_ShowsTheCertificateBeforeAcceptingIt(t *testing.T) {
+	info := pluginsdk.CertificateInfo{
+		Subject:     "CN=imap.exemple.fr",
+		Issuer:      "CN=imap.exemple.fr",
+		SelfSigned:  true,
+		Fingerprint: strings.Repeat("cd", 32),
+		VerifyError: "x509: certificate signed by unknown authority",
+		NotAfter:    time.Date(2027, 1, 2, 3, 4, 0, 0, time.UTC),
+	}
+
+	var sb strings.Builder
+	err := uiTemplate.Execute(&sb, uiData{
+		Base:            "/base/",
+		MemberScoped:    true,
+		Tested:          true,
+		TestMessage:     "Connexion impossible : x509: certificate signed by unknown authority",
+		Cert:            &info,
+		CertProtocol:    "imap",
+		CertFingerprint: info.FormattedFingerprint(),
+		CertExpiry:      "02/01/2027 03:04",
+	})
+	if err != nil {
+		t.Fatalf("rendu: %v", err)
+	}
+	html := sb.String()
+
+	for _, needle := range []string{
+		"imap.exemple.fr",
+		"auto-signé",
+		info.FormattedFingerprint(),
+		"Accepter ce certificat",
+		"certificate signed by unknown authority",
+	} {
+		if !strings.Contains(html, needle) {
+			t.Errorf("l'écran ne montre pas %q", needle)
+		}
+	}
+	// Le protocole part avec l'acceptation : sans lui, l'exception se
+	// poserait sur le mauvais serveur.
+	if !strings.Contains(html, `name="protocol" value="imap"`) {
+		t.Error("l'acceptation ne désigne pas le serveur concerné")
+	}
+}
+
+// Les exceptions en vigueur se voient, et se retirent une par une.
+func TestMemberTemplate_ShowsAndRemovesExistingExceptions(t *testing.T) {
+	var sb strings.Builder
+	err := uiTemplate.Execute(&sb, uiData{
+		Base:         "/base/",
+		MemberScoped: true,
+		Exceptions:   []string{"imap", "smtp"},
+	})
+	if err != nil {
+		t.Fatalf("rendu: %v", err)
+	}
+	html := sb.String()
+
+	if !strings.Contains(html, "Exception de certificat enregistrée pour : imap, smtp") {
+		t.Errorf("les exceptions en vigueur ne sont pas listées: %s", html)
+	}
+	if !strings.Contains(html, "Retirer l'exception imap") || !strings.Contains(html, "Retirer l'exception smtp") {
+		t.Error("chaque exception doit pouvoir être retirée séparément")
 	}
 }
