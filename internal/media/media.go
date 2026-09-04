@@ -420,7 +420,7 @@ func AttachedFilesNotice(medias []Media) string {
 
 // DelegableFilesNotice décrit à un orchestrateur les fichiers déjà reçus
 // dans la conversation, pour qu'il sache qu'ils restent traitables par un
-// spécialiste. Sans cette note, il ne voit que le message courant : « voici
+// spécialiste — qu'il édite des fichiers ou qu'il regarde des images. Sans cette note, il ne voit que le message courant : « voici
 // une photo » puis « enlève le logo » lui donne un message sans pièce
 // jointe, et il répond à l'utilisateur qu'il n'a rien reçu au lieu de
 // déléguer.
@@ -441,7 +441,7 @@ func DelegableFilesNotice(medias []Media) string {
 
 	return "\n\n[Files already received earlier in this conversation, most recent first:\n" +
 		strings.Join(lines, "\n") + "\n" +
-		"You cannot see them, but a specialist that works on files can still open and edit them. " +
+		"You cannot see them, but a specialist that sees images or works on files can still examine or edit them. " +
 		"If the user refers to one of these, delegate instead of telling them you received nothing.]"
 }
 

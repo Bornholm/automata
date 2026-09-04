@@ -143,6 +143,11 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	// d'un plugin actif pour l'organisation : les deux sources comptent.
 	fileCapable := hasFileCapableSpecialist(a.specialists)
 
+	// Un spécialiste qui ne travaille que sur pièce jointe (la vision) peut
+	// se replier sur les images des messages précédents : voir
+	// newDelegationTool.
+	attachmentDependent := hasAttachmentDependentSpecialist(a.specialists)
+
 	tools := a.buildDelegationTools(req.Identity, req.Attachments, recentFiles, collector, mediaCollector)
 	if len(custom.DisabledAgents) > 0 {
 		tools = filterDelegationTools(tools, custom.DisabledAgents)
@@ -158,6 +163,7 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 			tools = append(tools, newDelegationTool(name, pluginDescs[name], specialist, req.Identity, req.Attachments, recentFiles, collector, mediaCollector, a.metrics, a.logger))
 		}
 		fileCapable = fileCapable || hasFileCapableSpecialist(pluginSpecs)
+		attachmentDependent = attachmentDependent || hasAttachmentDependentSpecialist(pluginSpecs)
 	}
 	tools = append(tools, a.memoryTools.buildMemoryTools(req.Identity, collector)...)
 	tools = append(tools, a.reminderTools.buildReminderTools(req.Identity)...)
@@ -188,9 +194,11 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	// L'orchestrateur ne voit que le message courant : sans cette note, une
 	// demande qui renvoie à un fichier envoyé plus tôt lui paraît sans
 	// objet, et il répond « je n'ai rien reçu » au lieu de déléguer.
-	// N'annoncer que ce qu'un spécialiste peut réellement traiter.
-	if len(recentFiles) > 0 && fileCapable {
-		req.Input += media.DelegableFilesNotice(recentFiles)
+	// N'annoncer que ce qu'un spécialiste peut réellement traiter : tous
+	// les fichiers s'il en existe un capable de fichiers, sinon les seules
+	// images visibles qu'un spécialiste dépendant saura regarder.
+	if announced := delegableFiles(recentFiles, fileCapable, attachmentDependent); len(announced) > 0 {
+		req.Input += media.DelegableFilesNotice(announced)
 	}
 
 	messages := buildChatMessages(systemPrompt, a.agentName, textOnly, recallNote, req)
@@ -364,6 +372,34 @@ func recentToolFiles(history []Message, current []media.Media) []media.Media {
 	return out
 }
 
+// delegableFiles retient, parmi les fichiers déjà reçus, ceux qu'au moins
+// un spécialiste du tour saura traiter : tous si l'un d'eux manipule des
+// fichiers, les seuls visibles du modèle si l'un d'eux dépend d'une pièce
+// jointe, aucun sinon.
+func delegableFiles(recentFiles []media.Media, fileCapable, attachmentDependent bool) []media.Media {
+	switch {
+	case fileCapable:
+		return recentFiles
+	case attachmentDependent:
+		return visibleAttachments(recentFiles)
+	default:
+		return nil
+	}
+}
+
+// hasAttachmentDependentSpecialist indique si au moins un spécialiste ne
+// travaille que sur pièce jointe. C'est à lui que les images des messages
+// précédents peuvent encore être soumises.
+func hasAttachmentDependentSpecialist(specialists map[string]delegation.Specialist) bool {
+	for _, specialist := range specialists {
+		if dependent, ok := specialist.(delegation.AttachmentDependent); ok && dependent.RequiresAttachments() {
+			return true
+		}
+	}
+
+	return false
+}
+
 // hasFileCapableSpecialist indique si au moins un spécialiste sait
 // manipuler des fichiers. Annoncer des fichiers qu'aucun délégué ne peut
 // ouvrir ne ferait que promettre à l'utilisateur ce que le tour ne sait pas
@@ -390,20 +426,30 @@ const maxSameAgentDelegations = 2
 // modèle comme contenu de résultat d'outil, en clair, pour qu'il puisse
 // s'adapter (plan de conception, Phase 8, test "spécialiste en erreur").
 func newDelegationTool(agentID, description string, specialist delegation.Specialist, identity model.ExecutionIdentity, attachments, recentFiles []media.Media, collector *proposalCollector, mediaCollector *mediaCollector, metrics *observability.Metrics, logger *slog.Logger) llm.Tool {
+	// Un spécialiste qui ne sait travailler que sur des pièces jointes est
+	// refusé quand le tour n'en porte aucune. La question ne lui est même
+	// pas posée : sollicité à vide, un modèle multimodal invente ce qu'il
+	// aurait vu (voir delegation.AttachmentDependent).
+	//
+	// Exception : les images des messages précédents, encore rejouées dans
+	// l'historique (attachments.max_history). « Voici une carte » puis
+	// « c'est Malakoff ? » deux minutes plus tard porte bien une image à
+	// examiner ; la refuser condamnait toute question de suivi à un « renvoie
+	// la capture ». Vu en production le 2026-09-04. Seules les pièces
+	// visibles du modèle se prêtent à ce repli : une vidéo réservée aux
+	// outils ne peut pas être regardée par un tel spécialiste.
+	dependent := false
+	var earlierVisible []media.Media
+	if capable, ok := specialist.(delegation.AttachmentDependent); ok && capable.RequiresAttachments() {
+		dependent = true
+		earlierVisible = visibleAttachments(recentFiles)
+	}
+
 	// Les fichiers déjà reçus ne sont proposés qu'aux spécialistes qui
 	// déclarent savoir les manipuler : l'orchestrateur interroge une
 	// capacité, il ne connaît aucun spécialiste par son nom.
 	if capable, ok := specialist.(delegation.FileCapable); !ok || !capable.SupportsFiles() {
 		recentFiles = nil
-	}
-
-	// Un spécialiste qui ne sait travailler que sur des pièces jointes est
-	// refusé quand le tour n'en porte aucune. La question ne lui est même
-	// pas posée : sollicité à vide, un modèle multimodal invente ce qu'il
-	// aurait vu (voir delegation.AttachmentDependent).
-	dependent := false
-	if capable, ok := specialist.(delegation.AttachmentDependent); ok {
-		dependent = capable.RequiresAttachments()
 	}
 
 	// Un spécialiste ne garde aucun état d'une délégation à l'autre : le
@@ -448,7 +494,12 @@ func newDelegationTool(agentID, description string, specialist delegation.Specia
 				}
 			}
 
-			if dependent && len(attachments) == 0 && len(recentFiles) == 0 {
+			turnAttachments := attachments
+			if dependent && len(turnAttachments) == 0 {
+				turnAttachments = earlierVisible
+			}
+
+			if dependent && len(turnAttachments) == 0 && len(recentFiles) == 0 {
 				if logger != nil {
 					logger.InfoContext(ctx, "agent: délégation refusée faute de pièce jointe", "agent", agentID)
 				}
@@ -476,8 +527,10 @@ func newDelegationTool(agentID, description string, specialist delegation.Specia
 				Identity:      identity,
 				// Les pièces jointes du tour accompagnent toujours la
 				// délégation : le modèle ne peut pas les recopier dans
-				// relevant_input (voir delegation.Request.Attachments).
-				Attachments: attachments,
+				// relevant_input (voir delegation.Request.Attachments). Un
+				// spécialiste dépendant reçoit à leur place, faute de
+				// mieux, les images des messages précédents.
+				Attachments: turnAttachments,
 				// Fichiers des messages précédents : invisibles du modèle,
 				// atteignables par les seuls outils fichiers du délégué.
 				RecentAttachments: recentFiles,

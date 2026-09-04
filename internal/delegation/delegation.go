@@ -51,8 +51,12 @@ type Request struct {
 	//
 	// Cela ne contredit pas plan de conception, §6.3 (« le sous-agent ne reçoit pas
 	// automatiquement l'intégralité de l'historique ») : seules les pièces
-	// jointes du tour courant sont transmises, jamais celles des tours
-	// précédents.
+	// jointes du tour courant sont transmises. Une exception, pour les
+	// spécialistes AttachmentDependent quand le tour n'en porte aucune : les
+	// images visibles des messages précédents, déjà rejouées dans
+	// l'historique de l'orchestrateur (attachments.max_history), les
+	// remplacent — une question de suivi sur une photo envoyée deux minutes
+	// plus tôt a bien une image à examiner.
 	Attachments []media.Media
 	// RecentAttachments porte les fichiers reçus lors des messages
 	// précédents de la conversation, du plus récent au plus ancien —
