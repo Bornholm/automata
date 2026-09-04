@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
@@ -21,16 +22,17 @@ import (
 // actives, il couvre l'historique des dossiers clos.
 const maxListedMissions = 30
 
-// missionStatusLabels traduit le statut pour la personne.
-var missionStatusLabels = map[string]string{
-	persistence.MissionStatusActive:    "suivie",
-	persistence.MissionStatusDone:      "terminée",
-	persistence.MissionStatusAbandoned: "abandonnée",
+// missionStatusKeys traduit le statut pour la personne. Les valeurs
+// persistées ne veulent rien dire pour elle.
+var missionStatusKeys = map[string]string{
+	persistence.MissionStatusActive:    "missions.status.active",
+	persistence.MissionStatusDone:      "missions.status.done",
+	persistence.MissionStatusAbandoned: "missions.status.abandoned",
 }
 
 // HandleProfileMissions liste les dossiers du membre.
 func (h *Handlers) HandleProfileMissions(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := h.resolveProfile(w, r)
+	member, r, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -48,7 +50,7 @@ func (h *Handlers) HandleProfileMissions(w http.ResponseWriter, r *http.Request)
 	}
 
 	if r.URL.Query().Get("done") == "abandoned" {
-		page.Notice = "Dossier abandonné. Je ne ferai plus de point d'étape dessus."
+		page.Notice = i18n.TC(r.Context(), "missions.notice_abandoned")
 	}
 
 	var missions []persistence.Mission
@@ -67,7 +69,7 @@ func (h *Handlers) HandleProfileMissions(w http.ResponseWriter, r *http.Request)
 			Title:       m.Title,
 			Objective:   m.Objective,
 			Journal:     m.Journal,
-			StatusLabel: missionStatusLabels[m.Status],
+			StatusLabel: i18n.TC(r.Context(), missionStatusKeys[m.Status]),
 			Active:      m.Status == persistence.MissionStatusActive,
 		}
 		if row.Active && !m.NextCheckAt.IsZero() {
@@ -88,7 +90,7 @@ func (h *Handlers) HandleProfileMissionAbandon(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	member, _, ok := h.resolveProfile(w, r)
+	member, r, _, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}

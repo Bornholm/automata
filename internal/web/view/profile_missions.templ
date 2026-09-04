@@ -1,5 +1,7 @@
 package view
 
+import "github.com/bornholm/automata/internal/i18n"
+
 // --- Dossiers (missions) ---
 //
 // Les affaires qu'Automata suit au long cours pour la personne : objectif,
@@ -34,14 +36,14 @@ type MissionsPage struct {
 }
 
 templ ProfileMissions(page MissionsPage) {
-	@ProfileLayout("Dossiers — Automata", page.Header, ProfileNav{LinkID: page.LinkID, Active: "missions", Plugins: page.PluginUIs}) {
-		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Mes dossiers</h1>
-		<p class="mt-2 text-[15px] leading-normal text-text-3">Les affaires que je suis pour vous dans la durée. À chaque point d'étape, je note où en est le dossier — c'est ce journal que je relis avant d'agir.</p>
+	@ProfileLayout(i18n.TC(ctx, "missions.title"), page.Header, ProfileNav{LinkID: page.LinkID, Active: "missions", Plugins: page.PluginUIs}) {
+		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">{ i18n.TC(ctx, "missions.heading") }</h1>
+		<p class="mt-2 text-[15px] leading-normal text-text-3">{ i18n.TC(ctx, "missions.intro") }</p>
 		if page.Notice != "" {
 			<div class="mt-4 rounded-lg bg-ok-wash-2 px-3.5 py-2.5 text-sm text-ok-deep">{ page.Notice }</div>
 		}
 		if len(page.Missions) == 0 {
-			<div class="mt-5 rounded-[11px] border border-dashed border-line px-3.5 py-6 text-center text-sm text-text-4">Aucun dossier. Demandez-moi de suivre une affaire — « suis ma réclamation et relance-les si personne ne répond » — et elle apparaîtra ici.</div>
+			<div class="mt-5 rounded-[11px] border border-dashed border-line px-3.5 py-6 text-center text-sm text-text-4">{ i18n.TC(ctx, "missions.empty") }</div>
 		}
 		<div class="mt-5 flex flex-col gap-3">
 			for _, mission := range page.Missions {
@@ -52,18 +54,18 @@ templ ProfileMissions(page MissionsPage) {
 					</div>
 					<div class="mt-1.5 text-[15px] leading-normal text-text-2">{ mission.Objective }</div>
 					if mission.NextCheckAt != "" {
-						<div class="mt-1.5 text-xs text-text-4">Prochain point : { mission.NextCheckAt }</div>
+						<div class="mt-1.5 text-xs text-text-4">{ i18n.TC(ctx, "missions.next_check", mission.NextCheckAt) }</div>
 					}
 					if mission.Journal != "" {
 						<details class="mt-3">
-							<summary class="cursor-pointer text-sm font-medium text-text-2">Journal de bord</summary>
+							<summary class="cursor-pointer text-sm font-medium text-text-2">{ i18n.TC(ctx, "missions.journal") }</summary>
 							<pre class="mt-2 whitespace-pre-wrap break-words rounded-lg bg-panel p-3 text-[13px] leading-normal text-text-2">{ mission.Journal }</pre>
 						</details>
 					}
 					if mission.Active {
-						<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/missions/" + mission.ID + "/abandon") } onsubmit="return confirm('Abandonner ce dossier ? Je ne ferai plus aucun point d\'étape dessus.')">
+						<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/missions/" + mission.ID + "/abandon") } { templ.Attributes{"onsubmit": confirmScript(i18n.TC(ctx, "missions.confirm_abandon"))}... }>
 							<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
-							<button type="submit" class="mt-3 h-10 rounded-[10px] border border-line-2 px-4 text-sm font-medium text-text-2">Abandonner</button>
+							<button type="submit" class="mt-3 h-10 rounded-[10px] border border-line-2 px-4 text-sm font-medium text-text-2">{ i18n.TC(ctx, "missions.abandon") }</button>
 						</form>
 					}
 				</div>

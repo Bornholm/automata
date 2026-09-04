@@ -1,5 +1,7 @@
 package view
 
+import "strings"
+
 // Composants récurrents du design system des maquettes P1 : chips d'état,
 // jauges de solde, badges de plateforme, eyebrows Space Mono.
 
@@ -122,4 +124,13 @@ templ Eyebrow(text string, colorClass string) {
 // Logo est le carré sombre à « a » indigo de la marque.
 templ Logo(sizeClass string, textClass string) {
 	<div class={ "flex shrink-0 items-center justify-center rounded-lg bg-ink font-mono font-bold text-brand-soft", sizeClass, textClass }>a</div>
+}
+
+// confirmScript compose le onsubmit d'une confirmation navigateur à partir
+// d'un texte traduit. L'échappement n'est pas une précaution de style : une
+// apostrophe dans une traduction — « ¿Borrar l'element? » — casserait le
+// littéral JavaScript et rendrait le bouton inopérant, silencieusement.
+func confirmScript(message string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(message)
+	return "return confirm('" + escaped + "')"
 }

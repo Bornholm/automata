@@ -1,10 +1,12 @@
 package profile
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"slices"
 
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/onboarding"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/view"
@@ -24,7 +26,7 @@ import (
 
 // HandleProfileDiscover rend la page de découverte.
 func (h *Handlers) HandleProfileDiscover(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := h.resolveProfile(w, r)
+	member, r, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -47,7 +49,7 @@ func (h *Handlers) HandleProfileDiscover(w http.ResponseWriter, r *http.Request)
 		LinkID:       r.PathValue("link"),
 		Header:       h.profileHeader(r, member, minutes),
 		PluginUIs:    plugins,
-		Capabilities: discoverCapabilities(enabled),
+		Capabilities: discoverCapabilities(r.Context(), enabled),
 		VisitState:   visitState(member),
 	}))
 }
@@ -70,57 +72,33 @@ func visitState(member persistence.Member) string {
 // discoverCapabilities compose la liste, en commençant par ce dont tout le
 // monde dispose. Les exemples sont écrits comme on parle, pas comme on
 // documente : ce sont des phrases à recopier.
-func discoverCapabilities(enabledPlugins []string) []view.DiscoverCapability {
+func discoverCapabilities(ctx context.Context, enabledPlugins []string) []view.DiscoverCapability {
+	capability := func(name string) view.DiscoverCapability {
+		return view.DiscoverCapability{
+			Title:   i18n.TC(ctx, "discover."+name+".title"),
+			Detail:  i18n.TC(ctx, "discover."+name+".detail"),
+			Example: i18n.TC(ctx, "discover."+name+".example"),
+		}
+	}
+
 	capabilities := []view.DiscoverCapability{
-		{
-			Title:   "Retenir ce qui compte",
-			Detail:  "Dites-moi ce que je dois garder en tête, et je m'en souviendrai dans nos prochaines conversations.",
-			Example: "Retiens que mon associée s'appelle Lina et qu'elle gère la comptabilité.",
-		},
-		{
-			Title:   "Vous rappeler quelque chose",
-			Detail:  "Une échéance, un rendez-vous, une habitude : je vous préviens au bon moment.",
-			Example: "Rappelle-moi vendredi matin d'envoyer la facture à Lina.",
-		},
-		{
-			Title:   "Travailler sur vos fichiers",
-			Detail:  "Envoyez-moi un document, une image ou une vidéo : je peux les convertir, les découper, en extraire ce qu'il vous faut.",
-			Example: "Envoyez une photo, puis : « recadre-la en carré et allège-la ».",
-		},
-		{
-			Title:   "Garder vos documents",
-			Detail:  "Ce que je garde pour vous reste disponible des mois plus tard, contrairement aux fichiers de passage.",
-			Example: "Garde ce contrat, j'en aurai besoin le mois prochain.",
-		},
-		{
-			Title:   "Chercher pour vous",
-			Detail:  "Une question dont la réponse est sur le web, et je vous rapporte l'essentiel plutôt qu'une liste de liens.",
-			Example: "Quels sont les horaires de la déchetterie de Meylan ?",
-		},
+		capability("remember"),
+		capability("remind"),
+		capability("files"),
+		capability("locker"),
+		capability("search"),
 	}
 
 	// Les plugins ajoutent leurs propres verbes. Chacun n'apparaît que s'il
 	// est activé pour l'organisation.
 	if slices.Contains(enabledPlugins, "email") {
-		capabilities = append(capabilities, view.DiscoverCapability{
-			Title:   "Lire et écrire vos courriels",
-			Detail:  "Une fois votre boîte reliée, je peux la relever et rédiger vos réponses — vous les validez avant tout envoi.",
-			Example: "Qu'est-ce que j'ai reçu d'important aujourd'hui ?",
-		})
+		capabilities = append(capabilities, capability("email"))
 	}
 	if slices.Contains(enabledPlugins, "caldav") {
-		capabilities = append(capabilities, view.DiscoverCapability{
-			Title:   "Tenir votre agenda",
-			Detail:  "Je consulte vos disponibilités et je place vos rendez-vous, après confirmation.",
-			Example: "Suis-je libre jeudi après-midi ?",
-		})
+		capabilities = append(capabilities, capability("calendar"))
 	}
 	if slices.Contains(enabledPlugins, "pages") {
-		capabilities = append(capabilities, view.DiscoverCapability{
-			Title:   "Publier une page",
-			Detail:  "Un compte rendu, une affiche, un formulaire : je les mets en ligne et vous donne le lien.",
-			Example: "Fais-moi une page avec le programme de la fête de quartier.",
-		})
+		capabilities = append(capabilities, capability("pages"))
 	}
 
 	return capabilities

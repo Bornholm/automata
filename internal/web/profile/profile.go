@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/binary"
@@ -11,6 +12,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
@@ -22,14 +24,14 @@ import (
 // les visites suivantes sur cette session tant que le lien du chemin lui
 // correspond. Retourne (membre, minutes restantes, true) ou rend l'état de
 // lien approprié (PRO-90) et retourne false.
-func (h *Handlers) resolveProfile(w http.ResponseWriter, r *http.Request) (persistence.Member, int, bool) {
+func (h *Handlers) resolveProfile(w http.ResponseWriter, r *http.Request) (persistence.Member, *http.Request, int, bool) {
 	now := h.Now()
 	segment := r.PathValue("link")
 
 	linkID, secret, wellFormed := weblink.SplitProfileLink(segment)
 	if !wellFormed {
 		h.Render(w, r, http.StatusNotFound, view.ProfileLinkState(view.LinkStatePage{State: "expired"}))
-		return persistence.Member{}, 0, false
+		return persistence.Member{}, r, 0, false
 	}
 
 	// Session courte déjà ouverte pour ce lien ? (navigation entre pages,
@@ -40,7 +42,7 @@ func (h *Handlers) resolveProfile(w http.ResponseWriter, r *http.Request) (persi
 			if found && sessionLink == linkID {
 				member, exists, err := h.findMember(r, memberID)
 				if err == nil && exists {
-					return member, minutesLeft(now, expires), true
+					return member, withMemberLocale(r, member), minutesLeft(now, expires), true
 				}
 			}
 		}
@@ -56,7 +58,7 @@ func (h *Handlers) resolveProfile(w http.ResponseWriter, r *http.Request) (persi
 		return err
 	})
 	if !ok {
-		return persistence.Member{}, 0, false
+		return persistence.Member{}, r, 0, false
 	}
 
 	switch {
@@ -64,13 +66,13 @@ func (h *Handlers) resolveProfile(w http.ResponseWriter, r *http.Request) (persi
 		// Lien inconnu ou secret faux : même réponse qu'un lien périmé —
 		// aucune information sur l'existence du lien.
 		h.Render(w, r, http.StatusNotFound, view.ProfileLinkState(view.LinkStatePage{State: "expired"}))
-		return persistence.Member{}, 0, false
+		return persistence.Member{}, r, 0, false
 	case link.Status == persistence.ProfileLinkStatusOpened:
 		h.Render(w, r, http.StatusGone, view.ProfileLinkState(view.LinkStatePage{State: "used"}))
-		return persistence.Member{}, 0, false
+		return persistence.Member{}, r, 0, false
 	case now.After(link.ExpiresAt):
 		h.Render(w, r, http.StatusGone, view.ProfileLinkState(view.LinkStatePage{State: "expired"}))
-		return persistence.Member{}, 0, false
+		return persistence.Member{}, r, 0, false
 	}
 
 	// Le lien est intact. Le consommer ici le griller: les messageries
@@ -82,15 +84,16 @@ func (h *Handlers) resolveProfile(w http.ResponseWriter, r *http.Request) (persi
 		if err != nil || !exists {
 			h.Logger.ErrorContext(r.Context(), "web: lien de profil vers un membre introuvable", "link_id", linkID)
 			h.Render(w, r, http.StatusInternalServerError, view.ProfileLinkState(view.LinkStatePage{State: "error", Ref: linkID}))
-			return persistence.Member{}, 0, false
+			return persistence.Member{}, r, 0, false
 		}
 
+		r = withMemberLocale(r, member)
 		h.Render(w, r, http.StatusOK, view.ProfileLinkOpen(view.LinkOpenPage{
 			LinkID:    segment,
 			CSRFToken: h.CSRFToken(w, r),
 			Name:      firstName(member.DisplayName),
 		}))
-		return persistence.Member{}, 0, false
+		return persistence.Member{}, r, 0, false
 	}
 
 	// Ouverture demandée : consommation atomique.
@@ -101,18 +104,18 @@ func (h *Handlers) resolveProfile(w http.ResponseWriter, r *http.Request) (persi
 		return err
 	})
 	if !ok {
-		return persistence.Member{}, 0, false
+		return persistence.Member{}, r, 0, false
 	}
 	if !consumed {
 		h.Render(w, r, http.StatusGone, view.ProfileLinkState(view.LinkStatePage{State: "used"}))
-		return persistence.Member{}, 0, false
+		return persistence.Member{}, r, 0, false
 	}
 
 	member, exists, err := h.findMember(r, link.MemberID)
 	if err != nil || !exists {
 		h.Logger.ErrorContext(r.Context(), "web: lien de profil vers un membre introuvable", "link_id", linkID)
 		h.Render(w, r, http.StatusInternalServerError, view.ProfileLinkState(view.LinkStatePage{State: "error", Ref: linkID}))
-		return persistence.Member{}, 0, false
+		return persistence.Member{}, r, 0, false
 	}
 
 	expires := now.Add(core.ProfileSessionTTL)
@@ -121,7 +124,14 @@ func (h *Handlers) resolveProfile(w http.ResponseWriter, r *http.Request) (persi
 
 	h.Logger.InfoContext(r.Context(), "web: lien de profil ouvert", "link_id", linkID, "member_id", member.ID)
 
-	return member, minutesLeft(now, expires), true
+	return member, withMemberLocale(r, member), minutesLeft(now, expires), true
+}
+
+// withMemberLocale rend une requête dont le contexte porte la langue du
+// membre. Le serveur y a déjà posé celle de l'instance : ici, on sait à qui
+// l'on parle.
+func withMemberLocale(r *http.Request, member persistence.Member) *http.Request {
+	return r.WithContext(i18n.WithLocale(r.Context(), member.Locale))
 }
 
 func minutesLeft(now, expires time.Time) int {
@@ -161,9 +171,53 @@ func (h *Handlers) profileHeader(r *http.Request, member persistence.Member, min
 	}
 }
 
+// HandleProfileLanguage change la langue du membre.
+//
+// Le changement prend effet au rechargement qui suit, y compris pour les
+// messages de la conversation : la langue est lue sur le membre à chaque
+// tour, elle n'est mise en cache nulle part.
+func (h *Handlers) HandleProfileLanguage(w http.ResponseWriter, r *http.Request) {
+	member, r, _, ok := h.resolveProfile(w, r)
+	if !ok {
+		return
+	}
+	if !core.CheckCSRF(r) {
+		http.Error(w, "jeton CSRF absent ou invalide", http.StatusForbidden)
+		return
+	}
+
+	linkPath := "/p/" + r.PathValue("link")
+
+	// Une langue que l'instance ne sert pas est ignorée : le formulaire n'en
+	// propose que trois, et une valeur forgée ne vaut pas une page d'erreur.
+	locale, valid := i18n.Parse(r.PostFormValue("locale"))
+	if !valid || locale == member.Locale {
+		http.Redirect(w, r, linkPath, http.StatusFound)
+		return
+	}
+
+	now := h.Now()
+	ok = h.WithTx(w, r, func(tx *sql.Tx) error {
+		fresh, found, err := h.Members.FindByID(r.Context(), tx, member.ID)
+		if err != nil || !found {
+			return err
+		}
+		fresh.Locale = locale
+		fresh.UpdatedAt = now
+		return h.Members.Update(r.Context(), tx, fresh)
+	})
+	if !ok {
+		return
+	}
+
+	h.Logger.InfoContext(r.Context(), "web: langue du membre changée", "member_id", member.ID, "locale", locale)
+
+	http.Redirect(w, r, linkPath+"?langue=1", http.StatusFound)
+}
+
 // HandleProfile — PRO-01.
 func (h *Handlers) HandleProfile(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := h.resolveProfile(w, r)
+	member, r, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -175,6 +229,8 @@ func (h *Handlers) HandleProfile(w http.ResponseWriter, r *http.Request) {
 		CSRFToken:      h.CSRFToken(w, r),
 		Email:          member.Email,
 		MailConfigured: h.Mail != nil,
+		Locale:         string(member.Locale),
+		LanguageSaved:  r.URL.Query().Get("langue") == "1",
 	}
 
 	switch {
@@ -189,7 +245,7 @@ func (h *Handlers) HandleProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if r.URL.Query().Get("bad_code") == "1" && page.EmailState == "pending" {
-		page.Error = "Ce code ne correspond pas. Vérifiez les six chiffres, ou renvoyez-en un."
+		page.Error = i18n.TC(r.Context(), "profile.email.error_code")
 	}
 
 	plugins, ok := h.profilePluginUIs(w, r, member)
@@ -207,9 +263,9 @@ func (h *Handlers) HandleProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, ch := range channels {
-		detail := "Conversation privée"
+		detail := i18n.TC(r.Context(), "profile.channel.private")
 		if ch.Kind == "Groupe" {
-			detail = "Groupe"
+			detail = i18n.TC(r.Context(), "profile.channel.group")
 		}
 		page.Channels = append(page.Channels, view.ProfileChannel{
 			PlatformType: ch.PlatformType,
@@ -260,7 +316,7 @@ func (h *Handlers) profilePluginUIs(w http.ResponseWriter, r *http.Request, memb
 // HandleProfilePluginPage rend l'onglet d'un plugin. Un plugin inactif ou
 // sans interface n'a pas d'onglet : sa page n'existe pas non plus.
 func (h *Handlers) HandleProfilePluginPage(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := h.resolveProfile(w, r)
+	member, r, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -293,7 +349,7 @@ func (h *Handlers) HandleProfilePluginPage(w http.ResponseWriter, r *http.Reques
 
 // HandleProfileEmail enregistre l'adresse et envoie le code (PRO-01).
 func (h *Handlers) HandleProfileEmail(w http.ResponseWriter, r *http.Request) {
-	member, _, ok := h.resolveProfile(w, r)
+	member, r, _, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -361,7 +417,7 @@ func upperFirst(s string) string {
 
 // HandleProfileEmailVerify vérifie le code à six chiffres (PRO-01b).
 func (h *Handlers) HandleProfileEmailVerify(w http.ResponseWriter, r *http.Request) {
-	member, _, ok := h.resolveProfile(w, r)
+	member, r, _, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -400,7 +456,7 @@ func (h *Handlers) HandleProfileEmailVerify(w http.ResponseWriter, r *http.Reque
 
 // HandleProfileCredits — PRO-02.
 func (h *Handlers) HandleProfileCredits(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := h.resolveProfile(w, r)
+	member, r, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -422,12 +478,12 @@ func (h *Handlers) HandleProfileCredits(w http.ResponseWriter, r *http.Request) 
 
 	switch {
 	case r.URL.Query().Get("paid") == "1":
-		page.Notice = "Merci ! Votre paiement est confirmé. Vos crédits arrivent dans quelques secondes — rafraîchissez si le solde n'a pas encore bougé."
+		page.Notice = i18n.TC(r.Context(), "credits.notice.paid")
 		page.NoticeTone = "ok"
 	case r.URL.Query().Get("canceled") == "1":
-		page.Notice = "Paiement annulé : rien n'a été débité."
+		page.Notice = i18n.TC(r.Context(), "credits.notice.cancelled")
 	case r.URL.Query().Get("payment_error") == "1":
-		page.Notice = "Nous n'avons pas pu ouvrir la page de paiement. Réessayez dans un instant."
+		page.Notice = i18n.TC(r.Context(), "credits.notice.error")
 	}
 
 	txOK := h.WithTx(w, r, func(tx *sql.Tx) error {
@@ -463,20 +519,20 @@ func (h *Handlers) HandleProfileCredits(w http.ResponseWriter, r *http.Request) 
 			// Rien à acheter, rien à surveiller : on montre l'usage du mois
 			// et on s'arrête là — pas de solde, pas d'offres.
 			page.UsedCredits = monthUsage
-			page.BalanceHint = "Votre accès est sans limite"
+			page.BalanceHint = i18n.TC(r.Context(), "credits.balance.unlimited")
 			return h.fillUsageSplit(r, tx, &page, org.ID, monthFrom, monthTo)
 		case "offered":
 			page.Allowance = org.MonthlyAllowance
 			page.UsedCredits = monthUsage
-			page.NextReset = "le 1ᵉʳ " + strings.ToLower(view.FormatMonth(monthTo))
-			page.BalanceHint = offeredHint(monthUsage, org.MonthlyAllowance)
+			page.NextReset = i18n.TC(r.Context(), "credits.next_reset", strings.ToLower(view.FormatMonth(r.Context(), monthTo)))
+			page.BalanceHint = offeredHint(r.Context(), monthUsage, org.MonthlyAllowance)
 			return h.fillUsageSplit(r, tx, &page, org.ID, monthFrom, monthTo)
 		case "empty":
-			page.BalanceHint = "Solde épuisé"
+			page.BalanceHint = i18n.TC(r.Context(), "duration.balance.empty")
 		case "low":
-			page.BalanceHint = "Il vous reste " + lowerFirst(view.HumanUsageDuration(balance, rate))
+			page.BalanceHint = i18n.TC(r.Context(), "credits.balance.remaining", lowerFirst(view.HumanUsageDuration(r.Context(), balance, rate)))
 		default:
-			page.BalanceHint = view.HumanUsageDuration(balance, rate)
+			page.BalanceHint = view.HumanUsageDuration(r.Context(), balance, rate)
 		}
 
 		// Offres effectives : celles de l'écran de tarification, sinon
@@ -489,16 +545,16 @@ func (h *Handlers) HandleProfileCredits(w http.ResponseWriter, r *http.Request) 
 			row := view.CreditPack{
 				Index:    i,
 				Credits:  pack.Credits,
-				Duration: view.HumanPackDuration(pack.Credits, rate),
+				Duration: view.HumanPackDuration(r.Context(), pack.Credits, rate),
 				// Les prix des offres sont hors taxes : Stripe ajoute la
 				// TVA applicable au moment du paiement, et un prix
 				// annoncé plus bas que le prix débité se découvrirait à
 				// la première facture.
-				PriceEUR: core.FormatEuros(pack.PriceEUR) + " HT",
+				PriceEUR: i18n.TC(r.Context(), "credits.price_excl_tax", core.FormatEuros(pack.PriceEUR)),
 				Featured: pack.Featured,
 			}
 			if pack.Featured {
-				row.FeaturedLabel = "Le plus choisi"
+				row.FeaturedLabel = i18n.TC(r.Context(), "credits.featured_label")
 				page.FeaturedPrice = row.PriceEUR
 				page.FeaturedIndex = i
 			}
@@ -517,9 +573,9 @@ func (h *Handlers) HandleProfileCredits(w http.ResponseWriter, r *http.Request) 
 			if err != nil {
 				return err
 			}
-			label := view.FormatMonth(from)
+			label := view.FormatMonth(r.Context(), from)
 			if i == 0 {
-				label += " — en cours"
+				label = i18n.TC(r.Context(), "credits.month_current", label)
 			}
 			page.Months = append(page.Months, view.MonthUsage{Label: label, Credits: credits})
 		}
@@ -534,21 +590,21 @@ func (h *Handlers) HandleProfileCredits(w http.ResponseWriter, r *http.Request) 
 }
 
 // offeredHint décrit l'usage du mois d'une organisation offerte.
-func offeredHint(used, allowance int64) string {
+func offeredHint(ctx context.Context, used, allowance int64) string {
 	if allowance <= 0 {
-		return "Votre usage du mois"
+		return i18n.TC(ctx, "credits.hint.month_usage")
 	}
 	switch ratio := float64(used) / float64(allowance); {
 	case ratio < 0.25:
-		return "Vous avez à peine entamé votre mois"
+		return i18n.TC(ctx, "credits.hint.barely_started")
 	case ratio < 0.55:
-		return "Vous avez utilisé un peu moins de la moitié de votre mois"
+		return i18n.TC(ctx, "credits.hint.under_half")
 	case ratio < 0.85:
-		return "Vous avez utilisé une bonne partie de votre mois"
+		return i18n.TC(ctx, "credits.hint.good_part")
 	case ratio < 1:
-		return "Vous approchez de votre allocation du mois"
+		return i18n.TC(ctx, "credits.hint.approaching")
 	default:
-		return "Votre allocation du mois est épuisée"
+		return i18n.TC(ctx, "credits.hint.exhausted")
 	}
 }
 
@@ -565,14 +621,14 @@ func (h *Handlers) fillUsageSplit(r *http.Request, tx *sql.Tx, page *view.Credit
 	var total int64
 	for _, agg := range aggregates {
 		credits := h.UsageCredits(agg.CostAmount, rate)
-		label := "Conversations"
+		key := "usage.split.conversations"
 		switch {
 		case agg.Keys[1] == "image":
-			label = "Images"
+			key = "usage.split.images"
 		case agg.Keys[0] == "research":
-			label = "Recherches"
+			key = "usage.split.search"
 		}
-		buckets[label] += credits
+		buckets[key] += credits
 		total += credits
 	}
 	if total == 0 {
@@ -580,13 +636,16 @@ func (h *Handlers) fillUsageSplit(r *http.Request, tx *sql.Tx, page *view.Credit
 	}
 
 	shades := []string{"", "soft", "faint"}
-	for i, label := range []string{"Conversations", "Recherches", "Images"} {
-		credits := buckets[label]
+	// Les seaux sont indexés par CLÉ, pas par libellé traduit : deux
+	// langues peuvent donner le même mot — « Images » en français comme en
+	// anglais — et deux catégories se retrouveraient fusionnées.
+	for i, key := range []string{"usage.split.conversations", "usage.split.search", "usage.split.images"} {
+		credits := buckets[key]
 		if credits == 0 {
 			continue
 		}
 		page.Split = append(page.Split, view.UsageSplit{
-			Label:   label,
+			Label:   i18n.TC(r.Context(), key),
 			Credits: credits,
 			Pct:     int(credits * 100 / total),
 			Shade:   shades[i],
@@ -608,7 +667,7 @@ func firstName(displayName string) string {
 // sur le profil. Séparé du GET pour que le préchargement d'un aperçu de
 // messagerie ne grille pas le lien.
 func (h *Handlers) HandleProfileOpen(w http.ResponseWriter, r *http.Request) {
-	if _, _, ok := h.resolveProfile(w, r); !ok {
+	if _, _, _, ok := h.resolveProfile(w, r); !ok {
 		return
 	}
 

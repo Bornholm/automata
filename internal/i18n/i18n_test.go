@@ -71,7 +71,15 @@ func TestCatalogs_HaveNoEmptyMessage(t *testing.T) {
 // keyPattern relève les clés littérales passées à i18n.T dans le dépôt.
 // Une clé mal orthographiée compile parfaitement et ne se voit qu'en
 // production, où T rend la clé elle-même au lieu du message.
-var keyPattern = regexp.MustCompile(`i18n\.T\([^,)]+,\s*"([^"]+)"`)
+//
+// Le littéral doit fermer l'argument (`,` ou `)`) : une clé composée —
+// `"discover."+name+".title"` — n'est pas vérifiable ici, et la relever à
+// moitié produirait un faux positif à chaque exécution. Ces cas-là ont leur
+// propre test, au plus près du code qui compose la clé.
+var keyPattern = regexp.MustCompile(`i18n\.TC?\([^,)]+,\s*"([^"]+)"\s*[,)]`)
+
+// pluralKeyPattern relève les clés de base passées à i18n.TN.
+var pluralKeyPattern = regexp.MustCompile(`i18n\.TN\([^,)]+,\s*"([^"]+)"\s*,`)
 
 func TestEveryKeyUsedInTheRepositoryExists(t *testing.T) {
 	root := filepath.Join("..", "..")
@@ -101,6 +109,17 @@ func TestEveryKeyUsedInTheRepositoryExists(t *testing.T) {
 			checked++
 			if _, ok := reference[match[1]]; !ok {
 				t.Errorf("%s: clé %q absente du catalogue", path, match[1])
+			}
+		}
+		// TN compose sa clé : les deux formes doivent exister, sinon le
+		// décompte de zéro — rare en développement, banal chez qui vient
+		// d'arriver — afficherait la clé brute.
+		for _, match := range pluralKeyPattern.FindAllStringSubmatch(string(source), -1) {
+			for _, form := range []string{".one", ".other"} {
+				checked++
+				if _, ok := reference[match[1]+form]; !ok {
+					t.Errorf("%s: clé %q absente du catalogue", path, match[1]+form)
+				}
 			}
 		}
 		return nil

@@ -1,10 +1,12 @@
 package profile
 
 import (
+	"context"
 	"database/sql"
 	"net/http"
 	"time"
 
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
@@ -14,7 +16,7 @@ import (
 // catégories parlantes ; le mot « token » n'apparaît nulle part, il ne dit
 // rien à qui n'écrit pas de logiciel.
 func (h *Handlers) HandleProfileUsage(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := h.resolveProfile(w, r)
+	member, r, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -48,27 +50,30 @@ func (h *Handlers) HandleProfileUsage(w http.ResponseWriter, r *http.Request) {
 		var monthTotal int64
 		for _, agg := range aggregates {
 			credits := h.UsageCredits(agg.CostAmount, rate)
-			label := "Conversations"
+			key := "usage.split.conversations"
 			switch {
 			case agg.Keys[1] == "image":
-				label = "Images"
+				key = "usage.split.images"
 			case agg.Keys[1] == "transcription":
-				label = "Notes vocales"
+				key = "usage.split.voice"
 			case agg.Keys[0] == "research":
-				label = "Recherches"
+				key = "usage.split.search"
 			}
-			buckets[label] += credits
+			buckets[key] += credits
 			monthTotal += credits
 		}
 
 		shades := []string{"", "soft", "faint", "faint"}
-		for i, label := range []string{"Conversations", "Recherches", "Images", "Notes vocales"} {
-			credits := buckets[label]
+		// Indexés par CLÉ, pas par libellé traduit : « Images » s'écrit
+		// pareil en français et en anglais, et deux catégories distinctes
+		// se retrouveraient dans le même seau.
+		for i, key := range []string{"usage.split.conversations", "usage.split.search", "usage.split.images", "usage.split.voice"} {
+			credits := buckets[key]
 			if credits == 0 {
 				continue
 			}
 			page.Split = append(page.Split, view.UsageSplit{
-				Label:   label,
+				Label:   i18n.TC(r.Context(), key),
 				Credits: credits,
 				Pct:     view.GaugePercent(credits, monthTotal),
 				Shade:   shades[i],
@@ -93,7 +98,7 @@ func (h *Handlers) HandleProfileUsage(w http.ResponseWriter, r *http.Request) {
 			if credits > maxMonth {
 				maxMonth = credits
 			}
-			months = append(months, monthUsage{view.FormatMonth(from), credits, i == 0})
+			months = append(months, monthUsage{view.FormatMonth(r.Context(), from), credits, i == 0})
 		}
 		for _, month := range months {
 			page.Months = append(page.Months, view.UsageMonth{
@@ -104,7 +109,7 @@ func (h *Handlers) HandleProfileUsage(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 
-		page.Summary = usageSummary(monthTotal, months[len(months)-2].credits, now)
+		page.Summary = usageSummary(r.Context(), monthTotal, months[len(months)-2].credits, now)
 
 		return nil
 	})
@@ -117,23 +122,23 @@ func (h *Handlers) HandleProfileUsage(w http.ResponseWriter, r *http.Request) {
 
 // usageSummary énonce l'usage du mois avant tout chiffre, et le compare au
 // mois précédent quand la comparaison a un sens.
-func usageSummary(current, previous int64, now time.Time) string {
+func usageSummary(ctx context.Context, current, previous int64, now time.Time) string {
 	if current == 0 {
-		return "Vous n'avez rien consommé ce mois-ci."
+		return i18n.TC(ctx, "usage.summary.none")
 	}
 
 	// Comparer à un mois précédent vide, ou en tout début de mois, ne veut
 	// rien dire : mieux vaut se taire que d'annoncer « +900 % ».
 	if previous == 0 || now.Day() < 5 {
-		return "Voici ce que vos échanges avec Automata ont consommé ce mois-ci."
+		return i18n.TC(ctx, "usage.summary.plain")
 	}
 
 	switch ratio := float64(current) / float64(previous); {
 	case ratio > 1.5:
-		return "Vous utilisez Automata nettement plus que le mois dernier."
+		return i18n.TC(ctx, "usage.summary.more")
 	case ratio < 0.6:
-		return "Vous utilisez Automata moins que le mois dernier."
+		return i18n.TC(ctx, "usage.summary.less")
 	default:
-		return "Votre usage ressemble à celui du mois dernier."
+		return i18n.TC(ctx, "usage.summary.same")
 	}
 }

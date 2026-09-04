@@ -17,6 +17,7 @@
 package i18n
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -118,4 +119,62 @@ func T(locale Locale, key string, args ...any) string {
 func Has(key string) bool {
 	_, ok := catalogs[Default][key]
 	return ok
+}
+
+// localeContextKey est un type dédié pour éviter toute collision de clé de
+// contexte avec d'autres paquets.
+type localeContextKey struct{}
+
+// WithLocale place locale dans ctx. Les templates templ n'ont pas de
+// paramètre pour ça : ils reçoivent un contexte, et c'est par lui que la
+// langue traverse une page composée de dix composants imbriqués sans que
+// chacun ait à la porter dans sa structure.
+func WithLocale(ctx context.Context, locale Locale) context.Context {
+	return context.WithValue(ctx, localeContextKey{}, locale)
+}
+
+// FromContext extrait la langue de ctx, ou Default si elle n'y est pas. Une
+// page rendue hors requête — un courriel, un test — reste ainsi lisible.
+func FromContext(ctx context.Context) Locale {
+	locale, ok := ctx.Value(localeContextKey{}).(Locale)
+	if !ok {
+		return Default
+	}
+	return locale
+}
+
+// TC est T pour un contexte : la forme employée dans les templates.
+func TC(ctx context.Context, key string, args ...any) string {
+	return T(FromContext(ctx), key, args...)
+}
+
+// PluralForm rend le suffixe de clé — « one » ou « other » — pour un
+// décompte.
+//
+// Les trois langues ne coupent pas au même endroit : le français écrit
+// « 0 souvenir » au singulier, l'anglais et l'espagnol « 0 memories »,
+// « 0 recuerdos ». Une règle unique se trompe donc forcément sur deux
+// langues sur trois, et l'erreur passe inaperçue parce qu'un décompte de
+// zéro est rare en développement et banal chez quelqu'un qui vient
+// d'arriver.
+func PluralForm(locale Locale, n int) string {
+	if locale == FR {
+		if n <= 1 {
+			return "one"
+		}
+		return "other"
+	}
+	if n == 1 {
+		return "one"
+	}
+	return "other"
+}
+
+// TN rend un message accordé au décompte n, à partir d'une clé de base :
+// « privacy.messages » cherche « privacy.messages.one » ou
+// « privacy.messages.other ». n est passé au gabarit avant args.
+func TN(ctx context.Context, baseKey string, n int, args ...any) string {
+	locale := FromContext(ctx)
+	all := append([]any{n}, args...)
+	return T(locale, baseKey+"."+PluralForm(locale, n), all...)
 }

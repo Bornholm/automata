@@ -8,6 +8,8 @@ package view
 import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
+import "strings"
+
 // Composants récurrents du design system des maquettes P1 : chips d'état,
 // jauges de solde, badges de plateforme, eyebrows Space Mono.
 
@@ -120,7 +122,7 @@ func StatusChip(c Chip) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(c.Label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/components.templ`, Line: 50, Col: 11}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/components.templ`, Line: 52, Col: 11}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -215,7 +217,7 @@ func Gauge(pct int, tone string, heightClass string) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(templ.SafeCSS("width:" + itoa(pct) + "%"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/components.templ`, Line: 69, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/components.templ`, Line: 71, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
@@ -315,7 +317,7 @@ func PlatformBadge(platformType string, sizeClass string, textClass string) temp
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(platformInitial(platformType))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/components.templ`, Line: 114, Col: 185}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/components.templ`, Line: 116, Col: 185}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -376,7 +378,7 @@ func Eyebrow(text string, colorClass string) templ.Component {
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(text)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/components.templ`, Line: 119, Col: 94}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/view/components.templ`, Line: 121, Col: 94}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
@@ -436,6 +438,15 @@ func Logo(sizeClass string, textClass string) templ.Component {
 		}
 		return nil
 	})
+}
+
+// confirmScript compose le onsubmit d'une confirmation navigateur à partir
+// d'un texte traduit. L'échappement n'est pas une précaution de style : une
+// apostrophe dans une traduction — « ¿Borrar l'element? » — casserait le
+// littéral JavaScript et rendrait le bouton inopérant, silencieusement.
+func confirmScript(message string) string {
+	escaped := strings.NewReplacer(`\`, `\\`, `'`, `\'`).Replace(message)
+	return "return confirm('" + escaped + "')"
 }
 
 var _ = templruntime.GeneratedTemplate

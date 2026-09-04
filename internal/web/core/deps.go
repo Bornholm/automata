@@ -17,7 +17,6 @@ package core
 import (
 	"context"
 	"database/sql"
-	"github.com/bornholm/automata/internal/i18n"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -27,6 +26,7 @@ import (
 	"github.com/a-h/templ"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"

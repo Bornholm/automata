@@ -1,5 +1,7 @@
 package view
 
+import "github.com/bornholm/automata/internal/i18n"
+
 // --- Ce qu'Automata retient ---
 //
 // L'écran répond à une question que personne ne devrait avoir à poser : que
@@ -36,9 +38,9 @@ type MemoriesPage struct {
 }
 
 templ ProfileMemories(page MemoriesPage) {
-	@ProfileLayout("Ce que je retiens — Automata", page.Header, ProfileNav{LinkID: page.LinkID, Active: "memories", Plugins: page.PluginUIs}) {
-		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Ce que je retiens de vous</h1>
-		<p class="mt-2 text-[15px] leading-normal text-text-3">Voici, mot pour mot, ce dont je me sers pour vous répondre. Corrigez ou effacez ce qui ne va pas — je m'y fie.</p>
+	@ProfileLayout(i18n.TC(ctx, "memories.title"), page.Header, ProfileNav{LinkID: page.LinkID, Active: "memories", Plugins: page.PluginUIs}) {
+		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">{ i18n.TC(ctx, "memories.heading") }</h1>
+		<p class="mt-2 text-[15px] leading-normal text-text-3">{ i18n.TC(ctx, "memories.intro") }</p>
 		if page.Error != "" {
 			<div class="mt-4 rounded-lg bg-crit-wash px-3.5 py-2.5 text-sm text-crit-deep">{ page.Error }</div>
 		}
@@ -46,7 +48,7 @@ templ ProfileMemories(page MemoriesPage) {
 			<div class="mt-4 rounded-lg bg-ok-wash-2 px-3.5 py-2.5 text-sm text-ok-deep">{ page.Notice }</div>
 		}
 		if len(page.Memories) == 0 {
-			<div class="mt-5 rounded-[11px] border border-dashed border-line px-3.5 py-6 text-center text-sm text-text-4">Je ne retiens rien de vous pour l'instant. Dites-moi « retiens que… » dans notre conversation.</div>
+			<div class="mt-5 rounded-[11px] border border-dashed border-line px-3.5 py-6 text-center text-sm text-text-4">{ i18n.TC(ctx, "memories.empty") }</div>
 		}
 		<div class="mt-5 flex flex-col gap-3">
 			for _, memory := range page.Memories {
@@ -62,8 +64,8 @@ templ ProfileMemories(page MemoriesPage) {
 								class="w-full rounded-[10px] border border-brand-line-2 bg-white p-3 text-[15px] leading-normal text-ink outline-none focus:border-brand"
 							>{ memory.Content }</textarea>
 							<div class="mt-2.5 flex gap-2">
-								<button type="submit" class="h-11 flex-1 rounded-[10px] bg-brand text-[15px] font-semibold text-white hover:bg-brand-strong">Enregistrer</button>
-								<a href={ templ.SafeURL("/p/" + page.LinkID + "/memories") } class="flex h-11 flex-1 items-center justify-center rounded-[10px] border border-line-2 text-[15px] font-medium text-text-2 hover:no-underline">Annuler</a>
+								<button type="submit" class="h-11 flex-1 rounded-[10px] bg-brand text-[15px] font-semibold text-white hover:bg-brand-strong">{ i18n.TC(ctx, "common.save") }</button>
+								<a href={ templ.SafeURL("/p/" + page.LinkID + "/memories") } class="flex h-11 flex-1 items-center justify-center rounded-[10px] border border-line-2 text-[15px] font-medium text-text-2 hover:no-underline">{ i18n.TC(ctx, "common.cancel") }</a>
 							</div>
 						</form>
 					} else {
@@ -75,10 +77,10 @@ templ ProfileMemories(page MemoriesPage) {
 							}
 						</div>
 						<div class="mt-3 flex gap-2">
-							<a href={ templ.SafeURL("/p/" + page.LinkID + "/memories?edit=" + memory.ID) } class="flex h-10 items-center rounded-[10px] border border-line-2 px-4 text-sm font-medium text-text-2 hover:no-underline">Corriger</a>
-							<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/memories/" + memory.ID + "/delete") } onsubmit="return confirm('Effacer définitivement ce souvenir ?')">
+							<a href={ templ.SafeURL("/p/" + page.LinkID + "/memories?edit=" + memory.ID) } class="flex h-10 items-center rounded-[10px] border border-line-2 px-4 text-sm font-medium text-text-2 hover:no-underline">{ i18n.TC(ctx, "common.edit") }</a>
+							<form method="post" action={ templ.SafeURL("/p/" + page.LinkID + "/memories/" + memory.ID + "/delete") } { templ.Attributes{"onsubmit": confirmScript(i18n.TC(ctx, "memories.confirm_delete"))}... }>
 								<input type="hidden" name="csrf_token" value={ page.CSRFToken }/>
-								<button type="submit" class="h-10 rounded-[10px] border border-crit-line px-4 text-sm font-medium text-crit-deep">Effacer</button>
+								<button type="submit" class="h-10 rounded-[10px] border border-crit-line px-4 text-sm font-medium text-crit-deep">{ i18n.TC(ctx, "common.erase") }</button>
 							</form>
 						</div>
 					}
@@ -86,7 +88,7 @@ templ ProfileMemories(page MemoriesPage) {
 			}
 		</div>
 		<div class="mt-6 rounded-[11px] bg-panel p-3.5 text-sm leading-normal text-text-3">
-			Ce que je retiens des conversations de groupe n'apparaît pas ici : ces souvenirs appartiennent au groupe, pas à vous seul.
+			{ i18n.TC(ctx, "memories.group_note") }
 		</div>
 	}
 }

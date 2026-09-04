@@ -1,6 +1,7 @@
 package view_test
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -16,7 +17,7 @@ func TestProfileNav_ListsPluginsAsTabs(t *testing.T) {
 		{Name: "agenda", Title: "Agenda", Src: "/p/abc/plugins/agenda/ui/"},
 	}
 
-	tabs := view.ProfileTabs("abc", "plugin:agenda", plugins)
+	tabs := view.ProfileTabs(context.Background(), "abc", "plugin:agenda", plugins)
 	if len(tabs) != 10 {
 		t.Fatalf("huit pages fixes et deux plugins attendus, %d onglets obtenus", len(tabs))
 	}

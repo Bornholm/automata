@@ -17,6 +17,7 @@ import (
 	"github.com/a-h/templ"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/admin"
 	"github.com/bornholm/automata/internal/web/core"
@@ -166,6 +167,7 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 	mux.HandleFunc("GET /p/{link}/missions", prof.HandleProfileMissions)
 	mux.HandleFunc("POST /p/{link}/missions/{id}/abandon", prof.HandleProfileMissionAbandon)
 	mux.HandleFunc("GET /p/{link}/credits", prof.HandleProfileCredits)
+	mux.HandleFunc("POST /p/{link}/language", prof.HandleProfileLanguage)
 	mux.HandleFunc("POST /p/{link}/email", prof.HandleProfileEmail)
 	mux.HandleFunc("POST /p/{link}/email/verify", prof.HandleProfileEmailVerify)
 	mux.HandleFunc("POST /p/{link}/checkout", prof.HandleCheckout)
@@ -184,7 +186,17 @@ func NewServer(cfg *config.Config, db *persistence.DB, mail core.MailSender, log
 	mux.HandleFunc("GET /d/{token}", pub.HandleDraftPreviewRoot)
 	mux.HandleFunc("GET /d/{token}/{path...}", pub.HandleDraftPreview)
 
-	s.httpServer = &http.Server{Addr: cfg.Web.Addr, Handler: mux}
+	// La langue par défaut de l'instance est posée sur CHAQUE requête, avant
+	// tout handler : les pages servies sans identité — lien expiré, lien
+	// déjà utilisé, erreur — n'ont que celle-là. Les pages de profil
+	// l'écrasent ensuite par celle du membre, une fois qu'elles savent qui
+	// est là (voir profile.resolveProfile).
+	locale := i18n.Resolve(cfg.DefaultLocale)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.ServeHTTP(w, r.WithContext(i18n.WithLocale(r.Context(), locale)))
+	})
+
+	s.httpServer = &http.Server{Addr: cfg.Web.Addr, Handler: handler}
 
 	return s
 }

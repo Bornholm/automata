@@ -171,7 +171,7 @@ templ ProfileLayout(title string, header ProfileHeader, nav ProfileNav) {
 						<!-- Rangée d'onglets sur téléphone : elle défile dans son
 						     conteneur, le débordement ne décale jamais la page. -->
 						<div class="-mx-5.5 mb-5 flex gap-5 overflow-x-auto border-b border-line-3 px-5.5 md:hidden">
-							for _, tab := range ProfileTabs(nav.LinkID, nav.Active, nav.Plugins) {
+							for _, tab := range ProfileTabs(ctx, nav.LinkID, nav.Active, nav.Plugins) {
 								if tab.Active {
 									<span class="shrink-0 whitespace-nowrap px-0.5 pb-2.5 text-sm font-semibold text-ink shadow-[inset_0_-2px_0_var(--color-brand)]">{ tab.Label }</span>
 								} else {
@@ -181,7 +181,7 @@ templ ProfileLayout(title string, header ProfileHeader, nav ProfileNav) {
 						</div>
 						<!-- Colonne sur grand écran. -->
 						<nav class="hidden flex-col gap-0.5 md:flex">
-							for _, tab := range ProfileTabs(nav.LinkID, nav.Active, nav.Plugins) {
+							for _, tab := range ProfileTabs(ctx, nav.LinkID, nav.Active, nav.Plugins) {
 								if tab.Active {
 									<span class="rounded-[8px] bg-brand-wash-2 px-3 py-2 text-sm font-semibold text-brand-deep">{ tab.Label }</span>
 								} else {

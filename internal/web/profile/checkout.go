@@ -30,7 +30,7 @@ const checkoutReturnTTL = time.Hour
 // redirige vers Stripe. Accessible depuis la page de crédits du profil,
 // donc protégé par le lien temporaire comme le reste du profil.
 func (h *Handlers) HandleCheckout(w http.ResponseWriter, r *http.Request) {
-	member, _, ok := h.resolveProfile(w, r)
+	member, r, _, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}

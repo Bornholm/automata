@@ -4,9 +4,13 @@
 package view
 
 import (
+	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bornholm/automata/internal/i18n"
 )
 
 // nbsp est l'espace fine insécable utilisée comme séparateur de milliers
@@ -65,13 +69,16 @@ func FormatDayTime(t time.Time) string {
 	return t.Format("02/01 15:04")
 }
 
-// frMonths donne les noms de mois français pour les historiques (PRO-02).
-var frMonths = [...]string{"janvier", "février", "mars", "avril", "mai", "juin",
-	"juillet", "août", "septembre", "octobre", "novembre", "décembre"}
-
 // FormatMonth rend le nom du mois, capitalisé : « Août ».
-func FormatMonth(t time.Time) string {
-	name := frMonths[t.Month()-1]
+//
+// La capitalisation est faite ici plutôt que dans les catalogues parce que
+// les appelants en ont besoin dans les deux sens : « Août » en titre de
+// colonne, « le 1ᵉʳ août » au fil d'une phrase. Les langues ne s'accordent
+// d'ailleurs pas sur la casse d'un nom de mois — l'anglais le capitalise
+// toujours, le français et l'espagnol jamais — et c'est le catalogue qui
+// porte cette règle-là.
+func FormatMonth(ctx context.Context, t time.Time) string {
+	name := i18n.TC(ctx, "month."+strconv.Itoa(int(t.Month())))
 	return strings.ToUpper(name[:1]) + name[1:]
 }
 
@@ -79,40 +86,40 @@ func FormatMonth(t time.Time) string {
 // parlée — l'annotation des maquettes impose d'énoncer le solde en durée
 // avant le chiffre. rate <= 0 (aucune consommation mesurée) rend une
 // formule neutre.
-func HumanUsageDuration(balance int64, dailyRate float64) string {
+func HumanUsageDuration(ctx context.Context, balance int64, dailyRate float64) string {
 	if balance <= 0 {
-		return "Solde épuisé"
+		return i18n.TC(ctx, "duration.balance.empty")
 	}
 	if dailyRate <= 0 {
-		return "De quoi voir venir"
+		return i18n.TC(ctx, "duration.balance.unknown")
 	}
 
 	days := float64(balance) / dailyRate
 	switch {
 	case days < 1:
-		return "Moins d'un jour d'usage courant"
+		return i18n.TC(ctx, "duration.usage.less_than_day")
 	case days < 2:
-		return "Environ un jour d'usage courant"
+		return i18n.TC(ctx, "duration.usage.one_day")
 	case days < 7:
-		return fmt.Sprintf("Environ %d jours d'usage courant", int(days))
+		return i18n.TC(ctx, "duration.usage.days", int(days))
 	case days < 10:
-		return "Environ une semaine d'usage courant"
+		return i18n.TC(ctx, "duration.usage.one_week")
 	case days < 18:
-		return "Environ deux semaines d'usage courant"
+		return i18n.TC(ctx, "duration.usage.two_weeks")
 	case days < 25:
-		return "Environ trois semaines d'usage courant"
+		return i18n.TC(ctx, "duration.usage.three_weeks")
 	case days < 45:
-		return "Environ un mois d'usage courant"
+		return i18n.TC(ctx, "duration.usage.one_month")
 	case days < 75:
-		return "Environ deux mois d'usage courant"
+		return i18n.TC(ctx, "duration.usage.two_months")
 	default:
-		return "Plusieurs mois d'usage courant"
+		return i18n.TC(ctx, "duration.usage.several_months")
 	}
 }
 
 // HumanPackDuration décrit la durée approximative d'un pack au rythme
 // donné (« Environ un mois », PRO-02).
-func HumanPackDuration(credits int64, dailyRate float64) string {
+func HumanPackDuration(ctx context.Context, credits int64, dailyRate float64) string {
 	if dailyRate <= 0 {
 		return ""
 	}
@@ -120,17 +127,17 @@ func HumanPackDuration(credits int64, dailyRate float64) string {
 	days := float64(credits) / dailyRate
 	switch {
 	case days < 5:
-		return fmt.Sprintf("Environ %d jours", int(days))
+		return i18n.TC(ctx, "duration.pack.days", int(days))
 	case days < 10:
-		return "Environ une semaine"
+		return i18n.TC(ctx, "duration.pack.one_week")
 	case days < 20:
-		return "Environ deux semaines"
+		return i18n.TC(ctx, "duration.pack.two_weeks")
 	case days < 45:
-		return "Environ un mois"
+		return i18n.TC(ctx, "duration.pack.one_month")
 	case days < 100:
-		return "Environ deux mois"
+		return i18n.TC(ctx, "duration.pack.two_months")
 	default:
-		return "Environ trois mois ou plus"
+		return i18n.TC(ctx, "duration.pack.three_months_plus")
 	}
 }
 

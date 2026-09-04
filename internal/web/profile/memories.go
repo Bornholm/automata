@@ -1,9 +1,11 @@
 package profile
 
 import (
+	"context"
 	"net/http"
 	"strings"
 
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
@@ -28,7 +30,7 @@ import (
 
 // HandleProfileMemories liste les souvenirs personnels du membre.
 func (h *Handlers) HandleProfileMemories(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := h.resolveProfile(w, r)
+	member, r, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -52,12 +54,12 @@ func (h *Handlers) HandleProfileMemories(w http.ResponseWriter, r *http.Request)
 
 	switch r.URL.Query().Get("done") {
 	case "edited":
-		page.Notice = "Souvenir corrigé. Je m'en tiendrai à cette version."
+		page.Notice = i18n.TC(r.Context(), "memories.notice_updated")
 	case "deleted":
-		page.Notice = "Souvenir effacé. Je ne m'en servirai plus."
+		page.Notice = i18n.TC(r.Context(), "memories.notice_deleted")
 	}
 	if r.URL.Query().Get("error") == "1" {
-		page.Error = "Ce souvenir n'a pas pu être modifié. Rechargez la page et réessayez."
+		page.Error = i18n.TC(r.Context(), "memories.error_update")
 	}
 
 	memories, err := h.Memory.ListByScope(r.Context(), model.OrgID(member.OrgID),
@@ -65,7 +67,7 @@ func (h *Handlers) HandleProfileMemories(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		h.Logger.ErrorContext(r.Context(), "web: lecture des souvenirs",
 			"org_id", member.OrgID, "member_id", member.ID, "error", err)
-		page.Error = "Vos souvenirs n'ont pas pu être lus. Réessayez dans un instant."
+		page.Error = i18n.TC(r.Context(), "memories.error_read")
 	}
 
 	for _, m := range memories {
@@ -73,7 +75,7 @@ func (h *Handlers) HandleProfileMemories(w http.ResponseWriter, r *http.Request)
 			ID:      m.ID,
 			Content: m.Content,
 			At:      m.CreatedAt.Local().Format("02/01/2006"),
-			Origin:  originLabel(m.Metadata["origin"]),
+			Origin:  originLabel(r.Context(), m.Metadata["origin"]),
 		})
 	}
 
@@ -173,7 +175,7 @@ func (h *Handlers) resolveMemoryAction(w http.ResponseWriter, r *http.Request) (
 		return persistence.Member{}, false
 	}
 
-	member, _, ok := h.resolveProfile(w, r)
+	member, r, _, ok := h.resolveProfile(w, r)
 	if !ok {
 		return persistence.Member{}, false
 	}
@@ -202,18 +204,18 @@ func (h *Handlers) memoryFailure(w http.ResponseWriter, r *http.Request, link st
 // internal/onboarding) et ne veulent rien dire pour la personne concernée :
 // « episode_reflection » n'explique rien, « observé au fil des échanges »
 // si.
-func originLabel(origin string) string {
+func originLabel(ctx context.Context, origin string) string {
 	switch origin {
 	case "":
-		return "vous me l'avez dit"
+		return i18n.TC(ctx, "memories.origin.said")
 	case "onboarding":
-		return "recueilli à notre première conversation"
+		return i18n.TC(ctx, "memories.origin.onboarding")
 	case "compaction":
-		return "retenu d'une conversation"
+		return i18n.TC(ctx, "memories.origin.compaction")
 	case "consolidation":
-		return "regroupé avec d'autres souvenirs"
+		return i18n.TC(ctx, "memories.origin.consolidation")
 	case "reflection", "episode_reflection":
-		return "observé au fil des échanges"
+		return i18n.TC(ctx, "memories.origin.reflection")
 	default:
 		return ""
 	}

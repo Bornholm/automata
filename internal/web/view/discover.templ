@@ -1,5 +1,7 @@
 package view
 
+import "github.com/bornholm/automata/internal/i18n"
+
 // --- Découvrir Automata ---
 //
 // La page qui répond à « qu'est-ce que je peux te demander ? ». Elle
@@ -34,13 +36,13 @@ type DiscoverPage struct {
 }
 
 templ DiscoverHome(page DiscoverPage) {
-	@ProfileLayout("Découvrir — Automata", page.Header, ProfileNav{LinkID: page.LinkID, Active: "discover", Plugins: page.PluginUIs}) {
-		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">Ce que vous pouvez me demander</h1>
-		<p class="mt-2 text-[15px] leading-normal text-text-3">Écrivez-moi comme à quelqu'un, dans votre conversation habituelle. Voici de quoi commencer — recopiez un exemple tel quel.</p>
+	@ProfileLayout(i18n.TC(ctx, "discover.title"), page.Header, ProfileNav{LinkID: page.LinkID, Active: "discover", Plugins: page.PluginUIs}) {
+		<h1 class="text-[26px] font-semibold leading-tight tracking-[-.015em] text-ink">{ i18n.TC(ctx, "discover.heading") }</h1>
+		<p class="mt-2 text-[15px] leading-normal text-text-3">{ i18n.TC(ctx, "discover.intro") }</p>
 		if page.VisitState == "running" {
 			<div class="mt-5 rounded-xl border border-brand-line bg-brand-wash-2 p-4">
-				<div class="text-base font-semibold leading-snug text-ink">Nous étions en train de faire connaissance</div>
-				<div class="mt-1 text-sm leading-normal text-text-2">Reprenez la conversation quand vous voulez : je vous reposerai ma question. Répondez « passe » pour arrêter là.</div>
+				<div class="text-base font-semibold leading-snug text-ink">{ i18n.TC(ctx, "discover.visit_running.title") }</div>
+				<div class="mt-1 text-sm leading-normal text-text-2">{ i18n.TC(ctx, "discover.visit_running.body") }</div>
 			</div>
 		}
 		<div class="mt-5 flex flex-col gap-3">
@@ -53,7 +55,7 @@ templ DiscoverHome(page DiscoverPage) {
 			}
 		</div>
 		<div class="mt-6 rounded-[11px] bg-panel p-3.5 text-sm leading-normal text-text-3">
-			Vous pouvez à tout moment me demander ce que je retiens de vous, et me demander de l'oublier. Tout est aussi dans l'onglet Confidentialité.
+			{ i18n.TC(ctx, "discover.footer") }
 		</div>
 	}
 }

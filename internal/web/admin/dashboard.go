@@ -26,7 +26,7 @@ func (h *Handlers) HandleDashboard(w http.ResponseWriter, r *http.Request) {
 	page := view.DashboardPage{
 		Platforms: h.SidebarPlatforms(),
 		CSRFToken: h.CSRFToken(w, r),
-		Period:    strings.ToLower(view.FormatMonth(now)) + " " + fmt.Sprintf("%d", now.Year()),
+		Period:    strings.ToLower(view.FormatMonth(r.Context(), now)) + " " + fmt.Sprintf("%d", now.Year()),
 	}
 
 	ok := h.WithTx(w, r, func(tx *sql.Tx) error {

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"net/http"
 
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
@@ -19,17 +20,17 @@ import (
 // maxListedSuggestions borne l'affichage.
 const maxListedSuggestions = 30
 
-// suggestionKindLabels traduit la nature pour la personne.
+// suggestionKindLabels associe la nature persistée à sa clé de traduction.
 var suggestionKindLabels = map[string]string{
-	"automation": "automatisation",
-	"activation": "capacité à activer",
-	"fix":        "correction",
-	"habit":      "confort",
+	"automation": "suggestions.kind.automation",
+	"activation": "suggestions.kind.activation",
+	"fix":        "suggestions.kind.fix",
+	"habit":      "suggestions.kind.habit",
 }
 
 // HandleProfileSuggestions liste les suggestions du membre.
 func (h *Handlers) HandleProfileSuggestions(w http.ResponseWriter, r *http.Request) {
-	member, minutes, ok := h.resolveProfile(w, r)
+	member, r, minutes, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -49,13 +50,13 @@ func (h *Handlers) HandleProfileSuggestions(w http.ResponseWriter, r *http.Reque
 
 	switch r.URL.Query().Get("done") {
 	case "accepted":
-		page.Notice = "Noté. Ce genre de suggestion continuera."
+		page.Notice = i18n.TC(r.Context(), "suggestions.notice_accepted")
 	case "dismissed":
-		page.Notice = "Écartée. Je ne vous la reproposerai pas."
+		page.Notice = i18n.TC(r.Context(), "suggestions.notice_dismissed")
 	case "muted":
-		page.Notice = "C'est coupé : plus aucune suggestion."
+		page.Notice = i18n.TC(r.Context(), "suggestions.notice_muted")
 	case "unmuted":
-		page.Notice = "Réactivé. Ma prochaine réflexion aura lieu en début de semaine."
+		page.Notice = i18n.TC(r.Context(), "suggestions.notice_unmuted")
 	}
 
 	var suggestions []persistence.Suggestion
@@ -74,14 +75,14 @@ func (h *Handlers) HandleProfileSuggestions(w http.ResponseWriter, r *http.Reque
 			Title:     s.Title,
 			Body:      s.Body,
 			At:        s.CreatedAt.Local().Format("02/01/2006"),
-			KindLabel: suggestionKindLabels[s.Kind],
+			KindLabel: i18n.TC(r.Context(), suggestionKindLabels[s.Kind]),
 			Open:      s.Status == persistence.SuggestionStatusProposed || s.Status == persistence.SuggestionStatusDelivered,
 		}
 		switch s.Status {
 		case persistence.SuggestionStatusAccepted:
-			row.Outcome = "Suivie"
+			row.Outcome = i18n.TC(r.Context(), "suggestions.outcome.accepted")
 		case persistence.SuggestionStatusDismissed:
-			row.Outcome = "Écartée"
+			row.Outcome = i18n.TC(r.Context(), "suggestions.outcome.dismissed")
 		}
 		page.Suggestions = append(page.Suggestions, row)
 	}
@@ -107,7 +108,7 @@ func (h *Handlers) updateSuggestion(w http.ResponseWriter, r *http.Request, stat
 		return
 	}
 
-	member, _, ok := h.resolveProfile(w, r)
+	member, r, _, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}
@@ -136,7 +137,7 @@ func (h *Handlers) HandleProfileSuggestionsMute(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	member, _, ok := h.resolveProfile(w, r)
+	member, r, _, ok := h.resolveProfile(w, r)
 	if !ok {
 		return
 	}

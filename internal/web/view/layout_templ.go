@@ -446,7 +446,7 @@ func ProfileLayout(title string, header ProfileHeader, nav ProfileNav) templ.Com
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				for _, tab := range ProfileTabs(nav.LinkID, nav.Active, nav.Plugins) {
+				for _, tab := range ProfileTabs(ctx, nav.LinkID, nav.Active, nav.Plugins) {
 					if tab.Active {
 						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<span class=\"shrink-0 whitespace-nowrap px-0.5 pb-2.5 text-sm font-semibold text-ink shadow-[inset_0_-2px_0_var(--color-brand)]\">")
 						if templ_7745c5c3_Err != nil {
@@ -502,7 +502,7 @@ func ProfileLayout(title string, header ProfileHeader, nav ProfileNav) templ.Com
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				for _, tab := range ProfileTabs(nav.LinkID, nav.Active, nav.Plugins) {
+				for _, tab := range ProfileTabs(ctx, nav.LinkID, nav.Active, nav.Plugins) {
 					if tab.Active {
 						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<span class=\"rounded-[8px] bg-brand-wash-2 px-3 py-2 text-sm font-semibold text-brand-deep\">")
 						if templ_7745c5c3_Err != nil {

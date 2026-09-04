@@ -85,7 +85,7 @@ func (h *Handlers) HandleOrg(w http.ResponseWriter, r *http.Request) {
 		page.GaugePct = state.GaugePct
 		page.GaugeTone = state.GaugeTone
 		page.GaugeRef = state.GaugeRef
-		page.BalanceHint = view.HumanUsageDuration(balance, rate)
+		page.BalanceHint = view.HumanUsageDuration(r.Context(), balance, rate)
 		page.AutoTopUp = "Inactive"
 		page.DailyRate = "—"
 		if rate > 0 {
@@ -108,7 +108,7 @@ func (h *Handlers) HandleOrg(w http.ResponseWriter, r *http.Request) {
 		}
 		page.Stats = []view.OrgStat{
 			{Label: "Solde", Value: view.FormatCredits(balance)},
-			{Label: "Conso. " + strings.ToLower(view.FormatMonth(now)), Value: view.FormatCredits(monthUsage)},
+			{Label: "Conso. " + strings.ToLower(view.FormatMonth(r.Context(), now)), Value: view.FormatCredits(monthUsage)},
 			{Label: "Membres", Value: view.FormatInt(int64(len(members)))},
 			{Label: "Canaux", Value: view.FormatInt(int64(channelCount))},
 		}

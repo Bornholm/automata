@@ -54,7 +54,7 @@ func (h *Handlers) HandlePricing(w http.ResponseWriter, r *http.Request) {
 			MarginEUR:    core.FormatEuros(m.MarginEUR),
 			Positive:     m.MarginEUR >= 0,
 			Unreported:   m.Calls - m.ReportedCalls,
-			Period:       strings.ToLower(view.FormatMonth(now)) + " " + strconv.Itoa(now.Year()),
+			Period:       strings.ToLower(view.FormatMonth(r.Context(), now)) + " " + strconv.Itoa(now.Year()),
 		}
 		if m.SoldEUR > 0 {
 			page.Margin.Ratio = fmt.Sprintf("%.0f %% des recettes", m.MarginEUR/m.SoldEUR*100)
