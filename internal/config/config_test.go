@@ -771,3 +771,35 @@ func TestLoad_CoalesceWindowDefaultWhenAbsent(t *testing.T) {
 		t.Errorf("EffectiveCoalesceWindow = %s, attendu 2s (défaut)", got)
 	}
 }
+
+// Une langue inconnue est refusée au démarrage. Corrigée en silence, elle
+// produirait des messages en français sans que personne comprenne d'où ils
+// viennent — le symptôme le plus coûteux à diagnostiquer d'une
+// internationalisation.
+func TestLoad_RejectsAnUnknownLocale(t *testing.T) {
+	for _, snippet := range []string{
+		"default_locale: pt\n",
+		"default_locale: pt-BR\n",
+		"default_locale: francais\n",
+	} {
+		setBaseEnv(t)
+		path := writeYAML(t, baseYAML+snippet)
+		if _, err := config.Load(path); err == nil {
+			t.Errorf("configuration acceptée avec %q", strings.TrimSpace(snippet))
+		} else if !strings.Contains(err.Error(), "default_locale") {
+			t.Errorf("erreur sans mention du champ: %v", err)
+		}
+	}
+}
+
+// Les formes régionales sont acceptées : « es-ES » et « es » désignent le
+// même catalogue.
+func TestLoad_AcceptsRegionalLocales(t *testing.T) {
+	for _, value := range []string{"fr", "en", "es", "es-ES", "EN"} {
+		setBaseEnv(t)
+		path := writeYAML(t, baseYAML+"default_locale: "+value+"\n")
+		if _, err := config.Load(path); err != nil {
+			t.Errorf("default_locale %q refusé: %v", value, err)
+		}
+	}
+}

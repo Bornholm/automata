@@ -12,6 +12,7 @@ import (
 	"github.com/bornholm/genai/llm"
 
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
@@ -248,10 +249,8 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	// l'agent a annoncé. Le texte de réponse, lui, est conservé : il porte le
 	// raisonnement qui aide à reformuler.
 	if a.maxActionsPerTurn > 0 && len(proposals) > a.maxActionsPerTurn {
-		notice := fmt.Sprintf(
-			"\n\n⚠️ Ce tour a produit %d actions à confirmer, au-delà de la limite de %d configurée pour l'agent %q. Aucune action n'a été enregistrée : reformulez votre demande en la découpant en plusieurs étapes.",
-			len(proposals), a.maxActionsPerTurn, a.agentName,
-		)
+		notice := i18n.T(req.Identity.Locale, "agent.actions_over_limit",
+			len(proposals), a.maxActionsPerTurn, a.agentName)
 
 		return Result{
 			Reply:                loopResult.Text + notice,

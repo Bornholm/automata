@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bornholm/automata/internal/i18n"
 	cron "github.com/robfig/cron/v3"
 )
 
@@ -49,8 +50,42 @@ func Validate(cfg *Config, baseDir string) error {
 	errs = append(errs, validateConversation(cfg)...)
 	errs = append(errs, validateStorage(cfg)...)
 	errs = append(errs, validatePlugins(cfg)...)
+	errs = append(errs, validateLocales(cfg)...)
 
 	return joinErrors(errs)
+}
+
+// validateLocales vérifie les langues déclarées. Une langue inconnue est
+// refusée au démarrage plutôt que d'être corrigée en silence : « pt » écrit
+// dans un fichier produirait des messages en français sans que personne
+// comprenne pourquoi.
+func validateLocales(cfg *Config) []error {
+	var errs []error
+
+	if cfg.DefaultLocale != "" {
+		if _, ok := i18n.Parse(cfg.DefaultLocale); !ok {
+			errs = append(errs, fmt.Errorf("default_locale: langue inconnue %q (attendu %s)", cfg.DefaultLocale, supportedLocales()))
+		}
+	}
+
+	for i, principal := range cfg.Identities.Principals {
+		if principal.Locale == "" {
+			continue
+		}
+		if _, ok := i18n.Parse(principal.Locale); !ok {
+			errs = append(errs, fmt.Errorf("identities.principals[%d].locale: langue inconnue %q (attendu %s)", i, principal.Locale, supportedLocales()))
+		}
+	}
+
+	return errs
+}
+
+func supportedLocales() string {
+	names := make([]string, 0, len(i18n.Supported))
+	for _, locale := range i18n.Supported {
+		names = append(names, string(locale))
+	}
+	return strings.Join(names, "|")
 }
 
 // validateConversation vérifie la section conversation (historique et

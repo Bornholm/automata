@@ -663,9 +663,10 @@ func (a *PluginSubAgent) hasWriteTools() bool {
 const confirmationProtocolPrompt = "CONFIRMATION PROTOCOL — this is enforced by the host and you cannot change it:\n" +
 	"- To make ANY change, you must CALL the corresponding tool. Describing a change in text does nothing at all.\n" +
 	"- Tools that modify or delete something are never executed during your turn: calling one records a proposal, " +
-	"and the host itself asks the user to reply \"confirmer\". That message is sent by the host, not by you.\n" +
+	"and the host itself asks the user to reply with a literal confirmation word in their own language " +
+	"(\"confirmer\", \"confirm\", \"confirmar\"). That message is sent by the host, not by you.\n" +
 	"- NEVER invent your own confirmation phrase (\"reply yes\", \"say delete\", \"answer OK\"): such an answer executes NOTHING, " +
-	"and the user is left believing something happened. Only the host's \"confirmer\" executes a recorded proposal.\n" +
+	"and the user is left believing something happened. Only the host's own confirmation word executes a recorded proposal.\n" +
 	"- NEVER state or imply that a change has been made, deleted, published or saved. You cannot know that: " +
 	"execution happens after your turn, once the user confirms. Say what you have PROPOSED and that it awaits their confirmation.\n" +
 	"- If the user asks for a destructive change, call the tool anyway: the confirmation step is the host's job, not a reason to hesitate."

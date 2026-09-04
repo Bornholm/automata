@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
@@ -53,9 +54,9 @@ type Step struct {
 	// State est la valeur persistée pendant que cette question est en
 	// attente de réponse.
 	State string
-	// Question part vers la personne : en français, comme tout ce qui
-	// s'écrit dans la conversation.
-	Question string
+	// QuestionKey désigne la question dans le catalogue i18n : elle part
+	// vers la personne, donc dans SA langue.
+	QuestionKey string
 	// Fact préfixe la réponse dans le souvenir. En anglais : un souvenir
 	// est relu par le modèle.
 	Fact string
@@ -67,27 +68,24 @@ type Step struct {
 // « pour la forme ».
 var steps = []Step{
 	{
-		State:    "q1",
-		Question: "Comment préférez-vous que je vous appelle ?",
-		Fact:     "Preferred name to address the user:",
+		State:       "q1",
+		QuestionKey: "onboarding.q1",
+		Fact:        "Preferred name to address the user:",
 	},
 	{
-		State: "q2",
-		Question: "Dans quel fuseau horaire vivez-vous, et à quelles heures êtes-vous " +
-			"généralement disponible ? Cela m'évitera de vous proposer un rappel à 3 h du matin.",
-		Fact: "Time zone and usual availability:",
+		State:       "q2",
+		QuestionKey: "onboarding.q2",
+		Fact:        "Time zone and usual availability:",
 	},
 	{
-		State: "q3",
-		Question: "Sur quoi travaillez-vous, en quelques mots ? Je saurai de quoi vous " +
-			"parlez quand vous mentionnerez un projet ou un dossier.",
-		Fact: "What the user works on:",
+		State:       "q3",
+		QuestionKey: "onboarding.q3",
+		Fact:        "What the user works on:",
 	},
 	{
-		State: "q4",
-		Question: "Dernière question : préférez-vous des réponses brèves qui vont droit " +
-			"au but, ou plus détaillées ?",
-		Fact: "Preferred answer style:",
+		State:       "q4",
+		QuestionKey: "onboarding.q4",
+		Fact:        "Preferred answer style:",
 	},
 }
 
@@ -131,10 +129,8 @@ func (s *Service) WithClock(now func() time.Time) *Service {
 
 // Offer marque la visite comme proposée et retourne l'invitation à joindre
 // au message de bienvenue. Appelé au rattachement du membre.
-func Offer() string {
-	return "Voulez-vous qu'on fasse connaissance en quatre questions ? " +
-		"Répondez « oui » — ou posez-moi directement ce dont vous avez besoin, " +
-		"on fera connaissance en chemin."
+func Offer(locale i18n.Locale) string {
+	return i18n.T(locale, "onboarding.offer")
 }
 
 // Handle traite un message entrant du point de vue de la visite.
@@ -170,14 +166,14 @@ func (s *Service) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 	case StateNone, StateDone, StateSkipped:
 		return "", false, nil
 	case StateOffered:
-		return s.handleOffer(ctx, member, text)
+		return s.handleOffer(ctx, identity, member, text)
 	default:
 		return s.handleAnswer(ctx, identity, member, text)
 	}
 }
 
 // handleOffer traite la réponse à l'invitation.
-func (s *Service) handleOffer(ctx context.Context, member persistence.Member, text string) (string, bool, error) {
+func (s *Service) handleOffer(ctx context.Context, identity model.ExecutionIdentity, member persistence.Member, text string) (string, bool, error) {
 	if !accepts(text) {
 		// Tout ce qui n'est pas un oui franc vaut refus, et le message part
 		// à l'assistant : quelqu'un qui répond par sa vraie question veut
@@ -192,7 +188,7 @@ func (s *Service) handleOffer(ctx context.Context, member persistence.Member, te
 		return "", false, err
 	}
 
-	return steps[0].Question, true, nil
+	return i18n.T(identity.Locale, steps[0].QuestionKey), true, nil
 }
 
 // handleAnswer enregistre une réponse et enchaîne.
@@ -213,7 +209,7 @@ func (s *Service) handleAnswer(ctx context.Context, identity model.ExecutionIden
 			return "", false, err
 		}
 		if quits(answer) {
-			return "Entendu, on s'arrête là. Je suis à votre disposition quand vous voulez.", true, nil
+			return i18n.T(identity.Locale, "onboarding.stopped"), true, nil
 		}
 		return "", false, nil
 	}
@@ -234,16 +230,14 @@ func (s *Service) handleAnswer(ctx context.Context, identity model.ExecutionIden
 		if err := s.setState(ctx, member.ID, steps[index+1].State); err != nil {
 			return "", false, err
 		}
-		return steps[index+1].Question, true, nil
+		return i18n.T(identity.Locale, steps[index+1].QuestionKey), true, nil
 	}
 
 	if err := s.setState(ctx, member.ID, StateDone); err != nil {
 		return "", false, err
 	}
 
-	return "Merci, je note tout ça. Vous pouvez maintenant me demander ce que vous voulez : " +
-		"retenir quelque chose, vous rappeler une échéance, travailler sur un fichier que vous " +
-		"m'envoyez, ou garder un document au chaud. Dites-moi simplement ce dont vous avez besoin.", true, nil
+	return i18n.T(identity.Locale, "onboarding.done"), true, nil
 }
 
 // remember range la réponse en mémoire personnelle. Un échec n'interrompt
@@ -291,9 +285,25 @@ func stepIndex(state string) int {
 	return -1
 }
 
-// acceptWords reconnaît un oui. La liste est courte et volontairement
-// littérale : dans le doute, on rend la main plutôt que d'imposer la visite.
-var acceptWords = []string{"oui", "ok", "d'accord", "daccord", "volontiers", "go", "yes", "allons-y", "c'est parti"}
+// acceptWords reconnaît un oui, dans les trois langues servies. La liste
+// reste courte et volontairement littérale : dans le doute, on rend la main
+// plutôt que d'imposer la visite.
+//
+// Les trois langues sont reconnues quelle que soit celle du membre. Une
+// visite proposée en français à quelqu'un qui répond « yes » est acceptée —
+// se tromper dans ce sens ne coûte rien, alors que refuser un oui sincère
+// fait passer la personne à côté de l'accueil sans qu'elle comprenne
+// pourquoi.
+var acceptWords = []string{
+	// français
+	"oui", "d'accord", "daccord", "volontiers", "allons-y", "c'est parti",
+	// anglais
+	"yes", "yeah", "sure", "let's go", "lets go",
+	// espagnol
+	"sí", "si", "vale", "claro", "de acuerdo", "vamos",
+	// communs
+	"ok", "okay", "go",
+}
 
 func accepts(text string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(text))
@@ -322,8 +332,19 @@ func accepts(text string) bool {
 	return false
 }
 
-// quitWords reconnaît une sortie explicite.
-var quitWords = []string{"passe", "passer", "plus tard", "stop", "non", "annuler", "arrête", "arrete", "skip"}
+// quitWords reconnaît une sortie explicite, dans les trois langues. Même
+// raisonnement que pour acceptWords, avec un enjeu plus fort : une visite
+// dont on ne sort pas ne retient pas seulement la personne, elle l'irrite.
+var quitWords = []string{
+	// français
+	"passe", "passer", "plus tard", "non", "annuler", "arrête", "arrete",
+	// anglais
+	"later", "no", "cancel", "not now",
+	// espagnol
+	"más tarde", "mas tarde", "luego", "ahora no", "cancelar",
+	// communs
+	"stop", "skip",
+}
 
 func quits(text string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(text))

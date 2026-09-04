@@ -31,6 +31,7 @@ import (
 	"github.com/bornholm/automata/internal/action"
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/persistence"
 )
@@ -278,7 +279,7 @@ func (r *Runner) recordFailure(ctx context.Context, mission persistence.Mission,
 	// ferait sinon un message par heure.
 	if attempts == failureAlertThreshold {
 		r.deliver(ctx, mission,
-			fmt.Sprintf("Je n'arrive plus à travailler sur « %s » : les %d derniers réveils ont échoué. Je continue d'essayer ; tu peux aussi abandonner la mission si elle n'a plus lieu d'être.", mission.Title, attempts),
+			i18n.T(principalLocale(r.cfg, mission.PrincipalID), "mission.stalled", mission.Title, attempts),
 			logCtx)
 	}
 }
@@ -466,6 +467,7 @@ func (r *Runner) buildIdentity(mission persistence.Mission) (model.ExecutionIden
 		Trigger:              model.TriggerMission,
 		PrincipalID:          model.PrincipalID(mission.PrincipalID),
 		PrincipalDisplayName: principalDisplayName(r.cfg, mission.PrincipalID),
+		Locale:               principalLocale(r.cfg, mission.PrincipalID),
 		OrgID:                model.OrgID(mission.OrgID),
 		OrgDisplayName:       r.cfg.OrganizationDisplayName(mission.OrgID),
 		ConversationID:       model.ConversationID(mission.ConversationID),
@@ -501,6 +503,25 @@ func principalDisplayName(cfg *config.Config, principalID string) string {
 	}
 
 	return ""
+}
+
+// principalLocale rend la langue du principal, symétrique de
+// principalDisplayName. Elle a la même limite : un membre rattaché en ligne
+// n'est pas dans la configuration, et reçoit alors la langue par défaut de
+// l'instance. Le réveil d'une mission ne dispose pas de la transaction qui
+// permettrait de lire members.locale, et le seul texte concerné est
+// l'avertissement d'enlisement.
+func principalLocale(cfg *config.Config, principalID string) i18n.Locale {
+	for _, p := range cfg.Identities.Principals {
+		if p.ID == principalID {
+			if locale, ok := i18n.Parse(p.Locale); ok {
+				return locale
+			}
+			break
+		}
+	}
+
+	return i18n.Resolve(cfg.DefaultLocale)
 }
 
 // buildBriefing compose l'entrée du réveil : le dossier complet. C'est ce

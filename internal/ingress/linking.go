@@ -10,6 +10,7 @@ import (
 
 	"github.com/bornholm/go-courier"
 
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/onboarding"
 	"github.com/bornholm/automata/internal/persistence"
@@ -97,7 +98,7 @@ func (p *Pipeline) tryLink(ctx context.Context, msg courier.Message, externalUse
 			// Jeton inconnu, périmé, révoqué ou déjà consommé : on ne dit
 			// pas lequel — un message d'échec précis renseignerait un
 			// inconnu sur la validité d'un code.
-			result = linkResult{Reply: "Ce code n'est plus valide. Demandez-en un nouveau à la personne qui administre votre accès."}
+			result = linkResult{Reply: i18n.T(p.resolver.DefaultLocale(), "linking.token_invalid")}
 			return nil
 		}
 
@@ -159,7 +160,7 @@ func (p *Pipeline) linkPersonal(ctx context.Context, tx *sql.Tx, token persisten
 		return linkResult{}, err
 	}
 	if taken && existing.ID != member.ID {
-		return linkResult{Reply: "Ce compte de messagerie est déjà rattaché à un autre profil. Contactez la personne qui administre votre accès."}, nil
+		return linkResult{Reply: i18n.T(p.resolver.DefaultLocale(), "linking.already_linked")}, nil
 	}
 
 	member.Provider = p.providerName
@@ -202,10 +203,10 @@ func (p *Pipeline) linkPersonal(ctx context.Context, tx *sql.Tx, token persisten
 
 	return linkResult{
 		Linked: true,
-		Reply: "Bonjour " + member.DisplayName + " ! Votre compte est rattaché, je suis à votre disposition. " +
-			"Écrivez-moi comme à quelqu'un : je peux retenir ce qui compte, vous rappeler des choses, " +
-			"travailler sur les fichiers que vous m'envoyez et garder vos documents. " +
-			onboarding.Offer(),
+		// La langue vient du membre, choisie par la personne qui l'a invité :
+		// le seul message dont on dispose ici est un code à usage unique, il
+		// ne porte aucun indice de langue.
+		Reply: i18n.T(member.Locale, "linking.welcome", member.DisplayName) + onboarding.Offer(member.Locale),
 	}, nil
 }
 
@@ -221,7 +222,7 @@ func (p *Pipeline) linkGroup(ctx context.Context, tx *sql.Tx, token persistence.
 
 	displayName := msg.Channel().Name()
 	if displayName == "" {
-		displayName = "Groupe"
+		displayName = i18n.T(p.resolver.DefaultLocale(), "linking.group_fallback_name")
 	}
 
 	bindings := persistence.NewChannelBindingRepository()
@@ -240,7 +241,6 @@ func (p *Pipeline) linkGroup(ctx context.Context, tx *sql.Tx, token persistence.
 
 	return linkResult{
 		Linked: true,
-		Reply: "Cette conversation est maintenant rattachée à « " + org.DisplayName + " ». " +
-			"Mentionnez-moi quand vous avez besoin de moi — je ne lis que ce qui m'est adressé.",
+		Reply:  i18n.T(p.resolver.DefaultLocale(), "linking.group_linked", org.DisplayName),
 	}, nil
 }

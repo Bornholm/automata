@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/bornholm/automata/internal/i18n"
 )
 
 // MemberRepository donne accès à la table members (migration 0010) : les
@@ -17,7 +19,7 @@ func NewMemberRepository() *MemberRepository {
 }
 
 const memberColumns = `id, org_id, display_name, role, email, email_verified_at,
-	provider, external_user_id, linked_at, onboarding_state, suggestions_muted, created_at, updated_at`
+	provider, external_user_id, linked_at, onboarding_state, suggestions_muted, locale, created_at, updated_at`
 
 // Insert enregistre m. ignoreExisting (bootstrap) transforme un conflit
 // d'identifiant en non-opération.
@@ -28,10 +30,10 @@ func (r *MemberRepository) Insert(ctx context.Context, q Querier, m Member, igno
 	}
 
 	_, err := q.ExecContext(ctx, verb+` INTO members
-		(`+memberColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(`+memberColumns+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		m.ID, m.OrgID, m.DisplayName, m.Role, m.Email, formatTenantTime(m.EmailVerifiedAt),
 		m.Provider, m.ExternalUserID, formatTenantTime(m.LinkedAt), m.OnboardingState, m.SuggestionsMuted,
-		formatTenantTime(m.CreatedAt), formatTenantTime(m.UpdatedAt))
+		string(m.Locale), formatTenantTime(m.CreatedAt), formatTenantTime(m.UpdatedAt))
 	if err != nil {
 		return fmt.Errorf("insertion du membre %q: %w", m.ID, err)
 	}
@@ -41,13 +43,19 @@ func (r *MemberRepository) Insert(ctx context.Context, q Querier, m Member, igno
 
 func scanMember(scan func(...any) error) (Member, error) {
 	var (
-		m                                          Member
-		emailVerifiedAt, linkedAt, createdAt, upAt string
+		m                                                  Member
+		emailVerifiedAt, linkedAt, locale, createdAt, upAt string
 	)
 	if err := scan(&m.ID, &m.OrgID, &m.DisplayName, &m.Role, &m.Email, &emailVerifiedAt,
-		&m.Provider, &m.ExternalUserID, &linkedAt, &m.OnboardingState, &m.SuggestionsMuted, &createdAt, &upAt); err != nil {
+		&m.Provider, &m.ExternalUserID, &linkedAt, &m.OnboardingState, &m.SuggestionsMuted,
+		&locale, &createdAt, &upAt); err != nil {
 		return Member{}, err
 	}
+
+	// Une locale devenue invalide — langue retirée du catalogue, valeur
+	// écrite à la main — ne doit pas empêcher de lire le membre : elle
+	// retombe sur le défaut, comme une colonne vide.
+	m.Locale = i18n.Resolve(locale)
 
 	var err error
 	if m.EmailVerifiedAt, err = parseTenantTime(emailVerifiedAt); err != nil {
@@ -135,10 +143,10 @@ func (r *MemberRepository) CountByOrg(ctx context.Context, q Querier) (map[strin
 func (r *MemberRepository) Update(ctx context.Context, q Querier, m Member) error {
 	res, err := q.ExecContext(ctx, `UPDATE members
 		SET display_name = ?, role = ?, email = ?, email_verified_at = ?,
-			provider = ?, external_user_id = ?, linked_at = ?, updated_at = ?
+			provider = ?, external_user_id = ?, linked_at = ?, locale = ?, updated_at = ?
 		WHERE id = ?`,
 		m.DisplayName, m.Role, m.Email, formatTenantTime(m.EmailVerifiedAt),
-		m.Provider, m.ExternalUserID, formatTenantTime(m.LinkedAt),
+		m.Provider, m.ExternalUserID, formatTenantTime(m.LinkedAt), string(m.Locale),
 		formatTenantTime(m.UpdatedAt), m.ID)
 	if err != nil {
 		return fmt.Errorf("mise à jour du membre %q: %w", m.ID, err)

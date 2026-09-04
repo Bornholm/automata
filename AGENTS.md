@@ -18,9 +18,14 @@ Règles d'implémentation pour ce dépôt. Voir `le plan de conception` pour le 
 - Tout ce qui part vers le modèle s'écrit en ANGLAIS : prompts (`prompts/`,
   `InvariantRules`, `honestyRules`, blocs de contexte), descriptions et
   paramètres d'outils, résultats d'outils. C'est du budget de tokens payé à
-  chaque tour. Le code, les commentaires, les journaux, la documentation et
-  les messages destinés à l'utilisateur restent en français ; les prompts
-  demandent explicitement de répondre dans la langue du message reçu.
+  chaque tour. Le code, les commentaires, les journaux et la documentation
+  restent en français ; les prompts demandent explicitement de répondre dans
+  la langue du message reçu.
+- Tout message destiné à une PERSONNE passe par `internal/i18n` : `i18n.T`
+  avec une clé présente dans les trois catalogues (fr, en, es). Une chaîne
+  française en dur qui atteint un canal, une page ou un courriel est un
+  oubli — c'est aussi ce qui distingue, à la lecture, un texte lu par
+  quelqu'un d'un texte de journal. Voir `docs/i18n.md`.
 - Ne pas exposer les identifiants de ressources externes aux modèles.
 - Ne pas stocker les audios ou transcriptions.
 - Les pièces jointes non vocales (images, documents) sont conservées, elles :

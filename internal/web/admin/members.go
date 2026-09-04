@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/persistence"
 	"github.com/bornholm/automata/internal/web/core"
 	"github.com/bornholm/automata/internal/web/view"
@@ -178,6 +179,7 @@ func (h *Handlers) buildMemberPage(ctx context.Context, tx *sql.Tx, w http.Respo
 		Name:      member.DisplayName,
 		Role:      member.Role,
 		Email:     member.Email,
+		Locale:    string(member.Locale),
 		Linked:    member.Linked(),
 	}
 
@@ -298,6 +300,12 @@ func (h *Handlers) HandleMemberUpdate(w http.ResponseWriter, r *http.Request) {
 		if role := r.PostFormValue("role"); role == persistence.MemberRoleMember ||
 			role == persistence.MemberRoleOwner || role == persistence.MemberRoleReadOnly {
 			member.Role = role
+		}
+		// Une langue non servie est ignorée plutôt que refusée : le
+		// formulaire n'en propose que trois, et une valeur forgée ne vaut
+		// pas une page d'erreur.
+		if locale, ok := i18n.Parse(r.PostFormValue("locale")); ok {
+			member.Locale = locale
 		}
 		if email := strings.TrimSpace(r.PostFormValue("email")); email != member.Email {
 			// Une adresse changée par l'admin repart non vérifiée.

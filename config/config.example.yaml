@@ -31,6 +31,16 @@
 
 version: 1
 
+# Langue des messages qu'Automata écrit SANS passer par un modèle : repli
+# d'erreur, propositions d'actions, visite d'accueil, pages web, courriels.
+# fr | en | es. Absent = fr.
+#
+# Elle ne dit rien de la langue des RÉPONSES : celles-ci suivent la langue
+# du message reçu, tour par tour, et l'ont toujours fait. Un membre peut
+# porter la sienne (écran d'administration) ; ceci n'est que le défaut.
+# Voir docs/i18n.md.
+default_locale: fr
+
 organization:
   id: home
   display_name: Maison

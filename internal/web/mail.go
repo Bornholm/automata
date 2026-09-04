@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/bornholm/automata/internal/i18n"
 	"net/smtp"
 	"strings"
 
@@ -89,7 +90,7 @@ func (s *smtpSender) smtpSettings(ctx context.Context) (config.MailProviderConfi
 }
 
 // SendVerificationCode implémente core.MailSender.
-func (s *smtpSender) SendVerificationCode(ctx context.Context, email, code string) error {
+func (s *smtpSender) SendVerificationCode(ctx context.Context, locale i18n.Locale, email, code string) error {
 	settings, err := s.smtpSettings(ctx)
 	if err != nil {
 		return err
@@ -98,11 +99,11 @@ func (s *smtpSender) SendVerificationCode(ctx context.Context, email, code strin
 	var body strings.Builder
 	body.WriteString("From: Automata <" + settings.SMTP.Issuer + ">\r\n")
 	body.WriteString("To: " + email + "\r\n")
-	body.WriteString("Subject: Votre code Automata : " + code + "\r\n")
+	body.WriteString("Subject: " + i18n.T(locale, "mail.verification.subject", code) + "\r\n")
 	body.WriteString("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n")
-	body.WriteString("Voici votre code de vérification : " + code + "\r\n\r\n")
-	body.WriteString("Saisissez-le dans la page de profil ouverte depuis votre conversation avec Automata. Il expire dans dix minutes.\r\n\r\n")
-	body.WriteString("Si vous n'êtes pas à l'origine de cette demande, ignorez simplement ce message.\r\n")
+	body.WriteString(i18n.T(locale, "mail.verification.intro", code) + "\r\n\r\n")
+	body.WriteString(i18n.T(locale, "mail.verification.instructions") + "\r\n\r\n")
+	body.WriteString(i18n.T(locale, "mail.verification.ignore") + "\r\n")
 
 	var auth smtp.Auth
 	if settings.SMTP.Username != "" {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/bornholm/automata/internal/apperr"
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/model"
 )
 
@@ -16,6 +17,9 @@ type DynamicMember struct {
 	DisplayName string
 	// Role : member | owner | readonly (voir persistence.MemberRole*).
 	Role string
+	// Locale est la langue du membre (members.locale, migration 0030),
+	// déjà résolue par la couche de persistance : jamais vide.
+	Locale i18n.Locale
 }
 
 // DynamicChannel décrit un canal rattaché en ligne par consommation d'un
@@ -118,6 +122,7 @@ func (r *Resolver) resolveDynamic(ctx context.Context, provider, externalUserID,
 		Trigger:              model.TriggerMessage,
 		PrincipalID:          model.PrincipalID(member.ID),
 		PrincipalDisplayName: member.DisplayName,
+		Locale:               r.localeOf(string(member.Locale)),
 		OrgID:                model.OrgID(member.OrgID),
 		OrgDisplayName:       orgDisplayName,
 		ConversationID:       conversationID,

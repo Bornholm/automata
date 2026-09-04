@@ -4,7 +4,11 @@
 // par le reste de l'application.
 package model
 
-import "context"
+import (
+	"context"
+
+	"github.com/bornholm/automata/internal/i18n"
+)
 
 // OrgID identifie une organisation.
 type OrgID string
@@ -131,6 +135,15 @@ type ExecutionIdentity struct {
 	// dossier en cours de réveil. Le modèle ne choisit jamais quelle
 	// mission il met à jour — même principe que le reste de l'identité.
 	MissionID string
+	// Locale est la langue des textes qu'Automata écrit sans passer par un
+	// modèle (internal/i18n) : repli d'erreur, propositions d'actions,
+	// visite d'accueil, notifications. Elle voyage avec l'identité pour la
+	// même raison que les noms affichés — elle dépend de la personne à qui
+	// l'on parle, pas de l'agent qui répond.
+	//
+	// Le corps des réponses ne la consulte JAMAIS : il suit la langue du
+	// message reçu, consigne portée par les prompts.
+	Locale i18n.Locale
 }
 
 // executionIdentityContextKey est un type dédié pour éviter toute collision

@@ -20,6 +20,7 @@ import (
 
 	"github.com/bornholm/automata/internal/apperr"
 	"github.com/bornholm/automata/internal/audio"
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
@@ -83,7 +84,9 @@ const maxBurstMessages = 10
 // personne qui a écrit. Le texte ne révèle volontairement rien de la cause :
 // les détails restent dans les journaux (jamais de contenu privé, mais pas
 // non plus d'erreur interne exposée côté canal).
-const FallbackReply = "Désolé, je n'ai pas réussi à traiter ce message. Réessaie dans quelques instants."
+func FallbackReply(locale i18n.Locale) string {
+	return i18n.T(locale, "ingress.fallback_reply")
+}
 
 // Handler traite un message déjà résolu et autorisé, et retourne le contenu
 // de la réponse à envoyer : son texte, et les éventuels médias à y joindre
@@ -703,7 +706,7 @@ func (p *Pipeline) handleResolved(ctx context.Context, self courier.User, execId
 		if explained {
 			p.logger.WarnContext(ctx, "ingress: message non exploitable, explication envoyée", append(logCtx, "error", err)...)
 		} else {
-			reply = FallbackReply
+			reply = FallbackReply(execIdentity.Locale)
 			p.logger.ErrorContext(ctx, "ingress: échec du traitement du message", append(logCtx, "error", err)...)
 		}
 

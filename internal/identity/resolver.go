@@ -12,8 +12,30 @@ import (
 
 	"github.com/bornholm/automata/internal/apperr"
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/model"
 )
+
+// DefaultLocale rend la langue par défaut de l'instance. Les chemins qui
+// écrivent à quelqu'un dont on ne sait encore rien — un expéditeur en cours
+// de rattachement, par exemple — n'ont que celle-là.
+func (r *Resolver) DefaultLocale() i18n.Locale {
+	return i18n.Resolve(r.cfg.DefaultLocale)
+}
+
+// localeOf rend la langue effective : celle déclarée si l'instance la sert,
+// sinon le défaut de l'instance, sinon le français.
+//
+// Jamais d'erreur. Une langue mal écrite est refusée à la validation de la
+// configuration ; ce qui passerait encore ici — une colonne écrite à la
+// main, une langue retirée du catalogue — ne vaut pas d'interrompre une
+// conversation.
+func (r *Resolver) localeOf(declared string) i18n.Locale {
+	if locale, ok := i18n.Parse(declared); ok {
+		return locale
+	}
+	return i18n.Resolve(r.cfg.DefaultLocale)
+}
 
 // Resolver résout les identités d'exécution à partir d'index précalculés sur
 // la configuration.
@@ -127,6 +149,7 @@ func (r *Resolver) ResolveMessage(ctx context.Context, provider, externalUserID,
 		Trigger:              model.TriggerMessage,
 		PrincipalID:          model.PrincipalID(principalID),
 		PrincipalDisplayName: r.principalIndex[principalID].DisplayName,
+		Locale:               r.localeOf(r.principalIndex[principalID].Locale),
 		OrgID:                model.OrgID(ch.OrgID),
 		OrgDisplayName:       r.cfg.OrganizationDisplayName(ch.OrgID),
 		ConversationID:       conversationID,

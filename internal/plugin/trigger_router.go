@@ -293,6 +293,7 @@ func (r *TriggerRouter) buildIdentity(member persistence.Member) (model.Executio
 		Trigger:              model.TriggerPlugin,
 		PrincipalID:          model.PrincipalID(member.ID),
 		PrincipalDisplayName: member.DisplayName,
+		Locale:               member.Locale,
 		OrgID:                model.OrgID(member.OrgID),
 		ConversationID:       conversationID,
 		Provider:             member.Provider,

@@ -65,6 +65,7 @@ func (s *tenantSource) FindMemberByOrigin(ctx context.Context, provider, externa
 		OrgID:       member.OrgID,
 		DisplayName: member.DisplayName,
 		Role:        member.Role,
+		Locale:      member.Locale,
 	}, true, nil
 }
 

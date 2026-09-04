@@ -15,6 +15,7 @@ import (
 	"github.com/bornholm/automata/internal/authorization"
 	"github.com/bornholm/automata/internal/config"
 	"github.com/bornholm/automata/internal/delegation"
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/mcp"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
@@ -312,9 +313,9 @@ func (e *Engine) CreatePlan(ctx context.Context, identity model.ExecutionIdentit
 
 	e.metrics.IncActionProposed()
 
-	text := formatPlanProposal(rows, e.planTTL)
+	text := formatPlanProposal(identity.Locale, rows, e.planTTL)
 	if superseded > 0 {
-		text += "\n(remplace la proposition précédente restée sans réponse)"
+		text += i18n.T(identity.Locale, "action.proposal.superseded")
 	}
 
 	return plan, text, nil
@@ -468,7 +469,7 @@ func (e *Engine) HandleCommand(ctx context.Context, identity model.ExecutionIden
 
 	if len(activePlans) == 0 {
 		if expired > 0 {
-			return "La proposition en attente a expiré : redemandez l'action pour en obtenir une nouvelle.", nil
+			return i18n.T(identity.Locale, "action.pending_expired"), nil
 		}
 		return "Aucun plan d'actions en attente de confirmation dans cette conversation.", nil
 	}
@@ -484,7 +485,7 @@ func (e *Engine) HandleCommand(ctx context.Context, identity model.ExecutionIden
 	switch {
 	case cmd.PlanNumber > 0:
 		if cmd.PlanNumber > len(activePlans) {
-			return fmt.Sprintf("Aucun plan numéro %d en attente de confirmation dans cette conversation.", cmd.PlanNumber), nil
+			return i18n.T(identity.Locale, "action.plan_not_found", cmd.PlanNumber), nil
 		}
 		target = activePlans[cmd.PlanNumber-1]
 	case len(activePlans) == 1:
@@ -492,14 +493,14 @@ func (e *Engine) HandleCommand(ctx context.Context, identity model.ExecutionIden
 	default:
 		// plan de conception, §10.4 : "si plusieurs plans sont actifs, demander
 		// explicitement lequel confirmer".
-		return formatAmbiguousPlans(activePlans), nil
+		return formatAmbiguousPlans(identity.Locale, activePlans), nil
 	}
 
 	switch cmd.Kind {
 	case CommandConfirm:
 		return e.confirmPlan(ctx, identity, target)
 	case CommandCancel:
-		return e.cancelPlan(ctx, target)
+		return e.cancelPlan(ctx, identity.Locale, target)
 	default:
 		return "", fmt.Errorf("action: commande inconnue")
 	}
@@ -521,7 +522,7 @@ func (e *Engine) confirmPlan(ctx context.Context, identity model.ExecutionIdenti
 	// 2. Vérifier son état : seul un plan awaiting_confirmation peut être
 	// confirmé (pas de double exécution).
 	if plan.Status != StatusAwaitingConfirmation {
-		return fmt.Sprintf("Ce plan d'actions a déjà été traité (statut actuel : %s).", plan.Status), nil
+		return i18n.T(identity.Locale, "action.plan_already_handled", plan.Status), nil
 	}
 
 	// 3. Vérifier l'expiration.
@@ -529,12 +530,12 @@ func (e *Engine) confirmPlan(ctx context.Context, identity model.ExecutionIdenti
 		if err := e.setPlanStatus(ctx, plan.ID, StatusExpired); err != nil {
 			return "", err
 		}
-		return "Ce plan d'actions a expiré : reformulez votre demande pour la proposer à nouveau.", nil
+		return i18n.T(identity.Locale, "action.plan_expired"), nil
 	}
 
 	// 4. Vérifier l'identité du confirmateur.
 	if err := e.authorizeConfirmer(identity, plan); err != nil {
-		return "Vous n'êtes pas autorisé à confirmer ce plan d'actions.", nil
+		return i18n.T(identity.Locale, "action.plan_forbidden"), nil
 	}
 
 	// Verrou d'exécution : la vérification d'état de l'étape 2 a été faite
@@ -546,7 +547,7 @@ func (e *Engine) confirmPlan(ctx context.Context, identity model.ExecutionIdenti
 		return "", err
 	}
 	if !swapped {
-		return "Ce plan d'actions vient d'être traité.", nil
+		return i18n.T(identity.Locale, "action.plan_just_handled"), nil
 	}
 
 	e.metrics.IncActionConfirmed()
@@ -574,7 +575,7 @@ func (e *Engine) confirmPlan(ctx context.Context, identity model.ExecutionIdenti
 
 	e.recordPlanConfirmedAudit(ctx, identity, plan, finalStatus, outcomes)
 
-	return formatExecutionReport(finalStatus, outcomes), nil
+	return formatExecutionReport(identity.Locale, finalStatus, outcomes), nil
 }
 
 // recordPlanConfirmedAudit journalise l'événement d'audit
@@ -652,7 +653,7 @@ func (e *Engine) recordPlanConfirmedAudit(ctx context.Context, identity model.Ex
 // cancelPlan marque ref comme annulé (plan de conception, §10.4). Comme confirmPlan,
 // recharge le plan et vérifie son état pour éviter d'annuler un plan déjà
 // terminé.
-func (e *Engine) cancelPlan(ctx context.Context, ref persistence.ActionPlan) (string, error) {
+func (e *Engine) cancelPlan(ctx context.Context, locale i18n.Locale, ref persistence.ActionPlan) (string, error) {
 	plan, found, err := e.reloadPlan(ctx, ref.ID)
 	if err != nil {
 		return "", err
@@ -662,14 +663,14 @@ func (e *Engine) cancelPlan(ctx context.Context, ref persistence.ActionPlan) (st
 	}
 
 	if plan.Status != StatusAwaitingConfirmation {
-		return fmt.Sprintf("Ce plan d'actions a déjà été traité (statut actuel : %s), impossible de l'annuler.", plan.Status), nil
+		return i18n.T(locale, "action.cancel_already_handled", plan.Status), nil
 	}
 
 	if err := e.setPlanStatus(ctx, plan.ID, StatusCancelled); err != nil {
 		return "", err
 	}
 
-	return "Plan d'actions annulé, aucune action n'a été exécutée.", nil
+	return i18n.T(locale, "action.cancelled"), nil
 }
 
 // authorizeConfirmer vérifie l'identité du confirmateur (plan de conception, §10.5

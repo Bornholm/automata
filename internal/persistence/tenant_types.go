@@ -1,6 +1,10 @@
 package persistence
 
-import "time"
+import (
+	"time"
+
+	"github.com/bornholm/automata/internal/i18n"
+)
 
 // Ce fichier définit les DTO des tables du socle SaaS (migration 0010) :
 // organisations, membres, jetons de liaison, portefeuille de crédits et
@@ -62,8 +66,12 @@ type Member struct {
 	// 0027) : ni collecte, ni suggestion, ni message. Définitif tant que la
 	// personne ne le rallume pas elle-même.
 	SuggestionsMuted bool
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// Locale est la langue des textes qu'Automata écrit sans passer par un
+	// modèle (migration 0030). Vide en base = défaut de l'instance ;
+	// scanMember la résout, elle n'est donc jamais vide ici.
+	Locale    i18n.Locale
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Linked indique si le membre est rattaché à une identité de messagerie.

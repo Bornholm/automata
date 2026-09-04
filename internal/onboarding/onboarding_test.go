@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/memory"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/onboarding"
@@ -262,5 +263,58 @@ func TestVisit_NeverOfferedStaysOutOfTheWay(t *testing.T) {
 
 	if _, handled, err := service.Handle(context.Background(), identity, "bonjour"); err != nil || handled {
 		t.Fatalf("handled=%v err=%v : aucune visite ne devait démarrer", handled, err)
+	}
+}
+
+// La visite se propose et se quitte dans les trois langues. C'est le
+// pendant conversationnel du mot de confirmation : « sí » non reconnu ne
+// produit aucune erreur, il fait simplement passer la personne à côté de
+// l'accueil sans qu'elle sache pourquoi.
+func TestVisit_AcceptsAndQuitsInEveryLanguage(t *testing.T) {
+	for _, word := range []string{"oui", "yes", "sí", "si", "vale", "ok"} {
+		db := openTestDB(t)
+		identity := seedMember(t, db, onboarding.StateOffered)
+		service := onboarding.New(db, &recordingMemory{}, nil)
+
+		if _, handled, err := service.Handle(context.Background(), identity, word); err != nil || !handled {
+			t.Errorf("%q devrait accepter la visite (handled=%v, err=%v)", word, handled, err)
+		}
+	}
+
+	for _, word := range []string{"passe", "later", "más tarde", "ahora no", "skip"} {
+		db := openTestDB(t)
+		identity := seedMember(t, db, "q2")
+		service := onboarding.New(db, &recordingMemory{}, nil)
+
+		reply, handled, err := service.Handle(context.Background(), identity, word)
+		if err != nil || !handled || reply == "" {
+			t.Errorf("%q devrait quitter la visite (handled=%v, reply=%q, err=%v)", word, handled, reply, err)
+		}
+		if state := memberState(t, db); state != onboarding.StateSkipped {
+			t.Errorf("%q : état = %q, attendu %q", word, state, onboarding.StateSkipped)
+		}
+	}
+}
+
+// La langue du membre commande les textes de la visite : c'est le seul
+// endroit où l'accueil parle avant que quiconque ait écrit une phrase dont
+// on pourrait déduire la langue.
+func TestVisit_SpeaksTheMemberLanguage(t *testing.T) {
+	db := openTestDB(t)
+	identity := seedMember(t, db, onboarding.StateOffered)
+	identity.Locale = i18n.ES
+	service := onboarding.New(db, &recordingMemory{}, nil)
+
+	reply, handled, err := service.Handle(context.Background(), identity, "sí")
+	if err != nil || !handled {
+		t.Fatalf("acceptation: handled=%v err=%v", handled, err)
+	}
+	if reply != i18n.T(i18n.ES, "onboarding.q1") {
+		t.Errorf("première question = %q, espagnol attendu", reply)
+	}
+
+	// Et l'invitation elle-même suit la même langue.
+	if offer := onboarding.Offer(i18n.EN); offer != i18n.T(i18n.EN, "onboarding.offer") {
+		t.Errorf("invitation = %q, anglais attendu", offer)
 	}
 }

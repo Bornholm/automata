@@ -5,32 +5,35 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/persistence"
 )
 
 // formatPlanProposal formate le texte renvoyé à l'utilisateur juste après
 // la création d'un plan (plan de conception, §8.5, "afficher une liste numérotée",
 // généralisé ici à toute action).
-func formatPlanProposal(actions []persistence.Action, ttl time.Duration) string {
+func formatPlanProposal(locale i18n.Locale, actions []persistence.Action, ttl time.Duration) string {
 	var b strings.Builder
 
-	b.WriteString("Actions proposées, en attente de confirmation :\n")
+	b.WriteString(i18n.T(locale, "action.proposal.header"))
 	for i, a := range actions {
+		// Le résumé de l'action vient du modèle, qui l'a écrit dans la
+		// langue du message : il n'y a rien à traduire ici.
 		fmt.Fprintf(&b, "%d. %s\n", i+1, a.Summary)
 	}
-	fmt.Fprintf(&b, "\nRépondez « confirmer » pour exécuter, ou « annuler » pour abandonner. Cette proposition expire dans %s.", ttl.Round(time.Second))
+	b.WriteString(i18n.T(locale, "action.proposal.footer", ttl.Round(time.Second)))
 
 	return b.String()
 }
 
 // formatAmbiguousPlans formate le texte demandant explicitement lequel des
 // plans actifs confirmer (plan de conception, §10.4).
-func formatAmbiguousPlans(plans []persistence.ActionPlan) string {
+func formatAmbiguousPlans(locale i18n.Locale, plans []persistence.ActionPlan) string {
 	var b strings.Builder
 
-	b.WriteString("Plusieurs plans d'actions sont en attente de confirmation dans cette conversation. Précisez lequel, par exemple « confirmer 1 » :\n")
+	b.WriteString(i18n.T(locale, "action.ambiguous.header"))
 	for i, p := range plans {
-		fmt.Fprintf(&b, "%d. plan proposé le %s (statut : %s)\n", i+1, p.CreatedAt, p.Status)
+		b.WriteString(i18n.T(locale, "action.ambiguous.item", i+1, p.CreatedAt, p.Status))
 	}
 
 	return b.String()
@@ -65,22 +68,22 @@ func finalPlanStatus(outcomes []actionOutcome) string {
 // après exécution d'un plan confirmé (plan de conception, §10.5 point 9, "enregistrer
 // le résultat" — le texte restitué doit rendre explicites les succès et les
 // échecs partiels).
-func formatExecutionReport(finalStatus string, outcomes []actionOutcome) string {
+func formatExecutionReport(locale i18n.Locale, finalStatus string, outcomes []actionOutcome) string {
 	var b strings.Builder
 
 	switch finalStatus {
 	case StatusSucceeded:
-		b.WriteString("Toutes les actions du plan ont été exécutées avec succès :\n")
+		b.WriteString(i18n.T(locale, "action.report.all_succeeded"))
 	case StatusPartiallySucceeded:
-		b.WriteString("Le plan a été exécuté partiellement :\n")
+		b.WriteString(i18n.T(locale, "action.report.partial"))
 	default:
-		b.WriteString("Aucune action du plan n'a pu être exécutée :\n")
+		b.WriteString(i18n.T(locale, "action.report.none"))
 	}
 
 	for i, o := range outcomes {
-		status := "échec"
+		status := i18n.T(locale, "action.report.status_failed")
 		if o.ok {
-			status = "réussi"
+			status = i18n.T(locale, "action.report.status_ok")
 		}
 		fmt.Fprintf(&b, "%d. [%s] %s — %s\n", i+1, status, o.action.Summary, o.message)
 	}

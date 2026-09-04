@@ -315,7 +315,7 @@ func (h *Handlers) HandleProfileEmail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Mail.SendVerificationCode(r.Context(), email, code); err != nil {
+	if err := h.Mail.SendVerificationCode(r.Context(), member.Locale, email, code); err != nil {
 		// L'adresse n'est pas journalisée : identifiants seulement.
 		h.Logger.ErrorContext(r.Context(), "web: échec d'envoi d'un code de vérification", "member_id", member.ID, "error", err)
 		http.Redirect(w, r, linkPath, http.StatusFound)

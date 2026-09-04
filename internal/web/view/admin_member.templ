@@ -15,7 +15,11 @@ type MemberPage struct {
 	Name    string
 	Role    string
 	Email   string
-	Chips   []Chip
+	// Locale est la langue des textes qu'Automata écrit à ce membre sans
+	// passer par un modèle. Ses réponses, elles, suivent la langue du
+	// message reçu, quoi qu'il y ait ici.
+	Locale string
+	Chips  []Chip
 
 	// Token est l'encart du jeton personnel ; nil si aucun jeton n'a
 	// jamais été généré (bouton « Générer un jeton » à la place).
@@ -38,6 +42,14 @@ templ memberRoleOption(page MemberPage, value string, label string) {
 		<button type="submit" name="role" value={ value } class="rounded-lg border border-brand bg-brand-wash px-3 py-1.5 text-[13px] font-semibold text-brand-deep">{ label }</button>
 	} else {
 		<button type="submit" name="role" value={ value } class="rounded-lg border border-line bg-white px-3 py-1.5 text-[13px] font-medium text-text-2 hover:bg-panel">{ label }</button>
+	}
+}
+
+templ memberLocaleOption(page MemberPage, value string, label string) {
+	if page.Locale == value {
+		<option value={ value } selected>{ label }</option>
+	} else {
+		<option value={ value }>{ label }</option>
 	}
 }
 
@@ -96,6 +108,14 @@ templ AdminMember(page MemberPage) {
 								@memberRoleOption(page, "readonly", "Lecture seule")
 							</div>
 						</div>
+						<label class="block">
+							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Langue <span class="font-normal text-text-4">— des messages qu'Automata écrit de lui-même ; ses réponses suivent la langue de la conversation</span></span>
+							<select name="locale" class="h-[38px] w-full rounded-lg border border-line bg-white px-3 text-sm outline-none focus:border-brand">
+								@memberLocaleOption(page, "fr", "Français")
+								@memberLocaleOption(page, "en", "English")
+								@memberLocaleOption(page, "es", "Español")
+							</select>
+						</label>
 						<label class="block">
 							<span class="mb-1.5 block text-[13px] font-medium text-text-2">Courriel de récupération <span class="font-normal text-text-4">— facultatif, la personne peut le renseigner elle-même</span></span>
 							<input type="email" name="email" value={ page.Email } placeholder="nom@exemple.fr" class="h-[38px] w-full rounded-lg border border-line px-3 text-sm outline-none placeholder:text-text-5 focus:border-brand"/>

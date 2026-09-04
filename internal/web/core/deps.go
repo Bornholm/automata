@@ -17,6 +17,7 @@ package core
 import (
 	"context"
 	"database/sql"
+	"github.com/bornholm/automata/internal/i18n"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -38,7 +39,7 @@ import (
 // MailSender envoie un code de vérification de courriel (PRO-01). Nil =
 // envoi non configuré : la vérification est proposée mais désactivée.
 type MailSender interface {
-	SendVerificationCode(ctx context.Context, email, code string) error
+	SendVerificationCode(ctx context.Context, locale i18n.Locale, email, code string) error
 }
 
 // PrivacyService est la vue qu'a le serveur du service de confidentialité

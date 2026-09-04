@@ -21,6 +21,7 @@ import (
 	"github.com/bornholm/automata/internal/apperr"
 	"github.com/bornholm/automata/internal/audio"
 	"github.com/bornholm/automata/internal/config"
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/identity"
 	"github.com/bornholm/automata/internal/ingress"
 	"github.com/bornholm/automata/internal/media"
@@ -704,8 +705,8 @@ func TestPipeline_HandlerErrorSendsFallback(t *testing.T) {
 		t.Fatalf("GetMessageMainContent: %v", err)
 	}
 
-	if content != ingress.FallbackReply {
-		t.Errorf("contenu de la réponse de repli = %q, attendu %q", content, ingress.FallbackReply)
+	if content != ingress.FallbackReply(i18n.Default) {
+		t.Errorf("contenu de la réponse de repli = %q, attendu %q", content, ingress.FallbackReply(i18n.Default))
 	}
 }
 
@@ -753,7 +754,7 @@ func TestPipeline_ExplainedErrorReplacesFallback(t *testing.T) {
 	if content != "Je n'ai rien entendu dans ce message vocal." {
 		t.Errorf("réponse = %q, attendu l'explication portée par l'erreur", content)
 	}
-	if content == ingress.FallbackReply {
+	if content == ingress.FallbackReply(i18n.Default) {
 		t.Error("le repli générique a été envoyé au lieu de l'explication")
 	}
 }

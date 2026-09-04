@@ -20,6 +20,7 @@ import (
 	"github.com/bornholm/automata/internal/agent"
 	"github.com/bornholm/automata/internal/apperr"
 	"github.com/bornholm/automata/internal/audio"
+	"github.com/bornholm/automata/internal/i18n"
 	"github.com/bornholm/automata/internal/media"
 	"github.com/bornholm/automata/internal/model"
 	"github.com/bornholm/automata/internal/observability"
@@ -192,7 +193,7 @@ func (h *Handler) Handle(ctx context.Context, identity model.ExecutionIdentity, 
 			transcribed, err := audio.ExtractText(transcriptionCtx, h.audioCfg, h.transcriber, voiceNote)
 			h.metrics.ObserveTranscriptionLatency(time.Since(transcriptionStart))
 			if err != nil {
-				return "", nil, fmt.Errorf("conversation: transcription de la note vocale: %w", explainAudioFailure(err))
+				return "", nil, fmt.Errorf("conversation: transcription de la note vocale: %w", explainAudioFailure(identity.Locale, err))
 			}
 
 			text = transcribed
@@ -601,14 +602,14 @@ func lastAssistantAnsweredWithoutTools(records []persistence.Message) bool {
 // configuration fautive) ressort telle quelle : c'est bien une panne, elle
 // mérite le message de repli générique et une ligne d'erreur dans les
 // journaux.
-func explainAudioFailure(err error) error {
+func explainAudioFailure(locale i18n.Locale, err error) error {
 	switch {
 	case errors.Is(err, audio.ErrEmptyTranscription):
-		return apperr.Explain(err, "Je n'ai rien entendu dans ce message vocal. Tu peux le réenregistrer en parlant un peu plus près du micro, ou m'écrire.")
+		return apperr.Explain(err, i18n.T(locale, "audio.empty_transcription"))
 	case errors.Is(err, audio.ErrTooLarge):
-		return apperr.Explain(err, "Ce message vocal est trop long pour que je puisse le traiter. Tu peux le refaire plus court, ou m'écrire.")
+		return apperr.Explain(err, i18n.T(locale, "audio.too_large"))
 	case errors.Is(err, audio.ErrUnsupportedFormat):
-		return apperr.Explain(err, "Je ne sais pas lire ce format audio. Tu peux me renvoyer un message vocal enregistré depuis WhatsApp, ou m'écrire.")
+		return apperr.Explain(err, i18n.T(locale, "audio.unsupported_format"))
 	default:
 		return err
 	}

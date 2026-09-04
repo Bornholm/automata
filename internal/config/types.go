@@ -92,6 +92,15 @@ type Config struct {
 	Backup        Backup               `yaml:"backup"`
 	Plugins       Plugins              `yaml:"plugins"`
 	Introspection Introspection        `yaml:"introspection"`
+	// DefaultLocale est la langue des textes qu'Automata écrit sans passer
+	// par un modèle, pour qui n'en a pas choisi une : « fr », « en » ou
+	// « es ». Vide = français.
+	//
+	// Elle ne dit RIEN de la langue des réponses : celles-ci suivent depuis
+	// toujours la langue du message reçu (prompts/main.md). Ce réglage ne
+	// couvre que les messages fabriqués par le code — repli d'erreur,
+	// propositions d'actions, visite d'accueil, pages web, courriels.
+	DefaultLocale string `yaml:"default_locale"`
 }
 
 // Introspection décrit la passe hebdomadaire qui relit les frictions
@@ -953,6 +962,10 @@ type Principal struct {
 	Kind        PrincipalKind `yaml:"kind"`
 	DisplayName string        `yaml:"display_name"`
 	Roles       []string      `yaml:"roles"`
+	// Locale surcharge default_locale pour ce principal. Vide = le défaut
+	// de l'instance. Les membres rattachés en ligne portent la leur en base
+	// (members.locale) plutôt qu'ici.
+	Locale string `yaml:"locale"`
 	// Orgs liste les organisations auxquelles ce principal appartient.
 	// Facultatif tant que l'instance n'en sert qu'une, obligatoire au-delà :
 	// c'est cette liste qui empêche un collègue d'atteindre la mémoire de la

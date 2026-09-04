@@ -1,0 +1,14 @@
+-- Langue du membre : celle des textes qu'Automata écrit SANS passer par un
+-- modèle — repli d'erreur, propositions d'actions, visite d'accueil, pages
+-- web, courriels (internal/i18n).
+--
+-- Le corps des réponses, lui, n'a jamais eu besoin de cette colonne : les
+-- prompts demandent depuis toujours de répondre dans la langue du message
+-- reçu. C'est tout le reste qui parlait français quoi qu'il arrive.
+--
+-- Vide = langue par défaut de l'instance (i18n.default_locale). On ne
+-- devine pas au rattachement : le seul message dont on dispose alors est un
+-- code à usage unique, qui ne porte aucun indice de langue. C'est donc la
+-- personne qui invite qui choisit, et le membre qui corrige depuis son
+-- profil.
+ALTER TABLE members ADD COLUMN locale TEXT NOT NULL DEFAULT '';
