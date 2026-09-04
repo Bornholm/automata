@@ -29,7 +29,12 @@ Radicale, Baïkal.
    (signalé le 2026-09-03).
 4. Trois interrupteurs, tous décidés par le membre :
    - "L'assistant peut consulter mon agenda" expose
-     `calendar_list_events` et `calendar_search_events` ;
+     `calendar_list_events` et `calendar_search_events`. La recherche
+     couvre un an de part et d'autre du jour présent : « quelles étaient
+     mes réunions cette semaine ? » est une question aussi ordinaire que
+     celle qui porte sur la semaine suivante, et une fenêtre commençant à
+     l'instant de la question y répondait invariablement « aucune »
+     (signalé le 2026-09-04) ;
    - "L'assistant peut préparer des événements" expose
      `calendar_create_event` et `calendar_cancel_event` ;
    - "Ranger mes rappels dans cet agenda" confie le stockage des

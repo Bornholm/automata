@@ -193,3 +193,51 @@ func (s stubHost) GetSecret(context.Context, string, string, string) (string, bo
 func (s stubHost) SetSecret(context.Context, string, string, string, string) error { return nil }
 func (s stubHost) DeleteSecret(context.Context, string, string, string) error      { return nil }
 func (s stubHost) Notify(context.Context, string, string, string) error            { return nil }
+
+// La recherche par titre couvre le passé. Le 4 septembre 2026, une question
+// au passé — « quelles étaient mes réunions cette semaine ? » — ne pouvait
+// recevoir qu'« aucune » : la fenêtre commençait à l'instant de la question,
+// et la réunion du mercredi était derrière elle.
+func TestSearchWindow_ReachesIntoThePast(t *testing.T) {
+	now := time.Date(2026, 9, 4, 9, 24, 0, 0, time.UTC)
+	from, to := searchWindow(now)
+
+	mercredi := time.Date(2026, 9, 2, 14, 0, 0, 0, time.UTC)
+	if !from.Before(mercredi) {
+		t.Errorf("fenêtre = [%s, %s], la réunion du %s reste hors de portée", from, to, mercredi)
+	}
+	if !to.After(now) {
+		t.Errorf("fenêtre = [%s, %s], l'avenir n'est plus couvert", from, to)
+	}
+}
+
+// Le défaut de calendar_list_events, lui, part bien de maintenant : c'est
+// un choix, pas un oubli. Il doit rester dit dans le schéma, sans quoi le
+// modèle croit lister « la semaine » et ne voit que ce qui reste du jour.
+func TestListEventsSchema_SaysTheDefaultLeavesOutThePast(t *testing.T) {
+	p := newPlugin()
+	p.SetHostClient(stubHost{config: `{"server_url":"https://exemple.fr","username":"cam","allow_read":true}`})
+
+	out, err := p.ListTools(context.Background(), &proto.ListToolsInput{
+		Ctx: &proto.CallContext{OrgId: "home", MemberId: "cam"},
+	})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+
+	var schema, description string
+	for _, tool := range out.Tools {
+		if tool.Name == "calendar_list_events" {
+			schema, description = tool.InputSchemaJson, tool.Description
+		}
+	}
+	if schema == "" {
+		t.Fatal("calendar_list_events absent des outils exposés")
+	}
+	if !strings.Contains(schema, "leaves out") {
+		t.Errorf("le schéma ne dit pas ce que le défaut écarte: %s", schema)
+	}
+	if !strings.Contains(description, "PAST") {
+		t.Errorf("la description ne dit pas comment interroger le passé: %s", description)
+	}
+}

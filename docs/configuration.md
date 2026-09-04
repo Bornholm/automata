@@ -527,6 +527,7 @@ limits:
   tool_timeout: 30s
   max_tool_result_bytes: 16KiB
   max_tool_context_bytes: 64KiB
+  judge_attempts: 3          # facultatif
 ```
 
 `max_sequential_tool_calls` borne les tours d'appels d'outils enchaînés.
@@ -540,6 +541,22 @@ sur douze annoncées serait pire que tout refuser.
 `max_tool_context_bytes` plafonne leur cumul sur le tour. Les deux sont
 nécessaires : huit appels tenant chacun sous le plafond unitaire dépassent
 largement le contexte prévu. Toute réduction est signalée au modèle.
+
+`judge_attempts` borne les appels au juge pour un tour — le second modèle
+qui relit les réponses écrites sans aucun appel d'outil (rôle `judge`, voir
+[models.md](models.md)). C'est la seule limite facultative : absente, elle
+vaut 3. Le réglage existe parce qu'un modèle qui rend son avis hors schéma
+le fait par intermittence, et qu'un seul essai suffit alors à perdre la
+relecture.
+
+Les essais épuisés, le tour est ABANDONNÉ : la personne reçoit une invitation
+à réessayer, pas la réponse. Ce n'est pas de la prudence excessive — le fait
+qui a déclenché la relecture est certain (des outils étaient offerts, aucun
+n'a été appelé), et la réponse en attente est exactement celle dont plus
+personne ne peut dire si elle est inventée. Le 4 septembre 2026, rendue telle
+quelle, elle a annoncé un agenda vide qui ne l'était pas. Le compteur
+`unverified_replies` compte ces tours ; s'il monte, c'est le modèle du rôle
+`judge` qu'il faut regarder, pas celui de l'agent.
 
 ### system_prompt.org_overrides
 

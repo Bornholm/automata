@@ -737,6 +737,13 @@ type AgentLimits struct {
 	ToolTimeout            Duration `yaml:"tool_timeout"`
 	MaxToolResultBytes     ByteSize `yaml:"max_tool_result_bytes"`
 	MaxToolContextBytes    ByteSize `yaml:"max_tool_context_bytes"`
+	// JudgeAttempts plafonne les appels au juge pour un tour (voir
+	// internal/agent/judge.go). Le juge relit les réponses écrites sans
+	// aucun appel d'outil ; s'il ne se prononce pas après ces essais, le
+	// tour est abandonné plutôt que de rendre un texte invérifiable.
+	// Absent ou nul : défaut de l'application (3). Sans effet sur un agent
+	// qui n'orchestre pas.
+	JudgeAttempts int `yaml:"judge_attempts"`
 }
 
 // MCPServer décrit un serveur MCP accessible aux agents, et la façon dont

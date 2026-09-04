@@ -22,6 +22,10 @@ type fakeJudge struct {
 	calls     int
 	requests  []string
 	replies   []string
+	// failures est le nombre d'essais initiaux qui échouent avant que
+	// l'avis soit rendu. Il sert à distinguer une panne passagère — que la
+	// relance doit traverser — d'un juge durablement muet.
+	failures int
 }
 
 func (j *fakeJudge) ReviewGrounding(_ context.Context, _ model.OrgID, request, reply string) (agent.Grounding, error) {
@@ -31,6 +35,10 @@ func (j *fakeJudge) ReviewGrounding(_ context.Context, _ model.OrgID, request, r
 	j.calls++
 	j.requests = append(j.requests, request)
 	j.replies = append(j.replies, reply)
+
+	if j.calls <= j.failures {
+		return agent.Grounding{}, errors.New("avis du juge illisible")
+	}
 
 	return j.grounding, j.err
 }
@@ -127,9 +135,11 @@ func TestOrchestratorAgent_GroundedReplyPassesThrough(t *testing.T) {
 	}
 }
 
-// Un juge en panne ne coûte pas sa réponse à la personne qui attend : le
-// tour passe inchangé.
-func TestOrchestratorAgent_JudgeFailureLeavesTheReplyAlone(t *testing.T) {
+// Un juge qui ne se prononce pas, après tous ses essais, coûte le tour. La
+// réponse qui reste est celle dont personne ne peut dire si elle est
+// inventée — le 4 septembre 2026, c'était un agenda vide qui ne l'était pas.
+// Elle n'est pas envoyée : la personne est invitée à réessayer.
+func TestOrchestratorAgent_JudgeFailureAbandonsTheTurn(t *testing.T) {
 	judge := &fakeJudge{err: errors.New("modèle du rôle judge non résolu")}
 
 	client := &fakeCompletionClient{
@@ -139,18 +149,53 @@ func TestOrchestratorAgent_JudgeFailureLeavesTheReplyAlone(t *testing.T) {
 	}
 
 	a := agent.NewOrchestratorAgent(client, "system", "main",
-		map[string]delegation.Specialist{"agenda": &fakeSpecialist{}}, 5).WithJudge(judge)
+		map[string]delegation.Specialist{"agenda": &fakeSpecialist{}}, 5).
+		WithJudge(judge).
+		WithJudgeAttempts(2)
 
 	result, err := a.Execute(context.Background(), agent.Request{Input: "Quels sont mes rendez-vous ?"})
+	if !errors.Is(err, agent.ErrJudgeUnavailable) {
+		t.Fatalf("Execute = (%+v, %v), attendu ErrJudgeUnavailable", result, err)
+	}
+	if result.Reply != "" {
+		t.Errorf("une réponse invérifiable a été rendue: %q", result.Reply)
+	}
+	if judge.callCount() != 2 {
+		t.Errorf("2 essais attendus, obtenu %d", judge.callCount())
+	}
+}
+
+// La panne observée est intermittente : le même avis, redemandé au même
+// modèle, passe à l'essai suivant. Un tour ne doit pas mourir de ça.
+func TestOrchestratorAgent_JudgeIsRetriedBeforeGivingUp(t *testing.T) {
+	judge := &fakeJudge{
+		failures:  2,
+		grounding: agent.Grounding{Grounded: true},
+	}
+
+	client := &fakeCompletionClient{
+		responseFunc: func(turn int, opts *llm.ChatCompletionOptions) (llm.ChatCompletionResponse, error) {
+			return scriptedFinalResponse("Je n'ai pas d'idée pour ce soir."), nil
+		},
+	}
+
+	a := agent.NewOrchestratorAgent(client, "system", "main",
+		map[string]delegation.Specialist{"agenda": &fakeSpecialist{}}, 5).
+		WithJudge(judge).
+		WithJudgeAttempts(3)
+
+	result, err := a.Execute(context.Background(), agent.Request{Input: "Une idée pour ce soir ?"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-
-	if result.Reply != "Le service de calendrier est indisponible." {
-		t.Errorf("la réponse a été modifiée malgré un juge en panne: %q", result.Reply)
+	if result.Reply != "Je n'ai pas d'idée pour ce soir." {
+		t.Errorf("la réponse a été modifiée: %q", result.Reply)
+	}
+	if judge.callCount() != 3 {
+		t.Errorf("3 essais attendus (2 échecs puis l'avis), obtenu %d", judge.callCount())
 	}
 	if client.callCount() != 1 {
-		t.Errorf("aucune relance attendue, %d complétions", client.callCount())
+		t.Errorf("aucune relance du modèle attendue, %d complétions", client.callCount())
 	}
 }
 

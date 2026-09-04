@@ -95,13 +95,13 @@ func (p *Plugin) ListTools(ctx context.Context, in *proto.ListToolsInput) (*prot
 		tools = append(tools,
 			&proto.ToolDescriptor{
 				Name:            "calendar_list_events",
-				Description:     "List the events of the user's calendar between two dates (id, start, title).",
-				InputSchemaJson: `{"type":"object","properties":{"from":{"type":"string","description":"Start of the window, RFC 3339 date-time with offset. Defaults to now."},"to":{"type":"string","description":"End of the window, RFC 3339 date-time with offset. Defaults to seven days after 'from'."}}}`,
+				Description:     "List the events of the user's calendar between two dates (id, start, title). To answer a question about the PAST (\"what did I have this week?\"), pass an explicit 'from' in the past: the default window starts now and would show nothing.",
+				InputSchemaJson: `{"type":"object","properties":{"from":{"type":"string","description":"Start of the window, RFC 3339 date-time with offset. Defaults to now, which leaves out everything earlier today and before."},"to":{"type":"string","description":"End of the window, RFC 3339 date-time with offset. Defaults to seven days after 'from'."}}}`,
 				ReadOnly:        true,
 			},
 			&proto.ToolDescriptor{
 				Name:            "calendar_search_events",
-				Description:     "Search the user's calendar for events whose title matches the query, over the coming year.",
+				Description:     "Search the user's calendar for events whose title matches the query, over the past year and the coming year.",
 				InputSchemaJson: `{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`,
 				ReadOnly:        true,
 			})
@@ -257,6 +257,21 @@ func (p *Plugin) listEvents(ctx context.Context, sess *session, args map[string]
 	return &proto.CallToolOutput{ResultText: b.String()}, nil
 }
 
+// searchWindow borne la recherche par titre. Elle s'étend des deux côtés
+// de l'instant présent : « quelles étaient mes réunions cette semaine ? »
+// est une question aussi ordinaire que « qu'ai-je la semaine prochaine ? »,
+// et une fenêtre qui commence maintenant y répond invariablement « aucune »
+// — un vide indiscernable d'un agenda vraiment vide (signalé le
+// 2026-09-04).
+//
+// Un an de part et d'autre : au-delà, la recherche ramènerait surtout des
+// séries récurrentes anciennes, et le filtre textuel s'applique après le
+// rapatriement.
+func searchWindow(now time.Time) (from, to time.Time) {
+	now = now.UTC()
+	return now.AddDate(-1, 0, 0), now.AddDate(1, 0, 0)
+}
+
 func (p *Plugin) searchEvents(ctx context.Context, sess *session, args map[string]any) (*proto.CallToolOutput, error) {
 	query, _ := args["query"].(string)
 	query = strings.TrimSpace(query)
@@ -264,8 +279,8 @@ func (p *Plugin) searchEvents(ctx context.Context, sess *session, args map[strin
 		return toolError("the 'query' argument is required"), nil
 	}
 
-	now := p.now().UTC()
-	objects, err := sess.query(ctx, now, now.AddDate(1, 0, 0))
+	from, to := searchWindow(p.now())
+	objects, err := sess.query(ctx, from, to)
 	if err != nil {
 		return toolError(err.Error()), nil
 	}

@@ -618,6 +618,40 @@ func TestLoad_AggregatesMultipleErrors(t *testing.T) {
 	}
 }
 
+// judge_attempts est la seule limite facultative : les configurations
+// écrites avant elle doivent continuer de démarrer, et zéro y vaut « défaut
+// de l'application », jamais « aucun essai ».
+func TestLoad_JudgeAttemptsIsOptional(t *testing.T) {
+	setBaseEnv(t)
+
+	cfg, err := config.Load(writeYAML(t, baseYAML))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	for name, agent := range cfg.Agents {
+		if agent.Limits.JudgeAttempts != 0 {
+			t.Errorf("agents.%s.limits.judge_attempts = %d, attendu 0 (absent)", name, agent.Limits.JudgeAttempts)
+		}
+	}
+}
+
+// Négative, en revanche, elle n'a aucun sens : c'est une faute de frappe,
+// pas une désactivation.
+func TestLoad_InvalidJudgeAttempts(t *testing.T) {
+	setBaseEnv(t)
+
+	content := strings.Replace(baseYAML, "max_actions_per_turn: 10", "max_actions_per_turn: 10\n      judge_attempts: -1", 1)
+
+	_, err := config.Load(writeYAML(t, content))
+	if err == nil {
+		t.Fatal("Load: erreur attendue pour judge_attempts négatif")
+	}
+	if !strings.Contains(err.Error(), "judge_attempts") {
+		t.Errorf("erreur = %v, attendu mention de judge_attempts", err)
+	}
+}
+
 func TestLoad_InvalidAgentLimitZero(t *testing.T) {
 	setBaseEnv(t)
 

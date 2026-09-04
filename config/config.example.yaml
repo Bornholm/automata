@@ -182,6 +182,11 @@ agents:
       max_tool_result_bytes: 16KiB
       # Budget CUMULÉ des résultats d'outils réinjectés durant un échange.
       max_tool_context_bytes: 64KiB
+      # Appels au juge — le second modèle qui relit les réponses écrites
+      # sans aucun appel d'outil — avant d'abandonner le tour. Facultatif :
+      # absent, il vaut 3. Les essais épuisés, la personne reçoit une
+      # invitation à réessayer plutôt qu'une réponse invérifiable.
+      judge_attempts: 3
 
   agenda:
     type: specialist

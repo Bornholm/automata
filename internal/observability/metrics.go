@@ -57,6 +57,7 @@ type Metrics struct {
 	profileLinks             atomic.Int64
 	profileLinkRepairs       atomic.Int64
 	ungroundedReplies        atomic.Int64
+	unverifiedReplies        atomic.Int64
 	walletDebits             atomic.Int64
 	servicePauses            atomic.Int64
 	usageRecords             atomic.Int64
@@ -390,6 +391,18 @@ func (m *Metrics) IncUngroundedReply() {
 	m.ungroundedReplies.Add(1)
 }
 
+// IncUnverifiedReply incrémente le compteur de tours abandonnés faute
+// d'avis du juge : la réponse n'appelait aucun outil, le juge n'a pas pu la
+// relire, et elle n'a donc pas été envoyée. Un compteur qui monte désigne le
+// modèle du rôle « judge », pas celui de l'agent — c'est la vérification qui
+// est en panne, pas la réponse.
+func (m *Metrics) IncUnverifiedReply() {
+	if m == nil {
+		return
+	}
+	m.unverifiedReplies.Add(1)
+}
+
 func (m *Metrics) IncProfileLinkRepair() {
 	if m == nil {
 		return
@@ -550,6 +563,7 @@ func (m *Metrics) Snapshot() map[string]any {
 		"profile_links":               m.profileLinks.Load(),
 		"profile_link_repairs":        m.profileLinkRepairs.Load(),
 		"ungrounded_replies":          m.ungroundedReplies.Load(),
+		"unverified_replies":          m.unverifiedReplies.Load(),
 		"wallet_debits":               m.walletDebits.Load(),
 		"service_pauses":              m.servicePauses.Load(),
 		"usage_records":               m.usageRecords.Load(),

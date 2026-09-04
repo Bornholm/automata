@@ -31,6 +31,24 @@ func TestParseGrounding(t *testing.T) {
 			want: Grounding{Grounded: false, Reason: "you claimed to have sent it"},
 		},
 		{
+			name: "objet noyé dans une phrase",
+			raw:  `Voici mon avis : {"grounded": false, "reason": "you claimed the calendar was empty without reading it"} — fin.`,
+			want: Grounding{Grounded: false, Reason: "you claimed the calendar was empty without reading it"},
+		},
+		{
+			name: "virgule finale et guillemets simples",
+			raw:  "{'grounded': false, 'reason': 'you never called a tool',}",
+			want: Grounding{Grounded: false, Reason: "you never called a tool"},
+		},
+		{
+			// La panne du 4 septembre 2026 : « invalid character 'g' »,
+			// un avis rendu sans accolades. Il coûtait sa relecture au
+			// tour, alors que rien n'y était ambigu.
+			name: "objet sans accolades",
+			raw:  "grounded: false, reason: \"you stated no meeting was found without reading the calendar\"",
+			want: Grounding{Grounded: false, Reason: "you stated no meeting was found without reading the calendar"},
+		},
+		{
 			name:    "texte libre",
 			raw:     "Je pense que la réponse est correcte.",
 			wantErr: true,

@@ -2,7 +2,7 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -126,38 +126,65 @@ func judgePrompt(request, reply string) string {
 
 // parseGrounding lit l'avis. Un texte illisible n'est pas un verdict : il
 // remonte en erreur, et le tour passe inchangé.
+//
+// La lecture est volontairement tolérante. Le schéma JSON est demandé au
+// modèle, mais il n'est pas toujours respecté — et le 4 septembre 2026, un
+// avis rendu hors schéma a laissé passer une réponse inventée sur l'agenda,
+// alors que le juge était là pour ça. llm.ParseJSON isole le bloc entre
+// accolades dans le texte et le répare avant de le lire : clôture Markdown,
+// virgule finale, guillemets simples, phrase d'introduction. Ce qui reste
+// illisible remonte AVEC le brut tronqué, sans quoi la prochaine panne se
+// diagnostiquera encore à la première lettre du message d'erreur.
 func parseGrounding(raw string) (Grounding, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return Grounding{}, fmt.Errorf("agent: avis du juge vide")
 	}
 
-	// Certains modèles encadrent le JSON d'une clôture Markdown malgré le
-	// schéma : la retirer coûte deux lignes et évite de jeter un avis
-	// parfaitement lisible.
-	if trimmed, ok := stripJSONFence(raw); ok {
-		raw = trimmed
+	// Un avis sans la moindre accolade — « grounded: false » sur deux
+	// lignes — n'offre aucun bloc à isoler. Les accolades posées autour du
+	// tout donnent à la réparation de quoi travailler ; si ce n'était pas
+	// un objet déguisé, la lecture échoue comme avant.
+	candidate := raw
+	if !strings.ContainsRune(candidate, '{') {
+		candidate = "{" + candidate + "}"
 	}
 
-	var grounding Grounding
-	if err := json.Unmarshal([]byte(raw), &grounding); err != nil {
-		return Grounding{}, fmt.Errorf("agent: avis du juge illisible: %w", err)
+	items, err := llm.ParseJSON[groundingPayload](llm.NewMessage(llm.RoleAssistant, candidate))
+	if err != nil {
+		return Grounding{}, fmt.Errorf("agent: avis du juge illisible (%s): %w", truncateForLog(raw), err)
+	}
+	// Aucun bloc trouvé : llm.ParseJSON rend alors une liste vide SANS
+	// erreur. Et une phrase libre entourée d'accolades se répare en objet
+	// VIDE, qui vaudrait « grounded: false » — un verdict négatif tiré d'un
+	// texte qui n'en portait aucun. Le verdict n'existe que si le champ
+	// était là, d'où le pointeur.
+	if len(items) == 0 || items[0].Grounded == nil {
+		return Grounding{}, fmt.Errorf("agent: avis du juge illisible (%s): aucun verdict dans la réponse", truncateForLog(raw))
 	}
 
-	return grounding, nil
+	return Grounding{Grounded: *items[0].Grounded, Reason: items[0].Reason}, nil
 }
 
-// stripJSONFence retire une clôture ```json … ``` autour d'un texte.
-func stripJSONFence(raw string) (string, bool) {
-	if !strings.HasPrefix(raw, "```") {
-		return raw, false
+// groundingPayload est l'avis tel qu'il arrive du modèle. Grounded y est un
+// pointeur pour distinguer « le juge a répondu faux » de « le juge n'a rien
+// répondu du tout » : confondre les deux relancerait le modèle sur un
+// verdict que personne n'a rendu.
+type groundingPayload struct {
+	Grounded *bool  `json:"grounded"`
+	Reason   string `json:"reason"`
+}
+
+// truncateForLog borne un brut de modèle destiné à une ligne de journal.
+func truncateForLog(raw string) string {
+	const max = 200
+
+	raw = strings.Join(strings.Fields(raw), " ")
+	if len(raw) <= max {
+		return raw
 	}
 
-	if idx := strings.IndexByte(raw, '\n'); idx >= 0 {
-		raw = raw[idx+1:]
-	}
-
-	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(raw), "```")), true
+	return raw[:max] + "…"
 }
 
 // ungroundedNotice est la consigne de la relance. Elle transporte la raison
@@ -177,12 +204,30 @@ Answer the request above now, one of two ways and no other:
 
 Write to the person, as if for the first time: they never saw the discarded attempt and are waiting for their answer. Do not mention this note, do not apologise, do not ask permission to use a tool you already have — use it.`
 
+// defaultJudgeAttempts est le nombre d'appels au juge pour un tour, faute de
+// réglage. Trois : la panne observée est intermittente — un modèle qui rend
+// son avis hors schéma une fois sur deux —, et deux essais de plus suffisent
+// à la traverser sans faire attendre la personne pour rien.
+const defaultJudgeAttempts = 3
+
+// ErrJudgeUnavailable est rendue quand le juge n'a pas pu se prononcer après
+// tous ses essais. Le tour échoue : l'ingress la journalise en ERREUR — c'est
+// une panne, l'alerting doit la voir — et envoie ingress.FallbackReply, qui
+// invite à réessayer.
+var ErrJudgeUnavailable = errors.New("agent: juge indisponible après tous les essais")
+
 // reviewGrounding fait relire la réponse par le juge lorsque le tour n'a
 // appelé aucun outil, et relance le modèle UNE fois si l'avis est négatif.
 //
-// Tout ce qui peut mal se passer laisse le tour inchangé : pas de juge, juge
-// en erreur, avis illisible, relance en échec. La vérification est un
-// filet, jamais un point de panne de plus sur le chemin de la réponse.
+// Ce qui reste sans conséquence : pas de juge du tout, verdict sans raison,
+// relance en échec. Le tour passe alors inchangé.
+//
+// Ce qui coûte le tour : un juge qui ne se prononce pas, après tous ses
+// essais. Le fait qui a DÉCLENCHÉ la relecture est certain — des outils
+// étaient offerts, aucun n'a été appelé —, et la réponse qui reste sur les
+// bras est précisément celle dont personne ne peut dire si elle est inventée.
+// Le 4 septembre 2026, rendre ce texte tel quel a donné à quelqu'un un
+// agenda vide qui ne l'était pas. Mieux vaut demander de réessayer.
 func (a *OrchestratorAgent) reviewGrounding(
 	ctx context.Context,
 	client llm.ChatCompletionClient,
@@ -192,22 +237,17 @@ func (a *OrchestratorAgent) reviewGrounding(
 	maxIterations int,
 	input string,
 	result toolLoopResult,
-) toolLoopResult {
+) (toolLoopResult, error) {
 	if a.judge == nil || !answeredWithoutTools(tools, result) || strings.TrimSpace(result.Text) == "" {
-		return result
+		return result, nil
 	}
 
-	grounding, err := a.judge.ReviewGrounding(ctx, identity.OrgID, input, result.Text)
+	grounding, err := a.askJudge(ctx, identity, input, result.Text)
 	if err != nil {
-		if a.logger != nil {
-			a.logger.WarnContext(ctx, "agent: juge indisponible, réponse rendue telle quelle",
-				"agent", a.agentName, "error", err)
-		}
-
-		return result
+		return toolLoopResult{}, err
 	}
 	if grounding.Grounded {
-		return result
+		return result, nil
 	}
 
 	reason := strings.TrimSpace(grounding.Reason)
@@ -220,7 +260,7 @@ func (a *OrchestratorAgent) reviewGrounding(
 				"agent", a.agentName)
 		}
 
-		return result
+		return result, nil
 	}
 
 	if a.logger != nil {
@@ -244,7 +284,7 @@ func (a *OrchestratorAgent) reviewGrounding(
 				"agent", a.agentName, "error", err)
 		}
 
-		return result
+		return result, nil
 	}
 
 	// Les résultats d'outils du tour initial restent des sources pour la
@@ -258,7 +298,55 @@ func (a *OrchestratorAgent) reviewGrounding(
 			"agent", a.agentName, "tool_calls", retried.ToolCalls)
 	}
 
-	return retried
+	return retried, nil
+}
+
+// askJudge demande l'avis, et le redemande tant qu'il reste des essais. Un
+// juge qui rend un avis illisible le rend souvent par intermittence : le
+// même texte relu par le même modèle passe à l'essai suivant, et cela ne
+// coûte qu'un aller-retour.
+//
+// L'annulation du contexte, elle, ne se réessaie pas : plus personne
+// n'attend la réponse.
+func (a *OrchestratorAgent) askJudge(
+	ctx context.Context,
+	identity model.ExecutionIdentity,
+	input string,
+	reply string,
+) (Grounding, error) {
+	attempts := a.judgeAttempts
+	if attempts <= 0 {
+		attempts = defaultJudgeAttempts
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		grounding, err := a.judge.ReviewGrounding(ctx, identity.OrgID, input, reply)
+		if err == nil {
+			return grounding, nil
+		}
+		lastErr = err
+
+		if a.logger != nil {
+			a.logger.WarnContext(ctx, "agent: avis du juge non rendu",
+				"agent", a.agentName, "essai", attempt, "essais", attempts, "error", err)
+		}
+
+		if ctx.Err() != nil {
+			break
+		}
+	}
+
+	if a.logger != nil {
+		a.logger.ErrorContext(ctx, "agent: juge indisponible, tour abandonné",
+			"agent", a.agentName,
+			"essais", attempts,
+			"error", lastErr,
+			"remède", "réponse non vérifiable rendue au lieu d'être envoyée ; vérifier le modèle du rôle judge")
+	}
+	a.metrics.IncUnverifiedReply()
+
+	return Grounding{}, fmt.Errorf("%w (%d essais): %w", ErrJudgeUnavailable, attempts, lastErr)
 }
 
 // resolvedJudge est le juge adossé au catalogue de modèles : il sert le

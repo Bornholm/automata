@@ -276,6 +276,13 @@ func validateAgentLimits(prefix string, limits AgentLimits) []error {
 		errs = append(errs, fmt.Errorf("%s.limits.max_tool_context_bytes: doit être strictement positif (valeur actuelle: %d)", prefix, limits.MaxToolContextBytes))
 	}
 
+	// Seule limite facultative : elle est arrivée après les configurations
+	// existantes, et l'absence de réglage doit continuer de démarrer. Zéro
+	// vaut donc « défaut de l'application », jamais « aucun essai ».
+	if limits.JudgeAttempts < 0 {
+		errs = append(errs, fmt.Errorf("%s.limits.judge_attempts: doit être positif, ou absent pour le défaut (valeur actuelle: %d)", prefix, limits.JudgeAttempts))
+	}
+
 	return errs
 }
 

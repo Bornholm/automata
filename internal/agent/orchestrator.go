@@ -76,6 +76,9 @@ type OrchestratorAgent struct {
 	// judge relit les réponses produites sans aucun appel d'outil ; nil
 	// quand aucun modèle n'est affecté au rôle « judge » (voir judge.go).
 	judge Judge
+	// judgeAttempts plafonne les appels au juge pour UN tour. <= 0 retombe
+	// sur defaultJudgeAttempts.
+	judgeAttempts int
 }
 
 // WithJudge câble le juge des réponses sans appel d'outil. Nil désactive la
@@ -83,6 +86,13 @@ type OrchestratorAgent struct {
 // affecté au rôle fonctionne exactement comme avant.
 func (a *OrchestratorAgent) WithJudge(judge Judge) *OrchestratorAgent {
 	a.judge = judge
+	return a
+}
+
+// WithJudgeAttempts fixe le nombre d'appels au juge avant de renoncer au
+// tour (agents.<nom>.limits.judge_attempts). <= 0 laisse le défaut.
+func (a *OrchestratorAgent) WithJudgeAttempts(attempts int) *OrchestratorAgent {
+	a.judgeAttempts = attempts
 	return a
 }
 
@@ -222,7 +232,10 @@ func (a *OrchestratorAgent) Execute(ctx context.Context, req Request) (Result, e
 	// FAIT : une adresse que rien n'a fournie au modèle a été composée par
 	// lui (voir unsourced_url.go). Chacune rend le tour au modèle une fois,
 	// ses outils toujours offerts ; aucune ne réécrit sa réponse.
-	loopResult = a.reviewGrounding(ctx, client, req.Identity, messages, tools, maxIterations, req.Input, loopResult)
+	loopResult, err = a.reviewGrounding(ctx, client, req.Identity, messages, tools, maxIterations, req.Input, loopResult)
+	if err != nil {
+		return Result{}, err
+	}
 	loopResult = a.verifyURLSources(ctx, client, messages, tools, maxIterations, loopResult)
 
 	proposals := collector.take()

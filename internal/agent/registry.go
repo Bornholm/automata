@@ -229,7 +229,8 @@ func NewRegistryWithMemory(cfg *config.Config, memoryTools MemoryTools, reminder
 			// Le juge n'agit que si un modèle est affecté au rôle
 			// « judge » : le câbler ici ne l'active pas, cela le rend
 			// possible (voir judge.go).
-			WithJudge(NewJudge(clientResolver))
+			WithJudge(NewJudge(clientResolver)).
+			WithJudgeAttempts(agentCfg.Limits.JudgeAttempts)
 
 		agentMemoryTools := memoryTools
 		agentMemoryTools.Search = memoryTools.Search && agentCfg.Memory.Search
