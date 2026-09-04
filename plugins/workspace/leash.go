@@ -121,21 +121,27 @@ func (c *LeashClient) Execute(ctx context.Context, orgID, memberID, script strin
 	return c.executeWithKey(ctx, orgID, memberID, script, "", commandTimeout)
 }
 
-// Fetch télécharge une vidéo publique dans le workspace du membre, par la
-// policy réseau de LeaSH. L'URL est déjà validée par l'appelant (schéma,
-// liste blanche de domaines) ; le script fetch-video la revalide de son
-// côté et encadre yt-dlp.
-func (c *LeashClient) Fetch(ctx context.Context, orgID, memberID, url, name string) (string, bool, error) {
+// RunFetch lance un des wrappers réseau de la policy « fetch » dans le
+// workspace du membre. Le nom du script est choisi par l'appelant parmi
+// les capacités déclarées, jamais construit à partir d'une entrée du
+// modèle ; les arguments, eux, en viennent, et sont échappés ici.
+//
+// L'URL est déjà validée par l'appelant (schéma, liste blanche de
+// domaines) ; le script la revalide de son côté et encadre yt-dlp.
+func (c *LeashClient) RunFetch(ctx context.Context, orgID, memberID, script string, args ...string) (string, bool, error) {
 	if !c.fetchConfigured() {
 		return "", false, fmt.Errorf("workspace: %s doit être renseigné pour télécharger", envFetchAPIKey)
 	}
 
-	// Un seul argument par valeur, entre apostrophes simples : la policy
-	// n'autorise qu'une commande et aucun subshell, mais rien ne justifie
-	// de laisser une URL non échappée atteindre l'analyseur de LeaSH.
-	script := fmt.Sprintf("fetch-video '%s' '%s'", shellSingleQuoted(url), shellSingleQuoted(name))
+	// Chaque valeur entre apostrophes simples : la policy n'autorise qu'une
+	// commande et aucun subshell, mais rien ne justifie de laisser une URL
+	// non échappée atteindre l'analyseur de LeaSH.
+	command := script
+	for _, arg := range args {
+		command += fmt.Sprintf(" '%s'", shellSingleQuoted(arg))
+	}
 
-	return c.executeWithKey(ctx, orgID, memberID, script, c.fetchAPIKey, fetchTimeout)
+	return c.executeWithKey(ctx, orgID, memberID, command, c.fetchAPIKey, fetchTimeout)
 }
 
 // shellSingleQuoted neutralise l'apostrophe simple dans une valeur entre

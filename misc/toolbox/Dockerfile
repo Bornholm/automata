@@ -99,7 +99,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       fonts-noto-color-emoji \
       # Téléchargement de vidéos publiques : utilisable UNIQUEMENT depuis
       # la policy « fetch » (la seule à ouvrir le réseau), et seulement à
-      # travers le script fetch-video — `yt-dlp` n'est dans aucune
+      # travers les scripts fetch-video et fetch-subtitles — `yt-dlp`
+      # n'est dans aucune
       # allowlist. Installé par pip, la version Debian étant périmée avant
       # même la sortie de l'image.
       python3-pip \
@@ -140,7 +141,7 @@ RUN chmod 0755 /usr/local/bin/office-convert
 # curl_cffi est une bibliothèque Python : elle n'ajoute aucun binaire, et
 # n'entre donc dans aucune allowlist. Comme python3 et deno, elle n'est
 # atteignable qu'en dépendance de yt-dlp, lui-même invocable seulement à
-# travers fetch-video.
+# travers ses wrappers.
 RUN pip3 install --no-cache-dir --break-system-packages -U "yt-dlp[default,curl-cffi]"
 
 # Le runtime JS que yt-dlp cherche pour résoudre le défi de signature de
@@ -150,11 +151,14 @@ RUN pip3 install --no-cache-dir --break-system-packages -U "yt-dlp[default,curl-
 # ocrmypdf.
 COPY --from=deno /usr/local/bin/deno /usr/local/bin/deno
 
-# fetch-video encadre yt-dlp (pas de --exec, pas de playlist, plafonds de
-# taille et de durée, schéma et hôte contrôlés). C'est le SEUL binaire
-# autorisé par policies/fetch.yaml, la seule policy à ouvrir le réseau.
+# Les deux wrappers de yt-dlp (pas de --exec, pas de playlist, schéma et
+# hôte contrôlés) : fetch-video rapporte la vidéo sous des plafonds de
+# taille et de durée, fetch-subtitles rapporte les seuls sous-titres sans
+# jamais télécharger la vidéo. Ce sont les seuls binaires autorisés par
+# policies/fetch.yaml, la seule policy à ouvrir le réseau.
 COPY fetch-video /usr/local/bin/fetch-video
-RUN chmod 0755 /usr/local/bin/fetch-video
+COPY fetch-subtitles /usr/local/bin/fetch-subtitles
+RUN chmod 0755 /usr/local/bin/fetch-video /usr/local/bin/fetch-subtitles
 
 RUN useradd --create-home --uid 1000 --shell /usr/sbin/nologin leash
 

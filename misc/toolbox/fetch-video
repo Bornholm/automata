@@ -6,9 +6,10 @@
 #   fetch-video https://www.youtube.com/watch?v=XXXX
 #   fetch-video https://vimeo.com/123456 conference
 #
-# Ce script est le SEUL binaire autorisé par policies/fetch.yaml, et cette
-# policy est la seule à lever `unshare.network`. Il existe pour que le
-# réseau reste attaché à UNE opération précise, et jamais à un shell : la
+# Ce script est l'un des deux binaires autorisés par policies/fetch.yaml
+# (avec fetch-subtitles), et cette policy est la seule à lever
+# `unshare.network`. Il existe pour que le réseau reste attaché à UNE
+# opération précise, et jamais à un shell : la
 # policy « toolbox » (ffmpeg, imagemagick, LibreOffice…) demeure étanche,
 # ce qui est la condition pour y exécuter des commandes sans confirmation
 # humaine.

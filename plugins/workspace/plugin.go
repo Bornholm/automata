@@ -69,10 +69,15 @@ func (p *Plugin) Describe(context.Context, *proto.DescribeRequest) (*proto.Plugi
 		"so \"send me that file\", \"give me the video back\" or \"make it smaller and send it\" are all for this agent"
 
 	if p.leash.fetchConfigured() {
-		description += " Peut aussi télécharger une vidéo publique depuis les sites autorisés par l'exploitant."
+		description += " Peut aussi télécharger une vidéo publique, ou ses seuls sous-titres, depuis les sites autorisés par l'exploitant."
 		subAgentDescription += ". It can also DOWNLOAD a public video from a URL into the workspace before editing it — " +
 			"allowed sites: " + strings.Join(downloadDomains(), ", ") +
-			" — so a request like \"download this video and crop it\" is for this agent, not something to refuse"
+			" — so a request like \"download this video and crop it\" is for this agent, not something to refuse. " +
+			// Sans cette phrase, l'orchestrateur ne délègue pas : « résume
+			// cette vidéo » ne ressemble pas à de l'édition de fichier, et
+			// il répond de lui-même qu'il ne sait pas regarder une vidéo.
+			"It can READ WHAT A VIDEO SAYS by fetching its subtitles, without downloading the video: " +
+			"\"summarise this video\", \"what does this talk say about X\", \"find the passage where they mention Y\" are all for this agent"
 	}
 
 	return &proto.PluginDescriptor{
@@ -97,7 +102,9 @@ func (p *Plugin) Describe(context.Context, *proto.DescribeRequest) (*proto.Plugi
 const workspaceSystemPrompt = "You are a shell expert working inside an isolated sandbox with ffmpeg, imagemagick, pandoc and LibreOffice available. " +
 	"You have no network access and no tools other than the ones listed.\n\n" +
 	"When download_video is available, you can also fetch a public video by URL into the workspace before editing it; " +
-	"only the sites listed in that tool's description are reachable, and nothing else on the network is.\n\n" +
+	"only the sites listed in that tool's description are reachable, and nothing else on the network is. " +
+	"To answer a question about what a video SAYS — summarise it, search it — use download_subtitles instead and load the " +
+	"summarize-video-from-subtitles skill: the video itself is minutes of download and megabytes you would have no use for.\n\n" +
 	"Your workspace persists between messages for about a day: files you imported or produced earlier are still there. " +
 	"For anything meant to last longer there is the locker, permanent storage the user keeps across months. " +
 	"When the user asks you to keep, store or hold on to a document, call locker_save — the workspace alone would lose it. " +
@@ -164,7 +171,10 @@ func (p *Plugin) ListTools(context.Context, *proto.ListToolsInput) (*proto.ListT
 	}
 
 	if p.leash.fetchConfigured() {
-		out.Tools = append(out.Tools, downloadTool(downloadDomains()))
+		domains := downloadDomains()
+		for _, capability := range fetchCapabilities {
+			out.Tools = append(out.Tools, fetchTool(capability, domains))
+		}
 	}
 
 	// share_file n'existe que si l'hôte peut réellement fabriquer un lien :
@@ -196,22 +206,61 @@ func shareTool() *proto.ToolDescriptor {
 	}
 }
 
-// downloadTool décrit download_video. Monté seulement quand l'exploitant a
-// configuré la clé de la policy réseau : sans elle, l'outil n'existe pas
-// pour le modèle, plutôt que d'échouer à l'usage.
-func downloadTool(domains []string) *proto.ToolDescriptor {
+// fetchTool décrit l'outil d'une capacité de téléchargement. Ces outils ne
+// sont montés que si l'exploitant a configuré la clé de la policy réseau :
+// sans elle, ils n'existent pas pour le modèle, plutôt que d'échouer à
+// l'usage.
+//
+// La liste des domaines est reprise dans CHAQUE description : le modèle
+// choisit son outil sur cette seule ligne, et ce qui n'y figure pas
+// n'existe pas pour lui.
+func fetchTool(capability fetchCapability, domains []string) *proto.ToolDescriptor {
 	return &proto.ToolDescriptor{
-		Name: "download_video",
-		Description: "Download a public video into your workspace so you can edit it. " +
-			"Only these sites are allowed: " + strings.Join(domains, ", ") + ". " +
-			"Playlists are not downloaded, only a single video, capped in size and duration.",
-		InputSchemaJson: `{"type":"object","properties":{"url":{"type":"string","description":"Public URL of the video page."},"name":{"type":"string","description":"Optional output name without extension (letters, digits, dashes)."}},"required":["url"]}`,
+		Name: capability.Tool,
+		Description: capability.Purpose +
+			" Only these sites are allowed: " + strings.Join(domains, ", ") + ".",
+		InputSchemaJson: fetchSchema(capability),
 		// read_only comme run_command, et pour la même raison : la
-		// frontière est le bac à sable. Celui-ci n'expose QUE fetch-video,
-		// et n'écrit que dans le workspace du membre.
-		ReadOnly:       true,
+		// frontière est le bac à sable. Celui-ci n'expose que les scripts
+		// listés par policies/fetch.yaml, et n'écrit que dans le workspace
+		// du membre.
+		ReadOnly: true,
+		// Le plafond est celui de la policy « fetch » (max_duration 600 s),
+		// pas celui de la capacité : l'hôte doit laisser LeaSH rendre son
+		// verdict plutôt que de couper avant lui. Une capacité brève y tient
+		// sans y toucher.
 		TimeoutSeconds: 630,
 	}
+}
+
+// fetchSchema compose le schéma d'entrée : url et name, communs à toutes
+// les capacités, puis les paramètres propres à celle-ci. Construit plutôt
+// qu'écrit à la main — un schéma JSON recopié se désynchronise du code
+// sans que rien ne le signale.
+func fetchSchema(capability fetchCapability) string {
+	properties := map[string]any{
+		"url":  map[string]any{"type": "string", "description": "Public URL of the video page."},
+		"name": map[string]any{"type": "string", "description": "Optional output name without extension (letters, digits, dashes)."},
+	}
+	for _, param := range capability.Params {
+		description := param.Description
+		if param.Default != "" {
+			description += " Default: " + param.Default + "."
+		}
+		properties[param.Name] = map[string]any{"type": "string", "description": description}
+	}
+
+	schema, err := json.Marshal(map[string]any{
+		"type":       "object",
+		"properties": properties,
+		"required":   []string{"url"},
+	})
+	if err != nil {
+		// Le contenu est entièrement statique : une erreur ici serait un
+		// bug de construction, pas une condition d'exécution.
+		panic(fmt.Sprintf("workspace: schéma de %s non sérialisable: %v", capability.Tool, err))
+	}
+	return string(schema)
 }
 
 // CallTool implements proto.AutomataPluginServer.
@@ -224,13 +273,17 @@ func (p *Plugin) CallTool(ctx context.Context, in *proto.CallToolInput) (*proto.
 		return errorOutput("the workspace could not be identified"), nil
 	}
 
+	// Les capacités de téléchargement sont des données, pas des branches :
+	// voir fetchCapabilities.
+	if capability, ok := lookupFetchCapability(in.Name); ok {
+		return p.fetch(ctx, in, capability)
+	}
+
 	switch in.Name {
 	case "run_command":
 		return p.runCommand(ctx, in)
 	case "list_files":
 		return p.listFiles(ctx, in)
-	case "download_video":
-		return p.downloadVideo(ctx, in)
 	case "share_file":
 		return p.shareFile(ctx, in)
 	case "locker_list":
@@ -273,33 +326,25 @@ func (p *Plugin) runCommand(ctx context.Context, in *proto.CallToolInput) (*prot
 	return &proto.CallToolOutput{ResultText: text, IsError: isError}, nil
 }
 
-// downloadVideo télécharge une vidéo publique dans le workspace, via le
-// bac à sable réseau (policy « fetch », clé distincte). L'URL est validée
-// ici contre la liste blanche de l'exploitant AVANT d'atteindre LeaSH.
-func (p *Plugin) downloadVideo(ctx context.Context, in *proto.CallToolInput) (*proto.CallToolOutput, error) {
-	// Le schéma nomme le paramètre « url », mais un modèle en invente
-	// volontiers une variante (video_url, link…) et l'outil paraît alors
-	// cassé alors qu'il n'a rien reçu. On accepte les synonymes plutôt que
-	// de renvoyer une erreur que le modèle interprète comme une panne.
-	var args struct {
-		URL      string `json:"url"`
-		VideoURL string `json:"video_url"`
-		Link     string `json:"link"`
-		Name     string `json:"name"`
-		Output   string `json:"output"`
-	}
+// fetch exécute une capacité de téléchargement dans le bac à sable réseau
+// (policy « fetch », clé distincte). L'URL est validée ICI contre la liste
+// blanche de l'exploitant, avant même d'atteindre LeaSH — le script la
+// revalide ensuite de son côté.
+func (p *Plugin) fetch(ctx context.Context, in *proto.CallToolInput, capability fetchCapability) (*proto.CallToolOutput, error) {
+	var args map[string]any
 	if in.ArgumentsJson != "" {
 		if err := json.Unmarshal([]byte(in.ArgumentsJson), &args); err != nil {
 			return errorOutput("invalid parameters: pass {\"url\": \"https://...\"}"), nil
 		}
 	}
 
-	rawURL := cmp.Or(args.URL, args.VideoURL, args.Link)
+	// Le schéma nomme le paramètre « url », mais un modèle en invente
+	// volontiers une variante (video_url, link…) et l'outil paraît alors
+	// cassé alors qu'il n'a rien reçu. On accepte les synonymes plutôt que
+	// de renvoyer une erreur que le modèle interprète comme une panne.
+	rawURL := stringArg(args, "url", "video_url", "link")
 	if rawURL == "" {
 		return errorOutput("the 'url' parameter is required: pass {\"url\": \"https://...\"}"), nil
-	}
-	if args.Name == "" {
-		args.Name = args.Output
 	}
 
 	target, err := validateDownloadURL(rawURL, downloadDomains())
@@ -308,22 +353,36 @@ func (p *Plugin) downloadVideo(ctx context.Context, in *proto.CallToolInput) (*p
 		// cette trace, un téléchargement refusé est indiscernable d'un
 		// téléchargement en panne côté exploitation.
 		slog.InfoContext(ctx, "workspace: téléchargement refusé",
-			"org_id", in.Ctx.OrgId, "reason", err.Error())
+			"org_id", in.Ctx.OrgId, "outil", capability.Tool, "reason", err.Error())
 		return errorOutput(err.Error()), nil
 	}
-	name, err := validateOutputName(args.Name)
+
+	name, err := validateOutputName(stringArg(args, "name", "output"))
 	if err != nil {
 		return errorOutput(err.Error()), nil
 	}
 
-	text, isError, err := p.leash.Fetch(ctx, in.Ctx.OrgId, in.Ctx.MemberId, target, name)
+	// Les arguments propres à la capacité suivent, dans l'ordre du
+	// tableau : c'est le contrat positionnel des scripts de misc/toolbox.
+	scriptArgs := []string{target, name}
+	for _, param := range capability.Params {
+		value, err := param.validate(stringArg(args, param.Name))
+		if err != nil {
+			return errorOutput(err.Error()), nil
+		}
+		scriptArgs = append(scriptArgs, value)
+	}
+
+	text, isError, err := p.leash.RunFetch(ctx, in.Ctx.OrgId, in.Ctx.MemberId, capability.Script, scriptArgs...)
 	if err != nil {
 		// Journaux : jamais l'URL, qui est du contenu utilisateur.
-		slog.WarnContext(ctx, "workspace: téléchargement en échec", "org_id", in.Ctx.OrgId, "error", err)
-		return errorOutput(fmt.Sprintf("the video could not be downloaded: %v", err)), nil
+		slog.WarnContext(ctx, "workspace: téléchargement en échec",
+			"org_id", in.Ctx.OrgId, "outil", capability.Tool, "error", err)
+		return errorOutput(fmt.Sprintf("the download failed: %v", err)), nil
 	}
 
-	slog.InfoContext(ctx, "workspace: vidéo téléchargée", "org_id", in.Ctx.OrgId, "is_error", isError)
+	slog.InfoContext(ctx, "workspace: téléchargement terminé",
+		"org_id", in.Ctx.OrgId, "outil", capability.Tool, "is_error", isError)
 
 	if isError {
 		// Un échec de yt-dlp se lit mal : « This video is not available »
@@ -335,8 +394,20 @@ func (p *Plugin) downloadVideo(ctx context.Context, in *proto.CallToolInput) (*p
 		}
 		return &proto.CallToolOutput{ResultText: text, IsError: true}, nil
 	}
-	return &proto.CallToolOutput{ResultText: text +
-		"\nThe file is now in your workspace: call list_files to see its exact name before working on it."}, nil
+	return &proto.CallToolOutput{ResultText: text + capability.Success}, nil
+}
+
+// stringArg lit le premier des noms présent dans les arguments, et rend ""
+// si aucun n'y est ou si la valeur n'est pas une chaîne. Un modèle qui
+// passe un nombre là où le schéma dit « string » ne doit pas faire échouer
+// l'appel sur une erreur de type qu'il ne saura pas corriger.
+func stringArg(args map[string]any, names ...string) string {
+	for _, name := range names {
+		if value, ok := args[name].(string); ok && strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // shareFile fabrique un lien de téléchargement temporaire vers un fichier

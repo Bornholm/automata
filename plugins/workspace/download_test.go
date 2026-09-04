@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -97,5 +99,129 @@ func TestShellSingleQuoted(t *testing.T) {
 	}
 	if got := shellSingleQuoted("a'b"); got != `a'\''b` {
 		t.Errorf("apostrophe mal échappée: %q", got)
+	}
+}
+
+// Le tableau des capacités est la seule déclaration : outil, script,
+// description et phrase de succès doivent y être complets, sinon l'outil
+// existe pour le modèle sans rien lui dire d'utile.
+func TestFetchCapabilities_AreComplete(t *testing.T) {
+	if len(fetchCapabilities) == 0 {
+		t.Fatal("aucune capacité de téléchargement déclarée")
+	}
+
+	seen := map[string]bool{}
+	for _, capability := range fetchCapabilities {
+		if seen[capability.Tool] {
+			t.Errorf("l'outil %q est déclaré deux fois", capability.Tool)
+		}
+		seen[capability.Tool] = true
+
+		if capability.Script == "" || capability.Purpose == "" || capability.Success == "" {
+			t.Errorf("capacité %q incomplète: %+v", capability.Tool, capability)
+		}
+		for _, param := range capability.Params {
+			if param.Name == "" || param.Description == "" {
+				t.Errorf("paramètre incomplet dans %q: %+v", capability.Tool, param)
+			}
+		}
+
+		found, ok := lookupFetchCapability(capability.Tool)
+		if !ok || found.Script != capability.Script {
+			t.Errorf("%q est introuvable par son nom d'outil", capability.Tool)
+		}
+	}
+
+	if _, ok := lookupFetchCapability("run_command"); ok {
+		t.Error("run_command est pris pour une capacité de téléchargement")
+	}
+}
+
+// Une capacité dont le script n'est pas dans allowed_binaries échoue chez
+// l'utilisateur, jamais ici : LeaSH refuse le binaire, et le message parle
+// de policy. Ce test est le point de contrôle qui manquerait sinon — et il
+// vaut aussi dans l'autre sens, la policy étant l'inventaire de ce que
+// l'agent peut atteindre sur le réseau.
+func TestFetchCapabilities_MatchTheSandboxPolicy(t *testing.T) {
+	policy, err := os.ReadFile(filepath.Join("..", "..", "misc", "toolbox", "policies", "fetch.yaml"))
+	if err != nil {
+		t.Fatalf("lecture de la policy: %v", err)
+	}
+	allowed := allowedBinaries(string(policy))
+
+	for _, capability := range fetchCapabilities {
+		if !allowed[capability.Script] {
+			t.Errorf("%s appelle %q, absent de allowed_binaries de fetch.yaml", capability.Tool, capability.Script)
+		}
+		script := filepath.Join("..", "..", "misc", "toolbox", capability.Script)
+		if _, err := os.Stat(script); err != nil {
+			t.Errorf("%s appelle %q, dont le script est absent de misc/toolbox: %v", capability.Tool, capability.Script, err)
+		}
+	}
+
+	for binary := range allowed {
+		var declared bool
+		for _, capability := range fetchCapabilities {
+			if capability.Script == binary {
+				declared = true
+			}
+		}
+		if !declared {
+			t.Errorf("%q est autorisé par la policy réseau sans qu'aucune capacité ne l'appelle", binary)
+		}
+	}
+}
+
+// allowedBinaries lit la liste `allowed_binaries` d'une policy LeaSH sans
+// analyseur YAML : le bloc est une suite de « - nom », et n'entraîner tout
+// le paquet pour ça serait payer cher une lecture de six lignes.
+func allowedBinaries(policy string) map[string]bool {
+	allowed := map[string]bool{}
+	var inside bool
+	for _, line := range strings.Split(policy, "\n") {
+		switch {
+		case strings.HasPrefix(line, "allowed_binaries:"):
+			inside = true
+		case !inside:
+		case strings.HasPrefix(strings.TrimSpace(line), "#"), strings.TrimSpace(line) == "":
+		case strings.HasPrefix(strings.TrimSpace(line), "- "):
+			allowed[strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "- "))] = true
+		default:
+			// Une clé de premier niveau : le bloc est fini.
+			inside = false
+		}
+	}
+	return allowed
+}
+
+// Un paramètre absent prend son défaut ; un paramètre malformé est refusé
+// avec un texte qui dit au modèle comment s'en sortir, plutôt que de
+// laisser une valeur inattendue atteindre la ligne de commande du script.
+func TestFetchParam_Validate(t *testing.T) {
+	param := fetchParam{Name: "lang", Default: "fr,en", Pattern: langPattern}
+
+	for _, accepted := range []string{"", "  ", "fr", "fr,en", "pt-BR", "fr-FR,en-US"} {
+		got, err := param.validate(accepted)
+		if err != nil {
+			t.Errorf("validate(%q): %v", accepted, err)
+		}
+		if accepted == "" || strings.TrimSpace(accepted) == "" {
+			if got != "fr,en" {
+				t.Errorf("validate(%q) = %q, défaut attendu", accepted, got)
+			}
+		}
+	}
+
+	for _, refused := range []string{"fr en", "fr;en", "$(id)", "../etc", "fr,"} {
+		if got, err := param.validate(refused); err == nil {
+			t.Errorf("validate(%q) = %q, refus attendu", refused, got)
+		}
+	}
+
+	// Sans motif, la valeur passe telle quelle : toutes les capacités
+	// n'ont pas besoin d'une grammaire.
+	free := fetchParam{Name: "libre", Default: "x"}
+	if got, err := free.validate("n'importe quoi"); err != nil || got != "n'importe quoi" {
+		t.Errorf("validate sans motif = %q, %v", got, err)
 	}
 }

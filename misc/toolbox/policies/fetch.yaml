@@ -11,11 +11,13 @@
 #
 # Garde-fous, dans l'ordre où ils comptent :
 #
-#  1. UN SEUL binaire autorisé, `fetch-video` — jamais `yt-dlp` en direct,
-#     dont --exec et les post-processeurs feraient un lanceur de commandes
-#     arbitraires avec le réseau ouvert et le workspace monté en écriture.
-#     Aucun interpréteur, aucun outil de fichiers, aucun `curl`/`wget` : un
+#  1. Des WRAPPERS seulement — jamais `yt-dlp` en direct, dont --exec et
+#     les post-processeurs feraient un lanceur de commandes arbitraires
+#     avec le réseau ouvert et le workspace monté en écriture. Aucun
+#     interpréteur, aucun outil de fichiers, aucun `curl`/`wget` : un
 #     script ne peut littéralement rien faire d'autre que télécharger.
+#     Chaque wrapper ne fait qu'UNE chose et se relit d'un coup d'oeil ;
+#     c'est cette relecture qui tient la frontière, pas leur nombre.
 #  2. Les builtins du shell sont désactivés et les tubes/subshells réduits
 #     au minimum : pas de composition qui contournerait le point 1.
 #  3. Le script refuse tout ce qui n'est pas http(s) et tout hôte littéral
@@ -24,8 +26,13 @@
 #  4. Durée et sortie bornées comme ailleurs ; le plafond de taille est
 #     dans le script (--max-filesize).
 #
-# Ne pas ajouter de binaire ici. Le jour où un second outil réseau est
-# nécessaire, il lui faut son propre wrapper, aussi étroit que celui-ci.
+# Ne pas ajouter de binaire ici sans lui écrire son propre wrapper, aussi
+# étroit que les deux existants : jamais un outil réseau généraliste, et
+# jamais un wrapper paramétrable en options — ce serait rouvrir --exec par
+# la bande. Cette liste est l'inventaire de ce que l'agent peut atteindre
+# sur le réseau, et le fait qu'elle DOIVE changer pour qu'une capacité
+# s'ajoute est le point de contrôle : une capacité qui s'ajouterait sans
+# elle s'ajouterait sans revue.
 #
 # À savoir : yt-dlp lance lui-même `deno` pour exécuter le script de
 # signature servi par YouTube. Ce sous-processus échappe à l'allowlist —
@@ -39,12 +46,19 @@ execution:
   # heure en 1080p passe mal en 300 s sur une liaison lente.
   max_duration: 600s
   max_output_bytes: 262144
-  # Une commande par script : il n'y a rien à composer ici.
+  # Une commande par script : il n'y a rien à composer ici. Le wrapper
+  # appelé, lui, fait ce qu'il veut en interne — l'allowlist ne filtre que
+  # la commande soumise, jamais les enfants d'un binaire autorisé.
   max_commands_per_script: 1
   max_subshells: 0
 
 allowed_binaries:
+  # Rapporte la vidéo, sous plafond de taille et de durée.
   - fetch-video
+  # Rapporte les seuls sous-titres, sans jamais télécharger la vidéo :
+  # quelques dizaines de kilo-octets de texte là où la vidéo en pèserait
+  # des centaines de milliers, pour répondre à ce qu'elle DIT.
+  - fetch-subtitles
 
 blocked_patterns:
   - "rm -rf /"

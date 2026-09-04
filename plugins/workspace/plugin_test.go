@@ -26,6 +26,10 @@ type fakeLeash struct {
 	files map[string][]byte
 	// script mémorise le dernier script reçu par execute_shell.
 	script string
+	// authorization mémorise la clé présentée sur la dernière requête : la
+	// séparation des clés est ce qui sépare l'atelier étanche du sandbox
+	// réseau, elle mérite d'être vérifiée et pas seulement relue.
+	authorization string
 
 	// execResult est le texte renvoyé par execute_shell.
 	execResult string
@@ -48,7 +52,11 @@ func (f *fakeLeash) record(r *http.Request) {
 }
 
 func (f *fakeLeash) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Authorization") != "Bearer test-key" {
+	f.mu.Lock()
+	f.authorization = r.Header.Get("Authorization")
+	f.mu.Unlock()
+
+	if r.Header.Get("Authorization") != "Bearer test-key" && r.Header.Get("Authorization") != "Bearer fetch-key" {
 		http.Error(w, "invalid API key", http.StatusUnauthorized)
 		return
 	}
@@ -455,5 +463,179 @@ func TestCallTool_WithoutIdentityIsRefused(t *testing.T) {
 	}
 	if !out.IsError {
 		t.Fatal("un appel sans identité doit être refusé")
+	}
+}
+
+// Les outils de téléchargement n'existent QUE si l'exploitant a configuré
+// la clé de la policy réseau. Un outil monté sans elle ferait perdre au
+// modèle un appel et une explication.
+func TestListTools_FetchToolsFollowTheOperatorKey(t *testing.T) {
+	closed := newPlugin(&LeashClient{baseURL: "http://leash", apiKey: "k"})
+	out, err := closed.ListTools(context.Background(), &proto.ListToolsInput{})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	for _, tool := range out.Tools {
+		if _, ok := lookupFetchCapability(tool.Name); ok {
+			t.Errorf("%s est monté sans clé de policy réseau", tool.Name)
+		}
+	}
+
+	open := newPlugin(&LeashClient{baseURL: "http://leash", apiKey: "k", fetchAPIKey: "f"})
+	out, err = open.ListTools(context.Background(), &proto.ListToolsInput{})
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	mounted := map[string]*proto.ToolDescriptor{}
+	for _, tool := range out.Tools {
+		mounted[tool.Name] = tool
+	}
+	for _, capability := range fetchCapabilities {
+		tool, ok := mounted[capability.Tool]
+		if !ok {
+			t.Fatalf("%s n'est pas monté alors que la clé est là", capability.Tool)
+		}
+		// La liste des domaines est reprise dans chaque description : le
+		// modèle choisit son outil sur cette seule ligne.
+		if !strings.Contains(tool.Description, "youtube.com") {
+			t.Errorf("%s ne dit pas quels sites sont autorisés: %s", capability.Tool, tool.Description)
+		}
+		// Le plafond doit rester au-dessus du max_duration de la policy
+		// « fetch » (600 s), sinon l'hôte coupe avant le verdict de LeaSH.
+		if tool.TimeoutSeconds <= 600 {
+			t.Errorf("%s expire en %d s, avant la policy réseau", capability.Tool, tool.TimeoutSeconds)
+		}
+	}
+}
+
+// Le schéma est construit, pas recopié : il doit porter url, name et les
+// paramètres propres à la capacité, avec leur défaut visible. Un modèle
+// qui ne lit pas le défaut dans le schéma invente une valeur.
+func TestFetchSchema_CarriesEveryParameter(t *testing.T) {
+	for _, capability := range fetchCapabilities {
+		var schema struct {
+			Properties map[string]struct {
+				Type        string `json:"type"`
+				Description string `json:"description"`
+			} `json:"properties"`
+			Required []string `json:"required"`
+		}
+		if err := json.Unmarshal([]byte(fetchSchema(capability)), &schema); err != nil {
+			t.Fatalf("%s: schéma illisible: %v", capability.Tool, err)
+		}
+
+		for _, name := range []string{"url", "name"} {
+			if _, ok := schema.Properties[name]; !ok {
+				t.Errorf("%s: le schéma ne déclare pas %q", capability.Tool, name)
+			}
+		}
+		if len(schema.Required) != 1 || schema.Required[0] != "url" {
+			t.Errorf("%s: required = %v, attendu [url]", capability.Tool, schema.Required)
+		}
+		for _, param := range capability.Params {
+			property, ok := schema.Properties[param.Name]
+			if !ok {
+				t.Fatalf("%s: le schéma ne déclare pas %q", capability.Tool, param.Name)
+			}
+			if param.Default != "" && !strings.Contains(property.Description, param.Default) {
+				t.Errorf("%s: le schéma tait le défaut de %q: %s", capability.Tool, param.Name, property.Description)
+			}
+		}
+	}
+}
+
+// Un modèle nomme mal ses paramètres : le chemin générique doit accepter
+// les synonymes observés plutôt que de rendre une erreur que le modèle
+// interprète comme une panne de l'outil.
+func TestStringArg_AcceptsTheSynonyms(t *testing.T) {
+	args := map[string]any{"video_url": "https://youtu.be/x", "output": "clip", "count": 3}
+
+	if got := stringArg(args, "url", "video_url", "link"); got != "https://youtu.be/x" {
+		t.Errorf("url = %q", got)
+	}
+	if got := stringArg(args, "name", "output"); got != "clip" {
+		t.Errorf("name = %q", got)
+	}
+	// Une valeur d'un autre type ne doit pas faire échouer l'appel sur une
+	// erreur de désérialisation que le modèle ne saurait pas corriger.
+	if got := stringArg(args, "count"); got != "" {
+		t.Errorf("count = %q, chaîne vide attendue", got)
+	}
+	if got := stringArg(args, "absent"); got != "" {
+		t.Errorf("absent = %q", got)
+	}
+}
+
+// Le contrat entre le Go et les scripts de misc/toolbox est POSITIONNEL :
+// l'URL, le nom de sortie, puis les paramètres de la capacité dans l'ordre
+// du tableau. Rien ne le vérifie à l'exécution — un décalage se lirait
+// comme une vidéo téléchargée dans la mauvaise langue, ou pire.
+func TestFetch_CallsTheScriptWithItsPositionalArguments(t *testing.T) {
+	p, fake := newTestPlugin(t)
+	p.leash.fetchAPIKey = "fetch-key"
+	fake.execResult = "## STDOUT\nfetch-subtitles: subtitles written to talk.vtt (language: fr)\n\n## EXIT CODE\n0\n"
+
+	out, err := p.CallTool(context.Background(), &proto.CallToolInput{
+		Ctx:           testCallContext("member-1"),
+		Name:          "download_subtitles",
+		ArgumentsJson: `{"url":"https://www.youtube.com/watch?v=abc","name":"talk","lang":"fr"}`,
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if out.IsError {
+		t.Fatalf("résultat en erreur: %s", out.ResultText)
+	}
+	if fake.script != `fetch-subtitles 'https://www.youtube.com/watch?v=abc' 'talk' 'fr'` {
+		t.Fatalf("script reçu = %q", fake.script)
+	}
+	// La clé de la policy réseau, jamais celle de l'atelier : c'est elle
+	// qui décide de l'ouverture du réseau côté LeaSH.
+	if fake.authorization != "Bearer fetch-key" {
+		t.Errorf("clé présentée = %q", fake.authorization)
+	}
+	if !strings.Contains(out.ResultText, "summarize-video-from-subtitles") {
+		t.Errorf("le succès n'oriente pas vers la compétence: %q", out.ResultText)
+	}
+}
+
+// Le défaut du paramètre doit atteindre le script : le laisser vide
+// donnerait « fetch-subtitles url name ” », que le script prendrait pour
+// une liste de langues vide.
+func TestFetch_OmittedParameterFallsBackToItsDefault(t *testing.T) {
+	p, fake := newTestPlugin(t)
+	p.leash.fetchAPIKey = "fetch-key"
+
+	if _, err := p.CallTool(context.Background(), &proto.CallToolInput{
+		Ctx:           testCallContext("member-1"),
+		Name:          "download_subtitles",
+		ArgumentsJson: `{"url":"https://youtu.be/abc"}`,
+	}); err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if fake.script != `fetch-subtitles 'https://youtu.be/abc' 'video' 'fr,en'` {
+		t.Fatalf("script reçu = %q", fake.script)
+	}
+}
+
+// Une URL hors liste blanche ne doit jamais atteindre LeaSH : le refus est
+// prononcé côté plugin, avant l'ouverture du réseau.
+func TestFetch_RefusedURLNeverReachesTheSandbox(t *testing.T) {
+	p, fake := newTestPlugin(t)
+	p.leash.fetchAPIKey = "fetch-key"
+
+	out, err := p.CallTool(context.Background(), &proto.CallToolInput{
+		Ctx:           testCallContext("member-1"),
+		Name:          "download_subtitles",
+		ArgumentsJson: `{"url":"https://192.168.30.10/interne"}`,
+	})
+	if err != nil {
+		t.Fatalf("un refus ne doit jamais être une erreur Go: %v", err)
+	}
+	if !out.IsError {
+		t.Fatal("le refus devrait être marqué en erreur")
+	}
+	if fake.script != "" {
+		t.Fatalf("le sandbox a été sollicité: %q", fake.script)
 	}
 }

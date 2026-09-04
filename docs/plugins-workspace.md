@@ -106,31 +106,70 @@ par membre :
 | ------------------- | -------------------------------------------------------------- |
 | `LEASH_SERVER_URL`  | URL du serveur LeaSH, sur le réseau interne (jamais publique). |
 | `LEASH_API_KEY`     | Clé API de l'instance Automata auprès de ce serveur.           |
-| `LEASH_FETCH_API_KEY` | Clé de la policy `fetch.yaml` (téléchargement). Vide : l'outil `download_video` n'existe pas. |
+| `LEASH_FETCH_API_KEY` | Clé de la policy `fetch.yaml` (téléchargement). Vide : les outils `download_video` et `download_subtitles` n'existent pas. |
 | `WORKSPACE_DOWNLOAD_DOMAINS` | Liste blanche des sites téléchargeables, séparés par des virgules. Vide : YouTube, Vimeo, Dailymotion. |
 
-### Télécharger une vidéo
+### Télécharger
 
 L'atelier n'a pas le réseau, et c'est ce qui rend `run_command`
 exécutable sans confirmation. Le téléchargement passe donc par une
 seconde clé API pointant sur `policies/fetch.yaml` côté LeaSH : une
-policy dont le seul binaire autorisé est `fetch-video` (un encadrement de
-`yt-dlp`. Ni `--exec`, ni playlist, ni post-processeur, plafonds de taille
-et de durée), sur le même workspace du membre. Deux clés, deux policies,
-un seul atelier :
+policy dont les seuls binaires autorisés sont des encadrements de
+`yt-dlp` — ni `--exec`, ni playlist, ni post-processeur — sur le même
+workspace du membre. Deux clés, deux policies, un seul atelier :
 
 ```
 LEASH_APIKEY_AUTOMATA=…        LEASH_APIKEY_AUTOMATA_POLICY=/app/policies/toolbox.yaml
 LEASH_APIKEY_FETCH=…           LEASH_APIKEY_FETCH_POLICY=/app/policies/fetch.yaml
 ```
 
-L'outil `download_video` n'apparaît pour le modèle que si
+Deux capacités, deux scripts :
+
+| Outil | Script | Ce qu'il rapporte |
+| --- | --- | --- |
+| `download_video` | `fetch-video` | La vidéo, sous plafond de taille (200 Mo) et de durée (1 h). La définition DÉCROÎT jusqu'à tenir sous le plafond plutôt que d'abandonner. |
+| `download_subtitles` | `fetch-subtitles` | Les seuls sous-titres, en VTT brut, sans jamais télécharger la vidéo. Quelques secondes et quelques dizaines de kilo-octets. |
+
+Un script par capacité, et non un script paramétrable : `allowed_binaries`
+de `fetch.yaml` est l'inventaire lisible de ce que l'agent peut atteindre
+sur le réseau, et le fait que cette liste DOIVE changer pour qu'une
+capacité s'ajoute est le point de contrôle. Une capacité réseau qui
+s'ajouterait sans elle s'ajouterait sans revue. Côté Go, au contraire,
+tout est commun (validation, journaux, traduction des échecs) : une
+capacité est une entrée du tableau `fetchCapabilities`, pas une branche de
+plus. Un test refuse un décalage entre ce tableau et la policy.
+
+Les outils n'apparaissent pour le modèle que si
 `LEASH_FETCH_API_KEY` est renseignée. L'URL est validée deux fois :
 côté Automata contre `WORKSPACE_DOWNLOAD_DOMAINS` (schéma http(s),
 sous-domaines acceptés, adresses IP littérales refusées, la forme
 qu'aurait une tentative vers un service interne), puis par le script
 lui-même. Élargir la liste blanche est un geste d'exploitation ; élargir
 la policy LeaSH d'un binaire n'en est pas un.
+
+### Résumer une vidéo
+
+C'est le cas d'usage de `download_subtitles`, et il n'est pas dans le
+plugin : il est dans la compétence `summarize-video-from-subtitles` (voir
+[skills.md](skills.md)). Le sous-agent télécharge les sous-titres, les
+nettoie dans l'atelier avec `sed` et `awk`, puis les lit.
+
+Le nettoyage n'est pas un détail de forme. Les sous-titres automatiques de
+YouTube sont en *rolling captions* : chaque ligne réapparaît deux ou trois
+fois, avec une balise de timing autour de chaque mot. Une heure de vidéo
+pèse 300 à 500 Ko bruts — au-dessus du `max_output_bytes` de la policy — et
+retombe à 40 ou 60 Ko une fois nettoyée. Un `cat` du `.vtt` brut noie le
+contexte du modèle sans rien lui apprendre de plus.
+
+Ce nettoyage est fait dans la policy `toolbox`, pas dans `fetch-subtitles`,
+qui rend le VTT tel quel. C'est du traitement de texte : il a sa place là
+où sont `sed` et `awk`, et il s'y ajuste sans toucher à un script qui a le
+réseau ouvert.
+
+Deux limites à connaître, portées par la compétence et par la description
+de l'outil : les sous-titres automatiques n'ont ni ponctuation ni noms de
+locuteurs. Un résumé bâti dessus est juste sur le fond et incapable de dire
+qui a dit quoi.
 
 Côté `config.yaml` :
 
@@ -269,8 +308,9 @@ publie sur `ghcr.io/bornholm/leash-toolbox` (`latest` depuis `main`, et
 une étiquette par version taguée). Elle contient le serveur MCP de LeaSH,
 installé depuis le module Go publié et épinglé par l'argument
 `LEASH_VERSION` du Dockerfile, plus `bubblewrap`, `ffmpeg`, `imagemagick`,
-LibreOffice, tesseract, yt-dlp et son runtime Deno, et les deux policies
-`toolbox.yaml` et `fetch.yaml`.
+LibreOffice, tesseract, yt-dlp et son runtime Deno, les wrappers
+`fetch-video` et `fetch-subtitles`, et les deux policies `toolbox.yaml` et
+`fetch.yaml`.
 
 Pourquoi ici et pas chez LeaSH. LeaSH est un serveur d'exécution
 générique. Ce qu'on met dans le bac à sable et ce qu'on y autorise est un

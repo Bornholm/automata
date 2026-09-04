@@ -1,0 +1,148 @@
+#!/bin/sh
+# fetch-subtitles — téléchargement des seuls sous-titres d'une vidéo
+# publique par yt-dlp, dans le bac à sable de la policy « fetch » (le seul
+# à disposer du réseau).
+#
+# Usage : fetch-subtitles <url> [nom-de-sortie] [langues]
+#   fetch-subtitles https://www.youtube.com/watch?v=XXXX
+#   fetch-subtitles https://www.youtube.com/watch?v=XXXX conference fr,en
+#
+# Second binaire autorisé par policies/fetch.yaml, à côté de fetch-video,
+# et volontairement séparé de lui plutôt qu'ajouté sous un drapeau. Les
+# plafonds n'ont rien à voir : `--max-filesize 200M` ne veut rien dire pour
+# un fichier de texte, et le `duration < 3600` de fetch-video écarterait
+# exactement les conférences d'une heure, qui sont le cas d'usage du
+# résumé. Surtout, un wrapper ne se relit d'un coup d'œil que s'il ne fait
+# qu'une chose, et c'est cette relecture qui tient la sécurité du sandbox
+# réseau — pas le nombre de fichiers.
+#
+# Ce que le script impose, comme fetch-video :
+#
+#  1. `--exec` et les post-processeurs arbitraires sont hors de portée.
+#  2. `--no-playlist` : une URL de playlist remplirait le quota du membre.
+#  3. `--skip-download` : la vidéo n'est JAMAIS téléchargée. C'est tout
+#     l'intérêt — quelques secondes et quelques dizaines de kilo-octets là
+#     où la vidéo prendrait des minutes et des centaines de méga-octets.
+#  4. Seuls http(s), jamais un hôte littéral en IP ; la liste blanche de
+#     domaines est appliquée côté appelant (Automata).
+#  5. Le nom du fichier de sortie est imposé et sans espace.
+#
+# Le fichier rendu est du VTT BRUT, sans nettoyage. C'est délibéré : le
+# nettoyage (horodatages, balises de timing, lignes répétées des
+# sous-titres automatiques) est du traitement de texte, il a sa place dans
+# la policy « toolbox » avec sed et awk, où il s'ajuste sans toucher à un
+# script qui a le réseau ouvert.
+
+set -e
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 3 ]; then
+	echo "usage: fetch-subtitles <url> [output-name] [languages]" >&2
+	exit 2
+fi
+
+url="$1"
+name="${2:-video}"
+langs="${3:-fr,en}"
+
+# Schéma : http(s) exclusivement.
+case "$url" in
+	http://*|https://*) ;;
+	*)
+		echo "fetch-subtitles: only http(s) URLs are accepted" >&2
+		exit 2
+		;;
+esac
+
+# Hôte littéral en IP : refusé. C'est la forme qu'aurait une tentative
+# d'atteindre un service interne (169.254.x.y, 10.x.y.z, 127.0.0.1…).
+host="${url#*://}"
+host="${host%%/*}"
+host="${host%%\?*}"
+host="${host##*@}"
+host="${host%%:*}"
+case "$host" in
+	*[!0-9.]*) ;;
+	*)
+		echo "fetch-subtitles: numeric host addresses are not accepted" >&2
+		exit 2
+		;;
+esac
+case "$host" in
+	'['*|localhost)
+		echo "fetch-subtitles: this host is not accepted" >&2
+		exit 2
+		;;
+esac
+
+case "$name" in
+	*[!A-Za-z0-9_-]*)
+		echo "fetch-subtitles: output name may only contain letters, digits, dashes and underscores" >&2
+		exit 2
+		;;
+esac
+
+# Langues : codes séparés par des virgules. Ce qui arrive ici atteint la
+# ligne de commande de yt-dlp, et `--sub-langs` accepte des motifs.
+case "$langs" in
+	*[!A-Za-z0-9,-]*)
+		echo "fetch-subtitles: languages may only contain letters, digits, dashes and commas" >&2
+		exit 2
+		;;
+esac
+
+# Une langue à la fois, dans l'ordre demandé, et on s'arrête à la première
+# qui répond. yt-dlp ne sait pas « la première disponible » : passer
+# « fr,en » d'un coup rapporte les DEUX quand les deux existent, et l'agent
+# se retrouve à choisir entre deux fichiers dont il ne sait rien. Le suffixe
+# `.*` fait suivre les variantes régionales (fr-FR, fr-orig).
+# IFS reste positionné pendant toute la boucle : aucune expansion du corps
+# n'est laissée sans guillemets, et le résultat d'un glob n'est pas soumis
+# au découpage.
+IFS=','
+for lang in $langs; do
+	[ -n "$lang" ] || continue
+
+	# Chaque tentative est autorisée à échouer : une langue absente n'est
+	# pas une panne tant qu'il en reste à essayer.
+	yt-dlp \
+		--skip-download \
+		--write-subs \
+		--write-auto-subs \
+		--sub-langs "${lang}.*" \
+		--sub-format vtt \
+		--convert-subs vtt \
+		--no-playlist \
+		--no-continue \
+		--no-part \
+		--retries 2 \
+		--socket-timeout 20 \
+		--no-exec \
+		--output "${name}.%(ext)s" \
+		--paths "." \
+		--no-cache-dir \
+		--restrict-filenames \
+		-- "$url" || true
+
+	# yt-dlp nomme le fichier « <name>.<langue>.vtt ». On le ramène à un
+	# nom prévisible, et on annonce la langue obtenue sur la sortie : sans
+	# ça, l'agent doit deviner laquelle des variantes il a reçue.
+	#
+	# Le code demandé passe avant ses variantes. L'ordre du glob, seul, en
+	# choisirait une autre : « en-orig » précède « en » à l'alphabet, et
+	# c'est la piste en langue originale, pas la piste anglaise.
+	for found in "${name}.${lang}.vtt" "${name}."*.vtt; do
+		[ -f "$found" ] || continue
+		got="${found%.vtt}"
+		got="${got#*.}"
+		mv -- "$found" "${name}.vtt"
+		# Les autres variantes rapportées par le même appel n'ont plus
+		# d'usage et pèsent sur le quota du membre.
+		rm -f -- "${name}."*.vtt
+		echo "fetch-subtitles: subtitles written to ${name}.vtt (language: ${got})"
+		exit 0
+	done
+done
+unset IFS
+
+echo "fetch-subtitles: no subtitles are available for this video in ${langs} — the platform offers none, automatic ones included" >&2
+exit 1

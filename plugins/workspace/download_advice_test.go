@@ -30,6 +30,19 @@ func TestDownloadFailureAdvice(t *testing.T) {
 		t.Error("aucune consigne pour une vidéo réellement privée")
 	}
 
+	// Une vidéo sans sous-titres n'est pas une panne : la consigne doit
+	// arrêter l'agent, pas l'envoyer chercher une autre URL — c'est le même
+	// piège que ci-dessus, sur un outil différent.
+	none := downloadFailureAdvice("fetch-subtitles: no subtitles are available for this video in fr,en")
+	if none == "" {
+		t.Fatal("aucune consigne pour une vidéo sans sous-titres")
+	}
+	for _, want := range []string{"do NOT retry", "no subtitles"} {
+		if !strings.Contains(none, want) {
+			t.Errorf("consigne %q : %q attendu", none, want)
+		}
+	}
+
 	// Rien de connu : on ne surinterprète pas, la sortie brute suffit.
 	if got := downloadFailureAdvice("ERROR: some unexpected failure"); got != "" {
 		t.Errorf("consigne %q pour une erreur inconnue, attendue vide", got)

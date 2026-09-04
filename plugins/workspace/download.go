@@ -154,6 +154,15 @@ func downloadFailureAdvice(output string) string {
 			"Do not retry with another link to the same video. " +
 			"Tell the user plainly that this video exceeds what the workspace accepts."
 
+	// Aucun sous-titre : ce n'est pas une panne, c'est une propriété de la
+	// vidéo. Sans consigne, l'agent enchaîne les formes d'URL comme il le
+	// faisait pour les vidéos indisponibles.
+	case strings.Contains(output, "no subtitles are available"):
+		return "This video carries no subtitles at all, not even automatic ones. This is a property of the video, not a fault: " +
+			"do NOT retry with another form of the same link. " +
+			"You may try ONCE more with a different 'lang' if the video is likely spoken in another language. " +
+			"Otherwise tell the user plainly that this video has no subtitles, so there is no text to summarise."
+
 	// Vraie indisponibilité : là, une autre URL a du sens.
 	case strings.Contains(output, "Private video"),
 		strings.Contains(output, "Sign in to confirm"),
@@ -164,4 +173,101 @@ func downloadFailureAdvice(output string) string {
 	}
 
 	return ""
+}
+
+// fetchCapability décrit un wrapper réseau exposé comme outil du plugin.
+//
+// Ce qui suit est vrai de TOUT téléchargement : tolérer les synonymes de
+// paramètres qu'un modèle invente, valider l'URL contre la liste blanche,
+// borner le nom de sortie, journaliser sans l'URL, traduire l'échec de
+// yt-dlp en consigne. Seuls le script appelé et les phrases rendues au
+// modèle changent d'une capacité à l'autre. Ajouter une capacité, c'est
+// donc une entrée dans ce tableau et un script dans misc/toolbox — jamais
+// une branche de plus dans CallTool.
+//
+// Le script, lui, reste étroit et propre à sa capacité, et c'est
+// délibéré : `allowed_binaries` de policies/fetch.yaml est l'inventaire
+// lisible de ce que l'agent peut atteindre sur le réseau. Une capacité
+// réseau qui s'ajouterait sans que cette policy change s'ajouterait sans
+// revue.
+type fetchCapability struct {
+	// Tool est le nom exposé au modèle.
+	Tool string
+	// Script est le binaire autorisé par la policy « fetch ». Il reçoit
+	// l'URL, puis le nom de sortie, puis les Params dans l'ordre.
+	Script string
+	// Purpose ouvre la description de l'outil ; la liste des domaines
+	// autorisés y est ajoutée à la volée, elle vient de la configuration
+	// de l'exploitant.
+	Purpose string
+	// Params sont les arguments propres à la capacité, au-delà de l'URL et
+	// du nom de sortie que toutes partagent.
+	Params []fetchParam
+	// Success est ajouté à la sortie du script quand il a réussi : il dit
+	// au modèle quoi faire du fichier obtenu.
+	Success string
+}
+
+// fetchParam est un argument propre à une capacité. Le motif borne ce qui
+// atteint la ligne de commande du script ; le défaut évite d'exiger du
+// modèle une valeur qu'il devinerait mal.
+type fetchParam struct {
+	Name        string
+	Description string
+	Default     string
+	Pattern     *regexp.Regexp
+}
+
+// langPattern borne une liste de langues (« fr », « fr,en », « pt-BR »).
+var langPattern = regexp.MustCompile(`^[A-Za-z]{2,8}(-[A-Za-z0-9]{2,8})*(,[A-Za-z]{2,8}(-[A-Za-z0-9]{2,8})*)*$`)
+
+// fetchCapabilities énumère les téléchargements offerts quand l'exploitant
+// a configuré la clé de la policy réseau.
+var fetchCapabilities = []fetchCapability{
+	{
+		Tool:   "download_video",
+		Script: "fetch-video",
+		Purpose: "Download a public video into your workspace so you can edit it. " +
+			"Playlists are not downloaded, only a single video, capped in size and duration.",
+		Success: "\nThe file is now in your workspace: call list_files to see its exact name before working on it.",
+	},
+	{
+		Tool:   "download_subtitles",
+		Script: "fetch-subtitles",
+		Purpose: "Download the subtitles of a public video as a text file, WITHOUT downloading the video itself. " +
+			"This is the way to answer a question about what a video SAYS — summarise it, search it, quote it: " +
+			"it takes seconds where downloading the video would take minutes, and there is nothing to watch afterwards. " +
+			"Automatic subtitles carry no punctuation and never name the speakers, so never attribute a sentence to anyone based on them.",
+		Params: []fetchParam{{
+			Name:        "lang",
+			Description: "Preferred subtitle languages, comma separated. The first one the video offers is used.",
+			Default:     "fr,en",
+			Pattern:     langPattern,
+		}},
+		Success: "\nThe subtitle file is now in your workspace. It is raw VTT: load the summarize-video-from-subtitles skill and follow it. " +
+			"Do NOT cat the file as it is — automatic subtitles repeat every line two or three times and would flood your context for nothing.",
+	},
+}
+
+// lookupFetchCapability retrouve une capacité par le nom de son outil.
+func lookupFetchCapability(tool string) (fetchCapability, bool) {
+	for _, capability := range fetchCapabilities {
+		if capability.Tool == tool {
+			return capability, true
+		}
+	}
+	return fetchCapability{}, false
+}
+
+// validateParam applique défaut et motif à un argument propre à une
+// capacité. Le texte d'erreur part au modèle : anglais, actionnable.
+func (p fetchParam) validate(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return p.Default, nil
+	}
+	if p.Pattern != nil && !p.Pattern.MatchString(value) {
+		return "", fmt.Errorf("the '%s' parameter is malformed; leave it out to use %q", p.Name, p.Default)
+	}
+	return value, nil
 }

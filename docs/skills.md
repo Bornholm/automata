@@ -146,6 +146,7 @@ vide, et aucun outil `load_skill` monté.
 | `compress-media-for-messaging` | workspace | Ramener une vidéo ou une photo sous la limite d'envoi. |
 | `scan-to-pdf` | workspace | Transformer des photos de documents en PDF redressé, lisible et cherchable (OCR). |
 | `strip-photo-metadata` | workspace | Lire ou effacer les métadonnées d'une photo (position GPS, appareil) avant partage. |
+| `summarize-video-from-subtitles` | workspace | Résumer ou fouiller une vidéo par ses sous-titres, sans la télécharger : nettoyage du VTT compris. |
 | `unslop` | tous | Débarrasser un texte long de ses tics d'écriture d'IA. |
 | `translate` | tous | Traduire en gardant registre, noms propres et mise en forme. |
 
