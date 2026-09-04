@@ -165,15 +165,17 @@ func stripJSONFence(raw string) (string, bool) {
 // l'outil, ou dire honnêtement ce qui n'a pas été fait.
 //
 // En anglais, comme tout ce qui part au modèle.
-const ungroundedNotice = `Your reply above states something you could not know: %s
+const ungroundedNotice = `[Note from the system, not from the person you are talking to.]
 
-You called no tool while writing it, so you observed nothing — whatever your reply asserts about what works, what failed, or what you obtained, you were guessing.
+A first attempt at answering the request above was discarded before anyone saw it. It asserted something you could not know: %s
 
-Write the reply again, one of two ways and no other:
+No tool had been called, so nothing had been observed — that claim was a guess.
+
+Answer the request above now, one of two ways and no other:
   - if a tool offered to you can settle the question, CALL IT NOW and answer from what it returns;
-  - otherwise, drop the claim entirely and say plainly what you did not do.
+  - otherwise, answer without that claim, and say plainly what you did not do.
 
-Never present a guess as an observation.`
+Write to the person, as if for the first time: they never saw the discarded attempt and are waiting for their answer. Do not mention this note, do not apologise, do not ask permission to use a tool you already have — use it.`
 
 // reviewGrounding fait relire la réponse par le juge lorsque le tour n'a
 // appelé aucun outil, et relance le modèle UNE fois si l'avis est négatif.
@@ -229,10 +231,10 @@ func (a *OrchestratorAgent) reviewGrounding(
 	}
 	a.metrics.IncUngroundedReply()
 
-	retryMessages := append(append([]llm.Message(nil), messages...),
-		llm.NewMessage(llm.RoleAssistant, result.Text),
-		llm.NewMessage(llm.RoleUser, strings.Replace(ungroundedNotice, "%s", reason, 1)),
-	)
+	// Le tour est REJOUÉ, brouillon fautif exclu : le lui remontrer serait
+	// lui donner le texte à imiter, et sa réponse s'adresserait à la
+	// consigne plutôt qu'à la personne (voir replay.go).
+	retryMessages := replayWithNotice(messages, strings.Replace(ungroundedNotice, "%s", reason, 1))
 
 	retried, err := runToolLoop(ctx, client, retryMessages, tools, maxIterations,
 		a.maxToolContextBytes, ErrMaxDelegationsReached, a.logger, a.agentName, "")

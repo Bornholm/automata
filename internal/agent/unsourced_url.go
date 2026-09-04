@@ -37,15 +37,17 @@ import (
 //
 // Elle nomme les URL en cause plutôt que de parler en général : « une de
 // tes URL » laisse le modèle choisir laquelle corriger, et il choisit mal.
-const unsourcedURLNotice = `The reply you just wrote contains a web address that appears nowhere in this conversation and that no tool returned to you in this turn: %s
+const unsourcedURLNotice = `[Note from the system, not from the person you are talking to.]
 
-You did not read it anywhere — you composed it. An address built this way does not work, and the person will click it.
+A first attempt at answering the request above was discarded before anyone saw it. It contained a web address that appears nowhere in this conversation and that no tool had returned: %s
 
-Write your reply again, choosing one of two ways, and no other:
+Nobody showed you that address — it was composed. An address built this way does not work, and the person would click it.
+
+Answer the request above now, one of two ways and no other:
   - if a tool offered to you can produce this address, CALL IT NOW and use exactly what it returns;
-  - otherwise, write the reply without that address, and say plainly what you could not provide.
+  - otherwise, answer without that address, and say plainly what you could not provide.
 
-Never present an address you assembled yourself as if you had obtained it.`
+Write to the person, as if for the first time: they never saw the discarded attempt and are waiting for their answer. Do not mention this note, do not apologise, do not ask permission to use a tool you already have — use it.`
 
 // unsourcedURLs retourne les URL de reply qui n'apparaissent dans aucune
 // des sources, dans l'ordre de première apparition et sans doublon.
@@ -114,10 +116,9 @@ func (a *OrchestratorAgent) verifyURLSources(
 
 	a.logURLIncident(ctx, "agent: adresse fabriquée dans la réponse, relance du modèle", unsourced, result)
 
-	retryMessages := append(append([]llm.Message(nil), messages...),
-		llm.NewMessage(llm.RoleAssistant, result.Text),
-		llm.NewMessage(llm.RoleUser, strings.Replace(unsourcedURLNotice, "%s", strings.Join(unsourced, ", "), 1)),
-	)
+	// Même règle que pour le juge : on rejoue la demande sans montrer le
+	// brouillon (voir replay.go).
+	retryMessages := replayWithNotice(messages, strings.Replace(unsourcedURLNotice, "%s", strings.Join(unsourced, ", "), 1))
 
 	retried, err := runToolLoop(ctx, client, retryMessages, tools, maxIterations,
 		a.maxToolContextBytes, ErrMaxDelegationsReached, a.logger, a.agentName, "")

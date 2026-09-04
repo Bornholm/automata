@@ -56,9 +56,15 @@ func TestOrchestratorAgent_UngroundedReplyIsHandedBack(t *testing.T) {
 			if turn == 0 {
 				return scriptedFinalResponse("Le service de calendrier est indisponible. Réessayez plus tard."), nil
 			}
-			// La relance porte la raison du juge, en dernier message.
+			// La relance rejoue la demande, consigne intégrée, et ne
+			// remontre jamais le brouillon fautif.
 			if n := len(opts.Messages); n > 0 {
 				secondPrompt = opts.Messages[n-1].Content()
+			}
+			for _, m := range opts.Messages {
+				if strings.Contains(m.Content(), "Le service de calendrier est indisponible") {
+					t.Errorf("le brouillon fautif a été remontré au modèle: %q", m.Content())
+				}
 			}
 			return scriptedFinalResponse("Je n'ai pas consulté ton agenda. Veux-tu que je le fasse ?"), nil
 		},
@@ -77,6 +83,11 @@ func TestOrchestratorAgent_UngroundedReplyIsHandedBack(t *testing.T) {
 	}
 	if !strings.Contains(secondPrompt, "you never called a calendar tool") {
 		t.Errorf("la relance ne transporte pas la raison du juge: %q", secondPrompt)
+	}
+	// La demande de la personne est rejouée avec la consigne : c'est à elle
+	// que le modèle répond, pas au correcteur.
+	if !strings.Contains(secondPrompt, "Quels sont mes rendez-vous ?") {
+		t.Errorf("la demande n'a pas été rejouée: %q", secondPrompt)
 	}
 	if !strings.Contains(result.Reply, "pas consulté") {
 		t.Errorf("la réponse reprise n'a pas été rendue: %q", result.Reply)

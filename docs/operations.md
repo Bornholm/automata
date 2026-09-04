@@ -399,11 +399,21 @@ Ce cadre est ce qui rend un juge acceptable dans le chemin d'une réponse :
 - **une preuve décide QUAND, une opinion décide QUOI.** Le juge n'est
   consulté que si le tour n'a appelé aucun outil alors qu'il en avait. Un
   tour normal ne coûte donc aucune complétion de plus ;
-- **son verdict ne réécrit jamais la réponse.** Il déclenche UNE relance du
-  modèle d'origine, à qui la raison est transmise telle quelle, ses outils
-  toujours offerts, avec deux issues : appeler l'outil, ou dire honnêtement
-  ce qui n'a pas été fait. « Ta réponse n'est pas fondée » sans la raison
-  ferait recommencer à l'identique ;
+- **son verdict ne réécrit jamais la réponse.** Il fait REJOUER le tour au
+  modèle d'origine — mêmes règles, même historique, même demande — avec la
+  raison intégrée à la demande, ses outils toujours offerts, et deux issues :
+  appeler l'outil, ou dire honnêtement ce qui n'a pas été fait. « Ta réponse
+  n'est pas fondée » sans la raison ferait recommencer à l'identique ;
+- **le brouillon fautif n'est jamais remontré au modèle.** La première
+  version le rejouait comme sa réponse, suivi de la consigne : c'était lui
+  tendre le texte à ne pas reproduire, alors que la sonde a mesuré qu'il
+  imite le dernier message d'assistant qu'il voit. Pire, sa réponse
+  s'adressait au correcteur et non à la personne — « Tu as raison, j'ai
+  inventé les détails. Je le fais ? » est arrivé à un membre le 2026-09-04,
+  à la place de sa réponse. Les consignes se présentent donc comme des notes
+  du système, et demandent explicitement d'écrire à la personne sans
+  mentionner la note ni redemander la permission d'appeler un outil déjà
+  offert (voir `internal/agent/replay.go`) ;
 - **tout ce qui peut mal se passer laisse le tour inchangé** : aucun modèle
   affecté au rôle, juge en erreur, avis illisible, verdict sans raison,
   relance en échec. Une vérification indisponible ne doit pas coûter sa
